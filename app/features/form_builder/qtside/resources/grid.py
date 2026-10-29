@@ -24,7 +24,7 @@ from app.qt.QtWidgets import QWidget
 
 CELL_W = 72
 CELL_H = 80
-THUMB = 56
+THUMB = 48
 HEADER_H = 24
 NO_PREFIX = "No prefix"
 
@@ -219,6 +219,7 @@ class QrcGrid(QWidget):
         checker_a = token_color(chrome.fb.checker_a)
         checker_b = token_color(chrome.fb.checker_b)
         clip = event.rect()  # type: ignore[attr-defined]
+        painter.fillRect(clip, token_color(chrome.panel))
         metrics = QFontMetrics(self.font())
         for slot in self._slots:
             rect = QRect(slot.x, slot.y, slot.w, slot.h)
