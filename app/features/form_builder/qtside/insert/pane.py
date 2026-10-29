@@ -40,7 +40,7 @@ from app.features.form_builder.qtside.insert.pieces_box import PieceBox
 from app.features.form_builder.qtside.insert.ports import InsertMemoryPort, PieceOps
 from app.features.form_builder.qtside.insert.rows import ENTRY, HEADER, Row, browse_rows, search_rows
 from app.features.form_builder.qtside.insert.catalog.search import search
-from app.features.form_builder.qtside.theme.chrome import FormChrome
+from app.features.form_builder.qtside.theme.chrome import FormChrome, scrollbar_qss
 
 ICONS_MIN_WIDTH = 216
 _KEY_ROW = Qt.ItemDataRole.UserRole
@@ -277,6 +277,7 @@ class InsertPane(QWidget):
             "QListWidget { background: %s; color: %s; border: 1px solid %s; }"
             "QListWidget::item:selected { background: %s; color: %s; }"
             % (chrome.input, chrome.text, chrome.border, chrome.selected, chrome.text)
+            + scrollbar_qss(chrome)
         )
         self.filter.setStyleSheet(
             "QLineEdit { background: %s; color: %s; border: 1px solid %s; }"

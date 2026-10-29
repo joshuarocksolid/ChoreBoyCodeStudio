@@ -439,7 +439,7 @@ def build_frame(static: StaticLayer, inputs: FrameInputs) -> OverlayFrame:
     live = previewing(gesture)
     items: List[Item] = []
     if not live:
-        items.extend(static.items)
+        items.extend(_without_refused_hint(static.items, view, inputs))
         focused = _focused_layouts(document, primary)
         _sites(items, view, inputs.knobs, focused)
     _hover(items, static, document, gesture)
@@ -764,6 +764,30 @@ def _drop_chip(
         inputs.document,
         _Face("chip", host, role, text, None),
         required=True,
+    )
+
+
+def _without_refused_hint(
+    items: Tuple[Item, ...], view: ViewMap, inputs: FrameInputs
+) -> Tuple[Item, ...]:
+    """A drag over a container that refuses it hides that container's "Drop widgets here"."""
+    shown = _shown_drop(inputs)
+    if shown is None or not isinstance(shown[0], RefusedDrop):
+        return items
+    frame = view.to_canvas(shown[0].frame)
+    return tuple(
+        item
+        for item in items
+        if not (isinstance(item, Caption) and item.lines == (_EMPTY_NESTED,) and _within(item.rect, frame))
+    )
+
+
+def _within(inner: CanvasRect, outer: CanvasRect) -> bool:
+    return (
+        inner.x >= outer.x
+        and inner.y >= outer.y
+        and inner.x + inner.width <= outer.x + outer.width
+        and inner.y + inner.height <= outer.y + outer.height
     )
 
 

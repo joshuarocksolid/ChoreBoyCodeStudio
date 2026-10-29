@@ -465,6 +465,34 @@ def test_an_empty_nested_layout_indicator_covers_the_empty_mark() -> None:
         parent.deleteLater()
 
 
+def test_a_refused_drop_over_an_empty_container_hides_its_drop_hint() -> None:
+    _require()
+    with opened(_NEST) as (session, realizer):
+        parent = QWidget()
+        parent.resize(640, 480)
+        canvas = FormCanvas(session, realizer, _Host(), parent)
+        canvas.resize(640, 480)
+        parent.show()
+        QApplication.instance().processEvents()  # type: ignore[union-attr]
+        layout = next(node for node in session.document.iter_preorder() if isinstance(node, LayoutNode) and node.object_name == "row")
+        qlayout = realizer.layout_for(layout.id)
+        assert qlayout is not None
+        host = qlayout.parentWidget()
+        page = canvas.page_widget()
+        assert host is not None and page is not None
+        proxy = page.graphicsProxyWidget()
+        assert proxy is not None
+        scene = proxy.mapToScene(host.mapTo(page, qlayout.geometry().center()))
+        hints = lambda: [i for i in canvas.overlay().items if isinstance(i, Caption) and i.lines == ("Drop widgets here",)]  # noqa: E731
+        assert hints()
+        canvas._controller.post(PlaceAsked(CanvasPoint(int(scene.x()), int(scene.y())), DropPayload("widget", wizard_page=True), "QWidget"))  # noqa: SLF001
+        QApplication.instance().processEvents()  # type: ignore[union-attr]
+        assert any(isinstance(i, Stroke) and i.role == "problem" for i in canvas.overlay().items)
+        assert not hints()
+        canvas.dispose()
+        parent.deleteLater()
+
+
 def test_empty_pages_name_the_page_and_a_group_box_does_not() -> None:
     _require()
     with opened(_PAGES) as (session, realizer):
