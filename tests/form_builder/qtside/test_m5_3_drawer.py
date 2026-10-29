@@ -175,3 +175,42 @@ def test_an_undo_elsewhere_reloads_the_text_and_chips_and_sentences_read_plainly
 
     assert chip_text(RuleMatch(0, "x", ())) == ("No match", True)
     assert chip_text(RuleMatch(0, "x", (1, 2, 3), ("hovered",))) == ("3 widgets · when hovered", False)
+
+
+@pytest.mark.parity("R3-176")
+@pytest.mark.pain("P-8")
+def test_p8_the_rule_colours_the_button_a_no_match_rule_saves_and_reopening_keeps_the_colour(qapp, tmp_path: Path) -> None:  # type: ignore[no-untyped-def]
+    from app.features.form_builder.engine.ids import IdAllocator
+    from app.features.form_builder.engine.session import FormSession
+    from app.features.form_builder.engine.project.forms import FormScope
+    from app.features.form_builder.qtside.realize import Realizer
+
+    host, surface = _surface(qapp, tmp_path)
+    try:
+        session = surface.session
+        ok = session.document.by_name("okButton")[0]
+        gateway.open_drawer(session, session.document.root.id)
+        drawer = _drawer(surface)
+        drawer.editor.setPlainText("QPushButton#okButton { background-color: #1A7F37; border: none; }\nQProgressBar { color: red; }")
+        drawer.close_drawer()
+        text = session.text()
+        assert "QProgressBar" in text
+    finally:
+        surface.release()
+        host.close()
+    path = str(tmp_path / "again.ui")
+    reopened = FormSession.open(text, path=path, scope=FormScope(kind="external", ui_path=path))
+    realizer = Realizer(reopened)
+    realizer.build()
+    try:
+        realizer.root_widget.resize(300, 200)
+        QApplication.processEvents()
+        again = reopened.document.by_name("okButton")[0]
+        color = realizer.widget_for(again).grab().toImage().pixelColor(5, 5)
+        other = realizer.widget_for(reopened.document.by_name("cancelButton")[0]).grab().toImage().pixelColor(5, 5)
+        assert (color.red(), color.green(), color.blue()) == (0x1A, 0x7F, 0x37)
+        assert other.green() != 0x7F or other.red() != 0x1A
+        del ok
+    finally:
+        realizer.dispose()
+        reopened.dispose()
