@@ -231,6 +231,7 @@ class CanvasController:
         self._refusal_holders: List[QtWidgets.QLabel] = []
         self._preview_key: Optional[str] = None
         self._pending_edit: Optional[Commit] = None
+        self._field_after_label: Optional[NodeId] = None
         self._pending_page: Optional[NodeId] = None
         self._queued_target: Optional[TextTarget] = None
         self._spring_flip: Optional[Tuple[NodeId, int]] = None
@@ -496,7 +497,7 @@ class CanvasController:
             elif effect.commands and callable(getattr(effect.commands[0], "merge_window_s", None)):
                 merge_token = "press:%s" % (effect.commands[0].merge_key(),)
                 merge_within_s = float(effect.commands[0].merge_window_s())
-            elif effect.label in ("Drop", "Move", "Edit text"):
+            elif effect.label in ("Drop", "Move", "Change text"):
                 merge_token = effect.token
                 merge_within_s = 30.0
             applied: List[Tuple[object, object]] = []
@@ -559,9 +560,13 @@ class CanvasController:
                 target = text_target(self._session.document, page, "page_tab")
             token = str(self._serial)
         elif effect is not None and effect.edit == "widget":
-            current = self._session.selection.state.current
+            state = self._session.selection.state
+            current = state.current
             target = None if current is None else text_target(self._session.document, current, "widget")
             token = effect.token
+            # A form-row drop selects the label and its field. Closing the label editor leaves the field.
+            others = [node for node in state.ids if node != current]
+            self._field_after_label = others[0] if len(others) == 1 and current is not None else None
         else:
             return
         if target is None:
@@ -1480,7 +1485,13 @@ class CanvasController:
         self._request_frame()
 
     def _on_editor_done(self, done: EditorDone) -> None:
+        field = self._field_after_label
+        self._field_after_label = None
         self._feed(done)
+        if field is not None and done.how not in ("tab", "backtab") and self._session.document.contains(field):
+            # The new row's label editor closed: the field is the selection, not the label and field pair,
+            # so the inspector shows the field's own rows.
+            self._session.selection.set((field,), current=field, source=SelectionSource.CANVAS)
 
     def _problems(self) -> Dict[NodeId, str]:
         found: Dict[NodeId, str] = {}

@@ -23,6 +23,7 @@ from app.features.form_builder.engine.query.pages import (
 )
 from app.features.form_builder.engine.ui4.values import NumberValue
 from app.features.form_builder.integration.menu_ext import MenuContext
+from app.features.form_builder.integration.toast import ToastNote
 from app.qt.QtCore import QRect
 from app.qt.QtWidgets import QWidget
 
@@ -121,10 +122,10 @@ def _item(menu: object, label: str, enabled: bool, reason: str, run: Callable[[]
 
 def _delete(ctx: MenuContext, container: NodeId, index: int, asking: bool) -> None:
     command = DeletePage(container, index)
-    if not asking:
-        ctx.run(command)
-        return
     surface = _surface(ctx)
+    if not asking:
+        _run_naming_title(ctx, surface, command, container, index)
+        return
     if surface is None:
         return
     outline = getattr(getattr(surface, "_workbench", None), "outline", None)
@@ -144,6 +145,36 @@ def _delete(ctx: MenuContext, container: NodeId, index: int, asking: bool) -> No
         getattr(surface, "_focus_canvas", None),
         _chip_blocks(ctx),
     )
+
+
+def _run_naming_title(
+    ctx: MenuContext,
+    surface: Optional[QWidget],
+    command: DeletePage,
+    container: NodeId,
+    index: int,
+) -> None:
+    """Delete an empty page and toast its title, not its object name (``tab_3``)."""
+    found = pages(ctx.session.document, container)
+    held = getattr(surface, "_command_toast", None)
+    if surface is None or held is None or not 0 <= index < len(found):
+        ctx.run(command)
+        return
+    page = found[index]
+    title = page_title(ctx.session.document, page.id) or page.object_name or "page"
+    log = ctx.session.log
+    before = len(log.entries())
+    # The log listener toasts inside the commit, with the object name. Hold it.
+    surface._toast_held = True  # type: ignore[attr-defined]
+    try:
+        ctx.run(command)
+    finally:
+        surface._toast_held = False  # type: ignore[attr-defined]
+    entries = log.entries()
+    if len(entries) > before:
+        text = "Deleted page \u201c%s\u201d \u00b7 Undo" % title
+        note = ToastNote(text, "Undo", "Delete page", len(entries), entries[-1])
+        held.show_note(note, surface._undo_announced)  # type: ignore[attr-defined]
 
 
 def _chip_blocks(ctx: MenuContext) -> Tuple[QRect, ...]:

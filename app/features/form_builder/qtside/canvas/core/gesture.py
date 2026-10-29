@@ -1156,7 +1156,7 @@ def _editing_done(gesture: Editing, event: EditorDone, world: World) -> Step:
     command = text_commit(gesture.target, event.text)
     if command is not None:
         stamped = replace(command, merge_token=gesture.token)
-        effects_list.append(Commit("Edit text", (stamped,), gesture.token))
+        effects_list.append(Commit("Change text", (stamped,), gesture.token))
     effects_list.append(CloseEditor())
     if event.how in ("tab", "backtab"):
         nxt = next_text_target(world.document, gesture.target.owner, event.how == "backtab")

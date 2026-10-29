@@ -88,7 +88,7 @@ from app.features.form_builder.engine.query.drop_target import (
     resolve_outline,
 )
 from app.features.form_builder.integration.insert_memory import LazyInsertMemory
-from app.features.form_builder.qtside.insert.catalog import load_catalog
+from app.features.form_builder.qtside.insert.catalog import in_sentence, load_catalog
 from app.features.form_builder.qtside.insert.delegate import ROW_ROLE, EntryDelegate
 from app.features.form_builder.qtside.insert.header import PaneHeader
 from app.features.form_builder.qtside.insert.pane import InsertPane
@@ -2700,7 +2700,7 @@ class FormWorkbench(QWidget):
         if tile is None or fragment is None:
             return
         entry = load_catalog().get(key)
-        name = (entry.friendly if entry is not None else tile[2]).lower()
+        name = in_sentence(entry.friendly if entry is not None else tile[2])
         payload = DropPayload(tile[1], dock=key == "QDockWidget", wizard_page=key == "QWizardPage")
         current = self._session.selection.state.current
         commands = auto_commands(self._session.document, current, payload, fragment)

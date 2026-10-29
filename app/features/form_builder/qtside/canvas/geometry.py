@@ -323,6 +323,10 @@ class LiveGeometrySource:
             rect, visible = measured
             visits += 1
             kind = "widget" if isinstance(found, WidgetNode) else "layout" if isinstance(found, LayoutNode) else "spacer"
+            if node_id in scope.dirty and located.get((node_id, "page_tab")) is not None:
+                # A new page title re-lays the tab bar. Every tab after it moves, and
+                # the "+" chip follows the last one. The full walk reads the bar again.
+                return None
             index = located.get((node_id, kind))
             if index is None:
                 # Not indexed (a hidden page's child, say): the full walk decides.

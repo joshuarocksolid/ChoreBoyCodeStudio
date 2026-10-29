@@ -31,9 +31,14 @@ def load_catalog() -> Catalog:
     return catalog_from(registry)
 
 
+def in_sentence(title: str) -> str:
+    """A friendly name inside a sentence: lower case, except acronyms ("Insert LCD number")."""
+    return " ".join(word if len(word) > 1 and word.isupper() else word.lower() for word in title.split(" "))
+
+
 def registry_for_tests() -> Registry:
     registry, _names = build_registry(_modules())
     return registry
 
 
-__all__ = ["Catalog", "Entry", "load_catalog", "registry_for_tests"]
+__all__ = ["Catalog", "Entry", "in_sentence", "load_catalog", "registry_for_tests"]
