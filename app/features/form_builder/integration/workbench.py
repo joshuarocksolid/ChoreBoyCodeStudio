@@ -751,11 +751,11 @@ class OutlinePane(QWidget):
 
     def apply_change(self, document: UiDocument, selected: Optional[NodeId], change: object) -> None:
         """Patch rows for one ChangeSet. Only open and replace rebuild (CONTRACTS 12)."""
-        mode = outline_mode(change) if change is not None else "rebuild"  # type: ignore[arg-type]
+        mode = outline_mode(change, document) if change is not None else "rebuild"  # type: ignore[arg-type]
         if mode == "structure" and self._forest is not None:
             self.patch_structure(document, selected, change)
         elif mode == "captions":
-            self.patch_rows(document, selected, captions_touched(change))  # type: ignore[arg-type]
+            self.patch_rows(document, selected, captions_touched(change, document))  # type: ignore[arg-type]
         elif mode == "keep" and self._forest is not None:
             self._document = document
             self._revision = document.revision
