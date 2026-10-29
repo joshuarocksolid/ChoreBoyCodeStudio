@@ -142,6 +142,10 @@ _PLUS = 12
 _TITLES = frozenset({"page_tab", "menu_title", "title_band"})
 _BANDS = frozenset({"page_tab", "title_band"})
 _DESCENDS = frozenset({"widget", "layout"})
+#: UX-OVL-003. While one of these layers is on, layout frames fade and hover outlines are not drawn.
+MODE_LAYERS = frozenset({"tab_order", "buddies"})
+_DIMMED_ROLES = frozenset({"layout", "layout_faint", "gap", "gap_fill"})
+_DIM = 0.3
 
 
 @dataclass(frozen=True)
@@ -484,11 +488,14 @@ def build_frame(static: StaticLayer, inputs: FrameInputs) -> OverlayFrame:
     primary = shown.current
     live = previewing(gesture)
     items: List[Item] = []
+    dim = any(layer.name in MODE_LAYERS for layer in inputs.layers)
     if not live:
-        items.extend(_without_refused_hint(static.items, view, inputs))
+        shown_static = _without_refused_hint(static.items, view, inputs)
+        items.extend(_dimmed(shown_static) if dim else shown_static)
         focused = _focused_layouts(document, primary)
         _sites(items, view, inputs.knobs, focused)
-    _hover(items, static, document, gesture)
+    if not dim:
+        _hover(items, static, document, gesture)
     rects: Dict[NodeId, CanvasRect] = {}
     for node_id in shown.ids:
         rect = _shown_rect(static, view, document, gesture, node_id)
@@ -547,6 +554,16 @@ def build_frame(static: StaticLayer, inputs: FrameInputs) -> OverlayFrame:
         tuple(chip_rows),
         inputs.dock,
     )
+
+
+def _dimmed(items: Sequence[Item]) -> List[Item]:
+    dimmed: List[Item] = []
+    for item in items:
+        if isinstance(item, (Stroke, Fill)) and item.role in _DIMMED_ROLES and not isinstance(item, LayerItem):
+            dimmed.append(replace(item, alpha=item.alpha * _DIM))
+        else:
+            dimmed.append(item)
+    return dimmed
 
 
 def _run_layers(

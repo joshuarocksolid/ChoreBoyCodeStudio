@@ -146,6 +146,10 @@ def test_new_keys_stay_disabled_until_a_handler_exists() -> None:
 def test_spec_keys_are_in_the_table() -> None:
     present = {command.shortcut for command in FORM_COMMANDS if command.shortcut}
     present.update(INERT_SHORTCUTS)
+    # Keys that lanes register through keys_ext (F1, F3, F4, F7, F8 since M5.6) count as in the table.
+    from app.features.form_builder.integration import keys_ext
+
+    present.update(command.shortcut for command in keys_ext.extra_commands() if command.shortcut)
     missing = [key for key in _SPEC_KEYS if key not in present]
     assert missing == []
 

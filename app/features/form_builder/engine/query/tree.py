@@ -13,7 +13,7 @@ from app.features.form_builder.engine.ids import NodeId
 from app.features.form_builder.engine.ui4.defaults import QtClassTable
 from app.features.form_builder.engine.ui4.document import UiDocument
 from app.features.form_builder.engine.ui4.nodes import CustomWidgetNode, LayoutItemNode, LayoutNode, WidgetNode
-from app.features.form_builder.engine.ui4.values import CStringValue, StringValue
+from app.features.form_builder.engine.ui4.values import CStringValue, EnumValue, StringValue
 
 # Used when the class table has not been generated yet. A known class trusts
 # its flags and ignores this set.
@@ -68,8 +68,28 @@ _FOCUSABLE = frozenset(
         "QTableWidget",
         "QTreeWidget",
         "QKeySequenceEdit",
+        "QListView",
+        "QTreeView",
+        "QTableView",
+        "QTextBrowser",
+        # Containers whose default policy has the Tab bit (Qt 6.8 and 5.15 agree).
+        "QScrollArea",
+        "QAbstractScrollArea",
+        "QTabWidget",
+        "QGraphicsView",
+        "QCalendarWidget",
+        "QColumnView",
+        "QUndoView",
+        "QAbstractSpinBox",
+        "QMdiSubWindow",
+        # QDialogButtonBox is NoFocus: Tab lands on its buttons, which Designer does
+        # not number, and QWidget::setTabOrder ignores a NoFocus widget, so a
+        # buttonBox <tabstop> would break the chain at runtime.
     }
 )
+
+#: ``focusPolicy`` enumerators that include the Tab bit (UX-MODE-003).
+_TAB_POLICIES = frozenset({"TabFocus", "StrongFocus"})
 
 _FORM_KIND = {
     "QMainWindow": "main_window",
@@ -275,6 +295,14 @@ def visual_children(doc: UiDocument, widget_id: NodeId) -> Tuple[NodeId, ...]:
     return _layout_content_ids(widget.layout)
 
 
+def takes_tab_focus(widget: WidgetNode) -> bool:
+    """True when Tab can land on the widget: its ``focusPolicy`` has the Tab bit, or the class does by default. O(1)."""
+    policy = widget.prop("focusPolicy")
+    if policy is not None and isinstance(policy.value, EnumValue):
+        return policy.value.text.rsplit("::", 1)[-1] in _TAB_POLICIES
+    return widget.class_name in _FOCUSABLE
+
+
 def reading_order(doc: UiDocument) -> Tuple[str, ...]:
     """Focusable widget names in visual reading order. O(form)."""
     names: List[str] = []
@@ -296,23 +324,38 @@ def splice_tab_order(
     reading: Tuple[str, ...],
     new_names: Tuple[str, ...],
 ) -> Tuple[str, ...]:
-    """Insert new inputs where they sit in reading order. O(n)."""
+    """Put each new input right after the stop that precedes it on the form (UX-OVL-006, pain 20).
+
+    A new input with nothing before it goes in front of the stop that follows it;
+    one the form does not place goes last. New inputs are joined in reading order.
+    O(n * m).
+    """
     result = list(order)
     reading_at = {name: index for index, name in enumerate(reading)}
-    for name in new_names:
-        if name in result:
-            continue
+    placed = sorted((name for name in new_names if name not in result), key=lambda name: reading_at.get(name, len(reading)))
+    for name in placed:
         spot = reading_at.get(name)
         if spot is None:
             result.append(name)
             continue
-        insert_at = len(result)
+        before = -1
+        before_at = -1
+        after = -1
+        after_at = len(reading) + 1
         for index, existing in enumerate(result):
             existing_at = reading_at.get(existing)
-            if existing_at is not None and existing_at > spot:
-                insert_at = index
-                break
-        result.insert(insert_at, name)
+            if existing_at is None:
+                continue
+            if existing_at < spot and existing_at > before_at:
+                before, before_at = index, existing_at
+            elif existing_at > spot and existing_at < after_at:
+                after, after_at = index, existing_at
+        if before >= 0:
+            result.insert(before + 1, name)
+        elif after >= 0:
+            result.insert(after, name)
+        else:
+            result.append(name)
     return tuple(result)
 
 
@@ -429,7 +472,7 @@ def _layout_content_ids(layout: LayoutNode) -> Tuple[NodeId, ...]:
 
 
 def _walk_reading(doc: UiDocument, widget: WidgetNode, names: List[str]) -> None:
-    if widget.class_name in _FOCUSABLE and widget.object_name:
+    if takes_tab_focus(widget) and widget.object_name:
         names.append(widget.object_name)
     layout = widget.layout
     if layout is not None:

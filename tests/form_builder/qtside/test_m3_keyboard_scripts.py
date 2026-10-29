@@ -13,7 +13,7 @@ bytes Save would write). A failed M3-owned step that the review filed is a
 xfail naming the finding, so it turns red once the finding is fixed.
 
 N/A here, with owners: K1's typed search ("date") and the Date edit tile
-(M4.1 Insert search and catalog), K6 tab order and buddies (M5.6), K8's
+(M4.1 Insert search and catalog), K6 tab order and buddies (now K23, M5.6), K8's
 Preview window (M2.5 preview process).
 """
 
@@ -601,9 +601,7 @@ def test_k5_sizing(tmp_path: Path, qapp: QApplication) -> None:
 # --------------------------------------------------------------------------
 
 
-@pytest.mark.skip(reason="K6 tab-order and buddy overlays (F8, F7, inspector Tab order list) are owned by M5.6")
-def test_k6_overlays() -> None:
-    raise AssertionError("M5.6")
+# K6 became K23 in M5.6: tests/form_builder/qtside/test_m5_6_keyboard_k23.py.
 
 
 # --------------------------------------------------------------------------

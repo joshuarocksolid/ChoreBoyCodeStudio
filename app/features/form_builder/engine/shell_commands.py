@@ -90,6 +90,8 @@ _CANVAS = ("canvas",)
 _CANVAS_OUTLINE = ("canvas", "outline")
 _FORM = ("form_tab",)
 
+# The overlay keys (F3, F4, F7, F8) and F1 moved to ``integration/keys_ext/modes.py`` in M5.6: they
+# have handlers there, so Settings can rebind them and the Form menu item does not hold the key.
 FORM_COMMANDS: Tuple[FormCommand, ...] = (
     _row(
         "form.action.insert",
@@ -145,9 +147,6 @@ FORM_COMMANDS: Tuple[FormCommand, ...] = (
     _row("form.action.sizeFixedWidth", "Fixed width", "", _CANVAS_OUTLINE, menu=("Size", "Fixed width")),
     _row("form.action.sizeFixedHeight", "Fixed height", "", _CANVAS_OUTLINE, menu=("Size", "Fixed height")),
     _row("form.action.sizeReset", "Reset size", "", _CANVAS_OUTLINE, menu=("Size", "Reset size")),
-    _row("form.action.tabOrder", "Tab order", "F8", _FORM, menu=("Overlays", "Tab order")),
-    _row("form.action.buddies", "Buddies", "F7", _FORM, menu=("Overlays", "Buddies")),
-    _row("form.action.connections", "Connections", "F4", _FORM, menu=("Overlays", "Connections")),
     _row("form.action.preview", "Preview", "Ctrl+Shift+R", _FORM, menu=("Preview",)),
     _row("form.action.textSize", "Text size", "", _FORM, menu=("Preview options", "Text size")),
     _row("form.action.screenScale", "Screen scale", "", _FORM, menu=("Preview options", "Screen scale")),
@@ -187,7 +186,6 @@ FORM_COMMANDS: Tuple[FormCommand, ...] = (
         menu=("Zoom to fit",),
         available=True,
     ),
-    _row("form.action.leaveOverlay", "Leave overlay", "F3", _FORM),
     _row("form.action.focusOutline", "Focus outline", "Alt+1", _FORM),
     _row("form.action.focusInsert", "Focus insert", "Alt+2", _FORM),
     _row("form.action.focusCanvas", "Focus canvas", "Alt+3", _FORM),

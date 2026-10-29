@@ -45,7 +45,7 @@ from app.features.form_builder.engine.query.direct import (
     resize_knob,
     turn,
 )
-from app.features.form_builder.qtside.canvas.core.snap import snap_move, snap_page
+from app.features.form_builder.qtside.canvas.core.snap import DEFAULT_STEP, GridStep, grid_step, snap_move, snap_page
 from app.features.form_builder.qtside.canvas.core.space import (
     CanvasPoint,
     Compass,
@@ -311,6 +311,8 @@ class Moving:
     snap: bool
     #: Set when the drag began with Ctrl held, so release clones even if Ctrl is up.
     armed_clone: bool = False
+    #: The form's grid when the drag began.
+    step: GridStep = DEFAULT_STEP
 
 
 @dataclass(frozen=True)
@@ -880,7 +882,7 @@ def _nudge(gesture: Idle, event: Key, world: World) -> Step:
     delta = _NUDGE.get(event.key)
     if delta is None:
         return Step(gesture, (), True)
-    step_px = 1 if event.mods.shift else GRID
+    step_x, step_y = grid_step(world.document).nudge(event.mods.shift)
     dx, dy = delta
     commands = []
     for node in nodes:
@@ -888,7 +890,7 @@ def _nudge(gesture: Idle, event: Key, world: World) -> Step:
         commands.append(
             SetGeometry(
                 node,
-                RectValue(origin.x + dx * step_px, origin.y + dy * step_px, origin.width, origin.height),
+                RectValue(origin.x + dx * step_x, origin.y + dy * step_y, origin.width, origin.height),
             )
         )
     return Step(gesture, (Commit("Nudge", tuple(commands), world.fresh_token),))
@@ -1265,7 +1267,7 @@ def _move_or_inert(world: World, nodes: Tuple[NodeId, ...], point: FormPoint, sn
     if nodes and all(isinstance(place, Free) for place in places):
         primary = world.selection.current if world.selection.current in nodes else nodes[0]
         items = tuple(_moved(world, node) for node in nodes)
-        return Moving(world.fresh_token, primary, items, point, point, snap)
+        return Moving(world.fresh_token, primary, items, point, point, snap, step=grid_step(world.document))
     if any(isinstance(place, (LaidOut, Managed)) for place in places):
         return _placing(world, nodes, point, snap, "")
     return Inert("")
@@ -1323,7 +1325,7 @@ def _resume_free_move(state: Placing, point: FormPoint, snap: bool, world: World
     nodes = state.payload.source_ids
     primary = nodes[0]
     items = tuple(_moved(world, node) for node in nodes)
-    return Moving(state.token, primary, items, point, point, snap)
+    return Moving(state.token, primary, items, point, point, snap, step=grid_step(world.document))
 
 
 def _pointer_of(state: Drag) -> FormPoint:
@@ -1442,7 +1444,7 @@ def _delta(anchor: FormPoint, pointer: FormPoint) -> FormPoint:
 
 def _move_delta(state: Moving) -> Tuple[int, int]:
     primary = next(item for item in state.items if item.node == state.primary)
-    return snap_move(primary.origin, _delta(state.anchor, state.pointer), state.snap)
+    return snap_move(primary.origin, _delta(state.anchor, state.pointer), state.snap, state.step)
 
 
 def _merge(base: Tuple[NodeId, ...], extra: Tuple[NodeId, ...]) -> Tuple[NodeId, ...]:

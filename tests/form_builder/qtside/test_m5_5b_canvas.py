@@ -52,7 +52,6 @@ def test_the_step_nudge_is_one_step_or_one_pixel_with_shift() -> None:
     assert GridStep(16, 4).nudge(True) == (1, 1)
 
 
-@pytest.mark.xfail(strict=True, reason="M5.6 owns qtside/canvas/core/gesture.py: _nudge uses the 8 px constant, not grid_step(document)")
 def test_alt_arrow_moves_a_free_widget_by_the_forms_step() -> None:
     with _shown(FREE_PAGE) as (session, canvas):
         _click(canvas, "north")
@@ -62,7 +61,6 @@ def test_alt_arrow_moves_a_free_widget_by_the_forms_step() -> None:
         assert north.x() == 56
 
 
-@pytest.mark.xfail(strict=True, reason="M5.6 owns qtside/canvas/core/gesture.py: _move_delta calls snap_move without the form's GridStep")
 def test_a_drag_in_a_free_container_lands_on_the_forms_step() -> None:
     with _shown(FREE_PAGE) as (session, canvas):
         _click(canvas, "north")

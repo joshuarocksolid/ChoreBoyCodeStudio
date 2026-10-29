@@ -7,7 +7,7 @@ The page caption, shadow and toast stay view chrome.
 
 from __future__ import annotations
 
-from typing import Hashable, List, Optional, Sequence, Tuple
+from typing import Callable, Hashable, List, Optional, Sequence, Tuple
 
 from app.qt.QtCore import QEvent, QMimeData, QPoint, QPointF, QRect, QRectF, Qt, QTimer
 from app.qt.QtGui import QColor, QContextMenuEvent, QCursor, QDrag, QFont, QImage, QPainter, QPen, QPixmap
@@ -58,6 +58,8 @@ from app.features.form_builder.qtside.canvas.core.palette import (
     fragment_for,
     tile_for,
 )
+from app.features.form_builder.qtside.canvas.banner import HEIGHT as BANNER_HEIGHT
+from app.features.form_builder.qtside.canvas.banner import ModeBanner
 from app.features.form_builder.qtside.canvas.core.place import payload_for
 from app.features.form_builder.qtside.canvas.geometry import HitIndexInvalidator, LiveGeometrySource
 from app.features.form_builder.qtside.canvas.paint import paint_docked_chip, paint_frame
@@ -222,6 +224,8 @@ class FormCanvas(QGraphicsView):
         )
         self._stage.set_banner_push(PAGE_TITLE_HEIGHT)
         self._build_chrome()
+        self._claimer: Optional[Callable[[QEvent], bool]] = None
+        self._banner = ModeBanner(self)
         self._controller = CanvasController(self, session, realizer, self._index, self._stage, host)
         self._preview = FormPreview(self, session, realizer, self._stage)
         # The page can change size without a ChangeSet: two widths forces the
@@ -263,6 +267,35 @@ class FormCanvas(QGraphicsView):
 
     def layer_state(self, name: str) -> Optional[Hashable]:
         return self._controller.layer_state(name)
+
+    def set_claimer(self, claimer: Optional[Callable[[QEvent], bool]]) -> None:
+        """Offer every canvas event to ``claimer`` first while an overlay is open (UX-OVL-005). None stops."""
+        self._claimer = claimer
+
+    def show_banner(
+        self,
+        glyph: str,
+        name: str,
+        sentence: str,
+        extra: str,
+        on_extra: Optional[Callable[[], None]],
+        on_done: Callable[[], None],
+    ) -> None:
+        """The overlay banner in the canvas's top margin; the page is pushed down by its height (UX-WB-006)."""
+        self.setViewportMargins(0, BANNER_HEIGHT, 0, 0)
+        self._banner.setGeometry(0, 0, self.width(), BANNER_HEIGHT)
+        self._banner.show_mode(glyph, name, sentence, extra, on_extra, on_done)
+        self._banner.raise_()
+        self._position_chrome()
+
+    def hide_banner(self) -> None:
+        self._banner.hide()
+        self.setViewportMargins(0, 0, 0, 0)
+        self._position_chrome()
+
+    @property
+    def banner(self) -> ModeBanner:
+        return self._banner
 
     def _page_resized(self) -> None:
         proxy = self._stage.proxy
@@ -533,6 +566,10 @@ class FormCanvas(QGraphicsView):
         if controller is None:
             return bool(super().viewportEvent(event))
         preview = getattr(self, "_preview", None)
+        claimer = self._claimer
+        if claimer is not None and claimer(event):
+            _keep_claimed_shortcut(event)
+            return True
         if preview is not None and preview.claim(event):
             return True
         if self._offer_piece_drag(event):
@@ -575,6 +612,10 @@ class FormCanvas(QGraphicsView):
         controller = getattr(self, "_controller", None)
         if controller is None:
             return bool(super().event(event))
+        claimer = getattr(self, "_claimer", None)
+        if claimer is not None and claimer(event):
+            _keep_claimed_shortcut(event)
+            return True
         if controller.handle(event):
             _keep_claimed_shortcut(event)
             return True
@@ -586,6 +627,9 @@ class FormCanvas(QGraphicsView):
 
     def resizeEvent(self, event: object) -> None:  # noqa: N802
         super().resizeEvent(event)  # type: ignore[arg-type]
+        banner = getattr(self, "_banner", None)
+        if banner is not None:
+            banner.setGeometry(0, 0, self.width(), BANNER_HEIGHT)
         preview = getattr(self, "_preview", None)
         if preview is not None:
             preview.arrange()
