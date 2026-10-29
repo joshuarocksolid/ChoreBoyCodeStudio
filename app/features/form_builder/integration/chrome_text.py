@@ -32,6 +32,8 @@ def page_chip_text(document: UiDocument, fallback_name: str) -> tuple[str, str]:
     """Object name and the layout phrase for the page chip."""
     root = document.root
     name = root.object_name or fallback_name or "Form"
+    if isinstance(root, WidgetNode) and root.class_name == "QMainWindow" and root.layout is None:
+        return name, "Main window"
     layout = root.layout
     if isinstance(layout, LayoutNode) and layout.class_name:
         phrase = _LAYOUT_PHRASE.get(layout.class_name, layout.class_name)

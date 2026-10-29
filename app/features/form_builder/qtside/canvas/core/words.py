@@ -75,6 +75,9 @@ def page_chip_label(document: UiDocument, fallback_name: str) -> str:
     name = root.object_name or fallback_name or "Form"
     if isinstance(root, WidgetNode) and root.class_name in _PAGE_ROOTS and root.layout is None:
         return name
+    # A main window never has a layout. The chip names the window, not the absence.
+    if isinstance(root, WidgetNode) and root.class_name == "QMainWindow" and root.layout is None:
+        return "%s · %s" % (name, _friendly(document, root))
     layout = root.layout
     if isinstance(layout, LayoutNode) and layout.class_name:
         phrase = _layout_words(layout.class_name)[1]
