@@ -182,6 +182,11 @@ class InspectorPane(QWidget):
                 "QLabel { color: %s; }"
                 % (chrome.panel, chrome.faint, chrome.faint)
             )
+        window = self.window()
+        for popover in window.findChildren(QWidget, "formBuilder.rowPopover") if window is not None else ():
+            row = getattr(popover, "row", None)
+            if row is not None and self.isAncestorOf(row):
+                popover.restyle(chrome)  # type: ignore[attr-defined]
         self._schedule()
 
     def focus_tab(self, tab: TabId) -> None:

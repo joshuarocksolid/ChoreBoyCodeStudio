@@ -923,3 +923,24 @@ def test_popover_check_boxes_read_on_the_dark_popover(qapp: QApplication) -> Non
             _done(qapp)
     finally:
         _close(window, pane, realizer, session, qapp)
+
+
+def test_an_open_popover_restyles_on_a_live_theme_switch(qapp: QApplication) -> None:
+    dark = chrome_from_values(
+        window="#1f2328", panel="#262c33", text="#e9ecef", muted="#adb5bd", faint="#8b949e",
+        border="#3d444d", accent="#4c8dff", row_hover="#2d333b", input_bg="#1f2328",
+        error="#ff6b6b", focus_width=1,
+    )
+    window, pane, session, realizer = _pane(qapp)
+    try:
+        _select(session, "title")
+        pane.flush()
+        _open_row(pane, "formBuilder.row.font", qapp)
+        popover = _widget("formBuilder.rowPopover")
+        assert dark.fb.popup not in popover.styleSheet()
+        pane.apply_chrome(dark)
+        qapp.processEvents()
+        assert dark.fb.popup in popover.styleSheet()
+        _done(qapp)
+    finally:
+        _close(window, pane, realizer, session, qapp)

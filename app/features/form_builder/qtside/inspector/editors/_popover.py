@@ -48,6 +48,7 @@ from app.qt.qt_compat import event_global_pos, wrapper_is_valid
 
 if TYPE_CHECKING:
     from app.features.form_builder.qtside.inspector.api import EditorHost, EditSession
+    from app.features.form_builder.qtside.theme.chrome import FormChrome
 
 #: UX-PED-003 widths: the inspector content width, clamped; large editors 320-480 and grow left.
 MIN_WIDTH = 236
@@ -345,6 +346,18 @@ class RowPopover(QFrame):
         else:
             y = max(0, min(below, window.height() - height))
         self.move(x, y)
+
+    @property
+    def row(self) -> QWidget:
+        return self._row
+
+    def restyle(self, chrome: "FormChrome") -> None:
+        """A live theme switch while the popover is open: new colours, same content."""
+        if self._closed or chrome is self._chrome:
+            return
+        self._chrome = chrome
+        self._apply_style()
+        self._paint_wells()
 
     def apply_chrome_shadow(self) -> None:
         """UX-ELEV-001 level 2: a soft shadow. High contrast has none (a 2 px border instead)."""
