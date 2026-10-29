@@ -109,6 +109,7 @@ def test_an_untouched_file_is_not_dirty_and_edits_name_their_steps(qapp: QApplic
         surface.release()
 
 
+@pytest.mark.parity("R3-174", "R3-175")
 def test_k17_rename_then_save_writes_the_alias_and_rewrites_the_forms_picture_module(
     qapp: QApplication, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

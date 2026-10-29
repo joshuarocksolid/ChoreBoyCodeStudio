@@ -15,6 +15,7 @@ from app.features.form_builder.engine.project.fs import ProjectOpError, relative
 from app.features.form_builder.engine.project.loaders import loader_kind_label, scan_ui_loaders
 from app.features.form_builder.engine.project.packaging import (
     GeneratedFile,
+    adopt_pictures_now,
     inspect_forms,
     save_form_now,
 )
@@ -76,6 +77,17 @@ def save_packaged_form(project_root: str, ui_path: str) -> str:
     if written.diagnostics:
         return written.diagnostics[0].message
     return "The form could not be saved."
+
+
+def add_packaged_pictures(project_root: str, ui_path: str) -> str:
+    """The "Add to project pictures" fix for one form. An empty string means every picture was fixed."""
+    try:
+        fixed, reason = adopt_pictures_now(project_root, ui_path)
+    except (OSError, UnicodeError, ProjectOpError, UiReadError, ValueError) as exc:
+        return str(exc).strip() or "The pictures could not be added."
+    if reason:
+        return reason
+    return "" if fixed else "No picture in this form uses a file path."
 
 
 def _issue_for_file(project_root: str, item: GeneratedFile) -> RuntimeIssue | None:

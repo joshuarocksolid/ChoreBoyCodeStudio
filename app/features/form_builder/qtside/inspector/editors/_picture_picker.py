@@ -14,6 +14,7 @@ from app.features.form_builder.engine.project.picture_adopt import (
     plan_add,
 )
 from app.features.form_builder.engine.project.project_files import ProjectFileIndex
+from app.features.form_builder.qtside.resources.drops import refusal
 from app.features.form_builder.engine.project.pictures import (
     PictureIndex,
     ProjectPictures,
@@ -634,6 +635,7 @@ class PicturePicker(QWidget):
         layout.addWidget(self._target_row)
         self._keys = _SearchKeys(self)
         self._search.installEventFilter(self._keys)
+        self.setAcceptDrops(self.in_project)
         self.set_tokens(host.chrome)
         self.reload()
 
@@ -795,6 +797,22 @@ class PicturePicker(QWidget):
     def _show_issue(self, sentence: str) -> None:
         self._issue.setText(sentence)
         self._issue.show()
+
+    def dragEnterEvent(self, event: QEvent) -> None:  # noqa: N802
+        if event.mimeData().hasUrls():  # type: ignore[attr-defined]
+            event.acceptProposedAction()  # type: ignore[attr-defined]
+
+    def dropEvent(self, event: QEvent) -> None:  # noqa: N802
+        """UX-RES-003: picture files from the file manager are added as "Add picture…" does."""
+        paths = [url.toLocalFile() for url in event.mimeData().urls() if url.isLocalFile()]  # type: ignore[attr-defined]
+        wrong = refusal(paths)
+        if wrong:
+            self._show_issue(wrong)
+            event.ignore()  # type: ignore[attr-defined]
+            return
+        event.acceptProposedAction()  # type: ignore[attr-defined]
+        if self.add_pictures(paths) and self._on_close is not None:
+            self._on_close()
 
     def _search_changed(self, _text: str) -> None:
         self._grid.set_sections(

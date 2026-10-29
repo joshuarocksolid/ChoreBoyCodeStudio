@@ -19,6 +19,7 @@ PNG = b"\x89PNG\r\n\x1a\n" + bytes(range(64))
 
 
 @pytest.mark.oracle
+@pytest.mark.parity("R3-175")
 @pytest.mark.timeout(60)
 @pytest.mark.parametrize("alias", ["", "shop_logo.png"])
 def test_added_pictures_resolve_to_the_same_bytes_as_rcc(qapp, tmp_path: Path, alias: str) -> None:

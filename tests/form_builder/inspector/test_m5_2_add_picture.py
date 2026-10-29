@@ -253,3 +253,50 @@ def test_the_toast_for_add_picture_carries_the_sentence_and_undo() -> None:
     sentence = "Added logo.png to forms/resources.qrc. Undo keeps the copied file."
     notices.remember("Add picture logo.png", sentence)
     assert notice_sentence("Add picture logo.png") == sentence
+
+
+def test_picture_files_dropped_on_the_open_picker_are_added_and_other_files_refused(
+    qapp: QApplication, shop: Path
+) -> None:
+    from app.qt.QtCore import QMimeData, QUrl
+
+    (shop.parent / "desktop" / "notes.txt").write_text("x", encoding="utf-8")
+
+    class _Drop:
+        def __init__(self, *paths: str) -> None:
+            self.data = QMimeData()
+            self.data.setUrls([QUrl.fromLocalFile(p) for p in paths])
+            self.accepted: object = None
+
+        def mimeData(self) -> QMimeData:
+            return self.data
+
+        def acceptProposedAction(self) -> None:
+            self.accepted = True
+
+        def ignore(self) -> None:
+            self.accepted = False
+
+    window, pane, session, realizer, _toasts = _open(qapp, shop)
+    try:
+        _select(session, "logo")
+        pane.flush()
+        _open_row(pane, "formBuilder.row.pixmap", qapp)
+        picker = _search_or_button(qapp)
+        bad = _Drop(str(shop.parent / "desktop" / "notes.txt"))
+        picker.dropEvent(bad)
+        assert bad.accepted is False and picker._issue.text() == "Only pictures can go here."
+        assert not (shop / "forms" / "resources.qrc").exists()
+        good = _Drop(_fixture(shop))
+        picker.dropEvent(good)
+        assert good.accepted is True
+        assert "<pixmap>:/pictures/logo.png</pixmap>" in session.text()
+    finally:
+        _close(window, pane, realizer, session, qapp)
+
+
+def _search_or_button(qapp: QApplication) -> PicturePicker:
+    button = _footer(qapp)
+    picker = button.parent()
+    assert isinstance(picker, PicturePicker)
+    return picker
