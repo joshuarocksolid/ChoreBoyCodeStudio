@@ -612,6 +612,8 @@ class PicturePicker(QWidget):
         else:
             self._file.setObjectName("formBuilder.pictureFromFile")
             self._file.setAccessibleName("Picture: from a file")
+        # Enter activates it like Space: a plain push button outside a dialog takes only Space.
+        self._file.setAutoDefault(True)
         self._file.clicked.connect(self._from_file)
         layout.addWidget(self._file)
         self._target_row = QWidget(self)
