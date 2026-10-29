@@ -72,10 +72,6 @@ def _visible(document: UiDocument, owners: Tuple[NodeId, ...]) -> bool:
     return colour_rows.shows_rows(document, owners)
 
 
-def _is_form(document: UiDocument, owners: Tuple[NodeId, ...]) -> bool:
-    return owners == (document.root.id,)
-
-
 def register(registrar: Registrar) -> None:
     registrar.editor(TEXT_COLOUR_KEY, TextColourEditor)
     registrar.editor(BACKGROUND_KEY, BackgroundEditor)
@@ -106,32 +102,6 @@ def register(registrar: Registrar) -> None:
             visible=_visible,
         )
     )
-    # The form's Look rows (UX-STYLE-012) also sit in Appearance while the form's own root widget is the
-    # selection, which is how a form is selected on the canvas and in the outline.
-    registrar.row(
-        RowSpec(
-            key="lookAccent",
-            group=GroupId.APPEARANCE,
-            label="Accent colour",
-            help=ACCENT_CAPTION,
-            source=Summary(),
-            editor=str(ACCENT_KEY),
-            after="backgroundColour",
-            visible=_is_form,
-        )
-    )
-    registrar.row(
-        RowSpec(
-            key="lookTextSize",
-            group=GroupId.APPEARANCE,
-            label="Text size",
-            help=SIZE_CAPTION,
-            source=Summary(),
-            editor=str(TEXT_SIZE_KEY),
-            after="lookAccent",
-            visible=_is_form,
-        )
-    )
     registrar.row(
         RowSpec(
             key="styleSheet",
@@ -140,7 +110,7 @@ def register(registrar: Registrar) -> None:
             help="Rules that restyle this widget and everything inside it.",
             source=Prop("styleSheet"),
             editor=str(STYLESHEET),
-            after="lookTextSize",
+            after="backgroundColour",
         )
     )
 
@@ -597,9 +567,6 @@ class LookBody:
 
     def show(self, rows: Sequence[object]) -> None:
         del rows
-        # The form-group slot adds this widget to a body that is already shown
-        # and does not show it, so the group's rows would be skipped by Tab.
-        self._root.show()
         self._write.owners = self._host.owners
         self._accent.show(Unset())
         self._size.show(Unset())

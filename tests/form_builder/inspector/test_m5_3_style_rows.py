@@ -250,44 +250,26 @@ def test_the_accent_colour_writes_highlight_and_link_on_the_root_palette(qapp) -
         _close(window, pane, realizer, session, qapp)
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "M5.0s form-group slot: the inspector paints form groups only when the selection is empty, "
-        "but selecting the form (the root widget) is what the canvas and the outline do. "
-        "Owner: qtside/inspector/model.py and _properties.py (M5.0s, not an M5.3 file)."
-    ),
-)
-def test_the_look_group_shows_when_the_form_itself_is_selected(qapp) -> None:  # type: ignore[no-untyped-def]
-    window, pane, session, realizer = _pane(qapp, _FORM)
-    try:
-        _select(session, "Form")
-        pane.flush()
-        look = pane.findChild(QWidget, "formBuilder.formGroup.look")
-        assert look is not None and look.isVisibleTo(pane)
-    finally:
-        _close(window, pane, realizer, session, qapp)
-
-
-def test_with_the_form_selected_accent_colour_and_text_size_are_rows_of_appearance_and_widgets_do_not_have_them(qapp) -> None:  # type: ignore[no-untyped-def]
+def test_selecting_the_form_shows_the_look_group_and_widgets_do_not_have_it(qapp) -> None:  # type: ignore[no-untyped-def]
     window, pane, session, realizer = _pane(qapp, _FORM)
     try:
         _select(session, "Form")
         pane.flush()
         order = _keys(pane, "appearance")
-        picked = [key for key in order if key in ("font", "textColour", "backgroundColour", "lookAccent", "lookTextSize", "styleSheet")]
-        assert picked == ["font", "textColour", "backgroundColour", "lookAccent", "lookTextSize", "styleSheet"]
+        picked = [key for key in order if key in ("font", "textColour", "backgroundColour", "styleSheet")]
+        assert picked == ["font", "textColour", "backgroundColour", "styleSheet"]
+        look = pane.findChild(QWidget, "formBuilder.formGroup.look")
+        assert look is not None and look.isVisibleTo(pane)
         before = session.text()
-        box = pane.findChild(QWidget, "formBuilder.row.lookTextSize").findChild(QSpinBox, "formBuilder.textSize")
+        box = look.findChild(QSpinBox, "formBuilder.textSize")
+        assert box.isVisibleTo(pane)
         box.setValue(14)
         QApplication.processEvents()
         assert session.log.undo_label() == "Change text size"
         assert realizer.root_widget.font().pointSize() == 14
         _select(session, "okButton")
         pane.flush()
-        assert pane.findChild(QWidget, "formBuilder.row.lookTextSize") is None or not pane.findChild(
-            QWidget, "formBuilder.row.lookTextSize"
-        ).isVisibleTo(pane)
+        assert not look.isVisibleTo(pane)
         assert session.log.undo()
         assert session.text() == before
     finally:
