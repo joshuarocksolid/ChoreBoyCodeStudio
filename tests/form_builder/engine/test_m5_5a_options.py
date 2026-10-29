@@ -119,9 +119,33 @@ def test_the_index_finds_the_lines_of_a_widget_and_of_the_form() -> None:
     assert index.lines_of("missing") == () and index.first_line("missing") is None
 
 
-def test_settings_defaults_apply_until_the_user_picks() -> None:
+def test_the_aa_menu_and_settings_share_one_style_and_screen() -> None:
+    """CONTRACTS section 14: Settings > Form designer and the Aa menu read and write the same two keys."""
     payload = {"form_builder": {"preview_style": "Windows", "preview_screen": "small"}}
     assert preview_from_payload(payload)[0] == po.PreviewChoices(style="Windows", screen="Small screen")
     assert preview_from_payload({"form_builder": {"preview_screen": "full_hd"}})[0].screen == "Full HD"
+    # Picking the defaults in the Aa menu removes the keys (absent means default to the settings page).
     picked = payload_with_preview(payload, po.PreviewChoices(), ())
+    assert "preview_style" not in picked["form_builder"] and "preview_screen" not in picked["form_builder"]
     assert preview_from_payload(picked)[0] == po.PreviewChoices()
+    # A screen of the user's is kept by name; a name that is no longer a profile is the default.
+    mine = _profile("Till", 1280, 800, "", 0, 100)
+    picked = payload_with_preview({}, po.PreviewChoices(style="Windows", screen="Till"), (mine,))
+    assert picked["form_builder"]["preview_screen"] == "Till"
+    assert preview_from_payload(picked)[0] == po.PreviewChoices(style="Windows", screen="Till")
+    picked["form_builder"]["preview"]["profiles"] = []
+    assert preview_from_payload(picked)[0].screen == po.DEFAULT_SCREEN
+
+
+def test_a_settings_change_from_another_service_is_read_without_a_restart(tmp_path: Path) -> None:
+    from app.persistence.settings_service import SettingsService
+
+    from app.features.form_builder.integration.memory import WorkbenchMemoryStore
+
+    store = PreviewOptionsStore(str(tmp_path))
+    workbench = WorkbenchMemoryStore(str(tmp_path))
+    assert store.load()[0] == po.PreviewChoices() and not workbench.qt_names()
+    SettingsService(state_root=str(tmp_path)).update_global(
+        lambda payload: {**payload, "form_builder": {"preview_style": "Windows", "qt_names": True}}
+    )
+    assert store.load()[0].style == "Windows" and workbench.qt_names()

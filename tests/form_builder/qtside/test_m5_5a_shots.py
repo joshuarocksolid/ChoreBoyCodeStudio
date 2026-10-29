@@ -156,6 +156,9 @@ def _shoot(qapp: QApplication, folder: Path, tmp_path: Path, scale: int) -> None
             # --- View Python code: the selected widget's lines marked
             node = session.document.by_name("totalEdit")[0]
             session.selection.set((node,), source=SelectionSource.PROGRAM)
+            # On a ChoreBoy screen (1366 x 768) the Outline waits on its rail while the code is open.
+            window.resize(1366, 768)
+            _flush(qapp)
             assert surface.toggle_code_view()
             # The shell's application style sheet paints the editor in the product; stand in for it here.
             surface._workbench.code_view.panel.editor.setStyleSheet(

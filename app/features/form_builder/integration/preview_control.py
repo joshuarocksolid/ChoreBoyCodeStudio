@@ -64,6 +64,11 @@ class PreviewControl:
 
     # ---- the user's choices
 
+    def reload(self) -> None:
+        """Read the choices again: Settings > Form designer may have changed them (CONTRACTS section 14)."""
+        self._choices = None
+        self._loaded()
+
     def _loaded(self) -> None:
         if self._choices is not None:
             return
@@ -145,7 +150,7 @@ class PreviewControl:
     # ---- the window
 
     def appearance(self, path: str) -> Appearance:
-        self._loaded()
+        self.reload()
         assert self._choices is not None
         return appearance_for(os.path.basename(path) or "form", self._choices, self._profiles)
 

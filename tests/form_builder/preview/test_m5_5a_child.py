@@ -206,16 +206,37 @@ _MAIN = """<?xml version="1.0" encoding="UTF-8"?>
 """
 
 
-def test_a_main_window_form_previews_from_its_generated_module(session) -> None:  # type: ignore[no-untyped-def]
-    """Preview of a QMainWindow form used to fail: the child gave setupUi a plain QWidget."""
+_DIALOG = """<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>AskDialog</class>
+ <widget class="QDialog" name="AskDialog">
+  <property name="geometry"><rect><x>0</x><y>0</y><width>300</width><height>120</height></rect></property>
+  <layout class="QVBoxLayout" name="mainLayout">
+   <item><widget class="QDialogButtonBox" name="buttonBox">
+    <property name="standardButtons"><set>QDialogButtonBox::Cancel|QDialogButtonBox::Ok</set></property>
+   </widget></item>
+  </layout>
+ </widget>
+ <resources/>
+ <connections>
+  <connection><sender>buttonBox</sender><signal>accepted()</signal><receiver>AskDialog</receiver><slot>accept()</slot></connection>
+  <connection><sender>buttonBox</sender><signal>rejected()</signal><receiver>AskDialog</receiver><slot>reject()</slot></connection>
+ </connections>
+</ui>
+"""
+
+
+@pytest.mark.parametrize("text, kind", [(_MAIN, "QMainWindow"), (_DIALOG, "QDialog")])
+def test_a_main_window_or_dialog_form_previews_from_its_generated_module(session, text, kind) -> None:  # type: ignore[no-untyped-def]
+    """Preview of a QMainWindow form (setCentralWidget) or a dialog (accept, reject) used to fail on a plain QWidget."""
     from app.features.form_builder.engine.codegen.api import generate_form_module
     from app.features.form_builder.engine.ids import IdAllocator
     from app.features.form_builder.engine.project.forms import FormScope
     from app.features.form_builder.engine.ui4.reader import read_ui
-    from app.qt.QtWidgets import QMainWindow
+    from app.qt import QtWidgets
 
     child, writer = session
-    document = read_ui(_MAIN, allocator=IdAllocator()).document
+    document = read_ui(text, allocator=IdAllocator()).document
     scope = FormScope(
         kind="project", ui_path="/p/forms/main.ui", project_root="/p", generated_path="/p/forms/ui_main.py",
         window_path="/p/forms/main_window.py", module_name="forms.ui_main", window_module_name="forms.main_window",
@@ -232,4 +253,4 @@ def test_a_main_window_form_previews_from_its_generated_module(session) -> None:
     )
     answer = writer.responses()[-1]
     assert answer.ok, answer.detail
-    assert isinstance(child._views["v9"].widget, QMainWindow)  # noqa: SLF001
+    assert isinstance(child._views["v9"].widget, getattr(QtWidgets, kind))  # noqa: SLF001

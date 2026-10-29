@@ -30,6 +30,8 @@ logger = logging.getLogger(__name__)
 KEY = "code"
 CHANGE_MS = 300
 TOO_NARROW = "Make the window wider to see the code beside the form."
+RAILED_LEFT = "The Outline is on the left rail while the code is open."
+RAILED_BOTH = "The Outline and the inspector are on their rails while the code is open."
 NOT_GENERATED = "The code can't be shown for this form."
 
 
@@ -141,6 +143,11 @@ class CodeViewController:
         if not self._workbench.open_beside_canvas(KEY, panel):
             self._say(TOO_NARROW)
             return False
+        rails = getattr(self._workbench, "beside_rails", lambda: (False, False))()
+        if rails[1]:
+            self._say(RAILED_BOTH)
+        elif rails[0]:
+            self._say(RAILED_LEFT)
         self._retheme(panel)
         self.refresh()
         self._mark_selection(scroll=True)
@@ -277,4 +284,4 @@ class CodeViewController:
         panel.apply_chrome(chrome_for(tokens))
 
 
-__all__ = ["CHANGE_MS", "CodeViewController", "TOO_NARROW", "generate_view", "view_scope"]
+__all__ = ["CHANGE_MS", "CodeViewController", "RAILED_BOTH", "RAILED_LEFT", "TOO_NARROW", "generate_view", "view_scope"]

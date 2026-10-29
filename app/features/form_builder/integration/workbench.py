@@ -5,6 +5,7 @@ Widths come from a ``LayoutPlan``. This module does not decide breakpoints.
 
 from __future__ import annotations
 
+import dataclasses
 import logging
 import os
 from typing import Any, Callable, Dict, FrozenSet, List, Optional, Sequence, Set, Tuple
@@ -119,6 +120,7 @@ from app.features.form_builder.integration.layout import (
     LEFT_MIN,
     LayoutPlan,
     RAIL_WIDTH,
+    fit_beside,
 )
 from app.features.form_builder.integration.outline_bind import key_gesture, perform
 from app.features.form_builder.integration.toast import CommandToast, ToastNote, undo_matches
@@ -490,14 +492,15 @@ class FormToolbar(QWidget):
         self.two_widths.setAccessibleName("Two widths")
         menu = QMenu(self.text_size)
         menu.setObjectName("formBuilder.textSizeMenu")
-        menu.addSection("Text size")
+        _add_heading(menu, "Text size")
         text_actions = []
         for label, factor in (("Smaller", 0.85), ("Normal", 1.0), ("Larger", 1.25), ("Largest", 1.5)):
             action = menu.addAction(label)
             action.setCheckable(True)
             action.triggered.connect(lambda _checked=False, value=factor, target=preview: target.set_text_factor(value))
             text_actions.append((action, factor))
-        menu.addSection("Screen scale")
+        menu.addSeparator()
+        _add_heading(menu, "Screen scale")
         screen_actions = []
         for percent in (100, 125, 150, 200):
             action = menu.addAction("%d%%" % percent)
@@ -546,11 +549,16 @@ class FormToolbar(QWidget):
         self.preview.setToolTip("Preview (Ctrl+Shift+R)")
         self.preview.setAccessibleName("Preview")
         self.preview.clicked.connect(lambda _checked=False: on_preview())
+        menu.addSeparator()
+        _add_heading(menu, "Preview")
         menu.addMenu("Style").setObjectName("formBuilder.previewStyleMenu")
         menu.addMenu("Screen").setObjectName("formBuilder.previewScreenMenu")
 
         def rebuild() -> None:
             # Looked up each time: the menus belong to Qt, and a Python wrapper kept from addMenu can go stale.
+            reload = getattr(control, "reload", None)
+            if callable(reload):
+                reload()
             style_menu = menu.findChild(QMenu, "formBuilder.previewStyleMenu")
             screen_menu = menu.findChild(QMenu, "formBuilder.previewScreenMenu")
             if style_menu is not None:
@@ -645,28 +653,43 @@ def _toolbar_qss(tokens: ShellThemeTokens) -> str:
             "QFrame#formBuilder\\.modeDivider { background: %s; border: none; }" % tokens.border,
             flat_tool_button_qss(tokens, selectors),
             "QLabel#formBuilder\\.saveState { color: %s; background: transparent; border: none; }" % faint,
+            "QLabel#formBuilder\\.menuCaption { color: %s; background: transparent; border: none; }"
+            % tokens.text_primary,
+            "QLabel#formBuilder\\.menuHeading { color: %s; background: transparent; border: none;"
+            " font-weight: 600; }" % tokens.text_primary,
         )
     )
 
 
-def _add_caption(menu: QMenu, text: str) -> None:
-    """A line of words at the top of a menu that is never a choice: shown in every style, skipped by the arrow keys.
+def _add_menu_words(menu: QMenu, text: str, name: str, *, wrap: bool) -> None:
+    """Words in a menu that are never a choice: shown in every style, skipped by the arrow keys.
 
-    ``addSection`` shows its words only in some styles (not in macOS or Windows), and the caption has to be
-    readable wherever the preview runs.
+    ``addSection`` shows its words only in some styles (not in Windows or macOS, nor under
+    a style sheet), and these words have to be readable wherever the editor runs.
     """
     label = QLabel(text, menu)
-    label.setObjectName("formBuilder.menuCaption")
-    label.setWordWrap(True)
-    label.setFixedWidth(280)
-    label.setContentsMargins(12, 6, 12, 6)
+    label.setObjectName(name)
+    label.setWordWrap(wrap)
+    if wrap:
+        label.setFixedWidth(280)
+    label.setContentsMargins(12, 6, 12, 2 if not wrap else 6)
     label.setAccessibleName(text)
     action = QWidgetAction(menu)
-    action.setObjectName("formBuilder.menuCaptionAction")
+    action.setObjectName(name + "Action")
     action.setDefaultWidget(label)
     menu.addAction(action)
     action.setEnabled(False)
     label.setEnabled(True)
+
+
+def _add_caption(menu: QMenu, text: str) -> None:
+    """The sentence at the top of the Style and Screen submenus (D21)."""
+    _add_menu_words(menu, text, "formBuilder.menuCaption", wrap=True)
+
+
+def _add_heading(menu: QMenu, text: str) -> None:
+    """A group title in the Aa menu ("Text size", "Screen scale", "Preview")."""
+    _add_menu_words(menu, text, "formBuilder.menuHeading", wrap=False)
 
 
 def _fill_style_menu(menu: QMenu, control: Any) -> None:
@@ -2522,6 +2545,8 @@ class FormWorkbench(QWidget):
         self._under_listener: Optional[Callable[[int], None]] = None
         self._beside_key = ""
         self._beside_widget: Optional[QWidget] = None
+        self._beside_rails: Tuple[bool, bool] = (False, False)
+        self._given_plan: Optional[LayoutPlan] = None
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
         self._splitter = QSplitter(self)
@@ -2679,6 +2704,12 @@ class FormWorkbench(QWidget):
         self._drawer_listener = callback
 
     def apply_plan(self, plan: LayoutPlan) -> None:
+        self._given_plan = plan
+        rail_left, rail_right = self._beside_rails
+        if rail_left and plan.left_docked:
+            plan = dataclasses.replace(plan, left_docked=False, left_width=RAIL_WIDTH)
+        if rail_right and plan.inspector_docked:
+            plan = dataclasses.replace(plan, inspector_docked=False, inspector_width=RAIL_WIDTH)
         self._plan = plan
         self.inspector.set_short(plan.short)
         self.inspector.set_compact(plan.density == "compact")
@@ -3201,21 +3232,44 @@ class FormWorkbench(QWidget):
     ) -> bool:
         """The split at the right of the canvas (UX-PREV-004). One at a time.
 
-        Returns False, and opens nothing, when the canvas would be left with
-        fewer than ``min_canvas`` px. The caller says why in its own words.
+        It takes ``share`` of the canvas row, or less down to ``BESIDE_MIN``, so
+        the canvas keeps ``min_canvas`` px. When the row is still too narrow (a
+        1366 px ChoreBoy screen), the Outline pane and then the inspector go to
+        their rails while the split is open and come back when it closes.
+        Returns False, and opens nothing, when even that does not fit; the
+        caller says why in its own words.
         """
-        row = self._canvas_row
-        width = row.width()
-        beside = int(width * share)
-        if width - beside - row.handleWidth() < min_canvas:
-            return False
         self.close_beside_canvas()
+        row = self._canvas_row
+        plan = self._given_plan
+        left_gain = plan.left_width - RAIL_WIDTH if plan is not None and plan.left_docked else 0
+        right_gain = plan.inspector_width - RAIL_WIDTH if plan is not None and plan.inspector_docked else 0
+        fit = fit_beside(
+            row.width(),
+            row.handleWidth(),
+            share=share,
+            min_canvas=min_canvas,
+            left_gain=max(0, left_gain),
+            right_gain=max(0, right_gain),
+        )
+        if fit is None:
+            return False
+        width = row.width()
+        if fit.rail_left or fit.rail_right:
+            self._beside_rails = (fit.rail_left, fit.rail_right)
+            width += (left_gain if fit.rail_left else 0) + (right_gain if fit.rail_right else 0)
+            if plan is not None:
+                self.apply_plan(plan)
         self._beside_key = key
         self._beside_widget = widget
         row.addWidget(widget)
         widget.show()
-        row.setSizes([width - beside, beside])
+        row.setSizes([width - fit.beside - row.handleWidth(), fit.beside])
         return True
+
+    def beside_rails(self) -> Tuple[bool, bool]:
+        """Which panes (Outline, inspector) are on their rails because the split is open."""
+        return self._beside_rails
 
     def close_beside_canvas(self) -> None:
         widget = self._beside_widget
@@ -3225,6 +3279,10 @@ class FormWorkbench(QWidget):
         widget.setParent(self)
         self._beside_widget = None
         self._beside_key = ""
+        if self._beside_rails != (False, False):
+            self._beside_rails = (False, False)
+            if self._given_plan is not None:
+                self.apply_plan(self._given_plan)
 
     def beside_canvas_key(self) -> str:
         return self._beside_key

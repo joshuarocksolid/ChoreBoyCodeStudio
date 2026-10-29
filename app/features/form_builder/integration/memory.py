@@ -1,7 +1,9 @@
-"""Per-user workbench widths in the global settings store.
+"""Per-user form builder choices in the global settings store (CONTRACTS section 14).
 
-The key is ``form_builder.workbench`` on the same JSON file as the rest of
-the shell settings. A missing or unreadable block is the default plan.
+The keys live in ``form_builder`` on the same JSON file as the rest of the
+shell settings. A missing or unreadable block is the default. Reads of keys
+Settings > Form designer can change re-read the file (``force_refresh``), so a
+change there shows without a restart; writes go through ``update_global``.
 """
 
 from __future__ import annotations
@@ -104,13 +106,18 @@ def payload_with_sort_properties(payload: Mapping[str, Any], shown: bool) -> dic
 
 
 def preview_from_payload(payload: Mapping[str, Any]) -> Tuple[PreviewChoices, Tuple[ScreenProfile, ...]]:
-    """The user's preview style, screen and screen profiles (UX-PREV-001). A bad block is the default."""
-    section = payload.get(SETTINGS_KEY)
-    raw = section.get(PREVIEW_KEY) if isinstance(section, Mapping) else None
-    if not isinstance(raw, Mapping):
-        return _settings_defaults(section if isinstance(section, Mapping) else {}), ()
+    """The user's preview style, screen and screen profiles (UX-PREV-001, CONTRACTS section 14).
+
+    One source of truth for the Aa menu and Settings > Form designer: ``preview_style``
+    (absent: Fusion) and ``preview_screen`` (``small``, ``full_hd``, a profile of the
+    user's by name, absent: the ChoreBoy screen). ``preview.profiles`` keeps the user's
+    screens. A missing or wrongly typed value is the default.
+    """
+    section_raw = payload.get(SETTINGS_KEY)
+    section: Mapping[str, Any] = section_raw if isinstance(section_raw, Mapping) else {}
+    raw = section.get(PREVIEW_KEY)
     profiles: List[ScreenProfile] = []
-    listed = raw.get("profiles")
+    listed = raw.get("profiles") if isinstance(raw, Mapping) else None
     for item in listed if isinstance(listed, list) else ():
         if not isinstance(item, Mapping):
             continue
@@ -118,26 +125,27 @@ def preview_from_payload(payload: Mapping[str, Any]) -> Tuple[PreviewChoices, Tu
         if profile is not None and not name_is_built_in(profile.name):
             profiles = [other for other in profiles if other.name.lower() != profile.name.lower()]
             profiles.append(profile)
-    style = raw.get("style")
-    screen = raw.get("screen")
+    style = section.get(STYLE_KEY)
+    screen = section.get(SCREEN_KEY)
+    chosen = DEFAULT_SCREEN
+    if isinstance(screen, str):
+        if screen in _SCREEN_KEYS:
+            chosen = _SCREEN_KEYS[screen]
+        else:
+            for profile in profiles:
+                if profile.name.lower() == screen.strip().lower():
+                    chosen = profile.name
     choices = PreviewChoices(
         style=style if isinstance(style, str) and style.strip() else DEFAULT_STYLE,
-        screen=screen if isinstance(screen, str) and screen.strip() else DEFAULT_SCREEN,
+        screen=chosen,
     )
     return choices, tuple(profiles)
 
 
-#: Settings > Form designer (M5.5c) writes these two keys; they are the choice until the user picks one in the Aa menu.
-_SCREEN_DEFAULTS = {"small": "Small screen", "full_hd": "Full HD"}
-
-
-def _settings_defaults(section: Mapping[str, Any]) -> PreviewChoices:
-    style = section.get("preview_style")
-    screen = section.get("preview_screen")
-    return PreviewChoices(
-        style=style if isinstance(style, str) and style.strip() else DEFAULT_STYLE,
-        screen=_SCREEN_DEFAULTS.get(screen, DEFAULT_SCREEN) if isinstance(screen, str) else DEFAULT_SCREEN,
-    )
+STYLE_KEY = "preview_style"
+SCREEN_KEY = "preview_screen"
+#: The built-in screens' values of ``preview_screen`` (Settings > Form designer writes the same).
+_SCREEN_KEYS = {"small": "Small screen", "full_hd": "Full HD"}
 
 
 def _profile_from(item: Mapping[str, Any]) -> Optional[ScreenProfile]:
@@ -159,12 +167,22 @@ def payload_with_preview(
     choices: PreviewChoices,
     profiles: Tuple[ScreenProfile, ...],
 ) -> dict[str, Any]:
+    """``payload`` with this style, screen and the user's screens; default choices are written as absent keys."""
     updated = dict(payload)
     section_raw = updated.get(SETTINGS_KEY)
     section = dict(section_raw) if isinstance(section_raw, Mapping) else {}
+    if choices.style and choices.style.lower() != DEFAULT_STYLE.lower():
+        section[STYLE_KEY] = choices.style
+    else:
+        section.pop(STYLE_KEY, None)
+    screen_value = {name: key for key, name in _SCREEN_KEYS.items()}.get(choices.screen)
+    if screen_value is None and choices.screen != DEFAULT_SCREEN:
+        screen_value = choices.screen
+    if screen_value:
+        section[SCREEN_KEY] = screen_value
+    else:
+        section.pop(SCREEN_KEY, None)
     section[PREVIEW_KEY] = {
-        "style": choices.style,
-        "screen": choices.screen,
         "profiles": [
             {
                 "name": item.name,
@@ -189,7 +207,8 @@ class PreviewOptionsStore:
 
     def load(self) -> Tuple[PreviewChoices, Tuple[ScreenProfile, ...]]:
         try:
-            return preview_from_payload(self._service.load_global())
+            # Settings > Form designer writes the same keys from another SettingsService.
+            return preview_from_payload(self._service.load_global(force_refresh=True))
         except OSError:
             return PreviewChoices(), ()
 
@@ -225,7 +244,7 @@ class WorkbenchMemoryStore:
 
     def qt_names(self) -> bool:
         try:
-            return qt_names_from_payload(self._service.load_global())
+            return qt_names_from_payload(self._service.load_global(force_refresh=True))
         except OSError:
             return False
 
@@ -237,7 +256,7 @@ class WorkbenchMemoryStore:
 
     def sort_properties(self) -> bool:
         try:
-            return sort_properties_from_payload(self._service.load_global())
+            return sort_properties_from_payload(self._service.load_global(force_refresh=True))
         except OSError:
             return False
 
@@ -250,6 +269,8 @@ class WorkbenchMemoryStore:
 
 __all__ = [
     "PREVIEW_KEY",
+    "SCREEN_KEY",
+    "STYLE_KEY",
     "PreviewOptionsStore",
     "QT_NAMES_KEY",
     "SORT_PROPERTIES_KEY",

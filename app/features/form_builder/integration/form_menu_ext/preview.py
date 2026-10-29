@@ -118,6 +118,7 @@ def _sync_checks(surface: Any, kind: str, name: str) -> bool:
         now = time.monotonic()
         if now - _stamp.get(id(window), 0.0) > 0.05:
             _stamp[id(window)] = now
+            control.reload()
             _refresh_user_screens(window, control)
         _mark(window, control, kind, name)
     except Exception:

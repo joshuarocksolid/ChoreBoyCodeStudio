@@ -29,7 +29,7 @@ from app.features.form_builder.qtside.preview.launch import (  # noqa: E402
 from app.features.form_builder.qtside.preview.pool import PreviewPool  # noqa: E402
 from app.qt.QtGui import QImage  # noqa: E402
 from app.qt.QtTest import QTest  # noqa: E402
-from app.qt.QtWidgets import QApplication, QDialog, QMenu, QPushButton  # noqa: E402
+from app.qt.QtWidgets import QApplication, QDialog, QMenu, QPushButton, QWidgetAction  # noqa: E402
 from tests.form_builder.qtside.test_m3_keyboard_scripts import Kb, _close, _key, _NoMouse, _session  # noqa: E402
 
 pytestmark = [pytest.mark.unit, pytest.mark.timeout(300)]
@@ -107,6 +107,9 @@ def test_the_aa_menu_lists_styles_and_screens_with_the_caption_and_remembers_a_p
         surface = kb.surface
         control = surface.preview_control
         menu = _aa_menu(surface)
+        # Group titles are words in every style (addSection's text is lost under Windows and style sheets).
+        headings = [a.defaultWidget().text() for a in menu.actions() if isinstance(a, QWidgetAction)]
+        assert headings == ["Text size", "Screen scale", "Preview"]
         style_menu = _submenu(menu, "Style")
         screen_menu = _submenu(menu, "Screen")
         for sub in (style_menu, screen_menu):
@@ -305,13 +308,32 @@ def test_the_code_split_follows_the_form_and_the_selection(tmp_path: Path, qapp:
         surface = kb.surface
         workbench = surface._workbench
         view = workbench.code_view
-        # Too narrow: refused with the spec's sentence, nothing opens.
+        # A ChoreBoy screen (1366 x 768): the split opens; the Outline waits on its rail
+        # and comes back when the split closes. The canvas keeps 360 px.
+        window.resize(1366, 768)
+        kb.pump()
+        assert view.open() and workbench.beside_canvas_key() == "code"
+        assert workbench.beside_rails()[0]
+        assert surface._gesture_sentence in (
+            "The Outline is on the left rail while the code is open.",
+            "The Outline and the inspector are on their rails while the code is open.",
+        )
+        kb.pump()
+        canvas_width, code_width = workbench._canvas_row.sizes()[:2]
+        assert canvas_width >= 360 - 8 and code_width >= 300 - 8, (canvas_width, code_width)
+        view.close()
+        kb.pump()
+        assert workbench.beside_rails() == (False, False) and workbench._plan.left_docked
+        # Too narrow even with both panes on their rails: refused with the spec's sentence.
+        window.resize(640, 600)
+        kb.pump()
         assert not view.open()
         assert surface._gesture_sentence == "Make the window wider to see the code beside the form."
         assert workbench.beside_canvas_key() == ""
         window.resize(1900, 900)
         kb.pump()
         assert view.open() and workbench.beside_canvas_key() == "code"
+        assert workbench.beside_rails() == (False, False), "a wide tab keeps both panes"
         panel = view.panel
         assert "class Ui_Customer" in panel.text() and panel.editor.isReadOnly()
         assert panel._title.text() == "ui_customer.py · as it will be saved"

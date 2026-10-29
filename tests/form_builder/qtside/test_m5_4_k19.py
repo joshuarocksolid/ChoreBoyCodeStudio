@@ -6,10 +6,8 @@ importing nothing from ``widgets/`` (an import hook), the preview child building
 the real class, the stand-in toast and FB602 for a class that raises, F2, "Back
 to label", and Undo all back to the original bytes.
 
-N/A here, with the owner: Ctrl+Shift+R and Esc on the preview window are
-M5.5a's (the form tab's Preview key is a status sentence until then); the
-script sends the same preview request the key will send
-(``surface.request_preview``).
+The first preview is Ctrl+Shift+R (M5.5a's key, the same request as F5 on a
+form outside a project); the second sends ``surface.request_preview`` directly.
 """
 
 from __future__ import annotations
@@ -249,8 +247,8 @@ def test_k19_your_own_class(tmp_path: Path, qapp: QApplication) -> None:
             [entry.class_name for entry in registry_for(str((tmp_path / "shop").resolve())).entries()] == ["TillDisplay"],
             "the class is saved for the project's other forms",
         )
-        # --- Preview: the child builds the real class; the security note shows
-        surface.request_preview(str(kb.path))
+        # --- Preview by Ctrl+Shift+R: the child builds the real class; the security note shows
+        kb.press("Key_R", "Control", "Shift")
         kb.check(_pump_until(qapp, lambda: notices.last_response is not None), "the preview child answered")
         response = notices.last_response
         kb.check(response.ok, "preview opened: %s" % response.detail)
