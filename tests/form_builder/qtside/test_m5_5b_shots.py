@@ -14,7 +14,7 @@ from pathlib import Path
 import pytest
 
 from app.core import constants
-from app.features.form_builder.engine.commands.catalog_ext.form_fields import SetFormGrid, SetFormSetting
+from app.features.form_builder.engine.commands.catalog_ext.form_fields import SetFormGrid, SetFormField
 from app.features.form_builder.engine.query.selection import SelectionSource
 from app.features.form_builder.engine.ui4.schema import LayoutDefault
 from app.features.form_builder.integration.chrome import chrome_for
@@ -84,11 +84,11 @@ def _settings(qapp, folder: Path, name: str, width: int, chrome) -> None:  # typ
         _fit_row(qapp, window, pane, width)
         window.resize(window.width(), 1500)
         log = session.log
-        log.execute(SetFormSetting("author", "Pat Ng"))
-        log.execute(SetFormSetting("layoutdefault", LayoutDefault(6, 11)))
-        log.execute(SetFormSetting("pixmapfunction", "load_picture"))
-        log.execute(SetFormSetting("includes", (("local", "shop.h"), ("global", "vector"))))
-        log.execute(SetFormSetting("idbasedtr", "true"))
+        log.execute(SetFormField("author", "Pat Ng"))
+        log.execute(SetFormField("layoutdefault", LayoutDefault(6, 11)))
+        log.execute(SetFormField("pixmapfunction", "load_picture"))
+        log.execute(SetFormField("includes", (("local", "shop.h"), ("global", "vector"))))
+        log.execute(SetFormField("idbasedtr", "true"))
         log.execute(SetFormGrid("across", 16))
         session.selection.clear(source=SelectionSource.PROGRAM)
         pane.flush()

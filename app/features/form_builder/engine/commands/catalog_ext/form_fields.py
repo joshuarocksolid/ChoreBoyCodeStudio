@@ -1,6 +1,6 @@
 """Form settings: the form's own fields, and the free-placement grid (UX-FSET-001 ... 006).
 
-``SetFormSetting`` writes one field of the ``<ui>`` element: the Code group
+``SetFormField`` (CONTRACTS section 1.4, the M5.5b row) writes one field of the ``<ui>`` element: the Code group
 (``author``, ``layoutdefault``, ``layoutfunction``, ``pixmapfunction``,
 ``includes``, ``exportmacro``, ``comment``), the Translation group
 (``idbasedtr``, ``language``, ``displayname``) and the older ``stdsetdef`` /
@@ -29,7 +29,7 @@ from app.features.form_builder.engine.ui4.opaque import OpaqueElement
 from app.features.form_builder.engine.ui4.schema import LayoutDefault, LayoutFunction
 from app.features.form_builder.engine.ui4.spec import NodeSpec
 
-#: Fields ``SetFormSetting`` writes. Anything else is refused.
+#: Fields ``SetFormField`` writes. Anything else is refused.
 TEXT_FIELDS = ("author", "comment", "exportmacro", "pixmapfunction", "language", "displayname")
 FLAG_FIELDS = ("idbasedtr",)
 LEGACY_FIELDS = ("stdsetdef", "stdSetDef")
@@ -56,7 +56,7 @@ def register(registry: object) -> None:
     add = getattr(registry, "add", None)
     if add is None:
         return
-    add(SetFormSetting)
+    add(SetFormField)
     add(SetFormGrid)
 
 
@@ -72,7 +72,7 @@ def lower_label(label: str) -> str:
 
 
 @dataclass(frozen=True)
-class SetFormSetting(_CommandBase):
+class SetFormField(_CommandBase):
     """Set one field of the form. ``None`` (or an empty text) removes it.
 
     ``value`` by field: text for the text fields, ``"true"``/``"false"`` for
@@ -81,7 +81,7 @@ class SetFormSetting(_CommandBase):
     accept only ``None``: the builder never writes them.
     """
 
-    command_type: ClassVar[str] = "set_form_setting"
+    command_type: ClassVar[str] = "set_form_field"
     _label_text: ClassVar[str] = "Change form setting"
     field: str
     value: object = None

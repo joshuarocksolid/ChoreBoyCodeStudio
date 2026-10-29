@@ -79,6 +79,8 @@ class FormGroupSpec:
     ``(root id,)`` and ``host.run(label, commands)`` is one undo step. The
     body's ``show(rows)`` is called with an empty tuple after every change to
     the form. ``applies(document)`` hides the group when it is False.
+    ``expanded`` is the group's state when the inspector opens; a closed
+    group builds its body the first time it is opened.
     """
 
     key: str
@@ -87,6 +89,7 @@ class FormGroupSpec:
     order: int = 100
     applies: Optional[Callable[[UiDocument], bool]] = None
     module: str = ""
+    expanded: bool = True
 
 
 class FormGroupRegistry:
@@ -104,12 +107,13 @@ class FormGroupRegistry:
         order: int = 100,
         applies: Optional[Callable[[UiDocument], bool]] = None,
         module: str = "",
+        expanded: bool = True,
     ) -> None:
         if not key or not title:
             raise ValueError("a form group needs a key and a title")
         if any(spec.key == key for spec in self._specs):
             raise ValueError("form group %s is already registered" % key)
-        self._specs.append(FormGroupSpec(key, title, factory, order, applies, module))
+        self._specs.append(FormGroupSpec(key, title, factory, order, applies, module, expanded))
 
     def scope(self, module: str) -> "_FormGroupScope":
         return _FormGroupScope(self, module)
@@ -131,8 +135,9 @@ class _FormGroupScope:
         *,
         order: int = 100,
         applies: Optional[Callable[[UiDocument], bool]] = None,
+        expanded: bool = True,
     ) -> None:
-        self._registry.add(key, title, factory, order=order, applies=applies, module=self._module)
+        self._registry.add(key, title, factory, order=order, applies=applies, module=self._module, expanded=expanded)
 
 
 def load_form_groups(*packages: ModuleType) -> FormGroupRegistry:
@@ -223,7 +228,7 @@ class PropertiesPage(QWidget):
         self._content_layout.addWidget(self._form)
         self._form_groups: List[_FormGroup] = []
         for spec in default_form_groups().groups():
-            box = _FormGroup(services, spec, self._content)
+            box = _FormGroup(services, spec, self._content, self.request_rebuild)
             self._form_groups.append(box)
             self._content_layout.addWidget(box)
             box.hide()
@@ -283,6 +288,12 @@ class PropertiesPage(QWidget):
             group.set_label_width(width)
 
     def set_group_expanded(self, group: object, expanded: bool) -> None:
+        """Open or close a group: a ``GroupId``, or the key of a registered form group."""
+        if isinstance(group, str) and not isinstance(group, GroupId):
+            for box in self._form_groups:
+                if box.key == group:
+                    box.set_expanded(expanded)
+            return
         if not isinstance(group, GroupId):
             return
         changed = self._expanded.get(group) != expanded
@@ -655,12 +666,19 @@ class _FormSection(QWidget):
 class _FormGroup(QWidget):
     """One registered form group: an overline toggle over the contributor's body."""
 
-    def __init__(self, services: Services, spec: FormGroupSpec, parent: QWidget) -> None:
+    def __init__(
+        self,
+        services: Services,
+        spec: FormGroupSpec,
+        parent: QWidget,
+        on_opened: Optional[Callable[[], None]] = None,
+    ) -> None:
         super().__init__(parent)
         self.setObjectName("formBuilder.formGroup.%s" % spec.key)
         self._services = services
         self._spec = spec
-        self._expanded = True
+        self._on_opened = on_opened
+        self._expanded = spec.expanded
         self._custom: Optional[GroupBody] = None
         self._host = _GroupHost(services, ())
         self._toggle = QToolButton(self)
@@ -669,10 +687,10 @@ class _FormGroup(QWidget):
         self._toggle.setText(spec.title.upper())
         self._toggle.setFont(_overline_font())
         self._toggle.setCheckable(True)
-        self._toggle.setChecked(True)
+        self._toggle.setChecked(self._expanded)
         self._toggle.setAccessibleName("%s group" % spec.title)
         self._toggle.setToolButtonStyle(_beside())
-        self._toggle.setArrowType(_arrow(True))
+        self._toggle.setArrowType(_arrow(self._expanded))
         self._toggle.clicked.connect(self._toggled)
         self._body = QWidget(self)
         self._body_layout = QVBoxLayout(self._body)
@@ -710,10 +728,26 @@ class _FormGroup(QWidget):
             logger.exception("form group %s failed", self._spec.key)
             self.hide()
 
+    @property
+    def key(self) -> str:
+        return self._spec.key
+
+    def set_expanded(self, expanded: bool) -> None:
+        """The same as a click on the toggle."""
+        if bool(expanded) == self._expanded:
+            return
+        self._toggle.setChecked(bool(expanded))
+        self._toggled(bool(expanded))
+
     def _toggled(self, checked: bool) -> None:
         self._expanded = bool(checked)
         self._toggle.setArrowType(_arrow(self._expanded))
         self._body.setVisible(self._expanded)
+        if self._expanded:
+            # A closed group is not painted: fill it now, then let the page relink its Tab stops.
+            self.paint(self._services.session.document)
+            if self._on_opened is not None:
+                self._on_opened()
 
 
 class _Group(QWidget):

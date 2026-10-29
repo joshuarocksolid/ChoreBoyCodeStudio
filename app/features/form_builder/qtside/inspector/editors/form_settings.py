@@ -2,13 +2,13 @@
 
 They are added through the form-group slot and show while the form is
 selected. Each row edits one field of the ``<ui>`` element through
-``SetFormSetting`` or ``SetFormGrid``; each change is one undo step named
+``SetFormField`` or ``SetFormGrid``; each change is one undo step named
 "Change form setting: {label in lower case}", and a row's reset removes the
 field. A row whose field is in the file shows the changed bar and Reset, as
 every inspector row does (UX-INSP-006).
 
-The slot has no "collapsed" flag yet, so each body collapses its group the
-first time it is built and refreshes itself when the group is opened.
+The groups register closed (``expanded=False``); a closed group builds its
+body the first time it is opened.
 """
 
 from __future__ import annotations
@@ -24,7 +24,7 @@ from app.features.form_builder.engine.commands.catalog_ext.form_fields import (
     NAME_REFUSAL,
     REMOVE_LEGACY,
     SetFormGrid,
-    SetFormSetting,
+    SetFormField,
     form_grid,
     function_name_ok,
     grid_is_default,
@@ -261,7 +261,7 @@ class _TextRow(SettingRow):
         return self.edit
 
     def reset_commands(self) -> list:
-        return [SetFormSetting(self.field, None, "Reset %s" % self.label_text)]
+        return [SetFormField(self.field, None, "Reset %s" % self.label_text)]
 
     def _revert(self) -> None:
         self.edit.setText(self._stored)
@@ -276,7 +276,7 @@ class _TextRow(SettingRow):
         if self._named and text.strip() and not function_name_ok(text.strip()):
             self.show_error(NAME_REFUSAL)
             return
-        if self.write(SetFormSetting(self.field, text.strip() if self._named else text)):
+        if self.write(SetFormField(self.field, text.strip() if self._named else text)):
             self.edit.setModified(False)
 
 
@@ -303,10 +303,10 @@ class _CheckRow(SettingRow):
         return self.box
 
     def reset_commands(self) -> list:
-        return [SetFormSetting(self.field, None, "Reset %s" % self.label_text)]
+        return [SetFormField(self.field, None, "Reset %s" % self.label_text)]
 
     def _toggled(self, on: bool) -> None:
-        if not self.write(SetFormSetting(self.field, "true" if on else None)):
+        if not self.write(SetFormField(self.field, "true" if on else None)):
             self.load(self.body.host.document)
 
 
@@ -363,11 +363,11 @@ class _GapsRow(SettingRow):
         return self.box
 
     def reset_commands(self) -> list:
-        return [SetFormSetting("layoutdefault", None, "Reset Default gaps")]
+        return [SetFormField("layoutdefault", None, "Reset Default gaps")]
 
     def _toggled(self, on: bool) -> None:
         value = LayoutDefault(DEFAULT_GAP, DEFAULT_MARGIN) if on else None
-        if not self.write(SetFormSetting("layoutdefault", value)):
+        if not self.write(SetFormField("layoutdefault", value)):
             self.load(self.body.host.document)
 
     def _numbers_done(self) -> None:
@@ -376,7 +376,7 @@ class _GapsRow(SettingRow):
         value = LayoutDefault(None if spacing < 0 else spacing, None if margin < 0 else margin)
         if value == self._stored:
             return
-        if not self.write(SetFormSetting("layoutdefault", value)):
+        if not self.write(SetFormField("layoutdefault", value)):
             self.load(self.body.host.document)
 
 
@@ -435,7 +435,7 @@ class _FunctionsRow(SettingRow):
 
     def reset_commands(self) -> list:
         self._armed = False
-        return [SetFormSetting("layoutfunction", None, "Reset Gap functions")]
+        return [SetFormField("layoutfunction", None, "Reset Gap functions")]
 
     def _revert(self) -> None:
         self.show_error("")
@@ -445,7 +445,7 @@ class _FunctionsRow(SettingRow):
         # With no names yet there is nothing to write: the check box only opens the fields.
         self._armed = on
         if not on and self._stored is not None:
-            if not self.write(SetFormSetting("layoutfunction", None)):
+            if not self.write(SetFormField("layoutfunction", None)):
                 self._armed = True
         self.load(self.body.host.document)
         if on:
@@ -462,7 +462,7 @@ class _FunctionsRow(SettingRow):
                 self.show_error(NAME_REFUSAL)
                 return
         value = LayoutFunction(gap or None, margin or None)
-        if self.write(SetFormSetting("layoutfunction", value)):
+        if self.write(SetFormField("layoutfunction", value)):
             self.gap.setModified(False)
             self.margin.setModified(False)
 
@@ -512,7 +512,7 @@ class _IncludesRow(SettingRow):
         return self.add_button
 
     def reset_commands(self) -> list:
-        return [SetFormSetting("includes", (), "Reset Extra includes")]
+        return [SetFormField("includes", (), "Reset Extra includes")]
 
     def _line(self, index: int, location: str, text: str) -> QWidget:
         row = QWidget(self.column)
@@ -547,7 +547,7 @@ class _IncludesRow(SettingRow):
         self.load(self.body.host.document, force=True)
 
     def _store(self, lines: Tuple[Tuple[str, str], ...]) -> bool:
-        ok = self.write(SetFormSetting("includes", lines))
+        ok = self.write(SetFormField("includes", lines))
         self._reload()
         return ok
 
@@ -622,7 +622,7 @@ class _LegacyRow(SettingRow):
             self.value.setText('%s = "%s"' % (self.field, value))
 
     def _remove(self) -> None:
-        refusal = self.body.host.run(REMOVE_LEGACY, [SetFormSetting(self.field, None, REMOVE_LEGACY)])
+        refusal = self.body.host.run(REMOVE_LEGACY, [SetFormField(self.field, None, REMOVE_LEGACY)])
         self.show_error(refusal or "")
 
 
@@ -713,7 +713,6 @@ class _Body:
             note.setObjectName("formBuilder.rowNote")
             note.setWordWrap(True)
             self.layout.addWidget(note)
-        self._collapse(parent, key)
 
     @property
     def widget(self) -> QWidget:
@@ -736,25 +735,6 @@ class _Body:
             if target is not None and row.isVisibleTo(self.root):
                 return target
         return None
-
-    def _collapse(self, parent: QWidget, key: str) -> None:
-        """Closed by default (UX-FSET-001); opening it refreshes the rows, which are not painted while closed."""
-        group = parent.parentWidget()
-        toggle = group.findChild(QToolButton, "formBuilder.group.%s" % key) if group is not None else None
-        if toggle is None:
-            return
-        toggle.toggled.connect(lambda opened: self._opened(toggle) if opened else None)
-        if toggle.isChecked():
-            toggle.click()
-
-    def _opened(self, toggle: QToolButton) -> None:
-        """Fill the rows, then have the inspector relink its Tab stops, which now include them."""
-        self.show(())
-        page = toggle.parentWidget()
-        while page is not None and not hasattr(page, "request_rebuild"):
-            page = page.parentWidget()
-        if page is not None:
-            page.request_rebuild()
 
 
 class CodeBody(_Body):
@@ -798,10 +778,10 @@ def register(registrar: Registrar) -> None:
 
 def register_form_groups(registry: object) -> None:
     # After the Pictures (120) and Button groups (140) sections.
-    registry.add(CODE, "Code", lambda host, parent: CodeBody(host, parent), order=150)  # type: ignore[attr-defined]
+    registry.add(CODE, "Code", lambda host, parent: CodeBody(host, parent), order=150, expanded=False)  # type: ignore[attr-defined]
     registry.add(  # type: ignore[attr-defined]
-        TRANSLATION, "Translation", lambda host, parent: TranslationBody(host, parent), order=160
+        TRANSLATION, "Translation", lambda host, parent: TranslationBody(host, parent), order=160, expanded=False
     )
     registry.add(  # type: ignore[attr-defined]
-        FREE, "Free placement", lambda host, parent: FreeBody(host, parent), order=170, applies=_applies_free
+        FREE, "Free placement", lambda host, parent: FreeBody(host, parent), order=170, applies=_applies_free, expanded=False
     )

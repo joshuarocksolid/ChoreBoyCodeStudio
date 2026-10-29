@@ -7,7 +7,7 @@ from typing import Optional
 
 import pytest
 
-from app.features.form_builder.engine.commands.catalog_ext.form_fields import SetFormGrid, SetFormSetting
+from app.features.form_builder.engine.commands.catalog_ext.form_fields import SetFormGrid, SetFormField
 from app.features.form_builder.engine.query.selection import SelectionSource
 from app.features.form_builder.engine.ui4.schema import LayoutDefault
 from app.features.form_builder.engine.ui4.writer import write_ui
@@ -50,7 +50,8 @@ def test_the_three_groups_are_collapsed_until_opened(qapp) -> None:  # type: ign
             toggle = pane.findChild(QToolButton, "formBuilder.group.%s" % key)
             assert toggle is not None and toggle.isVisible() and not toggle.isChecked(), key
             body = pane.findChild(QWidget, "formBuilder.formSettings.%s" % key)
-            assert body is not None and not body.isVisible(), key
+            # A closed group builds its body when it is first opened.
+            assert body is None or not body.isVisible(), key
         assert [t.text() for t in (pane.findChild(QToolButton, "formBuilder.group.%s" % k) for k in ("code", "translation", "freePlacement"))] == [
             "CODE",
             "TRANSLATION",
@@ -302,8 +303,8 @@ def test_a_change_from_elsewhere_refreshes_the_open_rows(qapp) -> None:  # type:
     try:
         _show_form(pane, session)
         body = _open_group(pane, "code", qapp)
-        session.log.execute(SetFormSetting("author", "Elsewhere"))
-        session.log.execute(SetFormSetting("layoutdefault", LayoutDefault(5, 7)))
+        session.log.execute(SetFormField("author", "Elsewhere"))
+        session.log.execute(SetFormField("layoutdefault", LayoutDefault(5, 7)))
         pane.flush()
         assert body.findChild(QLineEdit, "formBuilder.formSetting.author.edit").text() == "Elsewhere"
         assert body.findChild(QSpinBox, "formBuilder.formSetting.layoutdefault.gap").value() == 5
@@ -313,7 +314,7 @@ def test_a_change_from_elsewhere_refreshes_the_open_rows(qapp) -> None:  # type:
         assert body.findChild(QLineEdit, "formBuilder.formSetting.author.edit").text() == ""
         # A group that was closed while the form changed is current when it opens.
         toggle = pane.findChild(QToolButton, "formBuilder.group.translation")
-        session.log.execute(SetFormSetting("language", "Python"))
+        session.log.execute(SetFormField("language", "Python"))
         pane.flush()
         translation = _open_group(pane, "translation", qapp)
         assert translation.findChild(QLineEdit, "formBuilder.formSetting.language.edit").text() == "Python"

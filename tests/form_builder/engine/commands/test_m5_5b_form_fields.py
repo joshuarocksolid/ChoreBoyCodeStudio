@@ -9,7 +9,7 @@ from app.features.form_builder.engine.commands.base import CommandRejected
 from app.features.form_builder.engine.commands.catalog_ext.form_fields import (
     FormGrid,
     SetFormGrid,
-    SetFormSetting,
+    SetFormField,
     form_grid,
     has_free_container,
     include_lines,
@@ -77,17 +77,17 @@ def test_every_form_field_round_trips_byte_for_byte_and_undo_restores_it() -> No
     log = open_log(FULL)
     doc = log.document
     steps = [
-        SetFormSetting("author", "Sam"),
-        SetFormSetting("comment", "New"),
-        SetFormSetting("exportmacro", "OTHER"),
-        SetFormSetting("layoutdefault", LayoutDefault(8, 8)),
-        SetFormSetting("layoutfunction", LayoutFunction("gap_of", None)),
-        SetFormSetting("pixmapfunction", "pictures.load"),
-        SetFormSetting("includes", (("global", "map"),)),
-        SetFormSetting("idbasedtr", None),
-        SetFormSetting("language", "Python"),
-        SetFormSetting("displayname", "Till window"),
-        SetFormSetting("stdsetdef", None),
+        SetFormField("author", "Sam"),
+        SetFormField("comment", "New"),
+        SetFormField("exportmacro", "OTHER"),
+        SetFormField("layoutdefault", LayoutDefault(8, 8)),
+        SetFormField("layoutfunction", LayoutFunction("gap_of", None)),
+        SetFormField("pixmapfunction", "pictures.load"),
+        SetFormField("includes", (("global", "map"),)),
+        SetFormField("idbasedtr", None),
+        SetFormField("language", "Python"),
+        SetFormField("displayname", "Till window"),
+        SetFormField("stdsetdef", None),
         SetFormGrid("across", 16),
     ]
     for command in steps:
@@ -108,14 +108,14 @@ def test_the_new_form_templates_write_no_older_file_setting_or_grid() -> None:
 def test_a_setting_equal_to_what_is_stored_adds_no_step() -> None:
     log = open_log(FULL)
     before = len(log.entries())
-    log.execute(SetFormSetting("author", "Pat"))
-    log.execute(SetFormSetting("exportmacro", "SHOP_EXPORT"))
+    log.execute(SetFormField("author", "Pat"))
+    log.execute(SetFormField("exportmacro", "SHOP_EXPORT"))
     assert len(log.entries()) == before
 
 
 def test_the_command_names_the_undo_step_for_the_row() -> None:
     log = open_log(LAID_OUT)
-    log.execute(SetFormSetting("author", "Shop", "Change form setting: author"))
+    log.execute(SetFormField("author", "Shop", "Change form setting: author"))
     assert log.undo_label() == "Change form setting: author"
 
 
@@ -123,15 +123,15 @@ def test_the_command_names_the_undo_step_for_the_row() -> None:
 def test_function_names_are_checked_as_python_names(name: str) -> None:
     log = open_log(LAID_OUT)
     with pytest.raises(CommandRejected, match="Use a function name like margin_for."):
-        log.execute(SetFormSetting("pixmapfunction", name))
+        log.execute(SetFormField("pixmapfunction", name))
     with pytest.raises(CommandRejected, match="Use a function name like margin_for."):
-        log.execute(SetFormSetting("layoutfunction", LayoutFunction(name, None)))
+        log.execute(SetFormField("layoutfunction", LayoutFunction(name, None)))
     assert saved(log.document) == LAID_OUT
 
 
 def test_a_dotted_function_name_is_a_python_name() -> None:
     log = open_log(LAID_OUT)
-    log.execute(SetFormSetting("layoutfunction", LayoutFunction("sizes.gap", "sizes.margin")))
+    log.execute(SetFormField("layoutfunction", LayoutFunction("sizes.gap", "sizes.margin")))
     assert '<layoutfunction spacing="sizes.gap" margin="sizes.margin"/>' in saved(log.document)
 
 
@@ -139,24 +139,24 @@ def test_the_builder_never_writes_the_older_attributes() -> None:
     log = open_log(LAID_OUT)
     for field in ("stdsetdef", "stdSetDef"):
         with pytest.raises(CommandRejected):
-            log.execute(SetFormSetting(field, "1"))
+            log.execute(SetFormField(field, "1"))
     with pytest.raises(CommandRejected):
-        log.execute(SetFormSetting("version", "9"))
+        log.execute(SetFormField("version", "9"))
     assert saved(log.document) == LAID_OUT
 
 
 def test_an_older_attribute_the_file_has_survives_every_other_edit() -> None:
     log = open_log(FULL)
-    log.execute(SetFormSetting("author", "Sam"))
-    log.execute(SetFormSetting("idbasedtr", None))
+    log.execute(SetFormField("author", "Sam"))
+    log.execute(SetFormField("idbasedtr", None))
     assert 'stdsetdef="1"' in saved(log.document)
 
 
 def test_both_older_spellings_can_be_removed() -> None:
     text = FULL.replace('stdsetdef="1"', 'stdsetdef="1" stdSetDef="0"')
     log = open_log(text)
-    log.execute(SetFormSetting("stdsetdef", None))
-    log.execute(SetFormSetting("stdSetDef", None))
+    log.execute(SetFormField("stdsetdef", None))
+    log.execute(SetFormField("stdSetDef", None))
     assert "stdsetdef" not in saved(log.document).lower()
 
 
@@ -164,12 +164,12 @@ def test_both_older_spellings_can_be_removed() -> None:
 def test_include_lines_keep_the_bytes_of_lines_that_did_not_change() -> None:
     log = open_log(FULL)
     assert include_lines(log.document) == (("local", "shop.h"), ("global", "vector"))
-    log.execute(SetFormSetting("includes", (("local", "shop.h"), ("global", "map"), ("local", "more.h"))))
+    log.execute(SetFormField("includes", (("local", "shop.h"), ("global", "map"), ("local", "more.h"))))
     text = saved(log.document)
     assert '<include location="local" impldecl="in-implementation">shop.h</include>' in text
     assert '<include location="global">map</include>' in text and '<include location="local">more.h</include>' in text
-    log.execute(SetFormSetting("includes", ()))
-    assert "<includes>" not in saved(log.document)
+    log.execute(SetFormField("includes", ()))
+    assert "<include " not in saved(log.document)
 
 
 def test_the_grid_defaults_are_shown_and_snapping_at_8_px() -> None:
