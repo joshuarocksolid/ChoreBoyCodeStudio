@@ -130,6 +130,9 @@ def friendly(type_name: str, prop_name: str, enumerator: str) -> str:
     found = _BY_NAME.get(enumerator)
     if found:
         return found
+    # inputMethodHints: ImhDigitsOnly reads "Digits only", not "Imh digits only".
+    if enumerator.startswith("Imh") and len(enumerator) > 3 and enumerator[3].isupper():
+        return split_words(enumerator[3:])
     return split_words(enumerator)
 
 

@@ -26,6 +26,7 @@ from app.qt.QtWidgets import (
     QCheckBox,
     QComboBox,
     QLabel,
+    QPushButton,
     QLineEdit,
     QScrollArea,
     QToolButton,
@@ -299,6 +300,8 @@ def test_long_property_names_elide_and_the_menu_hides_its_arrow(qapp: QApplicati
         label = next(item for item in row.findChildren(QLabel) if "inputMethodHints" in (item.toolTip() or item.text()))
         assert "inputMethodHints" in label.toolTip()
         assert "\u2026" in label.text()
+        summary = row.findChild(QPushButton, "formBuilder.summary")
+        assert summary is not None and "Imh" not in summary.accessibleName()
         add = pane.findChild(QWidget, "formBuilder.addCustomProperty")
         assert add is not None
         add.click()
