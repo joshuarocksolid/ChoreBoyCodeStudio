@@ -30,6 +30,7 @@ _NAMED = {
     "list_detail": ("itemList", "nameEdit", "emailEdit"),
     "table_search": ("searchEdit", "resultTable"),
     "dialog_ok_cancel": ("nameEdit", "emailEdit", "buttonBox"),
+    "dialog_buttons_right": ("nameEdit", "emailEdit", "buttonBox"),
     "widget": (),
     "main_window": ("centralwidget",),
     "dialog": (),
