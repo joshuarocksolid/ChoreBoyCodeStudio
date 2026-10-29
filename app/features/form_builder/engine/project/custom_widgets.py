@@ -2,8 +2,9 @@
 
 Qt-free. Nothing here imports or runs project code (CONTRACTS section 10.4).
 A module path such as ``widgets.till_display`` is looked up as a file under
-the project root, read as text and parsed with ``ast.parse``; its top-level
-classes and their base-class names are listed. Imports are not followed, so a
+the project root and read as text; each top-level class header is parsed with
+``ast.parse`` (never the whole file, see ``classes_in``) and its base-class
+names are listed. Imports are not followed, so a
 class whose base lives in another module is "found" with bases the check can't
 judge. Results are cached by path, mtime and size.
 
@@ -15,9 +16,13 @@ parses and writes that list; the caller reads and saves it (a ``RegistryStore``)
 from __future__ import annotations
 
 import ast
+import io
 import keyword
 import os
+import re
+import stat
 import threading
+import tokenize
 from dataclasses import dataclass, replace
 from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple
 
@@ -148,36 +153,171 @@ def module_file(project_root: str, module: str) -> str:
 
 
 def classes_in(project_root: str, relative: str) -> Tuple[ClassFacts, ...]:
-    """The top-level classes of a project file, read with ``ast`` and never run."""
+    """The top-level classes of a project file, read as text and never run.
+
+    The whole file never goes to ``ast.parse``: on Python 3.9 (ChoreBoy) one long
+    ``1+1+...`` or ``a.b.c...`` line well under ``MAX_BYTES`` overflows the C
+    stack and kills the editor. A linear scan skips strings and comments and
+    finds each ``class`` at the start of a line; only that header, at most
+    ``HEADER_CHARS`` long, goes to ``ast.parse``. The scan is also much faster
+    than a full parse, so a big file doesn't stall the check line.
+    """
     full = os.path.join(project_root, *relative.split("/"))
-    try:
-        info = os.stat(full)
-    except OSError:
+    if not inside_project(full, project_root):
         return ()
-    if info.st_size > MAX_BYTES:
+    read = _read_regular(full)
+    if read is None:
         return ()
-    key = (os.path.abspath(full), info.st_mtime_ns, info.st_size)
+    data, key = read
     with _CACHE_LOCK:
         cached = _CACHE.get(key)
     if cached is not None:
         return cached
-    try:
-        with open(full, "rb") as handle:
-            data = handle.read(MAX_BYTES + 1)
-        tree = ast.parse(data, filename=relative)
-    except (OSError, SyntaxError, ValueError, RecursionError, MemoryError):
-        found: Tuple[ClassFacts, ...] = ()
-    else:
-        found = tuple(
-            ClassFacts(node.name, tuple(_base_name(base) for base in node.bases), node.lineno)
-            for node in tree.body
-            if isinstance(node, ast.ClassDef)
-        )
+    found = _scan_classes(data, relative)
     with _CACHE_LOCK:
         if len(_CACHE) >= _CACHE_LIMIT:
             _CACHE.clear()
         _CACHE[key] = found
     return found
+
+
+def _read_regular(full: str) -> Optional[Tuple[bytes, Tuple[str, int, int]]]:
+    """The bytes of a regular file of at most ``MAX_BYTES`` and its cache key, else None.
+
+    Opened non-blocking and checked with ``fstat`` on the open handle, so a FIFO
+    or device swapped in after the ``isfile`` test can't block the editor. A
+    cached file is not read again (its bytes come back empty).
+    """
+    flags = os.O_RDONLY | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_CLOEXEC", 0)
+    try:
+        fd = os.open(full, flags)
+    except OSError:
+        return None
+    try:
+        info = os.fstat(fd)
+        if not stat.S_ISREG(info.st_mode) or info.st_size > MAX_BYTES:
+            return None
+        key = (os.path.abspath(full), info.st_mtime_ns, info.st_size)
+        with _CACHE_LOCK:
+            if key in _CACHE:
+                return b"", key
+        chunks: List[bytes] = []
+        size = 0
+        while size <= MAX_BYTES:
+            chunk = os.read(fd, 65536)
+            if not chunk:
+                break
+            chunks.append(chunk)
+            size += len(chunk)
+        if size > MAX_BYTES:
+            return None
+        return b"".join(chunks), key
+    except OSError:
+        return None
+    finally:
+        os.close(fd)
+
+
+#: The longest class header (``class Name(Bases):``) the scan reads, the most classes it lists per
+#: file, and how many characters of headers it tokenizes per file in all (a file of thousands of
+#: ``class A(`` lines that never close stops there instead of costing seconds).
+HEADER_CHARS = 2048
+MAX_CLASSES = 2000
+HEADER_BUDGET = 131072
+
+_SCAN = re.compile(r"^class\b|#|'''|\"\"\"|'|\"", re.M)
+_STRING_END = {
+    "'''": re.compile(r"(?:[^\\']|\\.|'(?!''))*'''", re.S),
+    '"""': re.compile(r'(?:[^\\"]|\\.|"(?!""))*"""', re.S),
+    "'": re.compile(r"(?:[^\\'\n]|\\.)*'", re.S),
+    '"': re.compile(r'(?:[^\\"\n]|\\.)*"', re.S),
+}
+
+
+def _decode(data: bytes) -> Optional[str]:
+    """Source text the way Python reads it (BOM, coding cookie), or None."""
+    try:
+        encoding, _lines = tokenize.detect_encoding(io.BytesIO(data).readline)
+        text = data.decode(encoding)
+    except (SyntaxError, LookupError, UnicodeError, ValueError):
+        return None
+    if "\0" in text:
+        return None
+    return text
+
+
+def _scan_classes(data: bytes, relative: str) -> Tuple[ClassFacts, ...]:
+    text = _decode(data)
+    if text is None:
+        return ()
+    found: List[ClassFacts] = []
+    pos = 0
+    line = 1
+    counted = 0
+    end = len(text)
+    budget = HEADER_BUDGET
+    while pos < end and len(found) < MAX_CLASSES and budget > 0:
+        match = _SCAN.search(text, pos)
+        if match is None:
+            break
+        token = match.group()
+        start = match.start()
+        if token == "#":
+            newline = text.find("\n", start)
+            pos = end if newline < 0 else newline + 1
+            continue
+        if token != "class":
+            closed = _STRING_END[token].match(text, match.end())
+            if closed is not None:
+                pos = closed.end()
+            elif len(token) == 3:
+                break  # an open triple-quoted string runs to the end of the file
+            else:
+                newline = text.find("\n", start)
+                pos = end if newline < 0 else newline + 1
+            continue
+        line += text.count("\n", counted, start)
+        counted = start
+        facts, pos = _class_header(text, start, line, relative)
+        budget -= pos - start
+        if facts is not None:
+            found.append(facts)
+    return tuple(found)
+
+
+def _class_header(text: str, start: int, line: int, relative: str) -> Tuple[Optional[ClassFacts], int]:
+    """The class whose header starts at ``start``, and where the scan goes on."""
+    snippet = text[start : start + HEADER_CHARS]
+    rows = [0]
+    for row in snippet.split("\n"):
+        rows.append(rows[-1] + len(row) + 1)
+    depth = 0
+    stop = -1
+    try:
+        for token in tokenize.generate_tokens(io.StringIO(snippet).readline):
+            if token.type == tokenize.OP:
+                if token.string in ("(", "[", "{"):
+                    depth += 1
+                elif token.string in (")", "]", "}"):
+                    depth -= 1
+                elif token.string == ":" and depth == 0:
+                    stop = rows[token.end[0] - 1] + token.end[1]
+                    break
+            elif token.type in (tokenize.NEWLINE, tokenize.ENDMARKER):
+                break
+    except (tokenize.TokenError, SyntaxError, ValueError, IndexError):
+        stop = -1
+    if stop < 0:
+        # Not a header the scan can read: skip the whole snippet (it counts against the budget).
+        return None, start + len(snippet)
+    try:
+        tree = ast.parse(snippet[:stop] + " pass\n", filename=relative)
+    except (SyntaxError, ValueError, RecursionError, MemoryError):
+        return None, start + stop
+    node = tree.body[0] if tree.body else None
+    if not isinstance(node, ast.ClassDef):
+        return None, start + stop
+    return ClassFacts(node.name, tuple(_base_name(base) for base in node.bases), line), start + stop
 
 
 def _base_name(node: ast.expr) -> str:

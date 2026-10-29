@@ -125,6 +125,28 @@ def test_the_resolver_stays_inside_the_project_and_survives_hostile_files(tmp_pa
         assert cw.check_module(str(root), module, "Anything", "QWidget").state == cw.NO_CLASS
 
 
+@pytest.mark.parametrize("line", ["x = " + "1+" * 300000 + "1", "x = a" + ".b" * 300000, "x = f" + "()" * 300000])
+def test_one_very_long_expression_does_not_kill_the_editor(tmp_path: Path, line: str) -> None:
+    """On Python 3.9 (ChoreBoy) ``ast.parse`` of such a file (600 KB, under ``MAX_BYTES``) overflows the C
+    stack and takes the editor down with it. Only class headers are parsed, so the class after it is found."""
+    root = _project(tmp_path)
+    (root / "widgets" / "long.py").write_text(
+        '"""class Fake(QWidget): pass\n"""\n' + line + "\nclass Wanted(\n    QLabel,  # the base\n):\n    pass\n",
+        encoding="utf-8",
+    )
+    check = cw.check_module(str(root), "widgets.long", "Wanted", "QLabel")
+    assert (check.state, check.bases, check.line) == (cw.FOUND, ("QLabel",), 4)
+    assert cw.check_module(str(root), "widgets.long", "Fake", "QWidget").state == cw.NO_CLASS
+
+
+def test_a_fifo_named_like_a_module_does_not_block_the_check(tmp_path: Path) -> None:
+    root = _project(tmp_path)
+    if not hasattr(os, "mkfifo"):
+        pytest.skip("no FIFOs")
+    os.mkfifo(str(root / "widgets" / "pipe.py"))
+    assert cw.classes_in(str(root), "widgets/pipe.py") == ()
+
+
 def test_the_check_is_cached_by_mtime(tmp_path: Path) -> None:
     root = _project(tmp_path)
     assert cw.check_module(str(root), "widgets.till_display", "TillDisplay", "QLabel").state == cw.FOUND
