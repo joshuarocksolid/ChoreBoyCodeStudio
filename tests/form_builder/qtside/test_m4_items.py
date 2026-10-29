@@ -84,6 +84,28 @@ def test_the_file_never_holds_the_blank_row_the_editor_keeps_for_typing(qapp) ->
     session.dispose()
 
 
+def test_row_details_stay_left_of_the_scrollbar(qapp) -> None:
+    from app.qt.QtWidgets import QScrollArea, QStyleFactory, QToolButton, QWidget
+
+    previous = qapp.style().objectName()
+    qapp.setStyle(QStyleFactory.create("Fusion"))  # a scrollbar that takes room
+    session = open_session(_form())
+    try:
+        editor = open_editor(session, session.document.by_name("choices")[0], None)
+        editor.resize(360, 240)
+        qapp.processEvents()
+        next(b for b in editor.findChildren(QToolButton) if b.accessibleName() == "Details of row 1").click()
+        qapp.processEvents()
+        scroll = editor.findChild(QScrollArea, "formBuilder.listScroll")
+        details = editor.findChild(QWidget, "formBuilder.itemDetails")
+        assert scroll.verticalScrollBar().isVisible()
+        assert details.width() <= scroll.viewport().width()
+        editor.revert()
+    finally:
+        qapp.setStyle(QStyleFactory.create(previous))
+        session.dispose()
+
+
 def test_item_icon_is_picked_in_the_session_and_matches_uic(qapp, tmp_path, monkeypatch) -> None:
     """The item details Icon row is the inspector icon editor; a pick is part of the one item step."""
     import os
