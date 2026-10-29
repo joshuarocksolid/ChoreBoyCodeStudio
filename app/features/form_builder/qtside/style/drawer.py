@@ -26,7 +26,7 @@ from app.features.form_builder.engine.ids import NodeId
 from app.features.form_builder.engine.query.selection import SelectionSource
 from app.features.form_builder.engine.session import FormSession
 from app.features.form_builder.engine.style.check import Check
-from app.features.form_builder.engine.style.selectors import RuleMatch, StyleIndex, match_sheet
+from app.features.form_builder.engine.style.selectors import RuleMatch, match_sheet, shared_index
 from app.features.form_builder.engine.style.sheet import Sheet
 from app.features.form_builder.engine.ui4.nodes import WidgetNode
 from app.features.form_builder.engine.ui4.values import StringValue
@@ -447,7 +447,7 @@ class StyleDrawer(QFrame):
         self._last_check = result
         self._paint_status()
         self._sheet = result.sheet
-        index = StyleIndex(self._session.document)
+        index = shared_index(self._session.document)
         self._matches = match_sheet(index, target, result.sheet)
         chips = []
         for match in self._matches:
@@ -520,7 +520,7 @@ class StyleDrawer(QFrame):
             self._hooks.narrate("")
             return
         self._hooks.show_matches(match.ids)
-        index = StyleIndex(self._session.document)
+        index = shared_index(self._session.document)
         names = [index.facts[node_id].name or "widget" for node_id in match.ids if node_id in index.facts]
         self._hooks.narrate(styles_sentence(names))
 

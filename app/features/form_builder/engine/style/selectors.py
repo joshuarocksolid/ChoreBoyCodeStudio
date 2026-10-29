@@ -362,6 +362,20 @@ class StyleIndex:
         return [node_id for node_id in self.order if node_id in pool]
 
 
+_SHARED: Optional[Tuple[int, int, StyleIndex]] = None
+
+
+def shared_index(document: UiDocument) -> StyleIndex:
+    """The index of ``document`` at its current revision, built once per revision (the last one is kept)."""
+    global _SHARED
+    key = (id(document), document.revision)
+    if _SHARED is not None and _SHARED[:2] == key and _SHARED[2].document is document:
+        return _SHARED[2]
+    built = StyleIndex(document)
+    _SHARED = (key[0], key[1], built)
+    return built
+
+
 def match_sheet(index: StyleIndex, owner: NodeId, sheet: Sheet) -> Tuple[RuleMatch, ...]:
     """Per rule, the widgets of ``owner``'s subtree it reaches, in document order."""
     if owner not in index.facts:

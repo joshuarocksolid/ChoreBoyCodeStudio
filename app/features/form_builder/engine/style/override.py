@@ -7,10 +7,10 @@ palette colour.
 
 from __future__ import annotations
 
-from typing import FrozenSet, Optional, Tuple
+from typing import FrozenSet, Tuple
 
 from app.features.form_builder.engine.ids import NodeId
-from app.features.form_builder.engine.style.selectors import StyleIndex, match_sheet
+from app.features.form_builder.engine.style.selectors import match_sheet, shared_index
 from app.features.form_builder.engine.style.sheet import parse_sheet
 from app.features.form_builder.engine.ui4.document import UiDocument
 from app.features.form_builder.engine.ui4.nodes import WidgetNode
@@ -18,19 +18,6 @@ from app.features.form_builder.engine.ui4.values import StringValue
 
 TEXT_NAMES: FrozenSet[str] = frozenset({"color"})
 BACKGROUND_NAMES: FrozenSet[str] = frozenset({"background", "background-color"})
-
-_CACHE: Optional[Tuple[int, int, StyleIndex]] = None
-
-
-def _index(document: UiDocument) -> StyleIndex:
-    global _CACHE
-    key = (id(document), document.revision)
-    if _CACHE is not None and _CACHE[:2] == key:
-        return _CACHE[2]
-    built = StyleIndex(document)
-    _CACHE = (key[0], key[1], built)
-    return built
-
 
 def _sheet_of(node: object) -> str:
     entry = node.prop("styleSheet") if isinstance(node, WidgetNode) else None
@@ -55,7 +42,7 @@ def sheet_sets(document: UiDocument, widget: NodeId, names: FrozenSet[str]) -> b
     owners = sheet_owners(document, widget)
     if not owners:
         return False
-    index = _index(document)
+    index = shared_index(document)
     for owner in owners:
         sheet = parse_sheet(_sheet_of(document.node(owner)))
         if sheet.errors():

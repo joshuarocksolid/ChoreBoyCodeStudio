@@ -436,7 +436,9 @@ class FormPreview:
         if self._identity():
             self._font_rules_ready = False
             self._clear_saved_fonts(widget)
-            widget.setStyleSheet(sheet)
+            # The realizer has usually just set this text; setting it again repolishes the whole form.
+            if widget.styleSheet() != sheet:
+                widget.setStyleSheet(sheet)
             widget.setFont(QFont(startup_font()))
             entry = self._session.document.root.prop("font")
             if entry is not None:

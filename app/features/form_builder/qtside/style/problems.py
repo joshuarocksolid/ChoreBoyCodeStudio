@@ -13,7 +13,7 @@ from typing import List, Optional, Tuple
 
 from app.features.form_builder.engine.diagnostics import DiagnosticLocation, FormDiagnostic, Severity
 from app.features.form_builder.engine.session import FormSession
-from app.features.form_builder.engine.style.selectors import StyleIndex, match_sheet
+from app.features.form_builder.engine.style.selectors import StyleIndex, match_sheet, shared_index
 from app.features.form_builder.engine.ui4.document import UiDocument
 from app.features.form_builder.engine.ui4.nodes import WidgetNode
 from app.features.form_builder.qtside.style.verdict import check_text
@@ -51,7 +51,7 @@ def style_diagnostics(document: UiDocument) -> Tuple[FormDiagnostic, ...]:
             found.append(FormDiagnostic("FB033", Severity.WARNING, unreadable_message(name), location, SOURCE))
             continue
         if index is None:
-            index = StyleIndex(document)
+            index = shared_index(document)
         for match in match_sheet(index, node.id, result.sheet):
             if match.rule < 0 or (match.count > 0 and match.valid):
                 continue
