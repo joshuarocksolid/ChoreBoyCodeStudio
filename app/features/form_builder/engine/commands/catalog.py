@@ -12,6 +12,7 @@ from typing import Any, ClassVar, Hashable, Literal, Optional, Tuple
 from app.features.form_builder.engine.commands import planning
 from app.features.form_builder.engine.commands.base import PlanContext
 from app.features.form_builder.engine.commands.placement import Placement
+from app.features.form_builder.engine.commands.catalog_ext.events import require_logic_writable
 from app.features.form_builder.engine.ids import NodeId
 from app.features.form_builder.engine.ui4.document import UiDocument
 from app.features.form_builder.engine.ui4.spec import Fragment, NodeSpec
@@ -507,6 +508,7 @@ class AddConnection(_CommandBase):
     index: Optional[int] = None
 
     def apply(self, doc: UiDocument, ctx: PlanContext) -> NodeId:
+        require_logic_writable(doc)
         return planning.add_connection(
             doc, ctx, self.sender, self.signal, self.receiver, self.slot, self.index
         )
@@ -525,6 +527,11 @@ class EditConnection(_CommandBase):
     slot: Optional[str] = None
 
     def apply(self, doc: UiDocument, ctx: PlanContext) -> None:
+        require_logic_writable(doc)
+        node = doc.get(self.id)
+        if node is not None and self.receiver is not None and node.field("receiver") != self.receiver:
+            # A hint point belongs to the old endpoint (UX D7); the new one starts without.
+            planning.set_field(doc, ctx, self.id, "hints", None)
         planning.edit_connection(
             doc, ctx, self.id, self.sender, self.signal, self.receiver, self.slot
         )
@@ -540,6 +547,7 @@ class MoveConnection(_CommandBase):
     to_index: int
 
     def apply(self, doc: UiDocument, ctx: PlanContext) -> None:
+        require_logic_writable(doc)
         planning.move_connection(doc, ctx, self.id, self.to_index)
 
 
