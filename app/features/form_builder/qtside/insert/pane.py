@@ -575,31 +575,34 @@ class InsertPane(QWidget):
     # Filter and rows -----------------------------------------------------------------
 
     def _filter_changed(self, text: str) -> None:
-        self._query = text.strip()
-        self._refill()
+        query = text.strip()
+        changed = query != self._query
+        self._query = query
+        # A new query starts on its first result, so Enter inserts what the list shows first.
+        self._refill(first=changed)
 
     def _all_entries(self) -> Tuple[Entry, ...]:
         return self._entries + self._custom
 
-    def _refill(self, select_category: str = "") -> None:
+    def _refill(self, select_category: str = "", first: bool = False) -> None:
         query = self._query
         if query:
             hits = search(self._all_entries(), self._windows, query)
             rows = search_rows(hits, query)
         else:
             rows = browse_rows(self._all_entries(), self._memory.recent(), self._memory.expanded_states())
-        self._fill(rows, select_category)
+        self._fill(rows, select_category, first)
         self._apply_view()
 
     def refresh_recent(self) -> None:
         if not self._query:
             self._refill()
 
-    def _fill(self, rows: Sequence[Row], select_category: str) -> None:
+    def _fill(self, rows: Sequence[Row], select_category: str, first: bool = False) -> None:
         current_key = ""
         previous = self.body.currentItem()
         previous_row = _row_of(previous)
-        if previous_row is not None and previous_row.kind == ENTRY:
+        if not first and previous_row is not None and previous_row.kind == ENTRY:
             current_key = previous_row.key
         self.body.clear()
         entries_found = 0
