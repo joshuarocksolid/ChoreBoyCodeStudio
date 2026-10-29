@@ -103,6 +103,8 @@ _EMPTY_CONTAINER = frozenset({"QWidget", "QFrame", "QGroupBox", "QDialog", "QScr
 LABEL_HEIGHT = 18
 LABEL_PADDING = 6
 BADGE_SLOT = 16
+#: UX-PROB-004. Screen pixels, so zoom does not grow it.
+REFUSAL_BADGE = 12
 HANDLE_SIZE = 7
 HANDLE_HIT = 12
 PILL_LONG = 32
@@ -195,6 +197,9 @@ class FrameInputs:
     knobs: KnobSet = EMPTY
     #: What a landed knob commit still reads. The controller clears it.
     readout: Optional[Readout] = None
+    #: One tooltip per widget whose live value Qt refused. Empty on a normal
+    #: frame, so a selection change does not walk the form to look for them.
+    refusals: Tuple[Tuple[NodeId, str], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -843,6 +848,35 @@ def _band(items: List[Item], view: ViewMap, gesture: Banding) -> None:
         items.append(Stroke(view.to_canvas(form_rect).grown(1), "hover", 1, "solid"))
 
 
+def _refusal_badges(
+    faces: Dict[Hashable, _Face],
+    requests: List[ChipRequest],
+    static: StaticLayer,
+    inputs: FrameInputs,
+) -> None:
+    """One problem badge per refused widget. O(1) when nothing was refused."""
+    marks = inputs.refusals
+    if not marks:
+        return
+    document = inputs.document
+    for node_id, text in marks:
+        if not text:
+            continue
+        rect = _shown_rect(static, inputs.view, document, inputs.gesture, node_id)
+        if rect is None:
+            continue
+        _ask(
+            faces,
+            requests,
+            ("refusal", node_id),
+            rect,
+            CanvasSize(REFUSAL_BADGE, REFUSAL_BADGE),
+            BADGE_CORNERS,
+            document,
+            _Face("badge", node_id, "problem", "", OpenProblem(node_id, text), text),
+        )
+
+
 def _requests(
     static: StaticLayer,
     inputs: FrameInputs,
@@ -877,6 +911,7 @@ def _requests(
         _readout_chip(faces, requests, inputs, readout)
     if not previewing(inputs.gesture):
         _knob_chips(faces, requests, inputs)
+    _refusal_badges(faces, requests, static, inputs)
     # An empty map must not walk the form. Selection repaint is on an 8 ms budget.
     if inputs.problems:
         for node in document.iter_preorder():
@@ -1229,7 +1264,7 @@ def _seat_items(
         face = faces[seat.key]
         leader = None if isinstance(seat, CornerSeat) else seat.leader
         if face.kind == "badge":
-            items.append(Badge(seat.rect, "error", face.role, leader))
+            items.append(Badge(seat.rect, "error", face.role, leader, face.tip))
         else:
             items.append(
                 Chip(seat.rect, face.text, face.role, leader, chrome_dock and isinstance(seat, DockSeat), face.tip)

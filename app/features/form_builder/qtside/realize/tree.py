@@ -691,6 +691,7 @@ class _Structure(_LayoutSlots):
                 problems=self._problems,
                 refusals=self._refusals,
             )
+            settle_page_index(widget, current)
         sizes = node.prop("cbcsSplitterSizes")
         if sizes is not None and isinstance(widget, QSplitter):
             values = splitter_sizes(sizes.value)
@@ -1568,6 +1569,25 @@ def _remove_stack_page(widget: QWidget, index: int, page: QWidget) -> None:
         widget.removeItem(index)
     elif isinstance(widget, QStackedWidget):
         widget.removeWidget(page)
+
+
+def settle_page_index(widget: QWidget, entry: object) -> None:
+    """Leave a page container where a fresh build would after this index.
+
+    ``setCurrentIndex`` does nothing when the index is outside the pages.
+    A widget filled from empty therefore stays on page 0. A patch that
+    already had another page current has to move there explicitly.
+    """
+    if not isinstance(widget, (QTabWidget, QToolBox, QStackedWidget)):
+        return
+    value = getattr(getattr(entry, "value", None), "value", None)
+    if not isinstance(value, int):
+        return
+    count = widget.count()
+    if count <= 0 or 0 <= value < count:
+        return
+    if widget.currentIndex() != 0:
+        widget.setCurrentIndex(0)
 
 
 def _current_index(node: WidgetNode) -> int:
