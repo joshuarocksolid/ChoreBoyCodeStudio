@@ -545,6 +545,17 @@ def test_the_pixmap_row_says_when_the_label_text_hides_the_picture(qapp: QApplic
         warning = pane.findChild(QLabel, "formBuilder.pictureWarning")
         assert warning is not None and warning.isVisible()
         assert "text replaces this picture" in warning.text()
+        clear = pane.findChild(QPushButton, "formBuilder.pictureClearText")
+        assert clear is not None and clear.isVisible() and clear.focusPolicy() != Qt.FocusPolicy.NoFocus
+        steps = len(session.log.entries())
+        clear.click()
+        pane.flush()
+        assert '<string>Photo</string>' not in session.text() and "<pixmap>:/icons/save.png</pixmap>" in session.text()
+        assert len(session.log.entries()) == steps + 1
+        assert not warning.isVisible() and not clear.isVisible()
+        session.log.undo()
+        pane.flush()
+        assert "<string>Photo</string>" in session.text()
     finally:
         _close(window, pane, realizer, session, qapp)
 

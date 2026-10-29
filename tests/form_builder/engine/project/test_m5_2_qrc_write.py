@@ -85,6 +85,18 @@ def test_same_name_different_bytes_gets_a_number_and_same_bytes_is_reused(tmp_pa
     assert text.count("<file>pictures/logo_2.png</file>") == 1
 
 
+def test_a_file_listed_under_an_alias_is_reused_not_listed_again(tmp_path: Path) -> None:
+    root = _project(tmp_path)
+    qrc = root / "forms" / "resources.qrc"
+    add_pictures(str(root), str(qrc), [_source(tmp_path)])
+    layout = set_alias(parse_qrc(qrc.read_text(encoding="utf-8")), 0, 0, "shop_logo.png")
+    qrc.write_text(render_qrc(layout), encoding="utf-8")
+    outcome = add_pictures(str(root), str(qrc), [_source(tmp_path)])
+    assert outcome.resource_paths == (":/shop_logo.png",)
+    assert outcome.copied == ()
+    assert qrc.read_text(encoding="utf-8").count("<file") == 1
+
+
 def test_a_picture_listed_twice_in_one_call_is_listed_once(tmp_path: Path) -> None:
     root = _project(tmp_path)
     source = _source(tmp_path)

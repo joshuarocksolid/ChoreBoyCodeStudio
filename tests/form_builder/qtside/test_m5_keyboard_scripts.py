@@ -1107,11 +1107,6 @@ def test_k21_form_settings(shop: Shop) -> None:
 # --------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(
-    strict=True,
-    raises=Findings,
-    reason="F-k22-duplicate-picture: New Form from a template adds a second pictures/logo.png entry when the qrc lists that file under an alias",
-)
 def test_k22_templates(shop: Shop) -> None:
     script = Script(shop, "K22")
     kb = script.kb

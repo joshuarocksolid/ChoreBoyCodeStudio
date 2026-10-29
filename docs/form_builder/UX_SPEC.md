@@ -1965,6 +1965,8 @@ While an entry has focus, the selection is its action: the inspector shows it, s
 
 **UX-RES-007** `M5.2` `[A]` A picture listed in a `.qrc` whose file is missing is FB032 Warning: "{qrc} lists {file}, but the file is missing." on each form that includes it, with the fix [Open {qrc}]. The canvas draws it as UX-PED-104. Our `*_rc.py` and `rcc`'s register the same path-to-bytes map (CONTRACTS §15 row `codegen.resources`), and a run of a fixture project shows the icon through our generated import (R3 175).
 
+**UX-RES-008** `M5.8b` `[S K T]` A label that still has text shows the text, not its Picture, when the app runs (uic sets the text last). The Picture row's note ("The label's text replaces this picture when the app runs. Clear the text to show it.") carries a "Clear text" button, one Tab stop under the note. It removes the text of the selected labels in its own undo step "Clear text" (toast "Cleared the label's text · Undo"), separate from the step that set the picture: Undo brings the text back and keeps the picture, and nothing deletes text the user typed without their pressing it.
+
 #### 13.2.4 Style sheets, colours and theme (STYLE)
 
 **UX-STYLE-001** `M5.3` `[S K]` Entry points. Appearance gains a "Style sheet" row on every widget and on the form: a summary ("None", "1 rule", "{n} rules", or "Can't be read" in `fb.warning`) and an [Edit…] button; Enter on the row opens the drawer. The canvas and outline context menu has "Edit style sheet…"; the Form menu has "Style sheet of the form…". The drawer opens on the selected widget's own sheet (the form's when the form is selected).
