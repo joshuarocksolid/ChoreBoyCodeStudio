@@ -14,6 +14,7 @@ from app.features.form_builder.engine.commands.base import CommandRejected
 from app.features.form_builder.engine.commands.catalog_ext.main_window import AddEntry, MoveEntry
 from app.features.form_builder.engine.ids import NodeId
 from app.features.form_builder.engine.query import actions as q
+from app.features.form_builder.engine.query.drop_target import note_painted_parts
 from app.features.form_builder.engine.query.hit_index import Rect
 from app.features.form_builder.engine.session import FormSession
 from app.features.form_builder.qtside.actions.editing import EditView, Key, LevelView, MenuEditor
@@ -29,6 +30,7 @@ from app.features.form_builder.qtside.actions.paint_model import (
 )
 from app.features.form_builder.qtside.canvas import mime_hooks
 from app.features.form_builder.qtside.canvas.layers.menu_edit import NAME as LAYER
+from app.features.form_builder.qtside.canvas.layers.menu_edit import menu_font
 from app.qt.QtCore import QEvent, QObject, QPoint, Qt, QTimer
 from app.qt.QtGui import QColor, QFont, QFontMetrics, QKeyEvent, QPalette
 from app.qt.QtWidgets import QApplication, QLineEdit, QMenuBar, QToolBar, QWidget
@@ -37,6 +39,15 @@ CENTRAL_REFUSAL = "The central area belongs to the window. Delete what's inside 
 #: Hover a closed title this long with something in hand and it opens (UX-MAIN-009).
 OPEN_ON_HOVER_MS = 400
 MIME_ACTIONS = "application/x-cbcs-actions"
+
+
+def _menu_covers(items: List[PaintItem]) -> List[Tuple[NodeId, str, Rect]]:
+    """Open menu panels, in form pixels, so a widget drop on one is refused."""
+    covers = []
+    for item in items:
+        if item.kind == "box" and item.host:
+            covers.append((NodeId(item.host), "menu", Rect(item.x, item.y, item.width, item.height)))
+    return covers
 
 _NAMES = {
     Qt.Key.Key_Left: "Left",
@@ -433,8 +444,13 @@ class MenuEditGlue(QObject):
         assert line is not None
         self._syncing = True
         try:
-            font = QFont(QApplication.font())
-            font.setPixelSize(max(8, int(round(12 * factor))))
+            font = menu_font(
+                QFont(),
+                factor,
+                state.font_family,
+                state.font_point_size,
+                state.font_pixel_size,
+            )
             line.setFont(font)
             pal = line.palette()
             pal.setColor(QPalette.ColorRole.Text, self._ink())
@@ -515,12 +531,21 @@ class MenuEditGlue(QObject):
     def _build_state(self) -> PaintState:
         doc = self._session.document
         if not q.is_main_window(doc):
+            note_painted_parts(id(doc), ())
             return PaintState()
         root = getattr(self._realizer, "root_widget", None)
         self._maps = []
         self._hints = []
         if root is None:
+            note_painted_parts(id(doc), ())
             return PaintState()
+        font = root.font()
+        points = float(font.pointSizeF())
+        pixels = int(font.pixelSize())
+        if points < 0:
+            points = 0.0
+        if pixels < 0:
+            pixels = 0
         if not self._editor.active:
             items = self._idle_hints(root)
         else:
@@ -529,7 +554,8 @@ class MenuEditGlue(QObject):
         if landing is not None:
             line = landing.line
             items.append(PaintItem("drop", line.x, line.y, line.width, line.height))
-        return PaintState(tuple(items))
+        note_painted_parts(id(doc), _menu_covers(items))
+        return PaintState(tuple(items), font.family(), points, pixels)
 
     def _bar_widgets(self, node_id: NodeId) -> Optional[QWidget]:
         return getattr(self._realizer, "widget_for")(node_id)
@@ -557,7 +583,7 @@ class MenuEditGlue(QObject):
 
     def _idle_hints(self, root: QWidget) -> List[PaintItem]:
         doc = self._session.document
-        metrics = QFontMetrics(QApplication.font())
+        metrics = QFontMetrics(root.font())
         out: List[PaintItem] = []
         parts = q.parts(doc)
         for node in tuple(parts["menubar"]) + tuple(parts["toolbar"]):
@@ -579,7 +605,7 @@ class MenuEditGlue(QObject):
         self._maps.append(HostMap(host, kind, q.host_phrase(doc, host), True, Rect(*own), tuple(boxes)))
 
     def _open_items(self, root: QWidget, view: EditView) -> List[PaintItem]:
-        metrics = QFontMetrics(QApplication.font())
+        metrics = QFontMetrics(root.font())
         items: List[PaintItem] = []
         anchor: Optional[Tuple[int, int, int, int]] = None
         page_width = root.width()
@@ -626,7 +652,16 @@ class MenuEditGlue(QObject):
         width = MIN_MENU_WIDTH
         for row in level.reuse:
             width = max(width, metrics.horizontalAdvance(row.label) + metrics.horizontalAdvance(row.shortcut) + 56)
-        items.append(PaintItem("box", x, y, width, ROW_HEIGHT * len(level.reuse)))
+        items.append(
+            PaintItem(
+                "box",
+                x,
+                y,
+                width,
+                ROW_HEIGHT * len(level.reuse),
+                host=int(level.host) if level.host is not None else 0,
+            )
+        )
         for index, row in enumerate(level.reuse):
             items.append(
                 PaintItem("reuse", x, y + index * ROW_HEIGHT, width, ROW_HEIGHT, row.label, row.shortcut, current=index == level.reuse_current)
@@ -655,7 +690,9 @@ class MenuEditGlue(QObject):
         else:
             x, y = anchor[0], anchor[1] + anchor[3]
         height = ROW_HEIGHT * len(level.rows)
-        items.append(PaintItem("box", x, y, width, height))
+        items.append(
+            PaintItem("box", x, y, width, height, host=int(level.host) if level.host is not None else 0)
+        )
         if level.host is not None:
             doc = self._session.document
             entries = q.entries(doc, level.host)

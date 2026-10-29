@@ -12,7 +12,7 @@ from app.features.form_builder.qtside.style import gateway
 from app.features.form_builder.qtside.style.drawer import StyleDrawer, chip_text, styles_sentence
 from app.qt.QtCore import Qt
 from app.qt.QtTest import QTest
-from app.qt.QtWidgets import QApplication, QWidget
+from app.qt.QtWidgets import QApplication, QLineEdit, QWidget
 from tests.unit.features.form_builder.test_workbench import _open
 
 pytestmark = [pytest.mark.usefixtures("qapp"), pytest.mark.unit]
@@ -55,6 +55,29 @@ def _type(drawer: StyleDrawer, text: str) -> None:
     QTest.keyClicks(drawer.editor, text)
     QTest.qWait(380)
     QApplication.processEvents()
+
+
+def test_ctrl_f_in_the_drawer_finds_in_the_editor(qapp, tmp_path: Path) -> None:  # type: ignore[no-untyped-def]
+    host, surface = _surface(qapp, tmp_path)
+    try:
+        session = surface.session
+        ok = session.document.by_name("okButton")[0]
+        assert gateway.open_drawer(session, ok)
+        drawer = _drawer(surface)
+        drawer.editor.setPlainText("alpha beta alpha")
+        drawer.editor.setFocus()
+        QTest.keyClick(drawer.editor, Qt.Key.Key_F, Qt.KeyboardModifier.ControlModifier)
+        qapp.processEvents()
+        find = drawer.findChild(QLineEdit, "formBuilder.styleFindEdit")
+        assert find is not None and find.isVisible()
+        search = surface.findChild(QLineEdit, "formBuilder.inspectorSearch")
+        assert search is None or not search.hasFocus()
+        find.setText("beta")
+        drawer.find_next()
+        assert drawer.editor.textCursor().selectedText() == "beta"
+    finally:
+        surface.release()
+        host.close()
 
 
 def test_typing_a_rule_restyles_the_canvas_after_300_ms_and_the_status_and_chip_follow(qapp, tmp_path: Path) -> None:  # type: ignore[no-untyped-def]

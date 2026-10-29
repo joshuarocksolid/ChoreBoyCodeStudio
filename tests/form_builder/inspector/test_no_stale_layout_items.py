@@ -54,6 +54,12 @@ def test_repainting_the_inspector_holds_no_new_layout_items() -> None:
             before = _held_items()
             tour()
             tour()
+            third = _held_items()
+            for _ in range(3):
+                tour()
+            # Past the warm-up a tour adds nothing: the Layout group drops its rows
+            # with delete_now, so no wrapper outlives its C++ item.
+            assert _held_items() - third <= 0
             # Before the fix every repaint wrapped every inspector layout item
             # (thousands per tour), and a later object came back as a stale
             # QWidgetItem inside tour(). A few wrappers per class remain from

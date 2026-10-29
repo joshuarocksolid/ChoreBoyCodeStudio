@@ -265,6 +265,11 @@ class PropertiesPage(QWidget):
     def focus_tab_order(self) -> None:
         self._form.focus_tab_order()
 
+    def note_tab_order(self) -> None:
+        """Tab stops changed. Repaint the form's list and leave the property rows alone."""
+        if self._form.isVisible():
+            self._form.refresh_tab_order()
+
     def set_match_color(self, color: str) -> None:
         self._match_color = color
 
@@ -623,6 +628,9 @@ class _FormSection(QWidget):
     def focus_tab_order(self) -> None:
         """Form > Overlays > Tab order list… (UX-MODE-003)."""
         self._tab_body.focus_list()
+
+    def refresh_tab_order(self) -> None:
+        self._tab_body.show(())
 
     def note_focus(self, focus: object) -> None:
         self._window.note_focus(focus)
@@ -1221,6 +1229,15 @@ class _Row(QWidget):
         if not self._invalid and self._editor is not None:
             self._editor.show(view.value)
             self._show_canvas_refusal(view)
+        if isinstance(view, OpenRow) and not self._invalid:
+            # isVisible() is false while a parent is still hidden, so the canvas
+            # refusal caption is kept by its text. An empty note still clears a
+            # caption left on a reused row.
+            current = "" if self._caption is None else self._caption.text()
+            if view.note:
+                self._set_caption(view.note, error=False)
+            elif current != CANVAS_REFUSED_TEXT:
+                self._set_caption("", error=False)
         self._elide_label()
         self._sync_reset()
 

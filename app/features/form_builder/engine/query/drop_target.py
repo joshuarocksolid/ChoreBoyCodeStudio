@@ -279,6 +279,35 @@ def blocked_ids(doc: UiDocument, source_ids: Sequence[NodeId]) -> FrozenSet[Node
     return frozenset(found)
 
 
+_PAINTED_DOC = 0
+_PAINTED: Tuple[Tuple[NodeId, str, Rect], ...] = ()
+
+
+def note_painted_parts(document_id: int, covers: Sequence[Tuple[NodeId, str, Rect]]) -> None:
+    """The open menus painted on the page. One document at a time."""
+    global _PAINTED_DOC, _PAINTED
+    _PAINTED_DOC = document_id
+    _PAINTED = tuple(covers)
+
+
+def painted_parts(document_id: int) -> Tuple[Tuple[NodeId, str, Rect], ...]:
+    if document_id != _PAINTED_DOC:
+        return ()
+    return _PAINTED
+
+
+def cover_parts(host: DropHost, covers: Sequence[Tuple[NodeId, str, Rect]]) -> DropHost:
+    """Painted open menus are part hosts. A widget dropped on one is refused."""
+    extra = []
+    for node, noun, rect in covers:
+        if rect.width <= 0 or rect.height <= 0:
+            continue
+        extra.append(DropHost(node, "part", "menu", rect, noun=noun or "menu"))
+    if not extra:
+        return host
+    return replace(host, children=tuple(extra) + host.children)
+
+
 def hosts_from(doc: UiDocument, rect_of: Dict[NodeId, Rect]) -> DropHost:
     root = doc.root
     built = _widget_host(doc, rect_of, root.id, root.object_name or "form")

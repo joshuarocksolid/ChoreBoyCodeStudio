@@ -11,7 +11,7 @@ import os
 from typing import Any, Callable, Dict, FrozenSet, List, Optional, Sequence, Set, Tuple
 
 from app.qt.QtCore import QEvent, QItemSelectionModel, QMimeData, QObject, QPoint, QRect, QSize, Qt, QTimer
-from app.qt.QtGui import QBrush, QColor, QDrag, QIcon
+from app.qt.QtGui import QBrush, QColor, QDrag, QIcon, QPalette
 from app.qt.QtWidgets import (
     QActionGroup,
     QApplication,
@@ -605,6 +605,19 @@ class FormToolbar(QWidget):
         self._tokens = tokens
         self.setStyleSheet(_toolbar_qss(tokens))
         self._paint_glyphs()
+        self._paint_label_ink(tokens)
+
+    def _paint_label_ink(self, tokens: ShellThemeTokens) -> None:
+        """Button text follows the tokens. A raised tool button otherwise keeps the palette ink."""
+        ink = QColor(tokens.text_primary)
+        quiet = QColor(tokens.text_muted or tokens.text_primary)
+        for button in self.findChildren(QToolButton):
+            palette = button.palette()
+            palette.setColor(QPalette.ColorRole.ButtonText, ink)
+            palette.setColor(QPalette.ColorRole.WindowText, ink)
+            palette.setColor(QPalette.ColorGroup.Disabled, QPalette.ColorRole.ButtonText, quiet)
+            palette.setColor(QPalette.ColorGroup.Disabled, QPalette.ColorRole.WindowText, quiet)
+            button.setPalette(palette)
 
     def _paint_glyphs(self) -> None:
         tokens = self._tokens
@@ -644,14 +657,20 @@ def _toolbar_qss(tokens: ShellThemeTokens) -> str:
     )
     selectors = ["QToolButton#formBuilder\\.%s" % name for name in names]
     faint = tokens.gutter_text or tokens.text_primary
+    # Disabled Aa and Widths were gutter ink, which sits on the 4.5:1 floor in dark.
+    # text_muted clears that floor, and 7:1 in high contrast.
+    quiet = tokens.text_muted or tokens.text_primary
+    disabled = ",\n".join("%s:disabled" % selector for selector in selectors)
     return "".join(
         (
             "QWidget#formBuilder\\.toolbar { background: %s; color: %s; border-bottom: 1px solid %s; }"
             % (tokens.panel_bg, tokens.text_primary, tokens.border),
+            "QWidget#formBuilder\\.toolbar QToolButton { color: %s; }" % tokens.text_primary,
             mode_group_qss(tokens, "formBuilder\\.modeGroup"),
             "QWidget#formBuilder\\.modeGroup QToolButton#formBuilder\\.viewXml { border-right: none; }",
             "QFrame#formBuilder\\.modeDivider { background: %s; border: none; }" % tokens.border,
             flat_tool_button_qss(tokens, selectors),
+            "%s { color: %s; }\n" % (disabled, quiet),
             "QLabel#formBuilder\\.saveState { color: %s; background: transparent; border: none; }" % faint,
             "QLabel#formBuilder\\.menuCaption { color: %s; background: transparent; border: none; }"
             % tokens.text_primary,
