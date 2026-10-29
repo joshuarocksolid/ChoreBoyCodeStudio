@@ -2856,6 +2856,10 @@ class FormWorkbench(QWidget):
             self.open_right()
         self.inspector.focus_tab(tab)
 
+    def focus_inspector_tab(self, tab: TabId) -> None:
+        """Open the inspector (a closed side panel opens) on ``tab``, as Alt+4 and Alt+5 do."""
+        self._focus_inspector_tab(tab)
+
     def focus_share(self, axis: str) -> None:
         """Open the Size group on the current selection and focus its share spin for ``axis``."""
         self._focus_inspector_tab(TabId.PROPERTIES)
