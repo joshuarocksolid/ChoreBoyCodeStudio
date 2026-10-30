@@ -88,6 +88,7 @@ class WindowRead:
     facts: WindowFacts = WindowFacts()
     relative: str = ""
     source: Optional[str] = None
+    followed: Tuple[str, ...] = ()
 
 
 __all__ = ["MethodFacts", "MethodKind", "ReadStatus", "WindowFacts", "WindowRead"]

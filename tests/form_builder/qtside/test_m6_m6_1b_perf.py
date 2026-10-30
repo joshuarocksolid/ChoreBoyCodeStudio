@@ -9,6 +9,7 @@ is one discrete action, so its added cost over a bare repaint stays within
 
 from __future__ import annotations
 
+import gc
 import json
 import os
 import time
@@ -162,17 +163,21 @@ def test_behavior_share_and_picker_keystroke(tmp_path, qapp: QApplication) -> No
         assert pumped <= 16.0
 
         canvas = kb.surface.workbench.canvas
+        gc.collect()
         bares = []
         for _ in range(8):
+            gc.collect()
             started = time.process_time()
             canvas.repaint()
             inspector.repaint()
             qapp.processEvents()
             bares.append(time.process_time() - started)
         bare = _p95(bares)
+        gc.collect()
         one = (slot_step("edit0", "clear()"),)
         commits = []
         for index in range(8):
+            gc.collect()
             steps = one if index % 2 == 0 else ()
             started = time.process_time()
             session.log.execute(SetEventSteps("button0", "clicked", steps, caption="Connect"))

@@ -6,6 +6,7 @@ Not on each keystroke (UX D12). Inherited names come from the stock Qt class
 
 from __future__ import annotations
 
+import os
 from typing import Any, Dict, Optional, Tuple
 
 from app.features.form_builder.engine.events import PRIORITY_DIAGNOSTICS
@@ -46,6 +47,7 @@ def publish(surface: Any) -> None:
         inherited=inherited_names(base),
         connect_by_name=connect,
     )
+    surface._cbcs_followed = tuple(getattr(read, "followed", ()) or ())
     session.diagnostics.publish(SOURCE, rows)
 
 
@@ -62,8 +64,33 @@ def arm(surface: Any) -> None:
     bridge = getattr(surface, "code_bridge", None)
     listen = getattr(bridge, "on_saved", None)
     if callable(listen):
-        surface._cbcs_checks_unlisten = listen(lambda _path: publish(surface))
+        surface._cbcs_checks_unlisten = listen(lambda path: _on_saved(surface, path))
     publish(surface)
+
+
+def _on_saved(surface: Any, path: object) -> None:
+    """Rerun this form's checks only for its window file or a base of that file."""
+    saved = str(path or "")
+    if not saved:
+        return
+    scope = getattr(getattr(surface, "session", None), "scope", None)
+    window = str(getattr(scope, "window_path", "") or "")
+    root = str(getattr(scope, "project_root", "") or "")
+    if window and _same_file(saved, window):
+        publish(surface)
+        return
+    for relative in tuple(getattr(surface, "_cbcs_followed", ()) or ()):
+        full = os.path.join(root, *str(relative).split("/")) if root else str(relative)
+        if _same_file(saved, full):
+            publish(surface)
+            return
+
+
+def _same_file(left: str, right: str) -> bool:
+    try:
+        return os.path.realpath(left) == os.path.realpath(right)
+    except OSError:
+        return os.path.abspath(left) == os.path.abspath(right)
 
 
 def _registry(session: Any) -> Tuple[object, ...]:

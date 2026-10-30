@@ -1,12 +1,14 @@
 # pyright: reportAttributeAccessIssue=false
 """UX-M6-003 for the method page, the gesture, and a window-file save.
 
-Process CPU time, 20 runs, on the 300-widget reference form and a 2,000-line
+Process CPU time, 40 runs, on the 300-widget reference form and a 2,000-line
 window file of 150 methods. p95 is the high sample (index ``int(n * 0.95)``).
+The clean-tab path saves the window file. The dirty-tab path does not.
 """
 
 from __future__ import annotations
 
+import gc
 import os
 import time
 
@@ -23,9 +25,9 @@ from app.qt.QtWidgets import QApplication, QLineEdit  # noqa: E402
 from tests.form_builder.qtside.test_m3_keyboard_scripts import _close, _session  # noqa: E402
 from tests.form_builder.qtside.test_m6_m6_1b_perf import _form, _p95  # noqa: E402
 
-pytestmark = [pytest.mark.perf, pytest.mark.timeout(180)]
+pytestmark = [pytest.mark.perf, pytest.mark.timeout(300)]
 
-_RUNS = 20
+_RUNS = 40
 
 
 def _window_source() -> str:
@@ -49,6 +51,15 @@ def _window_source() -> str:
     return "\n".join(lines[:2000]) + "\n"
 
 
+def _median_ms(samples: list) -> float:
+    ordered = sorted(samples)
+    count = len(ordered)
+    mid = count // 2
+    if count % 2:
+        return ordered[mid] * 1000.0
+    return (ordered[mid - 1] + ordered[mid]) * 500.0
+
+
 def test_method_page_gesture_and_save_checks(tmp_path, qapp: QApplication) -> None:
     print("load", os.getloadavg())
     window, kb, guard = _session(tmp_path, qapp, _form())
@@ -62,6 +73,7 @@ def test_method_page_gesture_and_save_checks(tmp_path, qapp: QApplication) -> No
         qapp.processEvents()
         field = picker.findChild(QLineEdit, "formBuilder.eventPickerMethod")
         assert field is not None
+        gc.collect()
         samples = []
         for index in range(_RUNS):
             started = time.process_time()
@@ -69,7 +81,10 @@ def test_method_page_gesture_and_save_checks(tmp_path, qapp: QApplication) -> No
             qapp.processEvents()
             samples.append(time.process_time() - started)
         keystroke = _p95(samples)
-        print("method keystroke p95 %.2f ms  min %.2f  max %.2f  load %s" % (keystroke, min(samples) * 1000, max(samples) * 1000, os.getloadavg()))
+        print(
+            "method keystroke p95 %.2f ms  median %.2f  min %.2f  max %.2f  load %s"
+            % (keystroke, _median_ms(samples), min(samples) * 1000, max(samples) * 1000, os.getloadavg())
+        )
         assert keystroke <= 16.0
         picker.hide()
         qapp.processEvents()
@@ -82,7 +97,6 @@ def test_method_page_gesture_and_save_checks(tmp_path, qapp: QApplication) -> No
         opened = window._workspace_controller.widget_for_path(str(path))
         assert opened is not None
         opened.moveCursor(QTextCursor.MoveOperation.End)
-        opened.insertPlainText("\n# scratch\n")
         qapp.processEvents()
 
         canvas = surface.workbench.canvas
@@ -96,39 +110,57 @@ def test_method_page_gesture_and_save_checks(tmp_path, qapp: QApplication) -> No
                 editor.repaint()
             qapp.processEvents()
 
-        bares = []
-        for _ in range(_RUNS):
-            started = time.process_time()
-            _repaint()
-            bares.append(time.process_time() - started)
-        bare = _p95(bares)
-        gestures = []
-        for index in range(_RUNS):
-            started = time.process_time()
-            out = SERVICE.make_method(
+        def _one(name: str):
+            return SERVICE.make_method(
                 surface,
                 MethodRequest(
                     "Write code",
-                    (SetEventSteps("button0", "clicked", (call_step("made_%d" % index),), caption="Call made_%d" % index),),
-                    "made_%d" % index,
+                    (SetEventSteps("button0", "clicked", (call_step(name),), caption="Call %s" % name),),
+                    name,
                     "",
                     "button0",
                     "clicked",
                 ),
             )
-            assert out.ok, out
-            _repaint()
-            gestures.append(time.process_time() - started)
-        added = max(0.0, _p95(gestures) - bare)
-        print(
-            "bare p95 %.2f ms  gesture p95 %.2f ms  added %.2f ms  load %s"
-            % (bare, _p95(gestures), added, os.getloadavg())
-        )
-        assert added <= 50.0
+
+        def _added(prefix: str) -> float:
+            gc.collect()
+            bares = []
+            for _ in range(_RUNS):
+                started = time.process_time()
+                _repaint()
+                bares.append(time.process_time() - started)
+            for index in range(3):
+                out = _one("%s_warm_%d" % (prefix, index))
+                assert out.ok, out
+            gc.collect()
+            gestures = []
+            for index in range(_RUNS):
+                gc.collect()
+                started = time.process_time()
+                out = _one("%s_%d" % (prefix, index))
+                assert out.ok, out
+                _repaint()
+                gestures.append(time.process_time() - started)
+            bare = _p95(bares)
+            gesture = _p95(gestures)
+            added = max(0.0, gesture - bare)
+            print(
+                "%s bare p95 %.2f ms median %.2f  gesture p95 %.2f median %.2f  added %.2f ms  load %s"
+                % (prefix, bare, _median_ms(bares), gesture, _median_ms(gestures), added, os.getloadavg())
+            )
+            return added
+
+        # The tab is clean, so each gesture saves it. That is K26's path.
+        clean_added = _added("clean")
+        opened.insertPlainText("\n# scratch\n")
+        qapp.processEvents()
+        dirty_added = _added("dirty")
 
         bridge = surface.code_bridge
         bridge.notify_saved(str(path))
         qapp.processEvents()
+        gc.collect()
         checks = []
         for _ in range(_RUNS):
             started = time.process_time()
@@ -136,7 +168,12 @@ def test_method_page_gesture_and_save_checks(tmp_path, qapp: QApplication) -> No
             qapp.processEvents()
             checks.append(time.process_time() - started)
         save_checks = _p95(checks)
-        print("save checks p95 %.2f ms  min %.2f  max %.2f  load %s" % (save_checks, min(checks) * 1000, max(checks) * 1000, os.getloadavg()))
+        print(
+            "save checks p95 %.2f ms  median %.2f  min %.2f  max %.2f  load %s"
+            % (save_checks, _median_ms(checks), min(checks) * 1000, max(checks) * 1000, os.getloadavg())
+        )
         assert save_checks <= 50.0
+        assert dirty_added <= 50.0
+        assert clean_added <= 50.0
     finally:
         _close(window, qapp, guard)

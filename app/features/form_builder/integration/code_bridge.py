@@ -54,7 +54,12 @@ TOO_BIG = "That file is too large for Code Studio to change."
 UNREADABLE = "That file can't be read as text, so Code Studio won't change it."
 CHANGED = "That file changed since the plan was made."
 NOT_UTF8 = "That file isn't UTF-8 text, so Code Studio won't change it."
-WRITE_FAILED = "Code Studio couldn't write that file: %s"
+WRITE_FAILED = "Code Studio couldn't change %s: %s"
+
+
+def _change_failed(path: str, reason: object) -> str:
+    name = os.path.basename(path) or str(path)
+    return WRITE_FAILED % (name, reason)
 
 
 class TextEditLike(Protocol):
@@ -164,16 +169,21 @@ class CodeBridge:
         if not was_dirty:
             saved = bool(self._port.save(path))
             if not saved:
-                undo_last = getattr(self._port, "undo_last_edit", None)
-                undone = bool(undo_last(path)) if callable(undo_last) else False
-                if not undone:
-                    self._port.replace_range(path, start, start + len(text), current[start:end])
+                restore = getattr(self._port, "restore_text", None)
+                if callable(restore):
+                    restore(path, current)
+                else:
+                    undo_last = getattr(self._port, "undo_last_edit", None)
+                    undone = bool(undo_last(path)) if callable(undo_last) else False
+                    if not undone:
+                        self._port.replace_range(path, start, start + len(text), current[start:end])
                 mark = getattr(self._port, "mark_clean", None)
                 if callable(mark):
                     mark(path)
                 reason = getattr(self._port, "last_save_error", "") or "the file could not be saved"
-                return refused(WRITE_FAILED % reason)
-            self.notify_saved(path)
+                return refused(_change_failed(path, reason))
+            if not getattr(self._port, "save_notifies", False):
+                self.notify_saved(path)
         return BridgeResult(True, "tab", saved=saved, inverse=BridgeEdit(start, start + len(text), current[start:end]))
 
     def _apply_on_disk(
@@ -189,7 +199,7 @@ class CodeBridge:
             os.makedirs(directory, exist_ok=True)
             dir_fd = os.open(directory, _DIR_FLAGS)
         except OSError as exc:
-            return refused(WRITE_FAILED % exc)
+            return refused(_change_failed(path, exc))
         try:
             # Everything below goes through ``dir_fd``: a directory swapped for a
             # symlink after the check above can't redirect the write.
@@ -217,7 +227,7 @@ class CodeBridge:
                 return refused(str(why))
             except OSError as exc:
                 logger.warning("code bridge could not write %s: %s", path, exc)
-                return refused(WRITE_FAILED % exc)
+                return refused(_change_failed(path, exc))
         finally:
             os.close(dir_fd)
         note_written_files((path,))
@@ -425,6 +435,8 @@ class ShellPort:
 
     def __init__(self, window: Any) -> None:
         self._window = window
+        self.last_save_error = ""
+        self.save_notifies = False
 
     def _widget(self, path: str) -> Any:
         controller = getattr(self._window, "_workspace_controller", None)
@@ -494,6 +506,33 @@ class ShellPort:
         undo()
         return True
 
+    def restore_text(self, path: str, text: str) -> bool:
+        """Put ``text`` back after a refused save, with nothing to redo.
+
+        Undo is used only when it restores ``text``. Either way the document is
+        rewritten with the undo stack off, so Ctrl+Shift+Z cannot bring the
+        stub back without the form step.
+        """
+        widget = self._widget(path)
+        if widget is None:
+            return False
+        document = widget.document()
+        undo = getattr(document, "undo", None)
+        if widget.toPlainText() != text and callable(undo):
+            undo()
+        if widget.toPlainText() != text:
+            redo = getattr(document, "redo", None)
+            if callable(redo):
+                redo()
+        self._write_without_history(widget, text)
+        return widget.toPlainText() == text
+
+    def _write_without_history(self, widget: Any, text: str) -> None:
+        document = widget.document()
+        document.setUndoRedoEnabled(False)
+        widget.setPlainText(text)
+        document.setUndoRedoEnabled(True)
+
     def mark_clean(self, path: str) -> None:
         widget = self._widget(path)
         text = str(widget.toPlainText()) if widget is not None else ""
@@ -539,11 +578,13 @@ def bridge_for(window: Any, project_root: str) -> CodeBridge:
     found = getattr(window, _ATTRIBUTE, None)
     if isinstance(found, CodeBridge) and found.project_root == project_root:
         return found
-    made = CodeBridge(project_root, ShellPort(window))
+    port = ShellPort(window)
+    made = CodeBridge(project_root, port)
     try:
         setattr(window, _ATTRIBUTE, made)
     except (AttributeError, TypeError):
-        pass
+        return made
+    port.save_notifies = True
     return made
 
 

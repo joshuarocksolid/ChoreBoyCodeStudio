@@ -155,12 +155,13 @@ def test_reading_a_base_does_not_import_it(tmp_path: Path) -> None:
         "        self.ui.setupUi(self)\n"
     )
     (window / "invoice_window.py").write_text(body, encoding="utf-8")
+    before = set(sys.modules)
     read = read_window(str(tmp_path), "forms/invoice_window.py")
     assert read.status == "ok"
     assert read.facts is not None
     assert any(method.name == "ready" for method in read.facts.base_methods)
     assert not touched.exists()
-    assert "shop" not in sys.modules
+    assert "shop" not in set(sys.modules) - before
 
 
 def test_a_missing_file_is_missing(tmp_path: Path) -> None:

@@ -131,6 +131,27 @@ def _space_on_print(kb: Kb, qapp: QApplication) -> list:
     return [item for item in writer.sent if isinstance(item, Log)]
 
 
+def _deliver_would_call(control: object, sent: list) -> None:
+    """Hand the child's Log to the pool the way a real frame is delivered.
+
+    ``preview`` subscribes ``_on_child``. The test does not call that method.
+    """
+    from dataclasses import replace
+
+    pool = control._notices.pool()  # type: ignore[attr-defined]
+    if control._unsubscribe is None:  # type: ignore[attr-defined]
+        control._unsubscribe = pool.subscribe(  # type: ignore[attr-defined]
+            control._notices.view_id,  # type: ignore[attr-defined]
+            control._on_child,  # type: ignore[attr-defined]
+        )
+    view_id = control._notices.view_id  # type: ignore[attr-defined]
+    for item in sent:
+        if getattr(item, "kind", "") == "would_call" and getattr(item, "method", "") == "print_reciept":
+            delivered = item if getattr(item, "view_id", None) in (None, view_id) else replace(item, view_id=view_id)
+            pool._deliver(delivered)  # noqa: SLF001
+            return
+
+
 def _codes(kb: Kb) -> list:
     rows = kb.session.diagnostics.all()  # type: ignore[attr-defined]
     return [row.code for row in rows]
@@ -301,10 +322,7 @@ def test_k26_call_your_code(tmp_path: Path, qapp: QApplication) -> None:
         control = control_for(kb.surface)
         kb.check(control is not None, "preview control exists")
         assert control is not None
-        for item in sent:
-            if getattr(item, "kind", "") == "would_call" and getattr(item, "method", "") == "print_reciept":
-                control._on_child(item)  # noqa: SLF001
-                break
+        _deliver_would_call(control, sent)
         kb.pump()
         status = str(getattr(kb.surface, "_gesture_sentence", ""))
         kb.check(status.startswith("Preview:"), "preview status, saw %r" % status)

@@ -82,7 +82,7 @@ def test_a_failed_save_refuses_and_restores_a_clean_tab(tmp_path: Path, reason: 
     steps = len(surface.session.log.entries())
     outcome = SERVICE.make_method(surface, _request())
     assert outcome.ok is False
-    assert reason in outcome.reason
+    assert outcome.reason == "Code Studio couldn't change %s: %s" % (window.name, reason)
     assert port.tabs[str(window)] == before
     assert str(window) not in port.dirty
     assert len(surface.session.log.entries()) == steps

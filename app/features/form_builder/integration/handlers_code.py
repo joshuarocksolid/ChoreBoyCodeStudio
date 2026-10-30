@@ -257,6 +257,11 @@ class CodeHandlers:
         line, select = _caret(read, found.line)
         return bool(surface.code_bridge.open_at(path, line, select))
 
+    def inherited_names(self, class_name: str) -> Tuple[str, ...]:
+        from app.features.form_builder.integration.handler_checks_bridge import inherited_names
+
+        return inherited_names(class_name)
+
     def methods(self, surface: Any) -> Tuple[MethodInfo, ...]:
         read = self.reading(surface)
         if read.status != "ok":

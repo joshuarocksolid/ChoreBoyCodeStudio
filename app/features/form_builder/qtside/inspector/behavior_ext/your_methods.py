@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from typing import List, Optional, Tuple
 
-from app.qt.QtCore import Qt
-from app.qt.QtGui import QKeyEvent
+from app.qt.QtCore import QEvent, Qt
+from app.qt.QtGui import QKeyEvent, QResizeEvent
 from app.qt.QtWidgets import QHBoxLayout, QLabel, QVBoxLayout, QWidget
 from app.qt.qt_compat import enum_value
 
@@ -138,9 +138,28 @@ class _MethodRow(QWidget):
         self.setAccessibleName(accessible)
         line = QHBoxLayout(self)
         line.setContentsMargins(2, 0, 2, 0)
+        self._full = text
         self._label = QLabel(text, self)
         self._label.setMinimumWidth(0)
+        self._label.setToolTip(text)
+        self._label.setAccessibleName(accessible)
+        self.setToolTip(text)
         line.addWidget(self._label, 1)
+
+    def resizeEvent(self, event: QResizeEvent) -> None:  # noqa: N802
+        super().resizeEvent(event)
+        self._fit_text()
+
+    def showEvent(self, event: QEvent) -> None:  # noqa: N802
+        super().showEvent(event)
+        self._fit_text()
+
+    def _fit_text(self) -> None:
+        if self.width() <= 0:
+            return
+        shown = self.fontMetrics().elidedText(self._full, Qt.TextElideMode.ElideRight, max(8, self.width() - 8))
+        if shown != self._label.text():
+            self._label.setText(shown)
 
     def apply_colors(self, panel: str, text: str) -> None:
         chrome = self._body._services.chrome
@@ -180,11 +199,18 @@ def register(registry: object) -> None:
 
 
 def _base_slots(doc: object) -> set:
-    """Public names of the form's Qt class. A slot of that class is not 'missing'."""
+    """Public names of the form's Qt class. A slot of that class is not 'missing'.
+
+    The handler service caches ``dir`` of the Qt class. This section uses that
+    cache. It does not import ``integration``; the service is installed on the picker seam.
+    """
     root = getattr(doc, "root", None)
     class_name = str(getattr(root, "class_name", "") or "")
     if not class_name:
         return set()
+    cached = getattr(method_actions(), "inherited_names", None)
+    if callable(cached):
+        return set(cached(class_name))
     from app.qt import QtCore, QtGui, QtWidgets
 
     for module in (QtWidgets, QtGui, QtCore):

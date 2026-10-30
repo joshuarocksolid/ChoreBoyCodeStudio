@@ -98,7 +98,9 @@ def read_window(project_root: str, relative: str, text: Optional[str] = None) ->
         if cached is not None:
             return cached
         follow = _Follow()
-        read = _read_path(project_root, relative, chain=(), budget=follow)
+        read = _stamp_followed(
+            _read_path(project_root, relative, chain=(), budget=follow), follow
+        )
         _store_file(project_root, relative, read, follow.files)
         return read
     digest = hashlib.sha256(text.encode("utf-8", "surrogatepass")).hexdigest()
@@ -108,10 +110,19 @@ def read_window(project_root: str, relative: str, text: Optional[str] = None) ->
     if cached_text is not None and _fresh(project_root, cached_text[1]):
         return cached_text[0]
     follow = _Follow()
-    read = _read_text(project_root, relative, text, chain=(), budget=follow)
+    read = _stamp_followed(
+        _read_text(project_root, relative, text, chain=(), budget=follow), follow
+    )
     with _CACHE_LOCK:
         _remember(_TEXT_CACHE, key, (read, _stamps(project_root, follow.files)))
     return read
+
+
+def _stamp_followed(read: WindowRead, follow: "_Follow") -> WindowRead:
+    files = tuple(follow.files)
+    if not files:
+        return read
+    return replace(read, followed=files)
 
 
 def _cached_file(project_root: str, relative: str) -> Optional[WindowRead]:

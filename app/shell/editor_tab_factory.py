@@ -26,6 +26,13 @@ from app.shell.tab_content_providers import (
 )
 
 
+def _drop_focus_restore() -> None:
+    """A failed open must not leave Quick Open's restore flag for the next file."""
+    from app.editors.quick_open_dialog import take_focus_restore
+
+    take_focus_restore()
+
+
 def _focus_opened_tab(window: Any, file_path: str) -> None:
     """Focus the opened tab after Quick Open's focus restore.
 
@@ -95,6 +102,7 @@ class EditorTabFactory:
     def open_file_in_editor(self, file_path: str, *, preview: bool = False, restore_draft: bool = True) -> bool:
         window = self._window
         if window._editor_tabs_widget is None:
+            _drop_focus_restore()
             return False
 
         started_at = time.perf_counter()
@@ -102,13 +110,17 @@ class EditorTabFactory:
             use_preview = preview and window._editor_enable_preview
             opened_result = window._editor_manager.open_file(file_path, preview=use_preview)
         except ValueError as exc:
+            _drop_focus_restore()
             QMessageBox.warning(window, "Unable to open file", str(exc))
             return False
-        return self._materialize_opened_editor_tab(
+        opened = self._materialize_opened_editor_tab(
             opened_result,
             started_at=started_at,
             restore_draft=restore_draft,
         )
+        if not opened:
+            _drop_focus_restore()
+        return opened
 
     def open_restored_history_buffer(self, file_path: str, content: str) -> bool:
         window = self._window
