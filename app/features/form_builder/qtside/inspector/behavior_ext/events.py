@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Callable, List, Optional, Tuple
 
-from app.qt.QtCore import QEvent, QObject, Qt, QTimer
+from app.qt.QtCore import QEvent, QObject, Qt
 from app.qt.QtGui import QKeyEvent, QResizeEvent
 from app.qt.QtWidgets import (
     QApplication,
@@ -76,19 +76,11 @@ class EventsBody(QWidget):
         row.addStretch(1)
         self._when = QPushButton("+ When\u2026", overline)
         self._when.clicked.connect(self._add_event)
+        self._when.installEventFilter(self)
         row.addWidget(self._when)
-        self._scroll = QScrollArea(self)
-        self._scroll.setObjectName("formBuilder.events.scroll")
-        self._scroll.setWidgetResizable(True)
-        self._scroll.setFrameShape(getattr(getattr(QScrollArea, "Shape", QScrollArea), "NoFrame"))
-        self._scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        self._inner = QWidget(self._scroll)
-        self._inner.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Minimum)
-        self._events = QVBoxLayout(self._inner)
+        self._events = QVBoxLayout()
         self._events.setContentsMargins(0, 0, 0, 0)
         self._events.setSpacing(2)
-        self._events.setSizeConstraint(QVBoxLayout.SizeConstraint.SetMinimumSize)
-        self._scroll.setWidget(self._inner)
         self._empty = QLabel(self)
         self._empty.setWordWrap(True)
         self._caption = QLabel(self)
@@ -102,11 +94,10 @@ class EventsBody(QWidget):
         column.addWidget(self._notice)
         column.addWidget(overline)
         self._overline = overline
-        column.addWidget(self._scroll)
+        column.addLayout(self._events)
         column.addWidget(self._empty)
         column.addWidget(self._caption)
         column.addWidget(self._message)
-        self._scroll.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         app = QApplication.instance()
         if app is not None:
             app.focusChanged.connect(self._on_focus)  # type: ignore[attr-defined]
@@ -120,9 +111,9 @@ class EventsBody(QWidget):
             "QWidget#formBuilder\\.events, QWidget#formBuilder\\.events QWidget { background: %s; color: %s; }"
             "QLabel { color: %s; background: transparent; }"
             "QLabel#formBuilder\\.events\\.notice { color: %s; }"
+
             "QPushButton { color: %s; background: %s; border: 1px solid %s; border-radius: 4px; padding: 2px 8px; }"
-            "QPushButton:focus, QToolButton:focus { border: %dpx solid %s; }"
-            "QScrollArea#formBuilder\\.events\\.scroll { background: transparent; border: none; }"
+            "QPushButton:focus, QToolButton:focus, QWidget:focus { border: %dpx solid %s; }"
             % (
                 panel,
                 text,
@@ -177,6 +168,8 @@ class EventsBody(QWidget):
             shown = project_sender(
                 doc, QtClassTable.shared(), view.sender_name, qt_names=_qt_names(self)
             )
+        if shown == self._view:
+            return
         self._view = shown
         self._render(shown)
 
@@ -195,17 +188,16 @@ class EventsBody(QWidget):
         self._empty.setVisible(bool(self._empty.text()))
         self._caption.setText(shown.caption)
         self._caption.setVisible(bool(shown.caption))
+        self._remember_focus()
         while self._events.count():
             item = self._events.takeAt(0)
             widget = item.widget()
             if widget is not None:
+                widget.setObjectName("")
                 widget.deleteLater()
         self._chain = []
         if shown.kind != "one":
-            self._scroll.hide()
-            self._scroll.setMinimumHeight(0)
             return
-        self._scroll.setVisible(bool(shown.events))
         first = True
         for event in shown.events:
             group = _Group(self, event, editing)
@@ -216,22 +208,35 @@ class EventsBody(QWidget):
             self._chain.extend(group.chain())
         if editing and not shown.events:
             self._chain.append(self._when)
-        self._fit_scroll()
-        QTimer.singleShot(0, self, self._fit_scroll)
         self._place_focus()
 
-    def _fit_scroll(self) -> None:
-        if not self._scroll.isVisible():
-            self._scroll.setMinimumHeight(0)
+    def first_focus(self) -> Optional[QWidget]:
+        """The live row Alt+B should focus. Empty events land on + When…."""
+        for widget in self._chain:
+            if widget.isVisible():
+                return widget
+        if self._when.isVisible():
+            return self._when
+        return None
+
+    def _remember_focus(self) -> None:
+        if self._focus is not None:
             return
-        layout = self._inner.layout()
-        content = 0 if layout is None else layout.totalMinimumSize().height()
-        if content <= 0:
+        focus = QApplication.focusWidget()
+        if focus is None or not self.isAncestorOf(focus):
             return
-        fits = content <= 240
-        policy = Qt.ScrollBarPolicy.ScrollBarAlwaysOff if fits else Qt.ScrollBarPolicy.ScrollBarAsNeeded
-        self._scroll.setVerticalScrollBarPolicy(policy)
-        self._scroll.setMinimumHeight(min(content, 240))
+        signal = getattr(focus, "signal_name", None)
+        index = getattr(focus, "step_index", None)
+        if isinstance(signal, str) and isinstance(index, int):
+            self._focus = (signal, index)
+
+    def _reveal(self, widget: QWidget) -> None:
+        parent = widget.parentWidget()
+        while parent is not None:
+            if isinstance(parent, QScrollArea):
+                parent.ensureWidgetVisible(widget)
+                return
+            parent = parent.parentWidget()
 
     def _place_focus(self) -> None:
         if self._focus is None:
@@ -241,7 +246,7 @@ class EventsBody(QWidget):
         for widget in self._chain:
             if getattr(widget, "signal_name", None) == signal and getattr(widget, "step_index", -2) == index:
                 widget.setFocus()
-                self._scroll.ensureWidgetVisible(widget)
+                self._reveal(widget)
                 return
 
     def _on_focus(self, _old: object, _new: object) -> None:
@@ -252,15 +257,31 @@ class EventsBody(QWidget):
                 sync()
 
     def eventFilter(self, watched: QObject, event: QEvent) -> bool:  # noqa: N802
-        if event.type() == QEvent.Type.ShortcutOverride and isinstance(watched, (_Row, _ThenButton)):
-            if _claimed(event):  # type: ignore[arg-type]
-                event.accept()
-                return True
+        if event.type() == QEvent.Type.ShortcutOverride and isinstance(watched, (_Row, _ThenButton, QPushButton)):
+            if watched is self._when or isinstance(watched, (_Row, _ThenButton)):
+                if _claimed(event):  # type: ignore[arg-type]
+                    event.accept()
+                    return True
+        if event.type() == QEvent.Type.KeyPress and watched is self._when:
+            return self._when_key(event)  # type: ignore[arg-type]
         if event.type() == QEvent.Type.KeyPress and isinstance(watched, _ThenButton):
             return self._then_key(watched, event)  # type: ignore[arg-type]
         if event.type() == QEvent.Type.KeyPress and isinstance(watched, _Row):
             return self._key(watched, event)  # type: ignore[arg-type]
         return super().eventFilter(watched, event)
+
+    def _when_key(self, event: QKeyEvent) -> bool:
+        key = enum_value(event.key())
+        if key == _DOWN:
+            if self._chain and self._chain[0] is not self._when:
+                self._chain[0].setFocus()
+            return True
+        if key == _UP:
+            return True
+        if key == _ESC:
+            self._to_canvas()
+            return True
+        return False
 
     def _then_key(self, button: "_ThenButton", event: QKeyEvent) -> bool:
         key = enum_value(event.key())
@@ -307,7 +328,8 @@ class EventsBody(QWidget):
             self._to_canvas()
             return True
         if key == _F12:
-            self._go_code(row.method_name)
+            if row.method_name:
+                self._go_code(row.method_name)
             return True
         if key == _PERIOD and ctrl:
             self._fix(row)
@@ -327,7 +349,7 @@ class EventsBody(QWidget):
         index = chain.index(focus) + delta
         if 0 <= index < len(chain):
             chain[index].setFocus()
-            self._scroll.ensureWidgetVisible(chain[index])
+            self._reveal(chain[index])
 
     def _activate(self, row: "_Row") -> None:
         if row.step_index < 0:
@@ -377,8 +399,12 @@ class EventsBody(QWidget):
             _narrate(self, outcome.status)
 
     def _fix(self, row: "_Row") -> None:
-        if row.unreadable:
-            open_property_as_text(self, row.property_name)
+        event = getattr(row, "_event", None)
+        if event is not None and getattr(event, "stored_twice", False) and row.step_index < 0:
+            self._merge(row.signal_name)
+            return
+        if row.unreadable or (event is not None and event.banner):
+            open_property_as_text(self, row.property_name, self._sender)
 
     def _go_code(self, method: str) -> None:
         service = method_actions()
@@ -441,7 +467,7 @@ class _Group(QWidget):
             label.setWordWrap(True)
             label.setMinimumWidth(0)
             label.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred)
-            label.setStyleSheet("color: %s;" % warning_color(body._chrome))
+            label.setStyleSheet("color: %s;" % body._chrome.muted)
             line.addWidget(label, 1)
             merge = QPushButton("Merge", note)
             merge.setAccessibleName("Merge")
@@ -522,7 +548,8 @@ class _Row(QWidget):
         self.readonly = locked
         self.unreadable = unreadable
         self.property_name = prop
-        self.method_name = ""
+        self.method_name = step.method if step is not None else ""
+        self._off = bool(step is not None and step.off)
         self._body = body
         self._event = None
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
@@ -544,6 +571,17 @@ class _Row(QWidget):
         if index >= 0:
             self._menu.hide()
         line.addWidget(self._menu)
+        if step is not None and step.problem:
+            badge = QLabel("!", self)
+            badge.setFixedWidth(12)
+            badge.setToolTip(step.problem)
+            badge.setStyleSheet("color: %s; background: transparent;" % body._chrome.error)
+            line.addWidget(badge)
+        if step is not None and step.method:
+            place = QLabel("not checked", self)
+            place.setStyleSheet("color: %s; background: transparent;" % body._chrome.faint)
+            place.setToolTip(step.method)
+            line.addWidget(place)
         if problem:
             self._label.setStyleSheet("color: %s;" % body._chrome.error)
         self.installEventFilter(body)
@@ -556,16 +594,19 @@ class _Row(QWidget):
         width = self._label.width()
         if width <= 0:
             return
-        shown = self.fontMetrics().elidedText(self._full, Qt.TextElideMode.ElideRight, width)
+        shown = self.fontMetrics().elidedText(self._full, Qt.TextElideMode.ElideMiddle, width)
         if shown != self._label.text():
             self._label.setText(shown)
 
     def menu_button(self, event: EventView) -> QToolButton:
         self._event = event
         menu = QMenu(self._menu)
-        if event.unreadable:
-            menu.addAction("Open as text", lambda: open_property_as_text(self._body, event.property_name))
-        else:
+        if event.unreadable or (event.locked and event.banner):
+            menu.addAction(
+                "Open as text",
+                lambda: open_property_as_text(self._body, event.property_name, self._body._sender),
+            )
+        elif not event.locked:
             menu.addAction("Change event\u2026", lambda: self._body._change_event(event.signal, self))
             menu.addAction("Delete the event", lambda: self._body._delete_event(event.signal))
         self._menu.setMenu(menu)
@@ -588,28 +629,58 @@ class _Row(QWidget):
             return
         menu = QMenu(self)
         if not self.readonly:
-            menu.addAction("Turn off", lambda: self._body._run(Gesture("toggle", self.signal_name, self.step_index)))
+            word = "Turn on" if self._off else "Turn off"
+            menu.addAction(word, lambda: self._body._run(Gesture("toggle", self.signal_name, self.step_index)))
             menu.addAction("Duplicate", lambda: self._body._run(Gesture("duplicate", self.signal_name, self.step_index)))
             menu.addAction("Move up", lambda: self._body._run(Gesture("move", self.signal_name, self.step_index, -1)))
             menu.addAction("Move down", lambda: self._body._run(Gesture("move", self.signal_name, self.step_index, 1)))
             menu.addAction("Delete", lambda: self._body._run(Gesture("delete", self.signal_name, self.step_index)))
-        menu.addAction("Go to code", lambda: self._body._go_code(self.method_name))
+            menu.addAction("Change\u2026", lambda: self._body._activate(self))
+        if self.method_name:
+            menu.addAction("Go to code", lambda: self._body._go_code(self.method_name))
         menu.popup(self.mapToGlobal(self.rect().bottomLeft()))
 
+    def enterEvent(self, event: QEvent) -> None:  # noqa: N802
+        super().enterEvent(event)
+        if self.step_index >= 0:
+            self._menu.show()
 
-def open_property_as_text(widget: QWidget, prop: str) -> None:
-    """Show the .ui text with the caret on ``name="<property>"``. Does not select the widget."""
+    def leaveEvent(self, event: QEvent) -> None:  # noqa: N802
+        super().leaveEvent(event)
+        if self.step_index >= 0 and not self.hasFocus():
+            self._menu.hide()
+
+    def focusInEvent(self, event: QEvent) -> None:  # noqa: N802
+        super().focusInEvent(event)
+        if self.step_index >= 0:
+            self._menu.show()
+
+    def contextMenuEvent(self, event: QEvent) -> None:  # noqa: N802
+        self.open_menu()
+        event.accept()  # type: ignore[attr-defined]
+
+
+def open_property_as_text(widget: QWidget, prop: str, sender: str = "") -> None:
+    """Show the .ui text with the caret on this widget's own ``name="<property>"``."""
     surface = _surface(widget)
     if surface is None or not prop:
         return
-    source = getattr(surface, "_source", None)
-    if source is not None and getattr(source, "mode", "visual") == "visual":
+    source = surface.content_source()
+    if source.mode == "visual":
         surface.toggle_source_view()
     editor = surface.source_editor()
     if editor is None:
         return
     text = editor.toPlainText()
-    at = text.find('name="%s"' % prop)
+    start = 0
+    if sender:
+        at_widget = text.find('name="%s"' % sender)
+        if at_widget >= 0:
+            start = at_widget
+    end = text.find("<widget ", start + 1)
+    if end < 0:
+        end = len(text)
+    at = text.find('name="%s"' % prop, start, end)
     if at < 0:
         return
     cursor = editor.textCursor()

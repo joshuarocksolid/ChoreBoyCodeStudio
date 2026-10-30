@@ -6,7 +6,6 @@ from app.features.form_builder.engine.commands.catalog_ext.events import SetEven
 from app.features.form_builder.engine.diagnostic_codes.fb4xx_logic import logic_diagnostics
 from app.features.form_builder.engine.ui4.defaults import QtClassTable
 from app.features.form_builder.qtside.inspector.behavior_ext._rows import (
-    UNSAVABLE,
     Gesture,
     finish,
     project_sender,
@@ -51,7 +50,8 @@ def test_a_bad_identifier_locks_the_event_without_fb401_or_fb403() -> None:
     doc = _doc(_BAD)
     view = project_sender(doc, QtClassTable.shared(), "clearButton")
     assert view.events[0].locked
-    assert view.events[0].banner == UNSAVABLE
+    assert view.events[0].steps
+    assert "can't use (123bad)" in view.events[0].banner
     codes = [item.code for item in logic_diagnostics(doc)]
     assert "FB401" not in codes
     assert "FB403" not in codes
@@ -147,9 +147,10 @@ def test_the_list_keeps_designer_hints_off_then_on_and_on_an_unchanged_end() -> 
     run(log, Gesture("toggle", "clicked", 0))
     run(log, Gesture("toggle", "clicked", 0))
     assert _hint_block(saved(log.document)) == original
-    # Stored as a list while off: re-choosing the same end must carry the hints.
+    # Stored as a list while off: re-choosing the same end writes nothing, so the hints stay.
     run(log, Gesture("toggle", "clicked", 0))
-    run(log, Gesture("replace_slot", "clicked", 0, target="nameEdit", slot="clear()"))
+    same = finish(log.document, classes, "clearButton", Gesture("replace_slot", "clicked", 0, target="nameEdit", slot="clear()"))
+    assert same is None
     run(log, Gesture("toggle", "clicked", 0))
     assert _hint_block(saved(log.document)) == original
     run(log, Gesture("replace_slot", "clicked", 0, target="nameEdit", slot="selectAll()"))

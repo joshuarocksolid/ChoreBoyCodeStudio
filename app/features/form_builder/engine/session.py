@@ -210,11 +210,12 @@ class FormSession:
 
     def _publish_behavior(self) -> None:
         """Logic and event rows. A step-list edit never touches connection fields, so this is not gated on that scan."""
+        from app.features.form_builder.engine.diagnostic_codes.fb406 import name_diagnostics
         from app.features.form_builder.engine.diagnostic_codes.fb40x_events import event_diagnostics
         from app.features.form_builder.engine.diagnostic_codes.fb4xx_logic import logic_diagnostics
 
         self._diagnostics.publish("logic.storage", logic_diagnostics(self._document))
-        self._diagnostics.publish("events", event_diagnostics(self._document))
+        self._diagnostics.publish("events", event_diagnostics(self._document) + name_diagnostics(self._document))
 
     def _on_selection_notify(self, changeset: ChangeSet) -> None:
         del changeset
@@ -233,14 +234,17 @@ _CONNECTION_FIELDS = frozenset({"sender", "signal", "receiver", "slot"})
 
 
 def _behavior_scan_needed(changeset: ChangeSet) -> bool:
-    """True when the entry can change a property, a connection or the tree those diagnostics read."""
-    return bool(
-        changeset.replaced
-        or changeset.property_dirty
-        or changeset.added
-        or changeset.removed
-        or changeset.renamed
-        or changeset.structure_dirty
+    """True for a cbcs* property, a connection field, or an add, remove or rename.
+
+    A replaced document is included so undo republishes. Other property edits do not.
+    """
+    if changeset.replaced or changeset.added or changeset.removed or changeset.renamed:
+        return True
+    if any(name.startswith("cbcs") for _owner, _kind, name in changeset.property_dirty):
+        return True
+    return any(
+        isinstance(change, FieldChanged) and change.field in _CONNECTION_FIELDS
+        for change in changeset.changes
     )
 
 

@@ -924,7 +924,11 @@ An **event** is (sender object name, signal name). Its steps, in run order, are 
 
 **Intents** (`engine/logic/intents/m6.py`) return schema mappings with two routing keys that are never stored: `event` (the signal) and `sender` (only when the step goes on another object's event, the second half of "Keep *a* and *b* in step"). A `slot` mapping without `target` acts on the form.
 
-**Event picker.** `open_event_picker(host, source, target)` in `qtside/pickers` opens the event and step pages. M6.1c's link handler calls it. `host` is the widget that gets focus back. `source` is the sender (an object name, or a sender plus a signal when a step is being added). `target` is the receiver object name, or empty. Esc on the first page writes nothing. The pages do not call the log; only a finished choice does. Code actions are installed with `set_method_actions`, because `qtside` cannot import `integration`.
+**Event picker.** Two entries in `qtside/pickers`. Esc on the first page writes nothing. The pages do not call the log; only a finished choice does. Code actions are installed with `set_method_actions`, because `qtside` cannot import `integration`.
+
+`open_event_picker(host, source, target="") -> EventPicker`. `host` is the widget that gets focus back. `source` is a sender object name, or a `PickerSource` (sender, signal, replace index). `target` is the receiver object name, or empty. Services are resolved from `host`'s inspector ancestors.
+
+`open_for_link(surface, source_id, target_id=None, *, at=None, caption=None) -> EventPicker`. `source_id` and `target_id` are node ids on `surface.session`. Services are resolved from the surface. `at` is a global `QPoint` or `None` (the picker opens under the surface). `caption` defaults to `"Connect {sender} to {receiver}"`.
 
 **Native overloads in generated Python.** uic 6.8 writes `["types"]` after `clicked(...)` of a button (a class deriving from `QAbstractButton`, not that class itself) and `triggered(...)` of a `QToolButton` or `QAction` when the signature has arguments, because PySide6's bare `clicked`/`triggered` is the zero-argument overload and a Qt slot that needs `checked` would raise. The core emitter does the same (`_overload_selector`, checked against uic for every widget class of the table).
 

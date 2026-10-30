@@ -33,6 +33,43 @@ def method_actions() -> object:
     return _SERVICE
 
 
+def open_for_link(surface: QWidget, source_id: object, target_id: object = None, *, at: object = None, caption: Optional[str] = None) -> EventPicker:
+    """Open the step picker for a canvas link. ``source_id`` and ``target_id`` are node ids.
+
+    Services come from the surface. The caption defaults to "Connect {sender} to {receiver}".
+    """
+    from app.qt.QtCore import QPoint
+
+    from app.features.form_builder.qtside.inspector.behavior_ext._rows import display_name
+
+    doc = surface.session.document
+    sender = _named(doc, source_id)
+    receiver = _named(doc, target_id) if target_id is not None else ""
+    if caption is None:
+        other = display_name(doc, receiver) if receiver else "\u2026"
+        caption = "Connect %s to %s" % (display_name(doc, sender), other)
+    parsed = PickerSource.parse(sender)
+    services = _services(surface)
+    chrome = services.chrome if services is not None else default_chrome()
+    picker = EventPicker(surface, chrome, lambda gesture: _commit(surface, parsed, gesture))
+    methods, window_file, window_class = _window(surface)
+    ctx = build_context(doc, parsed, receiver, methods, window_file, window_class)
+    point = at if isinstance(at, QPoint) else None
+    picker.open_at(surface, ctx, point)
+    if picker._page is not None:
+        picker._apply(replace(picker._page, title=caption))
+    return picker
+
+
+def _named(doc: object, node_id: object) -> str:
+    if node_id is None:
+        return ""
+    node = doc.node(node_id)  # type: ignore[attr-defined]
+    if node is None:
+        return ""
+    return str(getattr(node, "object_name", "") or "")
+
+
 def open_event_picker(host: QWidget, source: object, target: object = "") -> EventPicker:
     """Open the picker under ``host``. ``source`` is a sender name or a ``PickerSource``.
 
@@ -77,7 +114,7 @@ def _commit(host: QWidget, source: PickerSource, gesture: Gesture) -> None:
     if isinstance(result, Dropped):
         return
     if outcome.status:
-        _narrate(host, outcome.status)
+        _narrate(host, _status_sentence(host, outcome.status))
 
 
 def _method(host: QWidget, gesture: Gesture, ask: MethodAsk) -> None:
@@ -108,6 +145,15 @@ def _note(host: QWidget, outcome: Outcome) -> None:
         note(outcome.focus_signal, outcome.focus_index)
 
 
+def _status_sentence(host: QWidget, status: str) -> str:
+    if status != "METHOD_UNUSED":
+        return status
+    _methods, file_name, _klass = _window(host)
+    if not file_name:
+        return ""
+    return "%s. \u00b7 Undo" % file_name
+
+
 def _narrate(host: QWidget, sentence: str) -> None:
     if not sentence:
         return
@@ -123,6 +169,11 @@ def _services(widget: QWidget) -> object:
         services = getattr(current, "_services", None)
         if services is not None and getattr(services, "session", None) is not None:
             return services
+        workbench = getattr(current, "workbench", None)
+        inspector = getattr(workbench, "inspector", None) if workbench is not None else None
+        found = getattr(inspector, "_services", None) if inspector is not None else None
+        if found is not None and getattr(found, "session", None) is not None:
+            return found
         current = current.parentWidget()
     return None
 

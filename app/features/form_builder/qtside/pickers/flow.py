@@ -9,22 +9,28 @@ from dataclasses import dataclass, replace
 from typing import Optional, Sequence, Tuple
 
 from app.features.form_builder.engine.logic import compat
-from app.features.form_builder.engine.logic.events import declared_methods, read_event, sender_node
+from app.features.form_builder.engine.logic.events import read_event, sender_node
 from app.features.form_builder.engine.logic.events_catalog import (
     class_chain,
     common_events,
+    event_clause,
     event_words,
     more_events,
     step_words,
-    value_words,
 )
 from app.features.form_builder.engine.logic.events_codec import slot_step
 from app.features.form_builder.engine.logic.intents.m6 import IntentSpec, default_target, intents_for, target_candidates
-from app.features.form_builder.engine.project.handler_names import suggest_method_name, value_param
-from app.features.form_builder.engine.query.tree import reading_order
+from app.features.form_builder.engine.project.handler_names import value_param
 from app.features.form_builder.engine.ui4.defaults import QtClassTable
 from app.features.form_builder.engine.ui4.document import UiDocument
-from app.features.form_builder.qtside.inspector.behavior_ext._rows import Gesture, display_name, dropped_count, friendly_class
+from app.features.form_builder.qtside.inspector.behavior_ext._rows import (
+    Gesture,
+    display_name,
+    dropped_count,
+    friendly_class,
+    outline_names,
+)
+from app.features.form_builder.qtside.pickers.method_page import method_notice, method_page
 
 _BASES = ("QWidget", "QObject")
 
@@ -109,11 +115,32 @@ def opening(ctx: PickContext) -> Page:
     source = ctx.source
     if source.changing:
         return _event_page(ctx, "")
+    if source.signal and source.replace_index >= 0:
+        return _edit_page(ctx)
     if source.signal and ctx.target:
         return _pair_page(ctx, source.signal, source.replace_index, "")
     if source.signal:
         return _step_page(ctx, source.signal, wide=False, replace_index=source.replace_index, back="")
     return _event_page(ctx, "")
+
+
+def _edit_page(ctx: PickContext) -> Page:
+    """The page that made this step, with the current choice current (UX-PICK-010)."""
+    source = ctx.source
+    state = read_event(ctx.doc, source.sender, source.signal)
+    if not (0 <= source.replace_index < len(state.steps)):
+        return _step_page(ctx, source.signal, wide=False, replace_index=source.replace_index, back="")
+    step = state.steps[source.replace_index]
+    if step.verb == "slot" and step.target:
+        holder = Page(
+            "step", "", "", 0, (), "", False, "", "",
+            source.signal, "slots", "", False, source.replace_index, "step",
+        )
+        return _select(_slots_page(ctx, holder, step.target), step.slot)
+    page = _step_page(ctx, source.signal, wide=False, replace_index=source.replace_index, back="")
+    if step.verb == "call" and step.method:
+        return _select(page, step.method)
+    return page
 
 
 def reduce(ctx: PickContext, page: Page, press: Press) -> object:
@@ -140,7 +167,7 @@ def reduce(ctx: PickContext, page: Page, press: Press) -> object:
     if key == "down":
         return replace(page, current=_move(page, 1))
     if key == "field":
-        return replace(page, field=press.text, notice=_method_notice(ctx, page, press.text))
+        return replace(page, field=press.text, notice=method_notice(ctx, page, press.text))
     if key == "enter" or key == "right":
         return _enter(ctx, page)
     if key == "filter":
@@ -163,7 +190,9 @@ def _enter(ctx: PickContext, page: Page) -> object:
     if item.kind == "intent":
         return _picked_intent(ctx, page, item.payload)
     if item.kind == "new-method":
-        return _method_page(ctx, page)
+        if not ctx.window_file:
+            return page
+        return method_page(ctx, page)
     if item.kind == "method":
         return Commit(Gesture("add_call", signal=page.signal, method=item.payload, args=0))
     if item.kind == "widget-action":
@@ -193,11 +222,14 @@ def _enter(ctx: PickContext, page: Page) -> object:
             )
         return Commit(Gesture("add_slot", signal=page.signal, target=page.picked_target, slot=item.payload))
     if item.kind == "make":
+        name = page.field.strip()
+        if not ctx.window_file or not compat.is_name(name):
+            return replace(page, notice=method_notice(ctx, page, name))
         return Commit(
             Gesture(
                 "add_call",
                 signal=page.signal,
-                method=page.field.strip(),
+                method=name,
                 args=1 if page.checked else 0,
             )
         )
@@ -250,7 +282,8 @@ def _go_back(ctx: PickContext, page: Page) -> object:
             return _pair_page(ctx, page.signal, page.replace_index, "event" if not ctx.source.signal else "")
         return _step_page(ctx, page.signal, page.wide, page.replace_index, "event" if page.wide else "")
     if page.back == "target":
-        return _target_page(ctx, page, page.intent_id, "Which widget?", page.intent_id)
+        marker = page.intent_id or "slots"
+        return _target_page(ctx, page, marker, "Which widget?", marker)
     if not page.back:
         return Closed()
     return Closed()
@@ -283,15 +316,16 @@ def _event_page(ctx: PickContext, text: str, show_base: Optional[bool] = None) -
     declared = _declared_signals(ctx)
     rows = [Item("header", "", "COMMON", header=True)]
     for name in common_events(ctx.classes, class_name, declared):
-        rows.append(_event_item(name, chain))
+        if compat.is_name(name):
+            rows.append(_event_item(ctx, name, chain))
     rows.append(Item("header", "", "MORE EVENTS", header=True))
     extra = list(more_events(ctx.classes, class_name, declared))
     if checked:
         extra.extend(_base_names(ctx.classes, class_name, "signals"))
     seen = {item.payload for item in rows}
     for name in sorted(set(extra)):
-        if name and name not in seen:
-            rows.append(_event_item(name, chain))
+        if name and name not in seen and compat.is_name(name):
+            rows.append(_event_item(ctx, name, chain))
             seen.add(name)
     title = "When\u2026 (%s \u00b7 %s)" % (display_name(ctx.doc, ctx.source.sender), friendly_class(class_name))
     page = Page("event", title, text, 0, _filter(tuple(rows), text), "Show events from QWidget and QObject", checked, "", "", "", "", "", False, -1, "")
@@ -307,10 +341,9 @@ def _step_page(
     rows.append(Item("header", "", "EVERYTHING ELSE", header=True))
     rows.append(Item("widget-action", "", "A widget's own action\u2026"))
     chain = _sender_chain(ctx)
-    header = event_words(signal, chain).header
-    title = "Then\u2026 (When %s is %s)" % (display_name(ctx.doc, ctx.source.sender), header)
+    title = "Then\u2026 (When %s)" % event_clause(signal, chain, display_name(ctx.doc, ctx.source.sender))
     page = Page(
-        "step", title, text, 0, _filter(tuple(rows), text, keep=("widget-action",)),
+        "step", title, text, 0, _filter(tuple(rows), text),
         "", False, "", "", signal, "", "", wide, replace_index, back,
     )
     return _select_first(page)
@@ -323,8 +356,7 @@ def _pair_page(
     rows = [item for item in _intent_rows(ctx, signal) if item.header or _intent_fits_target(ctx, item.payload)]
     rows.extend(_slot_items(ctx, signal, ctx.target, checked))
     chain = _sender_chain(ctx)
-    header = event_words(signal, chain).header
-    title = "Then\u2026 (When %s is %s)" % (display_name(ctx.doc, ctx.source.sender), header)
+    title = "Then\u2026 (When %s)" % event_clause(signal, chain, display_name(ctx.doc, ctx.source.sender))
     page = Page(
         "pair", title, text, 0, _filter(tuple(rows), text),
         "Show actions from QWidget and QObject", checked, "", "",
@@ -333,16 +365,30 @@ def _pair_page(
     return _select_first(page)
 
 
+_TARGET_ROWS: dict = {}
+
+
+def _target_rows(ctx: PickContext) -> Tuple[Item, ...]:
+    key = (id(ctx.doc), ctx.doc.revision, ctx.source.sender)
+    cached = _TARGET_ROWS.get(key)
+    if cached is None:
+        cached = tuple(Item("target", name, _target_line(ctx, name)) for name in _widget_names(ctx))
+        _TARGET_ROWS.clear()
+        _TARGET_ROWS[key] = cached
+    return cached
+
+
 def _target_page(
     ctx: PickContext, page: Page, intent_id: str, title: str, marker: str, text: str = ""
 ) -> Page:
     spec = _intent(ctx, intent_id) if intent_id and intent_id != "slots" else None
-    names = target_candidates(ctx.doc, ctx.classes, spec, ctx.source.sender) if spec is not None else _widget_names(ctx)
-    rows = []
-    for name in names:
-        rows.append(Item("target", name, _target_line(ctx, name)))
+    if spec is None:
+        rows = _target_rows(ctx)
+    else:
+        names = target_candidates(ctx.doc, ctx.classes, spec, ctx.source.sender)
+        rows = tuple(Item("target", name, _target_line(ctx, name)) for name in names)
     built = Page(
-        "target", title, text, 0, _filter(tuple(rows), text),
+        "target", title, text, 0, _filter(rows, text),
         "", False, "", "", page.signal, marker, "", page.wide, page.replace_index, "step",
     )
     return _select_first(built)
@@ -357,39 +403,9 @@ def _slots_page(
     built = Page(
         "slots", title, text, 0, _filter(tuple(rows), text),
         "Show actions from QWidget and QObject", checked, "", "",
-        page.signal, "", target, page.wide, page.replace_index, "target",
+        page.signal, "slots", target, page.wide, page.replace_index, "target",
     )
     return _select_first(built)
-
-
-def _method_page(ctx: PickContext, page: Page) -> Page:
-    chain = _sender_chain(ctx)
-    class_name = chain[0] if chain else ""
-    node = sender_node(ctx.doc, ctx.source.sender)
-    text = ""
-    if node is not None:
-        from app.features.form_builder.engine.query.actions import text_of
-
-        text = text_of(node)
-    suggested = suggest_method_name(
-        class_name=class_name,
-        object_name=ctx.source.sender,
-        text=text,
-        signal=page.signal,
-        form_class=ctx.doc.form_class_name(),
-        taken=ctx.taken or ctx.methods,
-        inherited=ctx.inherited,
-    )
-    sends = _sends(ctx, page.signal)
-    check = ""
-    if sends:
-        check = "My method receives %s" % value_words(sends[0], page.signal, chain)
-    notice = _method_line(ctx, suggested)
-    return Page(
-        "method", "Call a new method\u2026", "", 0,
-        (Item("make", suggested, "Add %s()" % suggested),),
-        check, False, suggested, notice, page.signal, "", "", page.wide, page.replace_index, "step",
-    )
 
 
 def _intent_rows(ctx: PickContext, event: Optional[str]) -> list:
@@ -407,13 +423,14 @@ def _code_rows(ctx: PickContext, signal: str) -> list:
     if not ctx.window_file and not ctx.methods:
         rows.append(Item("header", "", "This form isn't in a project, so it has no window file.", header=True))
         return rows
-    file_name = ctx.window_file or "the window file"
-    rows.append(Item("header", "", "METHODS IN %s" % file_name, header=True))
+    rows.append(Item("header", "", ctx.window_file, header=True))
     if not ctx.methods:
         return rows
     used = _used_methods(ctx, signal)
     sends = len(_sends(ctx, signal))
     for name in ctx.methods:
+        if not compat.is_name(name):
+            continue
         mark = " already here" if name in used else ""
         rows.append(Item("method", name, "Call %s()%s" % (name, mark)))
     del sends
@@ -433,6 +450,8 @@ def _slot_items(ctx: PickContext, signal: str, target: str, show_base: bool) -> 
     rows = [Item("header", "", "EVERYTHING %s CAN DO" % display_name(ctx.doc, target).upper(), header=True)]
     form = target == ctx.doc.root.object_name
     for signature in names:
+        if not compat.is_signature(signature):
+            continue
         fit = compat.slot_fit(signature, overloads, header)
         label = step_words(
             slot_step(target, signature),
@@ -444,13 +463,25 @@ def _slot_items(ctx: PickContext, signal: str, target: str, show_base: bool) -> 
     return rows
 
 
-def _event_item(name: str, chain: Sequence[str]) -> Item:
+def _event_item(ctx: PickContext, name: str, chain: Sequence[str]) -> Item:
     words = event_words(name, chain)
     text = words.header if words.header != name else name
-    return Item("event", name, text, faint=name + "()")
+    return Item("event", name, text, faint=_signal_signature(ctx, name))
 
 
-def _filter(rows: Tuple[Item, ...], text: str, keep: Tuple[str, ...] = ()) -> Tuple[Item, ...]:
+def _signal_signature(ctx: PickContext, name: str) -> str:
+    """The overload that carries argument types, written the way Designer writes it."""
+    overloads = _overloads(ctx, name)
+    with_args = [item for item in overloads if item[1]]
+    chosen = with_args[0] if with_args else (overloads[0] if overloads else None)
+    if chosen is None:
+        return name + "()"
+    if chosen[1]:
+        return "%s(%s)" % (chosen[0], ",".join(chosen[1]))
+    return chosen[0] + "()"
+
+
+def _filter(rows: Tuple[Item, ...], text: str) -> Tuple[Item, ...]:
     needle = text.strip().casefold()
     if not needle:
         return rows
@@ -460,8 +491,8 @@ def _filter(rows: Tuple[Item, ...], text: str, keep: Tuple[str, ...] = ()) -> Tu
         if item.header:
             pending = item
             continue
-        hay = " ".join((item.text, item.faint, item.payload)).casefold()
-        if needle in hay or item.kind in keep:
+        hay = " ".join((item.text, item.faint, item.payload, item.note)).casefold()
+        if needle in hay:
             if pending is not None:
                 found.append(pending)
                 pending = None
@@ -470,8 +501,7 @@ def _filter(rows: Tuple[Item, ...], text: str, keep: Tuple[str, ...] = ()) -> Tu
             pending = None
     if not any(not item.header for item in found):
         sentence = "Nothing matches \u201c%s\u201d." % text
-        extra = [item for item in rows if item.kind in keep]
-        return tuple([Item("header", "", sentence, header=True)] + extra)
+        return (Item("header", "", sentence, header=True),)
     return tuple(found)
 
 
@@ -608,11 +638,11 @@ def _slot_names(classes: QtClassTable, class_name: str, declared: object, show_b
 
 
 def _widget_names(ctx: PickContext) -> Tuple[str, ...]:
-    ordered = list(reading_order(ctx.doc))
+    ordered = list(outline_names(ctx.doc))
     root = ctx.doc.root.object_name
     if root and root not in ordered:
         ordered.insert(0, root)
-    return tuple(name for name in ordered if name and name != ctx.source.sender)
+    return tuple(name for name in ordered if name and name != ctx.source.sender and compat.is_name(name))
 
 
 def _target_line(ctx: PickContext, name: str) -> str:
@@ -629,21 +659,6 @@ def _target_line(ctx: PickContext, name: str) -> str:
 def _used_methods(ctx: PickContext, signal: str) -> set:
     state = read_event(ctx.doc, ctx.source.sender, signal)
     return {step.method for step in state.steps if step.verb == "call" and step.method}
-
-
-def _method_notice(ctx: PickContext, page: Page, name: str) -> str:
-    return _method_line(ctx, name, page.signal)
-
-
-def _method_line(ctx: PickContext, name: str, signal: str = "") -> str:
-    del signal
-    if not compat.is_name(name):
-        return "Use a method name like print_receipt: letters, digits and _, starting with a letter."
-    if name in ctx.methods or name in declared_methods(ctx.doc):
-        return "%s already has %s. This event will call it." % (ctx.window_class or "The window", name)
-    file_name = ctx.window_file or "the window file"
-    klass = ctx.window_class or ctx.doc.form_class_name()
-    return "Adds %s() to %s in %s." % (name, klass, file_name)
 
 
 def param_name(ctx: PickContext, signal: str) -> str:

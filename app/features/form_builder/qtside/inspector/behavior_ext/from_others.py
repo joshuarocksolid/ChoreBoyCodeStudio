@@ -51,6 +51,10 @@ class _Jump(QLabel):
         self._row = row
         self._body = body
         self.setAccessibleName(row.words)
+        chrome = body._services.chrome
+        self.setStyleSheet(
+            "QLabel:focus { border: %dpx solid %s; }" % (chrome.focus_width, chrome.accent)
+        )
 
     def mousePressEvent(self, event: object) -> None:  # noqa: N802
         self._body.go(self._row)

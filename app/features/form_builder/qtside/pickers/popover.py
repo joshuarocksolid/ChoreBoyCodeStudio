@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import replace
 from typing import Callable, Optional
 
-from app.qt.QtCore import QEvent, QObject, QPoint, Qt, QSize
+from app.qt.QtCore import QAbstractListModel, QEvent, QObject, QPoint, QRect, Qt
 from app.qt.QtGui import QKeyEvent
 from app.qt.QtWidgets import (
     QApplication,
@@ -13,8 +13,7 @@ from app.qt.QtWidgets import (
     QFrame,
     QLabel,
     QLineEdit,
-    QListWidget,
-    QListWidgetItem,
+    QListView,
     QVBoxLayout,
     QWidget,
 )
@@ -25,7 +24,6 @@ from app.features.form_builder.engine.ui4.defaults import QtClassTable
 from app.features.form_builder.qtside.pickers.flow import (
     Closed,
     Commit,
-    Item,
     Page,
     PickContext,
     PickerSource,
@@ -44,8 +42,6 @@ _DOWN = enum_value(Qt.Key.Key_Down)
 _LEFT = enum_value(Qt.Key.Key_Left)
 _RIGHT = enum_value(Qt.Key.Key_Right)
 _BACK = enum_value(Qt.Key.Key_Backspace)
-_ROLE = enum_value(Qt.ItemDataRole.UserRole)
-
 _SHOW_EVENTS = False
 _SHOW_ACTIONS = False
 
@@ -76,6 +72,7 @@ class EventPicker(QFrame):
         self._page: Optional[Page] = None
         self._host: Optional[QWidget] = None
         self._filling = False
+        self._listening = False
         column = QVBoxLayout(self)
         column.setContentsMargins(10, 8, 10, 10)
         column.setSpacing(6)
@@ -101,48 +98,96 @@ class EventPicker(QFrame):
         self.notice.setWordWrap(True)
         self.notice.setProperty("note", True)
         column.addWidget(self.notice)
-        self.rows = QListWidget(self)
+        self._model = _RowModel(self)
+        self._window_start = 0
+        self.rows = QListView(self)
         self.rows.setObjectName("formBuilder.eventPickerList")
         self.rows.setAccessibleName("Choices")
         self.rows.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        self.rows.itemClicked.connect(self._clicked)
+        self.rows.setModel(self._model)
+        self.rows.clicked.connect(self._clicked)
         column.addWidget(self.rows)
         self.check = QCheckBox(self)
         self.check.setObjectName("formBuilder.eventPickerBase")
+        self.check.installEventFilter(self)
         self.check.toggled.connect(self._toggled)
         column.addWidget(self.check)
         self.setStyleSheet(popover_style(self.objectName(), chrome) + self._extra(chrome))
         self.setFixedWidth(_WIDTH)
 
-    def open_at(self, host: QWidget, ctx: PickContext) -> None:
+    def open_at(self, host: QWidget, ctx: PickContext, at: Optional[QPoint] = None) -> None:
         self._host = host
         self._ctx = ctx
         self._apply(opening(ctx))
         self.adjustSize()
-        origin = host.mapToGlobal(QPoint(0, host.height()))
-        self.move(origin)
+        self._place(host, at)
         self.show()
         focus = self.field if self.field.isVisible() else self.search
         focus.setFocus()
         if focus is self.field:
             self.field.selectAll()
+        self._listen()
+
+    def _place(self, host: QWidget, at: Optional[QPoint]) -> None:
+        screen = host.screen()
+        area = screen.availableGeometry() if screen is not None else QRect(0, 0, 1600, 900)
+        if at is None:
+            anchor = host.mapToGlobal(QPoint(0, host.height()))
+            above = host.mapToGlobal(QPoint(0, 0)).y() - self.height()
+            host_right = host.mapToGlobal(QPoint(host.width(), 0)).x()
+        else:
+            anchor = at
+            above = anchor.y() - self.height()
+            host_right = anchor.x() + host.width()
+        width = max(self.width(), 1)
+        height = max(self.height(), 1)
+        x = anchor.x()
+        if x + width > area.right():
+            x = host_right - width
+        x = max(area.left(), min(x, area.right() - width + 1))
+        y = anchor.y()
+        if y + height > area.bottom() and above >= area.top():
+            y = above
+        y = max(area.top(), min(y, area.bottom() - height + 1))
+        self.move(int(x), int(y))
+
+    def _listen(self) -> None:
+        if self._listening:
+            return
+        app = QApplication.instance()
+        if app is None:
+            return
+        app.focusChanged.connect(self._focus_left)  # type: ignore[attr-defined]
+        self._listening = True
+
+    def _unlisten(self) -> None:
+        if not self._listening:
+            return
         app = QApplication.instance()
         if app is not None:
-            app.focusChanged.connect(self._focus_left)
+            try:
+                app.focusChanged.disconnect(self._focus_left)  # type: ignore[attr-defined]
+            except (RuntimeError, TypeError):
+                pass
+        self._listening = False
 
     def _focus_left(self, _old: object, new: object) -> None:
         if not self.isVisible():
             return
         if isinstance(new, QWidget) and (new is self or self.isAncestorOf(new)):
             return
-        # A click outside the popup is the same as Esc: close, write nothing.
+        # A click outside already moved focus. Close without pulling it back.
+        self._unlisten()
         self.hide()
+        self.deleteLater()
 
     def eventFilter(self, watched: QObject, event: QEvent) -> bool:  # noqa: N802
-        if event.type() == QEvent.Type.ShortcutOverride and watched in (self.search, self.field):
+        check = getattr(self, "check", None)
+        watched_line = watched in (self.search, self.field) or watched is check
+        if event.type() == QEvent.Type.ShortcutOverride and watched_line:
             event.accept()
             return True
-        if event.type() == QEvent.Type.KeyPress and watched in (self.search, self.field):
+        if event.type() == QEvent.Type.KeyPress and watched_line:
             return self._key(event)  # type: ignore[arg-type]
         return super().eventFilter(watched, event)
 
@@ -200,20 +245,21 @@ class EventPicker(QFrame):
     def _toggled(self, checked: bool) -> None:
         if self._filling or self._page is None:
             return
-        remember_base("event" if self._page.kind == "event" else "actions", checked)
+        if self._page.check.startswith("Show "):
+            remember_base("event" if self._page.kind == "event" else "actions", checked)
         self._press("check", "1" if checked else "0")
 
-    def _clicked(self, item: QListWidgetItem) -> None:
+    def _clicked(self, index: object) -> None:
         page = self._page
-        if page is None:
+        if page is None or not index.isValid():  # type: ignore[attr-defined]
             return
-        index = item.data(_ROLE)
-        if not isinstance(index, int) or not (0 <= index < len(page.rows)):
+        row_index = self._window_start + index.row()  # type: ignore[attr-defined]
+        if not (0 <= row_index < len(page.rows)):
             return
-        row = page.rows[index]
+        row = page.rows[row_index]
         if row.header or not row.enabled:
             return
-        self._page = replace(page, current=index)
+        self._page = replace(page, current=row_index)
         self._press("enter")
 
     def _apply(self, page: Page) -> None:
@@ -223,6 +269,12 @@ class EventPicker(QFrame):
         method = page.kind == "method"
         self.search.setVisible(not method)
         self.field.setVisible(method)
+        if page.kind == "event":
+            self.search.setPlaceholderText("Type to find an event")
+        else:
+            self.search.setPlaceholderText("")
+        self.search.setAccessibleName(page.title or "Choices")
+        self.rows.setAccessibleName(page.title or "Choices")
         if method:
             if self.field.text() != page.field:
                 self.field.setText(page.field)
@@ -237,45 +289,38 @@ class EventPicker(QFrame):
             self.check.setChecked(page.checked)
         self._fill(page)
         self._filling = False
-        self.adjustSize()
+        if not self.isVisible():
+            self.adjustSize()
 
     def _fill(self, page: Page) -> None:
-        chrome = self._chrome
-        self.rows.clear()
-        for index, item in enumerate(page.rows):
-            row = QListWidgetItem()
-            row.setData(_ROLE, index)
-            if item.header or not item.enabled:
-                row.setFlags(row.flags() & ~Qt.ItemFlag.ItemIsEnabled & ~Qt.ItemFlag.ItemIsSelectable)
-            self.rows.addItem(row)
-            label = QLabel(self._html(item, chrome), self.rows)
-            label.setTextFormat(Qt.TextFormat.RichText)
-            label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
-            label.setStyleSheet("background: transparent; border: none; padding: 2px 6px;")
-            height = _ROW + (16 if item.note else 0)
-            row.setSizeHint(QSize(280, height))
-            self.rows.setItemWidget(row, label)
-        if page.rows:
-            self.rows.setCurrentRow(page.current)
-        shown = min(max(len(page.rows), 1), 8)
-        self.rows.setFixedHeight(shown * _ROW + 8)
-
-    def _html(self, item: Item, chrome: FormChrome) -> str:
-        from html import escape
-
-        if item.header:
-            return "<span style=\"color:%s\">%s</span>" % (chrome.muted, escape(item.text))
-        color = chrome.text if item.enabled else chrome.muted
-        body = "<span style=\"color:%s\">%s</span>" % (color, escape(item.text))
-        if item.faint:
-            body += " <span style=\"color:%s\">%s</span>" % (chrome.faint, escape(item.faint))
-        if item.note:
-            body += "<br><span style=\"color:%s\">%s</span>" % (chrome.faint, escape(item.note))
-        return body
+        # The model holds a window around the current row. The page still has every match.
+        start = 0
+        if len(page.rows) > 12:
+            start = min(max(0, page.current - 4), len(page.rows) - 12)
+        self._window_start = start
+        window = page.rows[start:start + 12]
+        labels = []
+        flags = []
+        enabled = Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable
+        for item in window:
+            label = item.text
+            if item.faint:
+                label = "%s  %s" % (item.text, item.faint)
+            labels.append(label)
+            flags.append(Qt.ItemFlag.NoItemFlags if item.header or not item.enabled else enabled)
+        self._model.set_rows(labels, flags)
+        if window:
+            self.rows.setCurrentIndex(self._model.index(page.current - start, 0))
+        shown = min(max(len(window), 1), 8)
+        height = shown * _ROW + 8
+        if self.rows.height() != height:
+            self.rows.setFixedHeight(height)
 
     def _shut(self) -> None:
+        self._unlisten()
         host = self._host
         self.hide()
+        self.deleteLater()
         if host is not None:
             host.setFocus()
 
@@ -285,8 +330,8 @@ class EventPicker(QFrame):
             "%(f)s QLineEdit { color: %(text)s; background: %(input)s; border: 1px solid %(border)s;"
             " border-radius: 4px; padding: 4px 8px; }"
             "%(f)s QLineEdit:focus { border: %(focus)dpx solid %(accent)s; }"
-            "%(f)s QListWidget { color: %(text)s; background: %(panel)s; border: none; outline: none; }"
-            "%(f)s QListWidget::item:selected { background: %(hover)s; border: %(focus)dpx solid %(accent)s; }"
+            "%(f)s QListView { color: %(text)s; background: %(panel)s; border: none; outline: none; }"
+            "%(f)s QListView::item:selected { background: %(hover)s; border: %(focus)dpx solid %(accent)s; }"
             "%(f)s QCheckBox { color: %(text)s; }"
         ) % {
             "f": frame,
@@ -298,6 +343,40 @@ class EventPicker(QFrame):
             "accent": chrome.accent,
             "focus": chrome.focus_width,
         }
+
+
+class _RowModel(QAbstractListModel):
+    """One painted list. Rows are strings, not a widget each."""
+
+    def __init__(self, parent: QWidget) -> None:
+        super().__init__(parent)
+        self._labels: list = []
+        self._flags: list = []
+
+    def rowCount(self, parent: object = None) -> int:  # noqa: N802
+        if parent is not None and parent.isValid():  # type: ignore[attr-defined]
+            return 0
+        return len(self._labels)
+
+    def data(self, index: object, role: int = 0) -> object:
+        if not index.isValid():  # type: ignore[attr-defined]
+            return None
+        if role == enum_value(Qt.ItemDataRole.DisplayRole):
+            return self._labels[index.row()]  # type: ignore[attr-defined]
+        return None
+
+    def flags(self, index: object) -> object:
+        if not index.isValid():  # type: ignore[attr-defined]
+            return Qt.ItemFlag.NoItemFlags
+        return self._flags[index.row()]  # type: ignore[attr-defined]
+
+    def set_rows(self, labels: list, flags: list) -> None:
+        if labels == self._labels and flags == self._flags:
+            return
+        self.beginResetModel()
+        self._labels = labels
+        self._flags = flags
+        self.endResetModel()
 
 
 def watched_empty(page: Optional[Page]) -> bool:

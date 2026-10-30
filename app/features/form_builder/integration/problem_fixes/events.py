@@ -35,7 +35,16 @@ def open_as_text(context: FixContext) -> None:
     if editor is None or not prop:
         return
     text = editor.toPlainText()
-    at = text.find('name="%s"' % prop)
+    sender = context.diagnostic.location.object_name or ""
+    start = 0
+    if sender:
+        at_widget = text.find('name="%s"' % sender)
+        if at_widget >= 0:
+            start = at_widget
+    end = text.find("<widget ", start + 1)
+    if end < 0:
+        end = len(text)
+    at = text.find('name="%s"' % prop, start, end)
     if at < 0:
         return
     cursor = editor.textCursor()
@@ -47,3 +56,4 @@ def open_as_text(context: FixContext) -> None:
 def register(registry: object) -> None:
     registry.add(ProblemFix("FB404", "merge-event", "Merge", merge_event))  # type: ignore[attr-defined]
     registry.add(ProblemFix("FB401", "open-as-text", "Open as text", open_as_text))  # type: ignore[attr-defined]
+    registry.add(ProblemFix("FB406", "open-as-text", "Open as text", open_as_text))  # type: ignore[attr-defined]

@@ -92,6 +92,10 @@ class _FormRow(QLabel):
         self.setWordWrap(True)
         self.setMinimumWidth(0)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        chrome = body._services.chrome
+        self.setStyleSheet(
+            "QLabel:focus { border: %dpx solid %s; }" % (chrome.focus_width, chrome.accent)
+        )
         self.setAccessibleName(row.words)
         self._row = row
         self._body = body

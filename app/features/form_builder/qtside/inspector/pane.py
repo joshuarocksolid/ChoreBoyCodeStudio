@@ -209,9 +209,13 @@ class InspectorPane(QWidget):
         if tab is TabId.BEHAVIOR:
             self._pending = True
             self.flush()
-            first = self.findChild(QWidget, "formBuilder.events.first")
+            body = self.findChild(QWidget, "formBuilder.events")
+            first = body.first_focus() if body is not None and hasattr(body, "first_focus") else None
             if first is not None:
                 first.setFocus()
+                reveal = getattr(body, "_reveal", None)
+                if callable(reveal):
+                    reveal(first)
                 return
         page = self.tabs.widget(index)
         if page is not None:

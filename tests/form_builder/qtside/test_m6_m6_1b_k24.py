@@ -9,7 +9,8 @@ import pytest
 
 pytest.importorskip("app.qt.QtWidgets", exc_type=ImportError)
 
-from app.qt.QtWidgets import QApplication, QLabel  # noqa: E402
+from app.qt.QtCore import QPoint  # noqa: E402
+from app.qt.QtWidgets import QApplication, QLabel, QScrollArea, QWidget  # noqa: E402
 from tests.form_builder.qtside.test_m3_keyboard_scripts import Kb, _close, _session  # noqa: E402
 
 pytestmark = [pytest.mark.unit, pytest.mark.timeout(300)]
@@ -23,6 +24,26 @@ def _label(kb: Kb) -> str:
 
 def _depth(kb: Kb) -> int:
     return len(kb.session.log.entries())  # type: ignore[attr-defined]
+
+
+def _inside(widget: QWidget, name: str) -> bool:
+    current = widget
+    while current is not None:
+        if current.objectName() == name:
+            return True
+        current = current.parentWidget()
+    return False
+
+
+def _row_in_viewport(widget: QWidget) -> bool:
+    parent = widget.parentWidget()
+    while parent is not None:
+        if isinstance(parent, QScrollArea):
+            view = parent.viewport()
+            point = widget.mapTo(view, QPoint(1, 1))
+            return view.rect().contains(point)
+        parent = parent.parentWidget()
+    return widget.isVisible()
 
 
 def _focus_shows(kb: Kb, words: str) -> bool:
@@ -64,7 +85,19 @@ def test_k24_events_list(tmp_path: Path, qapp: QApplication) -> None:
             any("Nothing happens yet when Cancel is clicked." in widget.text() for widget in kb.surface.findChildren(QLabel)),  # type: ignore[attr-defined]
             "empty Cancel sentence",
         )
+        kb.press("Key_Down")
+        stayed = kb.focus()
+        kb.check(
+            stayed is not None and _inside(stayed, "formBuilder.events"),
+            "Down on + When… stays in Events",
+        )
+        kb.press("Key_Escape")
+        kb.check(kb.focus_name() == "formBuilder.canvas", "Esc returns to the canvas, have %s" % kb.focus_name())
         _add_close(kb)
+        kb.press("Key_B", "Alt")
+        row = kb.focus()
+        kb.check(row is not None and "clicked" in (row.accessibleName() or "").lower(), "Alt+B focuses the clicked row")
+        kb.check(_row_in_viewport(row), "the focused row is inside the viewport")
 
         _go(kb, "clearButton")
         kb.press("Key_B", "Alt")

@@ -32,6 +32,23 @@ def add_event(surface: Any) -> None:
     """Ctrl+Shift+E and Form > Add event… share this."""
     from app.qt.QtWidgets import QWidget
 
+    from app.features.form_builder.engine.logic.codec import marker_read_only
+    from app.features.form_builder.engine.ui4.nodes import LayoutNode, SpacerNode
+
+    session = surface.session
+    ids = session.selection.state.ids
+    if len(ids) != 1:
+        surface.narrate("Choose one widget to add an event.")
+        return
+    node = session.document.node(ids[0])
+    if isinstance(node, (LayoutNode, SpacerNode)):
+        surface.narrate("Layouts don't have events.")
+        return
+    if marker_read_only(session.document.root.prop("cbcsLogic")):
+        surface.narrate(
+            "This form's behavior was saved by a newer version of Code Studio, so it can't be changed here."
+        )
+        return
     inspector = surface.workbench.inspector
     _behavior(surface)
     host = inspector.findChild(QWidget, "formBuilder.events.when")

@@ -28,6 +28,7 @@ from app.features.form_builder.engine.logic.events import (
 from app.features.form_builder.engine.logic.events_catalog import (
     class_chain,
     default_event,
+    event_clause,
     event_words,
     step_words,
 )
@@ -37,10 +38,9 @@ from app.features.form_builder.engine.logic.intents.m6 import edits as intent_ed
 from app.features.form_builder.engine.logic.intents.m6 import intents_for
 from app.features.form_builder.engine.logic.storage import signal_property
 from app.features.form_builder.engine.query.actions import plain_text, text_of
-from app.features.form_builder.engine.query.tree import reading_order
 from app.features.form_builder.engine.ui4.defaults import QtClassTable
 from app.features.form_builder.engine.ui4.document import UiDocument
-from app.features.form_builder.engine.ui4.nodes import ActionNode, LayoutNode, SpacerNode
+from app.features.form_builder.engine.ui4.nodes import ActionNode, LayoutNode, SpacerNode, WidgetNode
 from app.features.form_builder.engine.ui4.values import CStringValue
 
 UNSAVABLE = (
@@ -82,6 +82,7 @@ class StepView:
     unknown: bool
     readonly: bool
     problem: str
+    method: str = ""
 
 
 @dataclass(frozen=True)
@@ -218,7 +219,7 @@ def project_sender(
         for state in events_of_sender(doc, sender)
     )
     empty = _empty_sentence(display, default, chain)
-    caption = CODE_CAPTION if _goes_to_code(chain) and not events else ""
+    caption = "" if read_only else (CODE_CAPTION if _goes_to_code(chain) and not events else "")
     return SenderView(
         "one",
         line,
@@ -246,19 +247,18 @@ def project_incoming(doc: UiDocument, classes: QtClassTable, target: str) -> Tup
         if state.sender == target or state.has_unreadable_list:
             continue
         chain = _chain_of(doc, classes, state.sender)
-        header = event_words(state.signal_name, chain).header
         sender_display = display_name(doc, state.sender)
         for index, step in enumerate(state.steps):
             if not _aims_at(doc, step, target):
                 continue
-            words = "When %s is %s: %s" % (sender_display, header, _short_words(doc, classes, step))
+            words = "When %s: %s" % (event_clause(state.signal_name, chain, sender_display), _short_words(doc, classes, step))
             found.append(IncomingRow(state.sender, state.signal_name, index, words))
     return tuple(found)
 
 
 def project_form(doc: UiDocument, classes: QtClassTable) -> Tuple[FormRow, ...]:
     """Every step on the form, senders in outline order, steps in run order."""
-    order = {name: index for index, name in enumerate(reading_order(doc))}
+    order = {name: index for index, name in enumerate(outline_names(doc))}
     states = sorted(read_events(doc), key=lambda state: order.get(state.sender, len(order)))
     found = []
     names = doc.names()
@@ -320,28 +320,62 @@ def finish(doc: UiDocument, classes: QtClassTable, key: str, gesture: Gesture) -
     return None
 
 
+_DISPLAY: dict = {}
+
+
+def outline_names(doc: UiDocument) -> Tuple[str, ...]:
+    """Every widget and action, in outline order, then the form if it was not first."""
+    names = []
+    for node in doc.iter_preorder():
+        if isinstance(node, WidgetNode) and node.object_name:
+            names.append(node.object_name)
+        elif isinstance(node, ActionNode) and node.name:
+            names.append(node.name)
+    return tuple(names)
+
+
 def display_name(doc: UiDocument, name: str) -> str:
-    """Buddy label, then the widget's own text, then the object name. ``&`` is a mnemonic."""
-    node = sender_node(doc, name)
-    if node is None:
-        return name
-    if name == doc.root.object_name:
-        title = plain_text(text_of(node, "windowTitle"))
-        return title or name
+    """Buddy label, then the widget's own text, then the object name. ``&`` is a mnemonic.
+
+    One map per document revision, so a 300-widget form does not walk every widget per call.
+    """
+    key = (id(doc), doc.revision)
+    cached = _DISPLAY.get(key)
+    if cached is None:
+        cached = _display_map(doc)
+        _DISPLAY.clear()
+        _DISPLAY[key] = cached
+    return cached.get(name, name)
+
+
+def _display_map(doc: UiDocument) -> dict:
+    found = {}
+    buddies = {}
     for widget in doc.iter_widgets():
         buddy = widget.value("buddy")
-        if isinstance(buddy, CStringValue) and buddy.text == name:
+        if isinstance(buddy, CStringValue) and buddy.text:
             label = plain_text(text_of(widget))
-            if label:
-                return label
-    own = plain_text(text_of(node))
-    if own:
-        return own
-    if isinstance(node, ActionNode):
-        action = plain_text(text_of(node))
-        if action:
-            return action
-    return name
+            if label and buddy.text not in buddies:
+                buddies[buddy.text] = label
+    for node in doc.iter_preorder():
+        if isinstance(node, ActionNode):
+            label = node.name
+        elif isinstance(node, WidgetNode):
+            label = node.object_name
+        else:
+            continue
+        if not label:
+            continue
+        if label == doc.root.object_name:
+            title = plain_text(text_of(node, "windowTitle"))
+            found[label] = title or label
+            continue
+        if label in buddies:
+            found[label] = buddies[label]
+            continue
+        own = plain_text(text_of(node))
+        found[label] = own or label
+    return found
 
 
 def friendly_class(class_name: str) -> str:
@@ -381,15 +415,19 @@ def _event_view(
             prop,
         )
     if _bad_name(state):
+        steps = tuple(
+            _step_view(doc, classes, state, index, step, words.header, True)
+            for index, step in enumerate(state.steps)
+        )
         return EventView(
             state.signal_name,
             "When %s" % words.header,
             qt,
             "Event, %s" % state.signal_name,
-            (),
+            steps,
             True,
             False,
-            UNSAVABLE,
+            _bad_sentence(state),
             False,
             prop,
         )
@@ -452,6 +490,7 @@ def _step_view(
         unknown,
         read_only or unknown,
         problem,
+        step.method if step.verb == "call" else "",
     )
 
 
@@ -486,7 +525,7 @@ def _named(doc: UiDocument, name: str) -> str:
 def _empty_sentence(display: str, signal: str, chain: Sequence[str]) -> str:
     if not signal:
         return "Nothing happens yet for %s." % display
-    return "Nothing happens yet when %s is %s." % (display, event_words(signal, chain).header)
+    return "Nothing happens yet when %s." % event_clause(signal, chain, display)
 
 
 def _goes_to_code(chain: Sequence[str]) -> bool:
@@ -533,6 +572,34 @@ def _missing(doc: UiDocument, step: EventStep) -> bool:
 
 def _bad_name(state: EventState) -> bool:
     return any(_bad_step(step) for step in state.steps)
+
+
+def _bad_sentence(state: EventState) -> str:
+    name = ""
+    for step in state.steps:
+        if _bad_step(step):
+            name = _bad_token(step)
+            break
+    return "%s %s has a step whose name Code Studio can't use (%s). It is kept as it is and does nothing." % (
+        state.sender,
+        event_words(state.signal_name).header,
+        name,
+    )
+
+
+def _bad_token(step: EventStep) -> str:
+    if step.verb == "slot":
+        if not compat.is_name(step.target):
+            return step.target
+        return step.slot
+    if step.verb == "call":
+        return step.method
+    return ""
+
+
+def bad_names(state: EventState) -> Tuple[str, ...]:
+    """The unusable names in this event, including a native connection."""
+    return tuple(_bad_token(step) for step in state.steps if _bad_step(step))
 
 
 def _bad_step(step: EventStep) -> bool:
@@ -609,10 +676,24 @@ def _delete(
     steps = tuple(item for index, item in enumerate(state.steps) if index != gesture.index)
     caption = "Delete %s" % _short_words(doc, classes, step)
     status = ""
-    if step.verb == "call" and step.method:
-        status = "Removed the step. %s() is still in the window file." % step.method
+    if step.verb == "call" and step.method and not _method_used_elsewhere(
+        doc, step.method, sender, state.signal_name, gesture.index
+    ):
+        status = "METHOD_UNUSED"
     focus = min(gesture.index, len(steps) - 1)
     return _written(sender, state.signal_name, steps, caption, status, focus)
+
+
+def _method_used_elsewhere(
+    doc: UiDocument, method: str, sender: str, signal: str, index: int
+) -> bool:
+    for state in read_events(doc):
+        for step_index, step in enumerate(state.steps):
+            if state.sender == sender and state.signal_name == signal and step_index == index:
+                continue
+            if step.verb == "call" and step.method == method:
+                return True
+    return False
 
 
 def _duplicate(
@@ -639,6 +720,8 @@ def _replace_slot(
         return None
     # Carry the old step so its Designer hints survive when the arrow end is unchanged;
     # the engine drops them when the target or slot changes (D7).
+    if old.verb == "slot" and old.target == gesture.target and old.slot == gesture.slot:
+        return None
     if old.verb == "slot":
         new = replace(old, target=gesture.target, slot=gesture.slot)
     else:
