@@ -149,13 +149,15 @@ def test_method_page_gesture_and_save_checks(tmp_path, qapp: QApplication) -> No
                 "%s bare p95 %.2f ms median %.2f  gesture p95 %.2f median %.2f  added %.2f ms  load %s"
                 % (prefix, bare, _median_ms(bares), gesture, _median_ms(gestures), added, os.getloadavg())
             )
-            return added
+            return gesture
 
+        # UX-M6-003 "Double-click to a new method with the caret in the code tab:
+        # tab already open <= 80 ms" is the budget for this whole gesture (D30).
         # The tab is clean, so each gesture saves it. That is K26's path.
-        clean_added = _added("clean")
+        clean_gesture = _added("clean")
         opened.insertPlainText("\n# scratch\n")
         qapp.processEvents()
-        dirty_added = _added("dirty")
+        dirty_gesture = _added("dirty")
 
         bridge = surface.code_bridge
         bridge.notify_saved(str(path))
@@ -173,7 +175,7 @@ def test_method_page_gesture_and_save_checks(tmp_path, qapp: QApplication) -> No
             % (save_checks, _median_ms(checks), min(checks) * 1000, max(checks) * 1000, os.getloadavg())
         )
         assert save_checks <= 50.0
-        assert dirty_added <= 50.0
-        assert clean_added <= 50.0
+        assert dirty_gesture <= 80.0
+        assert clean_gesture <= 80.0
     finally:
         _close(window, qapp, guard)
