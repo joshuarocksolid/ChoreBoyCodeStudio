@@ -1,8 +1,9 @@
 # pyright: reportAttributeAccessIssue=false
-"""Screenshots of the M6.2b code states.
+"""Live screenshots of the M6.2b code states.
 
 Skips unless CBCS_FB_SCREENSHOT_DIR is set. 100% is this process. 200% is a
 child with QT_SCALE_FACTOR=2. Inspector states are also grabbed at 236 px.
+The pixels come from the real inspector, method page, and Problems panel.
 """
 
 from __future__ import annotations
@@ -10,13 +11,14 @@ from __future__ import annotations
 import os
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 import pytest
 
 from app.core import constants
-from app.qt.QtWidgets import QApplication, QCheckBox, QLabel, QMessageBox, QVBoxLayout, QWidget
-from app.shell.theme_tokens import tokens_from_palette
+from app.qt.QtGui import QColor, QPalette
+from app.qt.QtWidgets import QApplication, QWidget
 
 pytestmark = pytest.mark.unit
 
@@ -26,146 +28,100 @@ _MODES = (
     constants.UI_THEME_MODE_HIGH_CONTRAST_LIGHT,
     constants.UI_THEME_MODE_HIGH_CONTRAST_DARK,
 )
-_INSPECTOR = (
-    "method-page",
-    "method-page-bad-name",
-    "your-methods",
-    "events-by-name",
-    "form-settings",
-    "problems-fb201",
-    "code-017",
-)
 
 
-def _pump(qapp: QApplication, times: int = 4) -> None:
+def _pump(qapp: QApplication, times: int = 6) -> None:
     for _ in range(times):
         qapp.processEvents()
 
 
-def _sheet(tokens: object) -> str:
-    return (
-        "QWidget { background: %s; color: %s; }"
-        "QLabel { background: transparent; color: %s; }"
-        "QCheckBox { color: %s; }"
-        % (tokens.panel_bg, tokens.text_primary, tokens.text_primary, tokens.text_primary)  # type: ignore[attr-defined]
-    )
+def _grab(widget: QWidget, path: Path, width: int = 0) -> None:
+    widget.show()
+    widget.adjustSize()
+    if width:
+        laid = widget.layout()
+        height = laid.heightForWidth(width) if laid is not None else 0
+        if height <= 0:
+            height = widget.sizeHint().height()
+        widget.setFixedSize(width, max(height, 1))
+    path.parent.mkdir(parents=True, exist_ok=True)
+    widget.grab().save(str(path))
 
 
-def _host(qapp: QApplication, mode: str, width: int) -> tuple:
-    tokens = tokens_from_palette(qapp.palette(), force_mode=mode)
-    host = QWidget()
-    host.setStyleSheet(_sheet(tokens))
-    column = QVBoxLayout(host)
-    host.resize(width, 280)
-    return host, column, tokens
+def _child(root: QWidget, name: str) -> QWidget:
+    found = root.findChild(QWidget, name)
+    assert found is not None, name
+    return found
 
 
-def _label(parent: QWidget, text: str, color: str) -> QLabel:
-    label = QLabel(text, parent)
-    label.setWordWrap(True)
-    label.setStyleSheet("color: %s; background: transparent;" % color)
-    return label
-
-
-def _fill(host: QWidget, column: QVBoxLayout, tokens: object, state: str) -> None:
-    if state == "method-page":
-        column.addWidget(_label(host, "print_receipt", tokens.text_primary))  # type: ignore[attr-defined]
-        column.addWidget(_label(host, "Adds print_receipt() to SaleWindow in sale_window.py.", tokens.text_muted))  # type: ignore[attr-defined]
-        column.addWidget(_label(host, "METHODS IN sale_window.py", tokens.text_muted))  # type: ignore[attr-defined]
-        column.addWidget(_label(host, "show_total()", tokens.text_primary))  # type: ignore[attr-defined]
-    elif state == "method-page-bad-name":
-        column.addWidget(_label(host, "close", tokens.text_primary))  # type: ignore[attr-defined]
-        column.addWidget(
-            _label(
-                host,
-                "close is a method of QDialog, so it would replace it. Try close_sale.",
-                tokens.diag_error_color,  # type: ignore[attr-defined]
-            )
-        )
-    elif state == "your-methods":
-        column.addWidget(_label(host, "YOUR METHODS · sale_window.py", tokens.text_muted))  # type: ignore[attr-defined]
-        column.addWidget(
-            _label(
-                host,
-                "Code Studio adds methods to sale_window.py and never changes the rest of it.",
-                tokens.text_muted,  # type: ignore[attr-defined]
-            )
-        )
-        column.addWidget(_label(host, "print_receipt() · Print receipt clicked · line 42", tokens.text_primary))  # type: ignore[attr-defined]
-        column.addWidget(_label(host, "close_shift() · not used · line 60", tokens.text_primary))  # type: ignore[attr-defined]
-        column.addWidget(_label(host, "export_day() · not in sale_window.py", tokens.diag_warning_color))  # type: ignore[attr-defined]
-    elif state == "events-by-name":
-        column.addWidget(_label(host, "When clicked", tokens.text_primary))  # type: ignore[attr-defined]
-        column.addWidget(_label(host, "on_printButton_clicked() runs by its name", tokens.text_primary))  # type: ignore[attr-defined]
-        column.addWidget(_label(host, "sale_window.py:18", tokens.accent))  # type: ignore[attr-defined]
-    elif state == "form-settings":
-        box = QCheckBox("Connect methods by name", host)
-        box.setObjectName("formBuilder.formSetting.connectslotsbyname.check")
-        box.setChecked(True)
-        column.addWidget(box)
-        column.addWidget(
-            _label(
-                host,
-                "Methods named on_{widget}_{event} with @Slot run without a step. "
-                "Qt Designer calls this Connect slots by name.",
-                tokens.text_muted,  # type: ignore[attr-defined]
-            )
-        )
-    elif state == "problems-fb201":
-        column.addWidget(_label(host, "FB201  print_receipt() is not in sale_window.py.", tokens.diag_error_color))  # type: ignore[attr-defined]
-        column.addWidget(_label(host, "Create method    Use print_receipt", tokens.accent))  # type: ignore[attr-defined]
-    elif state == "code-017":
-        column.addWidget(_label(host, "This form isn't in a project, so it has no window file.", tokens.text_muted))  # type: ignore[attr-defined]
-        column.addWidget(_label(host, "Adopt this form…", tokens.accent))  # type: ignore[attr-defined]
-    elif state == "preview-would-call":
-        column.addWidget(
-            _label(
-                host,
-                "Preview: Print receipt clicked would call print_receipt() in sale_window.py.",
-                tokens.text_primary,  # type: ignore[attr-defined]
-            )
-        )
-    host.show()
+def _theme(window: QWidget, mode: str, qapp: QApplication) -> None:
+    window._theme_mode = mode  # type: ignore[attr-defined]
+    window._shell_theme_workflow.apply_theme_styles()  # type: ignore[attr-defined]
+    _pump(qapp)
 
 
 def _shoot(qapp: QApplication, folder: Path, scale: str) -> None:
-    states = _INSPECTOR + ("f5-dialog", "preview-would-call")
-    for mode in _MODES:
-        for state in states:
-            host, column, tokens = _host(qapp, mode, 420)
-            if state == "f5-dialog":
-                box = QMessageBox(host)
-                box.setText("Save sale_window.py before running? It has code this form calls.")
-                box.addButton("Save and run", _role("AcceptRole"))
-                box.addButton("Run without saving", _role("DestructiveRole"))
-                box.addButton("Cancel", _role("RejectRole"))
-                box.show()
-                _pump(qapp)
-                box.grab().save(str(folder / ("%s-%s-%s.png" % (state, mode, scale))))
-                box.close()
-                host.close()
-                continue
-            _fill(host, column, tokens, state)
-            host.setFixedWidth(420)
-            host.adjustSize()
+    from tests.form_builder.qtside.test_m6_2b_k26 import _session
+
+    tmp = Path(tempfile.mkdtemp()).resolve()
+    window, kb, guard, _path = _session(tmp, qapp)
+    from app.features.form_builder.engine.commands.catalog_ext.events import SetEventSteps
+    from app.features.form_builder.engine.logic.events_codec import call_step
+    try:
+        surface = kb.surface
+        surface.session.log.execute(
+            SetEventSteps("printButton", "clicked", (call_step("missing_method"),), caption="Call missing_method()")
+        )
+        _pump(qapp)
+        inspector = surface.workbench.inspector
+        for mode in _MODES:
+            _theme(window, mode, qapp)
+            from app.features.form_builder.qtside.inspector import TabId
+
+            inspector.focus_tab(TabId.BEHAVIOR)
+            inspector.flush()
             _pump(qapp)
-            host.grab().save(str(folder / ("%s-%s-%s.png" % (state, mode, scale))))
-            if state in _INSPECTOR:
-                narrow, narrow_column, narrow_tokens = _host(qapp, mode, 236)
-                _fill(narrow, narrow_column, narrow_tokens, state)
-                narrow.setFixedWidth(236)
-                narrow.adjustSize()
-                _pump(qapp)
-                narrow.grab().save(str(folder / ("%s-%s-%s-236.png" % (state, mode, scale))))
-                narrow.close()
-            host.close()
+            yours = _child(inspector, "formBuilder.yourMethods")
+            _grab(yours, folder / ("your-methods-%s-%s.png" % (mode, scale)))
+            _grab(yours, folder / ("your-methods-%s-%s-236.png" % (mode, scale)), 236)
+            events = _child(inspector, "formBuilder.events")
+            _grab(events, folder / ("events-by-name-%s-%s.png" % (mode, scale)))
+            _grab(events, folder / ("events-by-name-%s-%s-236.png" % (mode, scale)), 236)
+            from app.features.form_builder.integration.form_menu_ext.form_settings import reveal
 
+            reveal(surface)
+            _pump(qapp)
+            box = _child(window, "formBuilder.formSetting.connectslotsbyname.check")
+            box.setFocus()
+            row = _child(window, "formBuilder.formSetting.connectslotsbyname")
+            # The row is transparent over the inspector. A bare grab fills that
+            # with the default window color, so paint the panel behind it.
+            panel = inspector._services.chrome.panel  # type: ignore[attr-defined]
+            row.setAutoFillBackground(True)
+            palette = row.palette()
+            palette.setColor(QPalette.ColorRole.Window, QColor(panel))
+            row.setPalette(palette)
+            _grab(row, folder / ("form-settings-%s-%s.png" % (mode, scale)))
+            _grab(row, folder / ("form-settings-%s-%s-236.png" % (mode, scale)), 236)
+            from app.features.form_builder.qtside.pickers import open_method_page
 
-def _role(name: str) -> object:
-    nested = getattr(QMessageBox, "ButtonRole", None)
-    if nested is not None and hasattr(nested, name):
-        return getattr(nested, name)
-    return getattr(QMessageBox, name)
+            picker = open_method_page(inspector, "printButton", "clicked")
+            _pump(qapp)
+            field = _child(picker, "formBuilder.eventPickerMethod")
+            field.setFocus()
+            _grab(picker, folder / ("method-page-%s-%s.png" % (mode, scale)))
+            field.setText("close")
+            _pump(qapp)
+            _grab(picker, folder / ("method-page-bad-name-%s-%s.png" % (mode, scale)))
+            picker.hide()
+            panel = window._problems_panel  # type: ignore[attr-defined]
+            if panel is not None:
+                panel.show()
+                _grab(panel, folder / ("problems-fb201-%s-%s.png" % (mode, scale)))
+    finally:
+        from tests.form_builder.qtside.test_m3_keyboard_scripts import _close
+
+        _close(window, qapp, guard)
 
 
 @pytest.mark.timeout(300)

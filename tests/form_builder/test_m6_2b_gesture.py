@@ -104,6 +104,49 @@ def _request(command: object = None) -> MethodRequest:
     return MethodRequest(label, commands, "print_receipt", "", "printButton", "clicked")
 
 
+def test_a_stub_for_an_existing_step_undoes_with_that_step(tmp_path: Path) -> None:
+    from app.features.form_builder.engine.commands.catalog_ext.methods import PairStub
+
+    text = (FIXTURE / "sale_window.py").read_text(encoding="utf-8")
+    surface, window, port = _open(tmp_path, text, dirty=True)
+    surface.session.log.execute(
+        SetEventSteps("printButton", "clicked", (call_step("print_receipt"),), caption="Call print_receipt()")
+    )
+    before = port.tabs[str(window)]
+    request = MethodRequest("Create method", (PairStub("print_receipt"),), "print_receipt", "", "printButton", "clicked")
+    assert SERVICE.make_method(surface, request).ok
+    assert "def print_receipt(self):" in port.tabs[str(window)]
+    assert "*args" not in port.tabs[str(window)]
+    assert len(surface.session.log.entries()) == 2
+    assert surface.session.log.undo()
+    assert port.tabs[str(window)] == before
+    from app.features.form_builder.engine.logic.events import read_event
+
+    state = read_event(surface.session.document, "printButton", "clicked")
+    assert any(step.verb == "call" and step.method == "print_receipt" for step in state.steps)
+
+
+def test_a_slot_whose_types_disagree_is_not_connected_by_name() -> None:
+    from app.features.form_builder.qtside.inspector.behavior_ext.events import _slot_agrees
+
+    clicked = ("clicked()", "clicked(bool)")
+    assert _slot_agrees(("str",), "clicked", clicked) is False
+    assert _slot_agrees(("bool",), "clicked", clicked) is True
+    assert _slot_agrees((), "clicked", clicked) is True
+    assert _slot_agrees(None, "clicked", clicked) is False
+
+
+def test_stubs_take_self_and_never_star_args() -> None:
+    from app.features.form_builder.engine.codegen.window_template import method_lines
+
+    lines = "\n".join(method_lines("    ", "print_receipt", (), "printButton", "clicked", "\n"))
+    assert "def print_receipt(self):" in lines
+    assert "*args" not in lines
+    with_value = "\n".join(method_lines("    ", "print_receipt", ("checked",), "printButton", "clicked", "\n"))
+    assert "def print_receipt(self, checked):" in with_value
+    assert "*args" not in with_value
+
+
 def test_the_plan_uses_the_open_tab_when_it_differs_from_disk(tmp_path: Path) -> None:
     disk = (FIXTURE / "sale_window.py").read_text(encoding="utf-8")
     tab = disk.replace("Notes for the next person", "tab only marker")
