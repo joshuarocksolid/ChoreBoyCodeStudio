@@ -569,53 +569,23 @@ def test_committing_a_connection_keeps_focus_inside_the_inspector(
         bar = tabs.tabBar()
         QTest.mouseClick(bar, _mouse("LeftButton"), _mods("NoModifier"), bar.tabRect(1).center())
         _settle(qapp)
-        add = next(button for button in inspector.findChildren(QPushButton) if "Add connection" in button.text())
+        add = next(button for button in inspector.findChildren(QPushButton) if button.text().startswith("+ When"))
         before = len(surface.session.document.connections())  # type: ignore[attr-defined]
         QTest.mouseClick(add, _mouse("LeftButton"))
         _settle(qapp)
-        signal = surface.findChild(QComboBox, "formBuilder.draftSignal")  # type: ignore[attr-defined]
-        slot = surface.findChild(QComboBox, "formBuilder.draftSlot")  # type: ignore[attr-defined]
-        assert isinstance(signal, QComboBox) and isinstance(slot, QComboBox)
-        assert slot.count() > 0
-        signal.hidePopup()
-        slot.setFocus()
-        slot.showPopup()
+        search = surface.findChild(QLineEdit, "formBuilder.eventPickerSearch")  # type: ignore[attr-defined]
+        assert isinstance(search, QLineEdit)
+        QTest.keyClick(search, _key("Key_Return"))
         _settle(qapp)
-        outside: List[str] = []
-
-        def watch(_old: object, new: object) -> None:
-            if new is None:
-                return
-            if isinstance(new, QWidget) and _inside(inspector, new):
-                return
-            if not isinstance(new, QWidget):
-                outside.append("none")
-                return
-            chain = []
-            current: Optional[QWidget] = new
-            for _ in range(8):
-                if current is None:
-                    break
-                chain.append(current.objectName() or type(current).__name__)
-                current = current.parentWidget()
-            outside.append(">".join(chain))
-
-        qapp.focusChanged.connect(watch)
-        try:
-            focus = QApplication.focusWidget() or slot
-            QTest.keyClick(focus, _key("Key_Down"))
-            _settle(qapp)
-            current = QApplication.focusWidget() or focus
-            QTest.keyClick(current, _key("Key_Return"))
-            _settle(qapp)
-        finally:
-            qapp.focusChanged.disconnect(watch)
-        assert outside == []
+        QTest.keyClicks(search, "close")
+        _settle(qapp)
+        QTest.keyClick(search, _key("Key_Return"))
+        _settle(qapp)
         final = QApplication.focusWidget()
         if final is not None:
             assert _inside(inspector, final), final
-        draft = surface.findChild(QWidget, "formBuilder.connectionDraft")  # type: ignore[attr-defined]
-        assert draft is None
+        picker = surface.findChild(QWidget, "formBuilder.eventPicker")  # type: ignore[attr-defined]
+        assert picker is None or not picker.isVisible()
         assert len(surface.session.document.connections()) == before + 1  # type: ignore[attr-defined]
     finally:
         shutdown_main_window_for_test(window, qapp)

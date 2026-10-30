@@ -157,6 +157,19 @@ def _shoot(qapp: QApplication, folder: Path, suffix: str, tmp_path: Path) -> Non
             modes._link_pointer = (int(scene.x()), int(scene.y()))  # type: ignore[attr-defined]
             modes._push()  # type: ignore[attr-defined]
             _grab(qapp, host, folder, "connections-link-drag-%s" % tag)
+            modes.finish_registered_link(document.by_name("nameEdit")[0])  # type: ignore[attr-defined]
+            _pump(qapp, 12)
+            picker = next(
+                (
+                    widget
+                    for widget in QApplication.topLevelWidgets()
+                    if widget.objectName() == "formBuilder.eventPicker" and widget.isVisible()
+                ),
+                None,
+            )
+            assert picker is not None, tag
+            _grab(qapp, picker, folder, "connections-overlay-picker-%s" % tag)
+            picker.close()
             surface.modes.close()
             surface.release()
             host.close()

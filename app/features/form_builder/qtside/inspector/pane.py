@@ -206,6 +206,17 @@ class InspectorPane(QWidget):
         if tab is TabId.PROPERTIES:
             self.properties.focus_search()
             return
+        if tab is TabId.BEHAVIOR:
+            self._pending = True
+            self.flush()
+            body = self.findChild(QWidget, "formBuilder.events")
+            first = body.first_focus() if body is not None and hasattr(body, "first_focus") else None
+            if first is not None:
+                first.setFocus()
+                reveal = getattr(body, "_reveal", None)
+                if callable(reveal):
+                    reveal(first)
+                return
         page = self.tabs.widget(index)
         if page is not None:
             page.setFocus()
@@ -257,8 +268,8 @@ class InspectorPane(QWidget):
             self.properties.reveal_after_selection()
         title = "Behavior"
         behavior = pages.behavior
-        if isinstance(behavior, OneBehavior) and behavior.connections:
-            title = "Behavior (%d)" % len(behavior.connections)
+        if isinstance(behavior, OneBehavior) and behavior.event_count:
+            title = "Behavior (%d)" % behavior.event_count
         index = self._tab_index.get(TabId.BEHAVIOR)
         # setTabText relays out the styled tab bar even for the same text.
         if index is not None and self.tabs.tabText(index) != title:

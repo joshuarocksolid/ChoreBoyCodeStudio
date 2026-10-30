@@ -2320,6 +2320,8 @@ The lane split, owned files and parity rows are in `PLAN.md` ("M6 lanes"). Claus
 | D22 | Alt+B | Adopted: no shell menu title uses B (&File, &Edit, &View, F&orm, &Tools, &Run, &Help). It selects the Behavior tab and focuses its first row | UX-KEY-005's condition is met |
 | D23 | Layouts and spacers as senders or receivers | Not offered. A drag that ends on a layout or spacer connects to the widget that holds the layout; one that starts on a spacer does nothing. Existing layout connections in a file are kept, listed in the form's event table, and generate as uic does | Designer allows layout endpoints (R3 2), but layouts have no events and almost no slots a form uses. Keeping them round-trips the file |
 | D24 | Step lists for an overloaded event | The UI shows one event per signal name ("When clicked" covers `clicked()` and `clicked(bool)`). Native storage picks the overload with the fewest arguments that the step needs; a step list connects the overload with the most arguments, so any step can use a prefix of its values (CONTRACTS §15.6) | Designer lists overloads twice; owners shouldn't have to choose |
+| D26 | A step whose name Code Studio can't use | FB406, same severity as FB401. The steps stay on screen, read-only, with Open as text. The event is kept as it is and does nothing. This includes a native connection. (orchestrator, 2026-10-29) | A bad name must be a Problems row, not only a banner |
+| D27 | Sentences after "When" | Each event-words row has a clause that is a complete English clause after "When" ("{display} is clicked", "you finish editing {display}", "Enter is pressed in {display}"). Prefer "in" over "of". `toggled` is "{display} is checked or unchecked". Headers stay the short words. An event with no row uses "{display} sends {signal}". (orchestrator, 2026-10-29) | "When Name is editing is finished" is not a sentence |
 
 **UX-M6-001** `all M6` `[C]` Copy for M6 follows section 9.5, UX-M4-005 and UX-M5-007. In addition, on-screen text says "event" (never "signal" outside tooltips, the Qt-names line and the "MORE EVENTS" list's Qt column), "step", "method" for your code, "window file" only in captions ("Code Studio adds methods to the window file, shop_window.py."), and never "slot" for a method (the word appears only in the Qt column and the tooltip "Qt calls these slots."). Behavior is spelled the US way (UX-COPY-001); LOGIC_DESIGN's "behaviour" is not on screen. Every sentence a lane may show is in the 13.3.8 tables; a new one needs a spec change.
 
@@ -2331,7 +2333,7 @@ The lane split, owned files and parity rows are in `PLAN.md` ("M6 lanes"). Claus
 | --- | --- |
 | Select a widget with 20 events: Behavior tab filled | ≤ 16 ms |
 | A keystroke in the event picker (a class with 60 events) or the step picker (300 possible targets) | ≤ 16 ms |
-| Commit a step (`SetEventSteps` with a storage conversion), command to repainted canvas, outline and inspector | ≤ 16 ms; the command alone ≤ 2 ms |
+| Commit a step (`SetEventSteps` with a storage conversion), command to repainted canvas, outline and inspector | ≤ 50 ms added p95 (one discrete action, under the 100 ms people notice; M6.R measures it on the ChoreBoy VM); the command alone ≤ 2 ms |
 | Arrows for a selection with 10 connections; Show all with 120 events | ≤ 4 ms; ≤ 16 ms per frame |
 | Open the Connections overlay; a link drag frame | ≤ 50 ms; ≤ 16 ms |
 | Read the window file: pre-scan plus `ast` of 100 KB / of 1 MB / a cached reading | ≤ 30 ms / ≤ 250 ms (idle, never on the edit path) / ≤ 1 ms |
@@ -2588,28 +2590,29 @@ The pain 22 test: a misspelled signal (`on_okButton_clickd`) is FB208; `@Slot() 
 
 **Event words** (event headers "When {words}", picker items, docstrings "Runs when {object} is {words}.", and the short word for method names):
 
-| Signal | Header and picker words | Docstring words | Short word |
-| --- | --- | --- | --- |
-| `clicked` | "clicked" | "clicked" | `clicked` |
-| `pressed` / `released` | "pressed" / "released" | same | `pressed` / `released` |
-| `toggled` | "checked or unchecked" | "checked or unchecked" | `toggled` |
-| `editingFinished` | "editing is finished" (header "When editing is finished") | "finished editing" | `done` |
-| `returnPressed` | "Enter is pressed" | "given Enter" | `enter` |
-| `textChanged` / `textEdited` | "the text changes" / "the text is typed" | "changed" | `text_changed` / `typed` |
-| `currentIndexChanged` | "the choice changes" | "changed" | `changed` |
-| `activated` (combo box) | "a choice is picked" | "picked" | `picked` |
-| `valueChanged` | "the value changes" | "changed" | `changed` |
-| `dateChanged`, `timeChanged`, `dateTimeChanged` | "the date changes", "the time changes", "the date or time changes" | "changed" | `changed` |
-| `currentChanged` (tabs, stack) | "the page changes" | "switched to another page" | `page_changed` |
-| `itemActivated` | "an item is opened" | "opened" | `opened` |
-| `currentRowChanged` | "another row is chosen" | "moved to another row" | `row_changed` |
-| `accepted` / `rejected` (button box, dialog) | "OK is pressed" / "Cancel is pressed" | "accepted" / "cancelled" | `ok` / `cancel` |
-| `clicked(QAbstractButton*)` (button box) | "any of its buttons is clicked" | "clicked" | `button_clicked` |
-| `triggered` (action) | "chosen" | "chosen" | the action's text rule (UX-CODE-001) |
-| `finished` (dialog) | "it closes" | "closed" | `closed` |
-| any other | the signal name, as Qt writes it | the signal name | the signal name in `snake_case` |
+| Signal | Header and picker words | Docstring words | Short word | Clause (after "When") |
+| --- | --- | --- | --- | --- |
+| `clicked` | "clicked" | "clicked" | `clicked` | "{display} is clicked" |
+| `pressed` / `released` | "pressed" / "released" | same | `pressed` / `released` | "{display} is pressed" / "{display} is released" |
+| `toggled` | "checked or unchecked" | "checked or unchecked" | `toggled` | "{display} is checked or unchecked" |
+| `editingFinished` | "editing is finished" (header "When editing is finished") | "finished editing" | `done` | "you finish editing {display}" |
+| `returnPressed` | "Enter is pressed" | "given Enter" | `enter` | "Enter is pressed in {display}" |
+| `textChanged` / `textEdited` | "the text changes" / "the text is typed" | "changed" | `text_changed` / `typed` | "the text of {display} changes" / "the text is typed in {display}" |
+| `currentIndexChanged` | "the choice changes" | "changed" | `changed` | "the choice of {display} changes" |
+| `activated` (combo box) | "a choice is picked" | "picked" | `picked` | "a choice is picked in {display}" |
+| `activated` (any other) | "activated" | "activated" | `activated` | "{display} is activated" |
+| `valueChanged` | "the value changes" | "changed" | `changed` | "the value of {display} changes" |
+| `dateChanged`, `timeChanged`, `dateTimeChanged` | "the date changes", "the time changes", "the date or time changes" | "changed" | `changed` | "the date of {display} changes", "the time of {display} changes", "the date or time of {display} changes" |
+| `currentChanged` (tabs, stack, toolbox) | "the page changes" | "switched to another page" | `page_changed` | "the page of {display} changes" |
+| `itemActivated` | "an item is opened" | "opened" | `opened` | "an item in {display} is opened" |
+| `currentRowChanged` | "another row is chosen" | "moved to another row" | `row_changed` | "the row of {display} changes" |
+| `accepted` / `rejected` (button box, dialog) | "OK is pressed" / "Cancel is pressed" | "accepted" / "cancelled" | `ok` / `cancel` | "OK is pressed in {display}" / "Cancel is pressed in {display}" |
+| `clicked(QAbstractButton*)` (button box) | "any of its buttons is clicked" | "clicked" | `button_clicked` | "a button in {display} is clicked" |
+| `triggered` (action) | "chosen" | "chosen" | the action's text rule (UX-CODE-001) | "{display} is chosen" |
+| `finished` (dialog) | "it closes" | "closed" | `closed` | "{display} closes" |
+| any other | the signal name, as Qt writes it | the signal name | the signal name in `snake_case` | "{display} sends {signal}" |
 
-Header sentences use "When {display name} is {words}" in the step picker title and "When {words}" in the list ("When OK is pressed"); "When Enter is pressed" and the like keep their own verb.
+D27. A sentence uses the clause: "When {clause}." Headers stay "When {words}" ("When clicked", "When OK is pressed"). The step picker title is "Then… (When {clause})". Prefer "in" ("the text is typed in {display}", "a choice is picked in {display}", "an item in {display} is opened", "a button in {display} is clicked"). `toggled` is "{display} is checked or unchecked", matching its header. `editingFinished` is "you finish editing {display}".
 
 **Value words** ("My method receives {words}"): bool "whether it's checked"; QString "the new text"; int "the new number" (index signals: "the number of the new choice"; tabs: "the number of the new page"); double "the new number"; QDate "the new date"; QTime "the new time"; QDateTime "the new date and time"; QAbstractButton* "the button that was clicked". **Type words** (UX-PICK-006 reasons): bool "yes or no", int "a whole number", double "a number", QString "text", QDate "a date", other types their Qt name.
 
@@ -2689,6 +2692,7 @@ Header sentences use "When {display name} is {words}" in the step picker title a
 | Newer logic, rename | "{name} is used by behavior from a newer version of Code Studio, so it can't be renamed here." | status |
 | Newer logic pasted | "The pasted widgets have behavior from a newer version of Code Studio, so this form's behavior is now read-only here. · Undo" | toast |
 | Event can't be read (FB401) | "This event can't be read (line {n}). It is kept as it is and does nothing when the form runs." | `fb.error` |
+| Bad step name (FB406) | "{object} {event words} has a step whose name Code Studio can't use ({name}). It is kept as it is and does nothing." | `fb.error` |
 | Unknown step (FB403) | "A step Code Studio can't edit ({verb})" | `fb.warning` |
 | Your methods caption | "Code Studio adds methods to {file} and never changes the rest of it." | Caption |
 | Declaration in use | "{name} is used by {n} steps. Delete those steps first." | status |
@@ -2715,6 +2719,7 @@ Header sentences use "When {display name} is {words}" in the step picker title a
 | FB403 | "{object} {event words} has a step Code Studio can't edit ({verb}). The event does nothing until it's edited in a newer version." |
 | FB404 | "{object} {event words} is stored in two places: Qt Designer connections and a Code Studio step list." |
 | FB405 | "Step {n} of {object} {event words} acts on {target}, which isn't on this form." |
+| FB406 | "{object} {event words} has a step whose name Code Studio can't use ({name}). It is kept as it is and does nothing." |
 
 #### 13.3.9 Deferred from M6, with owners
 

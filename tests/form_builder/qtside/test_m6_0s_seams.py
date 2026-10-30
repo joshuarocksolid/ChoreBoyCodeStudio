@@ -111,22 +111,22 @@ def test_a_section_added_from_a_new_file_shows_in_order_with_its_predicate_and_t
         pane.flush()
         qapp.processEvents()
         host = pane.behavior
-        # Order 5, then the M3 list standing in for Events at 30; the form-only section is hidden, the broken one never shown.
-        assert host.shown_sections() == ["probe.top", "connections"]
+        # Order 5. This registry has no Events section, so the old connections list does not stand in.
+        assert host.shown_sections() == ["probe.top"]
         top = host.section_widget("probe.top")
         assert top is not None and top.painted >= 1
-        add = next(button for button in pane.findChildren(QPushButton) if "Add connection" in button.text())
-        assert add.isVisibleTo(window)
+        assert host.section_widget("connections") is None
+        assert not any("Add connection" in button.text() for button in pane.findChildren(QPushButton))
         layout = host.layout()
         order = [layout.itemAt(i).widget() for i in range(layout.count()) if layout.itemAt(i).widget() is not None]
-        assert order[0] is host.section_widget("probe.top") and order[1] is host.section_widget("connections")
+        assert order[0] is host.section_widget("probe.top")
         _select(session, "Invoice")
         pane.flush()
         qapp.processEvents()
-        assert host.shown_sections() == ["probe.top", "connections", "probe.form_only"]
+        assert host.shown_sections() == ["probe.top", "probe.form_only"]
         _select(session, "okButton")
         pane.flush()
-        assert host.shown_sections() == ["probe.top", "connections"]
+        assert host.shown_sections() == ["probe.top"]
     finally:
         _close(window, pane, realizer, session, qapp)
         forget_package("m6_behavior_probe")

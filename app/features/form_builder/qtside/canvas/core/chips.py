@@ -46,6 +46,8 @@ class ChipRequest:
     required: bool = False
     #: Only seats clear of the page, so a page-edge number reads as gutter chrome.
     outside: bool = False
+    #: Corner seats only. Badges discard a beside or gutter seat, so they skip that scan.
+    corners_only: bool = False
 
 
 @dataclass(frozen=True)
@@ -120,9 +122,9 @@ def place_chips(
         walls = [page] + taken if request.outside else taken
         count = len(fixed) + (1 if request.outside else 0)
         seat: Optional[ChipSeat] = _corner_seat(request, buckets, walls, viewport)
-        if seat is None:
+        if seat is None and not request.corners_only:
             seat = _beside_seat(request, buckets, walls, count, viewport)
-        if seat is None:
+        if seat is None and not request.corners_only:
             seat = _gutter_seat(request, buckets, walls, count, page, viewport)
         if seat is None and request.required and request.target.intersects(viewport):
             seat = _dock_seat(request, buckets, walls, count, viewport, dock)

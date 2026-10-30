@@ -47,6 +47,8 @@ HELP = "help"
 TOP_LEVEL: Tuple[Tuple[str, str], ...] = (
     ("Insert widget…", "a"),
     ("Go to widget…", "a"),
+    ("Add event…", "a"),
+    ("Go to code", "a"),
     ("Layout", "a"),
     ("Size", "a"),
     ("Main window", "a"),

@@ -32,7 +32,10 @@ def register(registry: object) -> None:
 
 def badge_tip(doc: UiDocument, sender: str) -> str:
     """``{n} events: When clicked, When toggled``, then ``and {k} more``."""
-    states = events_of_sender(doc, sender)
+    return _tip(doc, sender, events_of_sender(doc, sender))
+
+
+def _tip(doc: UiDocument, sender: str, states: Sequence[object]) -> str:
     chain = _chain(doc, sender)
     words = ["When %s" % event_words(state.signal_name, chain).header for state in states]
     shown = words[:3]
@@ -51,12 +54,13 @@ def build(static: object, inputs: object, state: Hashable) -> LayerOutput:
     if factor < HIDE_BELOW:
         return LayerOutput()
     document = getattr(inputs, "document")
+    grouped: dict = {}
     senders = []
-    seen = set()
     for event in read_events(document):
-        if event.sender not in seen:
-            seen.add(event.sender)
+        if event.sender not in grouped:
+            grouped[event.sender] = []
             senders.append(event.sender)
+        grouped[event.sender].append(event)
     if not senders:
         return LayerOutput()
     placed = {}
@@ -68,15 +72,16 @@ def build(static: object, inputs: object, state: Hashable) -> LayerOutput:
         return LayerOutput()
     bodies = list(_bodies(document, senders, placed))
     others_all = _other_widgets(document, static)
+    other_index, other_span = _y_index(others_all)
     requests = []
     tips = {}
     widget_rect = {}
     for sender, rect in bodies:
-        tips[sender] = badge_tip(document, sender)
+        tips[sender] = _tip(document, sender, grouped.get(sender, ()))
         widget_rect[sender] = rect
-        others = [other for other in others_all if other != rect]
+        others = [other for other in _near(other_index, rect.y - other_span, rect.y + rect.height + other_span) if other != rect]
         requests.append(
-            ChipRequest(sender, rect, CanvasSize(BADGE, BADGE), _corners(rect, others), frozenset())
+            ChipRequest(sender, rect, CanvasSize(BADGE, BADGE), _corners(rect, others), frozenset(), corners_only=True)
         )
     if not requests:
         return LayerOutput()
@@ -89,14 +94,17 @@ def build(static: object, inputs: object, state: Hashable) -> LayerOutput:
         if isinstance(seat, CornerSeat) and _on_own_edge(seat.rect, widget_rect.get(str(seat.key), seat.rect)):
             seated[str(seat.key)] = seat.rect
     occupied = [item.rect for item in getattr(static, "placed", ())]
+    occupied_index, _occupied_span = _y_index(occupied)
     blockers = list(others_all) + list(bands)
+    blocker_index, _blocker_span = _y_index(blockers)
     items: List[LayerItem] = []
     for sender, rect in widget_rect.items():
         seat = seated.get(sender)
-        neighbours = [other for other in blockers if other != rect]
-        if seat is None or _covers(seat, occupied, rect) or _hits(seat, neighbours):
+        neighbours = [other for other in _near(blocker_index, rect.y - BADGE - 4, rect.y + rect.height + BADGE + 4) if other != rect]
+        occupied_near = _near(occupied_index, rect.y - BADGE - 4, rect.y + rect.height + BADGE + 4)
+        if seat is None or _covers(seat, occupied_near, rect) or _hits(seat, neighbours):
             seat = _badge_fallback(rect, neighbours)
-        if seat is None or _covers(seat, occupied, rect) or _hits(seat, neighbours):
+        if seat is None or _covers(seat, occupied_near, rect) or _hits(seat, neighbours):
             continue
         items.append(
             LayerItem(
@@ -308,6 +316,42 @@ def _on_own_edge(seat: CanvasRect, own: CanvasRect) -> bool:
     above = seat.y + seat.height <= own.y + 2 and own.y - (seat.y + seat.height) <= 8
     below = seat.y >= own.y + own.height - 2 and seat.y - (own.y + own.height) <= 8
     return above or below
+
+
+_CELL = 64
+
+
+def _y_index(rects: Sequence[CanvasRect]) -> Tuple[dict, int]:
+    """Rects bucketed by vertical cell, plus the tallest one.
+
+    A query for a y-span returns every rect that overlaps that span, including
+    a tall rect that starts above it.
+    """
+    buckets: dict = {}
+    tallest = 1
+    for rect in rects:
+        height = max(int(rect.height), 1)
+        tallest = max(tallest, height)
+        top = int(rect.y) // _CELL
+        bottom = int(rect.y + height - 1) // _CELL
+        for key in range(top, bottom + 1):
+            buckets.setdefault(key, []).append(rect)
+    return buckets, tallest
+
+
+def _near(buckets: dict, top: float, bottom: float) -> List[CanvasRect]:
+    start = int(top) // _CELL
+    end = int(bottom) // _CELL
+    found: List[CanvasRect] = []
+    seen = set()
+    for key in range(start, end + 1):
+        for rect in buckets.get(key, ()):
+            marker = id(rect)
+            if marker in seen:
+                continue
+            seen.add(marker)
+            found.append(rect)
+    return found
 
 
 def _hits(seat: CanvasRect, blockers: Sequence[CanvasRect]) -> bool:

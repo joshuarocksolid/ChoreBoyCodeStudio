@@ -358,6 +358,8 @@ class OneBehavior:
     connections: Tuple[ConnectionView, ...]
     empty: str
     add_signal: Optional[str]
+    #: Events of this sender that have at least one step. By-name methods count as 0 until M6.2b.
+    event_count: int = 0
 
 @dataclass(frozen=True)
 class ManyBehavior:
@@ -1064,7 +1066,9 @@ def _behavior(facts: Facts, owners: Tuple[NodeId, ...]) -> BehaviorView:
         empty = "Nothing happens yet with this %s." % noun
     else:
         empty = "Nothing happens yet when %s." % event_words(signal).clause.format(noun=noun)
-    return OneBehavior(node.id, name, connections, empty, signal)
+    from app.features.form_builder.qtside.inspector.behavior_ext._rows import count_events
+
+    return OneBehavior(node.id, name, connections, empty, signal, count_events(facts.document, name))
 
 def _connection_view(connection: ConnectionNode) -> ConnectionView:
     words = "When %s \u2192 %s \u00b7 %s" % (

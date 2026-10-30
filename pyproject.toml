@@ -24,6 +24,7 @@ markers = [
     "manual_acceptance: links automated coverage to manual acceptance workflows",
     "slow: tests whose realistic wall time exceeds the agent fast-lane budget",
     "performance: wall-clock benchmarks; excluded from default `run_tests.py`",
+    "perf: form-builder timing budgets; excluded from unit-py311",
     "parity(*ids): proves R3 parity items, e.g. parity(\"R3-145\"); read by tools/form_builder_parity.py",
     "pain(*ids): proves ranked pains, e.g. pain(\"P-3\"); read by tools/form_builder_parity.py",
     "logic(*ids): proves logic scenarios and features, e.g. logic(\"L-line-total-live\")",

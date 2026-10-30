@@ -21,11 +21,13 @@ from app.features.form_builder.engine.ui4.defaults import QtClassTable
 @dataclass(frozen=True)
 class EventWords:
     """``header``: "When {header}" and picker items; ``doc``: "Runs when {object} is {doc}.";
-    ``short``: the method-name word (UX-CODE-001)."""
+    ``short``: the method-name word (UX-CODE-001). ``clause`` is a complete English
+    clause after "When", with ``{display}`` and ``{signal}`` (D27)."""
 
     header: str
     doc: str
     short: str
+    clause: str = "{display} sends {signal}"
 
 
 @dataclass(frozen=True)
@@ -42,34 +44,42 @@ def snake_case(name: str) -> str:
 
 
 _BY_SIGNAL: Dict[str, EventWords] = {
-    "clicked": EventWords("clicked", "clicked", "clicked"),
-    "pressed": EventWords("pressed", "pressed", "pressed"),
-    "released": EventWords("released", "released", "released"),
-    "toggled": EventWords("checked or unchecked", "checked or unchecked", "toggled"),
-    "editingFinished": EventWords("editing is finished", "finished editing", "done"),
-    "returnPressed": EventWords("Enter is pressed", "given Enter", "enter"),
-    "textChanged": EventWords("the text changes", "changed", "text_changed"),
-    "textEdited": EventWords("the text is typed", "changed", "typed"),
-    "currentIndexChanged": EventWords("the choice changes", "changed", "changed"),
-    "valueChanged": EventWords("the value changes", "changed", "changed"),
-    "dateChanged": EventWords("the date changes", "changed", "changed"),
-    "timeChanged": EventWords("the time changes", "changed", "changed"),
-    "dateTimeChanged": EventWords("the date or time changes", "changed", "changed"),
-    "itemActivated": EventWords("an item is opened", "opened", "opened"),
-    "currentRowChanged": EventWords("another row is chosen", "moved to another row", "row_changed"),
-    "accepted": EventWords("OK is pressed", "accepted", "ok"),
-    "rejected": EventWords("Cancel is pressed", "cancelled", "cancel"),
-    "triggered": EventWords("chosen", "chosen", "triggered"),
-    "finished": EventWords("it closes", "closed", "closed"),
+    "clicked": EventWords("clicked", "clicked", "clicked", "{display} is clicked"),
+    "pressed": EventWords("pressed", "pressed", "pressed", "{display} is pressed"),
+    "released": EventWords("released", "released", "released", "{display} is released"),
+    "toggled": EventWords("checked or unchecked", "checked or unchecked", "toggled", "{display} is checked or unchecked"),
+    "editingFinished": EventWords("editing is finished", "finished editing", "done", "you finish editing {display}"),
+    "returnPressed": EventWords("Enter is pressed", "given Enter", "enter", "Enter is pressed in {display}"),
+    "textChanged": EventWords("the text changes", "changed", "text_changed", "the text of {display} changes"),
+    "textEdited": EventWords("the text is typed", "changed", "typed", "the text is typed in {display}"),
+    "currentIndexChanged": EventWords("the choice changes", "changed", "changed", "the choice of {display} changes"),
+    "valueChanged": EventWords("the value changes", "changed", "changed", "the value of {display} changes"),
+    "dateChanged": EventWords("the date changes", "changed", "changed", "the date of {display} changes"),
+    "timeChanged": EventWords("the time changes", "changed", "changed", "the time of {display} changes"),
+    "dateTimeChanged": EventWords("the date or time changes", "changed", "changed", "the date or time of {display} changes"),
+    "itemActivated": EventWords("an item is opened", "opened", "opened", "an item in {display} is opened"),
+    "currentRowChanged": EventWords("another row is chosen", "moved to another row", "row_changed", "the row of {display} changes"),
+    "accepted": EventWords("OK is pressed", "accepted", "ok", "OK is pressed in {display}"),
+    "rejected": EventWords("Cancel is pressed", "cancelled", "cancel", "Cancel is pressed in {display}"),
+    "triggered": EventWords("chosen", "chosen", "triggered", "{display} is chosen"),
+    "finished": EventWords("it closes", "closed", "closed", "{display} closes"),
 }
 
 #: Words that depend on the class the signal belongs to: (signal, class in the chain).
 _BY_CLASS: Dict[Tuple[str, str], EventWords] = {
-    ("clicked", "QDialogButtonBox"): EventWords("any of its buttons is clicked", "clicked", "button_clicked"),
-    ("activated", "QComboBox"): EventWords("a choice is picked", "picked", "picked"),
-    ("currentChanged", "QTabWidget"): EventWords("the page changes", "switched to another page", "page_changed"),
-    ("currentChanged", "QStackedWidget"): EventWords("the page changes", "switched to another page", "page_changed"),
-    ("currentChanged", "QToolBox"): EventWords("the page changes", "switched to another page", "page_changed"),
+    ("clicked", "QDialogButtonBox"): EventWords(
+        "any of its buttons is clicked", "clicked", "button_clicked", "a button in {display} is clicked"
+    ),
+    ("activated", "QComboBox"): EventWords("a choice is picked", "picked", "picked", "a choice is picked in {display}"),
+    ("currentChanged", "QTabWidget"): EventWords(
+        "the page changes", "switched to another page", "page_changed", "the page of {display} changes"
+    ),
+    ("currentChanged", "QStackedWidget"): EventWords(
+        "the page changes", "switched to another page", "page_changed", "the page of {display} changes"
+    ),
+    ("currentChanged", "QToolBox"): EventWords(
+        "the page changes", "switched to another page", "page_changed", "the page of {display} changes"
+    ),
 }
 
 
@@ -83,11 +93,26 @@ def event_words(signal_name: str, chain: Sequence[str] = ()) -> EventWords:
         if found is not None:
             return found
     if signal_name == "activated":
-        return EventWords("activated", "activated", "activated")
+        return EventWords("activated", "activated", "activated", "{display} is activated")
     found = _BY_SIGNAL.get(signal_name)
     if found is not None:
         return found
     return EventWords(signal_name, signal_name, snake_case(signal_name))
+
+
+def event_clause(signal_name: str, chain: Sequence[str], display: str) -> str:
+    """The clause that follows "When". Headers stay on ``event_words().header``."""
+    words = event_words(signal_name, chain)
+    return words.clause.format(display=display, signal=signal_name)
+
+
+def catalog_signals() -> Tuple[Tuple[str, Tuple[str, ...]], ...]:
+    """Every named row, as (signal, class chain), for the clause test."""
+    rows = [(name, ()) for name in _BY_SIGNAL]
+    rows.append(("activated", ()))
+    for signal, class_name in _BY_CLASS:
+        rows.append((signal, (class_name,)))
+    return tuple(rows)
 
 
 _BUTTONS = ClassEvents(("clicked",), "clicked")
