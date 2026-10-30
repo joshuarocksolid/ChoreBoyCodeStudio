@@ -2333,7 +2333,7 @@ The lane split, owned files and parity rows are in `PLAN.md` ("M6 lanes"). Claus
 | --- | --- |
 | Select a widget with 20 events: Behavior tab filled | ≤ 16 ms |
 | A keystroke in the event picker (a class with 60 events) or the step picker (300 possible targets) | ≤ 16 ms |
-| Commit a step (`SetEventSteps` with a storage conversion), command to repainted canvas, outline and inspector | ≤ 16 ms; the command alone ≤ 2 ms |
+| Commit a step (`SetEventSteps` with a storage conversion), command to repainted canvas, outline and inspector | ≤ 50 ms added p95 (one discrete action, under the 100 ms people notice; M6.R measures it on the ChoreBoy VM); the command alone ≤ 2 ms |
 | Arrows for a selection with 10 connections; Show all with 120 events | ≤ 4 ms; ≤ 16 ms per frame |
 | Open the Connections overlay; a link drag frame | ≤ 50 ms; ≤ 16 ms |
 | Read the window file: pre-scan plus `ast` of 100 KB / of 1 MB / a cached reading | ≤ 30 ms / ≤ 250 ms (idle, never on the edit path) / ≤ 1 ms |

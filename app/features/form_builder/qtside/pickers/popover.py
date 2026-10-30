@@ -456,7 +456,7 @@ class _RowDelegate(QStyledItemDelegate):
             painter.drawText(  # type: ignore[attr-defined]
                 note_rect,
                 enum_value(Qt.AlignmentFlag.AlignLeft) | enum_value(Qt.AlignmentFlag.AlignTop),
-                metrics.elidedText(str(note), Qt.TextElideMode.ElideMiddle, note_rect.width()),
+                metrics.elidedText(str(note), Qt.TextElideMode.ElideRight, note_rect.width()),
             )
         painter.restore()  # type: ignore[attr-defined]
 

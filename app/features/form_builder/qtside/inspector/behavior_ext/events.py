@@ -110,7 +110,7 @@ class EventsBody(QWidget):
         chrome = self._chrome
         self.setStyleSheet(
             "QWidget#formBuilder\\.events, QWidget#formBuilder\\.events QWidget { background: %s; color: %s; }"
-            "QLabel { color: %s; background: transparent; }"
+            "QLabel, QWidget#formBuilder\\.events QLabel { color: %s; background: transparent; }"
             "QLabel#formBuilder\\.events\\.notice { color: %s; }"
 
             "QPushButton { color: %s; background: %s; border: 1px solid %s; border-radius: 4px; padding: 2px 8px; }"
