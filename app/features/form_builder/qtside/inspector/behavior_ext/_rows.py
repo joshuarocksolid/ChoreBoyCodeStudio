@@ -37,11 +37,10 @@ from app.features.form_builder.engine.logic.intents.m6 import command as intent_
 from app.features.form_builder.engine.logic.intents.m6 import edits as intent_edits
 from app.features.form_builder.engine.logic.intents.m6 import intents_for
 from app.features.form_builder.engine.logic.storage import signal_property
-from app.features.form_builder.engine.query.actions import plain_text, text_of
+from app.features.form_builder.engine.query.tab_stops import display_name
 from app.features.form_builder.engine.ui4.defaults import QtClassTable
 from app.features.form_builder.engine.ui4.document import UiDocument
 from app.features.form_builder.engine.ui4.nodes import ActionNode, LayoutNode, SpacerNode, WidgetNode
-from app.features.form_builder.engine.ui4.values import CStringValue
 
 UNSAVABLE = (
     "This event has a step Code Studio can't save, so it is shown as it is and can't be changed here."
@@ -320,9 +319,6 @@ def finish(doc: UiDocument, classes: QtClassTable, key: str, gesture: Gesture) -
     return None
 
 
-_DISPLAY: dict = {}
-
-
 def outline_names(doc: UiDocument) -> Tuple[str, ...]:
     """Every widget and action, in outline order, then the form if it was not first."""
     names = []
@@ -332,50 +328,6 @@ def outline_names(doc: UiDocument) -> Tuple[str, ...]:
         elif isinstance(node, ActionNode) and node.name:
             names.append(node.name)
     return tuple(names)
-
-
-def display_name(doc: UiDocument, name: str) -> str:
-    """Buddy label, then the widget's own text, then the object name. ``&`` is a mnemonic.
-
-    One map per document revision, so a 300-widget form does not walk every widget per call.
-    """
-    key = (id(doc), doc.revision)
-    cached = _DISPLAY.get(key)
-    if cached is None:
-        cached = _display_map(doc)
-        _DISPLAY.clear()
-        _DISPLAY[key] = cached
-    return cached.get(name, name)
-
-
-def _display_map(doc: UiDocument) -> dict:
-    found = {}
-    buddies = {}
-    for widget in doc.iter_widgets():
-        buddy = widget.value("buddy")
-        if isinstance(buddy, CStringValue) and buddy.text:
-            label = plain_text(text_of(widget))
-            if label and buddy.text not in buddies:
-                buddies[buddy.text] = label
-    for node in doc.iter_preorder():
-        if isinstance(node, ActionNode):
-            label = node.name
-        elif isinstance(node, WidgetNode):
-            label = node.object_name
-        else:
-            continue
-        if not label:
-            continue
-        if label == doc.root.object_name:
-            title = plain_text(text_of(node, "windowTitle"))
-            found[label] = title or label
-            continue
-        if label in buddies:
-            found[label] = buddies[label]
-            continue
-        own = plain_text(text_of(node))
-        found[label] = own or label
-    return found
 
 
 def friendly_class(class_name: str) -> str:

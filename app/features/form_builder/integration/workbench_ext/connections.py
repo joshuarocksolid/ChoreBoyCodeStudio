@@ -33,6 +33,13 @@ from app.qt.qt_compat import enum_value, event_pos
 SHOW_ALL = "Showing all %d connections. Ctrl+Shift+L hides them."
 
 
+def _pointer(viewport: Optional[QObject], event: QMouseEvent) -> object:
+    pos = event_pos(event)
+    if viewport is None or pos is None or not hasattr(viewport, "mapToGlobal"):
+        return None
+    return viewport.mapToGlobal(pos)
+
+
 def layer_plan(
     design: bool,
     overlay: str,
@@ -206,7 +213,6 @@ class ConnectionHost(QObject):
         return str(getattr(getattr(surface, "_modes", None), "active", "") or "")
 
     def _press(self, event: QMouseEvent, double: bool) -> bool:
-        del double
         self._swallow_delete = False
         if self._overlay() in ("tab_order", "buddies"):
             self._aimed = None
@@ -234,7 +240,21 @@ class ConnectionHost(QObject):
         self._select(found.sender)
         self._aimed = (found.sender, found.signal, found.index)
         self.sync()
+        if double and found.kind == "arrow":
+            self._open_step(found, event)
         return True
+
+    def _open_step(self, found: Any, event: QMouseEvent) -> None:
+        """Double-click an arrow: the step picker on that step, anchored at the pointer."""
+        surface = _surface(self._workbench)
+        if surface is None:
+            return
+        located = self._workbench._session.document.by_name(found.sender)
+        if not located:
+            return
+        from app.features.form_builder.qtside.pickers import open_for_step
+
+        open_for_step(surface, located[0], found.signal, found.index, at=_pointer(self._viewport, event))
 
     def _on_widget(self, event: QMouseEvent) -> bool:
         canvas = self._canvas

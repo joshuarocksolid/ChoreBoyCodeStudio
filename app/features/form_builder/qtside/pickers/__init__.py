@@ -40,7 +40,7 @@ def open_for_link(surface: QWidget, source_id: object, target_id: object = None,
     """
     from app.qt.QtCore import QPoint
 
-    from app.features.form_builder.qtside.inspector.behavior_ext._rows import display_name
+    from app.features.form_builder.engine.query.tab_stops import display_name
 
     doc = surface.session.document
     sender = _named(doc, source_id)
@@ -68,6 +68,33 @@ def _named(doc: object, node_id: object) -> str:
     if node is None:
         return ""
     return str(getattr(node, "object_name", "") or "")
+
+
+def open_for_step(
+    surface: QWidget, source_id: object, signal: str, index: int, *, at: object = None, caption: Optional[str] = None
+) -> EventPicker:
+    """Open the step picker on one existing step. A double-clicked arrow uses this.
+
+    ``signal`` may be Designer text (``clicked()``) or the bare name. ``index`` is
+    that step in the sender's list. Esc writes nothing.
+    """
+    from app.qt.QtCore import QPoint
+
+    from app.features.form_builder.engine.logic.compat import split_signature
+
+    doc = surface.session.document
+    sender = _named(doc, source_id)
+    parsed = PickerSource(sender, split_signature(signal)[0], int(index))
+    services = _services(surface)
+    chrome = services.chrome if services is not None else default_chrome()
+    picker = EventPicker(surface, chrome, lambda gesture: _commit(surface, parsed, gesture))
+    methods, window_file, window_class = _window(surface)
+    ctx = build_context(doc, parsed, "", methods, window_file, window_class)
+    point = at if isinstance(at, QPoint) else None
+    picker.open_at(surface, ctx, point)
+    if caption and picker._page is not None:
+        picker._apply(replace(picker._page, title=caption))
+    return picker
 
 
 def open_event_picker(host: QWidget, source: object, target: object = "") -> EventPicker:

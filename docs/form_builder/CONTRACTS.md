@@ -928,7 +928,9 @@ An **event** is (sender object name, signal name). Its steps, in run order, are 
 
 `open_event_picker(host, source, target="") -> EventPicker`. `host` is the widget that gets focus back. `source` is a sender object name, or a `PickerSource` (sender, signal, replace index). `target` is the receiver object name, or empty. Services are resolved from `host`'s inspector ancestors.
 
-`open_for_link(surface, source_id, target_id=None, *, at=None, caption=None) -> EventPicker`. `source_id` and `target_id` are node ids on `surface.session`. Services are resolved from the surface. `at` is a global `QPoint` or `None` (the picker opens under the surface). `caption` defaults to `"Connect {sender} to {receiver}"`.
+`open_for_link(surface, source_id, target_id=None, *, at=None, caption=None) -> EventPicker`. `source_id` and `target_id` are node ids on `surface.session`. Services are resolved from the surface. `at` is a global `QPoint` or `None` (the picker opens under the surface). `caption` defaults to `"Connect {sender} to {receiver}"`. A finished drag calls this with `at` at the drop point.
+
+`open_for_step(surface, source_id, signal, index, *, at=None, caption=None) -> EventPicker`. Double-click on an arrow. `signal` is Designer text or the bare name, `index` is that step. The picker opens on the page that made the step. Choosing the same slot writes nothing. A different choice is one undo entry, "Change {old} to {new}". Esc writes nothing.
 
 **Native overloads in generated Python.** uic 6.8 writes `["types"]` after `clicked(...)` of a button (a class deriving from `QAbstractButton`, not that class itself) and `triggered(...)` of a `QToolButton` or `QAction` when the signature has arguments, because PySide6's bare `clicked`/`triggered` is the zero-argument overload and a Qt slot that needs `checked` would raise. The core emitter does the same (`_overload_selector`, checked against uic for every widget class of the table).
 

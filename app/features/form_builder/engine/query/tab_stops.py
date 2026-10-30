@@ -72,10 +72,30 @@ def caption_name(doc: UiDocument, node_id: NodeId) -> str:
     return node.object_name if isinstance(node, WidgetNode) else ""
 
 
+_NAMES: dict = {}
+
+
 def display_name(doc: UiDocument, object_name: str) -> str:
-    """Buddy label, then the widget's own text, then the object name. ``&`` is removed."""
+    """Buddy label, then the widget's own text, then the object name. ``&`` is removed.
+
+    One bucket per document revision, so a large form does not walk every label again.
+    """
     if not object_name:
         return ""
+    key = (id(doc), doc.revision)
+    bucket = _NAMES.get(key)
+    if bucket is None:
+        _NAMES.clear()
+        bucket = {}
+        _NAMES[key] = bucket
+    found = bucket.get(object_name)
+    if found is None:
+        found = _display_name(doc, object_name)
+        bucket[object_name] = found
+    return found
+
+
+def _display_name(doc: UiDocument, object_name: str) -> str:
     for label_id in labels(doc):
         if buddy_of(doc, label_id) != object_name:
             continue

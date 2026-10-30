@@ -1,9 +1,8 @@
 # pyright: reportAttributeAccessIssue=false, reportArgumentType=false, reportOptionalMemberAccess=false
-"""K25, keyboard only (UX_SPEC §12.3). The event and step pickers are M6.1b's.
+"""K25, keyboard only (UX_SPEC §12.3).
 
-Steps that need those pickers stop at this lane's stub and are reported by the
-strict xfail in test_m6_1c_connections.py. This script checks the keys this
-lane owns: F4, Enter, Home, Esc, and Ctrl+Shift+L.
+A finished link opens the real event picker. Down moves to returnPressed,
+Enter opens the step page, and Enter again writes the step.
 """
 
 from __future__ import annotations
@@ -14,10 +13,10 @@ from pathlib import Path
 import pytest
 
 from app.features.form_builder.qtside.canvas.layers.connections import drawable_steps
-from app.qt.QtCore import QTimer, Qt
+from app.qt.QtCore import Qt
 from app.qt.QtGui import QKeySequence
 from app.qt.QtTest import QTest
-from app.qt.QtWidgets import QApplication, QDialogButtonBox, QWidget
+from app.qt.QtWidgets import QApplication, QWidget
 from tests.form_builder.engine.commands._support import saved
 from tests.unit.features.form_builder.test_workbench import _open
 
@@ -101,33 +100,20 @@ def test_k25_connections_overlay_from_the_keyboard(qapp: QApplication, tmp_path:
     report.append("Tab receiver: %s" % _name(surface))
     assert _name(surface) == "nameEdit"
 
-    def accept() -> None:
-        dialog = QApplication.activeModalWidget()
-        if dialog is None:
-            return
-        box = dialog.findChild(QDialogButtonBox)
-        ok = None if box is None else box.button(QDialogButtonBox.StandardButton.Ok)
-        if ok is None:
-            return
-        ok.setFocus()
-        QTest.keyClick(ok, Qt.Key.Key_Return)
-
-    stalled = []
-
-    def give_up() -> None:
-        dialog = QApplication.activeModalWidget()
-        if dialog is not None:
-            stalled.append(dialog.windowTitle())
-            dialog.reject()
-
-    QTimer.singleShot(0, accept)
-    QTimer.singleShot(1500, give_up)
     _click(canvas, Qt.Key.Key_Return)
+    _pump(qapp)
+    search = QApplication.focusWidget()
+    assert search is not None and search.objectName() == "formBuilder.eventPickerSearch"
+    # editingFinished is current. Down lands on returnPressed, then the step page, then the step.
+    _click(search, Qt.Key.Key_Down)
+    _pump(qapp)
+    _click(search, Qt.Key.Key_Return)
+    _pump(qapp)
+    _click(search, Qt.Key.Key_Return)
     _pump(qapp)
     drawn = drawable_steps(surface.session.document)
     phone = [step for step in drawn if step.sender == "phoneEdit" and step.receiver == "nameEdit"]
-    report.append("phoneEdit step: %s stalled=%s" % (bool(phone), stalled))
-    assert not stalled
+    report.append("phoneEdit step: %s" % bool(phone))
     assert phone
     assert phone[0].signal == "returnPressed()"
     assert len(surface.session.log.entries()) == 1

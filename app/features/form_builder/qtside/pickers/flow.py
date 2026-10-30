@@ -22,10 +22,10 @@ from app.features.form_builder.engine.logic.events_codec import slot_step
 from app.features.form_builder.engine.logic.intents.m6 import IntentSpec, default_target, intents_for, target_candidates
 from app.features.form_builder.engine.project.handler_names import value_param
 from app.features.form_builder.engine.ui4.defaults import QtClassTable
+from app.features.form_builder.engine.query.tab_stops import display_name
 from app.features.form_builder.engine.ui4.document import UiDocument
 from app.features.form_builder.qtside.inspector.behavior_ext._rows import (
     Gesture,
-    display_name,
     dropped_count,
     friendly_class,
     outline_names,
@@ -263,6 +263,17 @@ def _picked_intent(ctx: PickContext, page: Page, intent_id: str) -> object:
     spec = _intent(ctx, intent_id)
     if spec is None:
         return page
+    if spec.needs_target and ctx.target and _intent_fits_target(ctx, intent_id):
+        # The canvas drop already named the receiver, so the step page can finish.
+        return Commit(
+            Gesture(
+                "add_intent",
+                signal=page.signal,
+                intent_id=intent_id,
+                target=ctx.target,
+                index=page.replace_index,
+            )
+        )
     if spec.needs_target:
         title = spec.target_title or "Which widget?"
         nxt = _target_page(ctx, page, intent_id, title, intent_id)

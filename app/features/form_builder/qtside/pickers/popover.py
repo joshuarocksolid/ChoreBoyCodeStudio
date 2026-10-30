@@ -99,8 +99,8 @@ class EventPicker(QFrame):
         self.notice.setProperty("note", True)
         column.addWidget(self.notice)
         self._model = _RowModel(self)
-        self._window_start = 0
         self.rows = QListView(self)
+        self.rows.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         self.rows.setObjectName("formBuilder.eventPickerList")
         self.rows.setAccessibleName("Choices")
         self.rows.setFocusPolicy(Qt.FocusPolicy.NoFocus)
@@ -253,7 +253,7 @@ class EventPicker(QFrame):
         page = self._page
         if page is None or not index.isValid():  # type: ignore[attr-defined]
             return
-        row_index = self._window_start + index.row()  # type: ignore[attr-defined]
+        row_index = index.row()  # type: ignore[attr-defined]
         if not (0 <= row_index < len(page.rows)):
             return
         row = page.rows[row_index]
@@ -293,25 +293,22 @@ class EventPicker(QFrame):
             self.adjustSize()
 
     def _fill(self, page: Page) -> None:
-        # The model holds a window around the current row. The page still has every match.
-        start = 0
-        if len(page.rows) > 12:
-            start = min(max(0, page.current - 4), len(page.rows) - 12)
-        self._window_start = start
-        window = page.rows[start:start + 12]
+        # Every match is in the model. The view paints only the rows in view.
         labels = []
         flags = []
         enabled = Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable
-        for item in window:
+        for item in page.rows:
             label = item.text
             if item.faint:
                 label = "%s  %s" % (item.text, item.faint)
             labels.append(label)
             flags.append(Qt.ItemFlag.NoItemFlags if item.header or not item.enabled else enabled)
         self._model.set_rows(labels, flags)
-        if window:
-            self.rows.setCurrentIndex(self._model.index(page.current - start, 0))
-        shown = min(max(len(window), 1), 8)
+        if page.rows:
+            current = self._model.index(min(page.current, len(page.rows) - 1), 0)
+            self.rows.setCurrentIndex(current)
+            self.rows.scrollTo(current)
+        shown = min(max(len(page.rows), 1), 8)
         height = shown * _ROW + 8
         if self.rows.height() != height:
             self.rows.setFixedHeight(height)

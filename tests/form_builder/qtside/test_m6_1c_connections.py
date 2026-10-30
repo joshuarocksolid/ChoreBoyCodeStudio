@@ -507,15 +507,13 @@ def _arrow_point(canvas: QWidget, sender: str) -> object:
     return None
 
 
-@pytest.mark.xfail(strict=True, reason="M6.1b opens the step picker on that step (UX-ARR-009)")
 def test_double_click_opens_the_step_picker_on_that_step() -> None:
-    from app.features.form_builder.qtside.pickers import open_for_step  # type: ignore[import-not-found]
+    from app.features.form_builder.qtside.pickers import open_for_step
 
     assert callable(open_for_step)
 
 
-@pytest.mark.xfail(strict=True, reason="M6.1b owns qtside/pickers.open_for_link, the event picker and the step picker")
 def test_link_opens_the_m6_1b_pickers() -> None:
-    from app.features.form_builder.qtside.pickers import open_for_link  # type: ignore[import-not-found]
+    from app.features.form_builder.qtside.pickers import open_for_link
 
     assert overlay.active_picker() is open_for_link

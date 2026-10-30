@@ -685,9 +685,12 @@ class OverlayModes:
             return False
         document = self._session.document
         resolved = gesture.target_of(document, target)
+        pointer = self._link_pointer
         self._reset_link()
         self._push()
         self._announce()
+        if pointer is not None:
+            setattr(self._surface, "_connection_drop", pointer)
         gesture.link(self._surface, source, resolved)
         return True
 
