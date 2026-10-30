@@ -40,6 +40,13 @@ class OverlayPalette:
     type_here_text: str = "#6B6B6BFF"
     #: Widgets the style sheet rule under the drawer's caret styles (UX-STYLE-005, ``ov.style_match``).
     style_match: str = "#0E7490FF"
+    #: Connection arrows (UX-TOK-007, ``ov.connect``). Faint is the same ink at 35% (60% in high contrast).
+    connect: str = "#4338CAFF"
+    connect_faint: str = "#4338CA59"
+    #: Code chips (``ov.code``).
+    code: str = "#15803DFF"
+    #: Logic badges (``ov.logic_badge``). The glyph uses ``chip_text``.
+    logic_badge: str = "#4B5563FF"
 
 
 OVERLAY = OverlayPalette(
@@ -78,6 +85,10 @@ OVERLAY_HIGH_CONTRAST = OverlayPalette(
     min_stroke=2.0,
     type_here_text="#2A2A2AFF",
     style_match="#00546AFF",
+    connect="#1E1B8AFF",
+    connect_faint="#1E1B8A99",
+    code="#00553AFF",
+    logic_badge="#000000FF",
 )
 
 
