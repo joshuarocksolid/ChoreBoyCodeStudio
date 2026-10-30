@@ -331,45 +331,90 @@ def _chip_seats(
     hover: Optional[Tuple[str, str, int]],
 ) -> dict:
     document = getattr(inputs, "document")
-    requests = []
     page = _page_rect(static)
     viewport = getattr(inputs, "viewport", None) or page
     if page is None or viewport is None:
         return {}
     width_of = measure if callable(measure) else (lambda text: max(12, len(text) * 7))
+    content = tuple(getattr(static, "content", ()))
+    fixed = tuple(getattr(inputs, "chrome", ()))
+    blocked = _centers(document, steps, placed)
+    requests = []
+    curves = {}
     for step in steps:
         key = (step.sender, step.signal, step.index)
-        text = _chip_text(step)
         if step.kind == "widget" and hover != key:
             continue
         origin = placed.get(_id_of(document, step.sender))
         if origin is None:
             continue
-        size = CanvasSize(int(width_of(text)) + 12, 18)
-        outside = step.kind == "form"
-        requests.append(
-            ChipRequest(key, origin, size, LABEL_CORNERS, frozenset(), outside=outside)
-        )
+        size = CanvasSize(int(width_of(_chip_text(step))) + 12, 18)
+        if step.kind == "widget":
+            target = placed.get(_id_of(document, step.receiver))
+            if target is None:
+                continue
+            start, c1, c2, end, _head = curve(origin, target, blocked)
+            curves[key] = (start, c1, c2, end)
+            spot = _bezier(start, c1, c2, end, 0.5)
+            requests.append(ChipRequest(key, CanvasRect(int(spot[0]), int(spot[1]), 1, 1), size, LABEL_CORNERS, frozenset()))
+        else:
+            # Beside the sender. The solver's last seat is the gutter on this row.
+            requests.append(ChipRequest(key, origin, size, LABEL_CORNERS, frozenset(), outside=True))
     if not requests:
         return {}
-    content = tuple(getattr(static, "content", ()))
-    fixed = tuple(getattr(inputs, "chrome", ()))
     seats = place_chips(requests, content, fixed, page, viewport)
     found = {seat.key: seat.rect for seat in seats}
-    # A crowded form leaves no corner clear. Park the leftover chips in the
-    # page's right margin so they do not cover the widgets they describe.
-    pending = [request for request in requests if request.key not in found]
-    if pending:
-        origin_x = page.x + page.width + 8
-        origin_y = page.y + 8
-        for row, request in enumerate(pending):
-            found[request.key] = CanvasRect(
-                origin_x,
-                origin_y + row * (request.size.height + 4),
-                request.size.width,
-                request.size.height,
+    for request in requests:
+        if request.key in found or request.key not in curves:
+            continue
+        start, c1, c2, end = curves[request.key]
+        for sample in (0.35, 0.65, 0.25, 0.75, 0.15, 0.85):
+            spot = _bezier(start, c1, c2, end, sample)
+            slide = ChipRequest(
+                request.key, CanvasRect(int(spot[0]), int(spot[1]), 1, 1), request.size, LABEL_CORNERS, frozenset()
             )
+            seated = place_chips((slide,), content, fixed + tuple(found.values()), page, viewport)
+            if seated:
+                found[request.key] = seated[0].rect
+                break
+    for request in requests:
+        if request.key in found or request.key in curves:
+            continue
+        parked = _on_sender_row(request, page, tuple(found.values()))
+        if parked is not None:
+            found[request.key] = parked
     return found
+
+
+def _on_sender_row(request: ChipRequest, page: CanvasRect, taken: Sequence[CanvasRect]) -> Optional[CanvasRect]:
+    """Beside the sender, on its row. The nearer gutter is the last seat, never a column of leftovers."""
+    origin = request.target
+    size = request.size
+    y = int(origin.y + (origin.height - size.height) / 2)
+    gap = 8
+    spots = [
+        CanvasRect(origin.x + origin.width + gap, y, size.width, size.height),
+        CanvasRect(origin.x - size.width - gap, y, size.width, size.height),
+    ]
+    for step in range(1, 4):
+        spots.append(CanvasRect(origin.x + origin.width + gap + step * (size.width + 4), y, size.width, size.height))
+        spots.append(CanvasRect(origin.x - gap - (step + 1) * (size.width + 4), y, size.width, size.height))
+    nearer_right = origin.x + origin.width / 2 >= page.x + page.width / 2
+    gutter_x = page.x + page.width - size.width - 4 if nearer_right else page.x + 4
+    spots.append(CanvasRect(int(gutter_x), y, size.width, size.height))
+    for spot in spots:
+        if any(spot.intersects(other) for other in taken):
+            continue
+        return spot
+    return spots[0]
+
+
+def _bezier(start: Point, c1: Point, c2: Point, end: Point, t: float) -> Point:
+    stay = 1.0 - t
+    return (
+        stay ** 3 * start[0] + 3 * stay ** 2 * t * c1[0] + 3 * stay * t ** 2 * c2[0] + t ** 3 * end[0],
+        stay ** 3 * start[1] + 3 * stay ** 2 * t * c1[1] + 3 * stay * t ** 2 * c2[1] + t ** 3 * end[1],
+    )
 
 
 def _faces(origin: CanvasRect, dest: CanvasRect) -> Tuple[Point, Point]:
@@ -531,6 +576,13 @@ def _paint_curve(painter: QPainter, weight: str, dashed: bool, points: Sequence[
         pen.setStyle(Qt.PenStyle.DashLine)
     painter.save()
     try:
+        if float(getattr(overlay, "min_stroke", 1) or 1) >= 2:
+            halo = QPen(_qcolor(getattr(overlay, "chip_text")), width + 2)
+            if dashed:
+                halo.setStyle(Qt.PenStyle.DashLine)
+            painter.setPen(halo)
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            painter.drawPath(path)
         painter.setPen(pen)
         painter.setBrush(Qt.BrushStyle.NoBrush)
         painter.drawPath(path)

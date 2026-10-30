@@ -9,10 +9,13 @@ from __future__ import annotations
 
 from typing import Any, Optional, Tuple
 
+from app.features.form_builder.engine.commands.catalog_ext.events import SetEventSteps
 from app.features.form_builder.engine.events import PRIORITY_VIEWS
-from app.features.form_builder.engine.logic.events import read_events
+from app.features.form_builder.engine.logic.compat import split_signature
+from app.features.form_builder.engine.logic.events import read_event, read_events
 from app.features.form_builder.engine.query.selection import SelectionSource
-from app.features.form_builder.integration.overlay_ext.connections import choose_step
+from app.features.form_builder.engine.ui4.nodes import WidgetNode
+from app.features.form_builder.integration.overlay_ext.connections import arrow_status, code_status, step_sentence, window_file
 from app.features.form_builder.qtside.canvas.layers.connections import (
     ARROWS,
     ArrowState,
@@ -22,13 +25,12 @@ from app.features.form_builder.qtside.canvas.layers.connections import (
 from app.features.form_builder.qtside.canvas.layers.logic_badges import NAME as BADGES
 from app.features.form_builder.qtside.canvas.layers.logic_badges import mark_at as badge_at
 from app.features.form_builder.qtside.canvas.layers.logic_badges import tip_at
-from app.features.form_builder.qtside.inspector.pane import TabId
+from app.features.form_builder.qtside.inspector import TabId
 from app.qt.QtCore import QEvent, QObject, Qt, QTimer
 from app.qt.QtGui import QKeyEvent, QMouseEvent
 from app.qt.qt_compat import enum_value, event_pos
 
 SHOW_ALL = "Showing all %d connections. Ctrl+Shift+L hides them."
-REMOVE = "Remove this step from the Behavior tab."
 
 
 def layer_plan(
@@ -41,10 +43,13 @@ def layer_plan(
     """``(badges on, arrow scope or None)``.
 
     Badges show in Design when no overlay is open. Scope ``all`` wins over the
-    Behavior tab. A different overlay hides badges and, unless Show all is on,
-    hides arrows too.
+    Behavior tab. Tab order and Buddies hide arrows even when Show all is on,
+    so those clicks are not stolen. Any other overlay hides arrows unless
+    Show all is on.
     """
     if not design or not has_events:
+        return False, None
+    if overlay in ("tab_order", "buddies"):
         return False, None
     badges = overlay == ""
     if show_all or overlay == "connections":
@@ -89,6 +94,8 @@ class ConnectionHost(QObject):
         self._waits = 0
         self._canvas: Optional[QObject] = None
         self._viewport: Optional[QObject] = None
+        self._swallow_delete = False
+        self._said = False
 
     @property
     def show_all(self) -> bool:
@@ -153,7 +160,10 @@ class ConnectionHost(QObject):
             return False
         if isinstance(event, QKeyEvent) and watched is self._canvas:
             types = getattr(QEvent, "Type", QEvent)
-            if enum_value(event.type()) == enum_value(types.KeyPress):
+            kind = enum_value(event.type())
+            if kind == enum_value(types.ShortcutOverride):
+                return self._override(event)
+            if kind == enum_value(types.KeyPress):
                 return self._key(event)
         return False
 
@@ -163,13 +173,18 @@ class ConnectionHost(QObject):
         self._wired = True
         canvas = self._workbench.canvas
         self._canvas = canvas
-        self._viewport = canvas.viewport()
+        viewport = canvas.viewport()
+        self._viewport = viewport
         canvas.installEventFilter(self)
-        self._viewport.installEventFilter(self)
+        if viewport is not None:
+            viewport.installEventFilter(self)
         self._workbench.inspector.tabs.currentChanged.connect(self.sync)
-        subscription = self._workbench._session.log.subscribe(self.sync, priority=PRIORITY_VIEWS + 1)
+        session = self._workbench._session
+        subscription = session.log.subscribe(self._on_log, priority=PRIORITY_VIEWS + 1)
         self._log_sub = subscription
+        selection = session.selection.subscribe(self._on_selection)
         self._workbench.destroyed.connect(lambda *_: subscription.close())
+        self._workbench.destroyed.connect(lambda *_: selection())
         toolbar = getattr(surface, "_toolbar", None)
         if toolbar is None:
             return
@@ -179,24 +194,57 @@ class ConnectionHost(QObject):
         for button in getattr(toolbar, "overlay_toggles", {}).values():
             button.toggled.connect(self.sync)
 
+    def _on_log(self, *_ignored: object) -> None:
+        self._aimed = None
+        self.sync()
+
+    def _on_selection(self, _change: object) -> None:
+        self._aimed = None
+
+    def _overlay(self) -> str:
+        surface = _surface(self._workbench)
+        return str(getattr(getattr(surface, "_modes", None), "active", "") or "")
+
     def _press(self, event: QMouseEvent, double: bool) -> bool:
+        del double
+        self._swallow_delete = False
+        if self._overlay() in ("tab_order", "buddies"):
+            self._aimed = None
+            return False
         point = self._scene(event)
         if point is None:
+            return False
+        # A press on a widget body starts the F4 link. Arrows are hit only in the gaps.
+        if self._overlay() == "connections" and self._on_widget(event):
+            self._aimed = None
             return False
         items = self._workbench.canvas.overlay().items
         badge = badge_at(items, point[0], point[1])
         if badge:
+            self._aimed = None
             self._select(badge)
             self._workbench.focus_inspector_tab(TabId.BEHAVIOR)
             return True
         found = mark_at(items, point[0], point[1])
         if found is None or not found.sender:
+            self._aimed = None
             return False
         self._select(found.sender)
         self._aimed = (found.sender, found.signal, found.index)
-        if double and found.kind == "arrow":
-            self._edit(found.sender, found.signal, found.index)
         return True
+
+    def _on_widget(self, event: QMouseEvent) -> bool:
+        canvas = self._canvas
+        if canvas is None or not hasattr(canvas, "node_at"):
+            return False
+        pos = event_pos(event)
+        if pos is None:
+            return False
+        node = canvas.node_at(pos)
+        document = self._workbench._session.document
+        if node is None or node == document.root.id:
+            return False
+        return isinstance(document.get(node), WidgetNode)
 
     def _hover_at(self, event: QMouseEvent) -> None:
         point = self._scene(event)
@@ -209,23 +257,86 @@ class ConnectionHost(QObject):
         if hover != self._hover:
             self._hover = hover
             self.sync()
-        text = tip
-        if found is not None and found.kind == "arrow":
-            text = "When %s is connected. Click to select. Remove the step from the Behavior tab." % found.sender
-        viewport = self._workbench.canvas.viewport()
-        if viewport.toolTip() != text:
-            viewport.setToolTip(text)
+        viewport = self._viewport
+        if viewport is not None and viewport.toolTip() != tip:
+            viewport.setToolTip(tip)
+        if found is None or found.kind not in ("arrow", "code", "label"):
+            if self._said:
+                self._said = False
+                self._unsay()
+            return
+        sentence = self._hover_sentence(found)
+        if not sentence:
+            return
+        self._said = True
+        self._say(sentence)
+
+    def _hover_sentence(self, found: Any) -> str:
+        surface = _surface(self._workbench)
+        document = self._workbench._session.document
+        if found.kind == "code":
+            bare = split_signature(found.signal)[0]
+            state = read_event(document, found.sender, bare)
+            if found.index < 0 or found.index >= len(state.steps):
+                return ""
+            return code_status(state.steps[found.index].method, window_file(surface))
+        return arrow_status(document, found.sender, found.signal, found.index)
+
+    def _say(self, sentence: str) -> None:
+        surface = _surface(self._workbench)
+        if surface is None:
+            return
+        if self._overlay():
+            surface.set_overlay_status(sentence)
+        else:
+            surface.narrate(sentence)
+
+    def _unsay(self) -> None:
+        surface = _surface(self._workbench)
+        if surface is None:
+            return
+        modes = getattr(surface, "_modes", None)
+        if self._overlay() and modes is not None:
+            modes._announce()
+        else:
+            surface.narrate("")
+
+    def _override(self, event: QKeyEvent) -> bool:
+        if self._aimed is None or not _delete_key(event):
+            return False
+        event.accept()
+        self._swallow_delete = True
+        self._remove_aimed()
+        return True
 
     def _key(self, event: QKeyEvent) -> bool:
-        key = enum_value(event.key())
-        delete = enum_value(Qt.Key.Key_Delete)
-        backspace = enum_value(Qt.Key.Key_Backspace)
-        if self._aimed is None or key not in (delete, backspace):
-            return False
+        if self._swallow_delete and _delete_key(event):
+            self._swallow_delete = False
+            return True
+        self._swallow_delete = False
+        if self._aimed is not None and _delete_key(event):
+            self._remove_aimed()
+            return True
+        self._aimed = None
+        return False
+
+    def _remove_aimed(self) -> None:
+        aimed = self._aimed
+        self._aimed = None
+        if aimed is None:
+            return
+        sender, signal, index = aimed
         surface = _surface(self._workbench)
-        if surface is not None:
-            surface.narrate(REMOVE)
-        return True
+        if surface is None:
+            return
+        document = surface.session.document
+        bare = split_signature(signal)[0]
+        state = read_event(document, sender, bare)
+        if index < 0 or index >= len(state.steps):
+            return
+        words = step_sentence(document, state.steps[index])
+        kept = tuple(step for at, step in enumerate(state.steps) if at != index)
+        surface.session.log.execute(SetEventSteps(sender, bare, kept, caption="Delete %s" % words))
 
     def _select(self, name: str) -> None:
         document = self._workbench._session.document
@@ -234,21 +345,17 @@ class ConnectionHost(QObject):
             return
         self._workbench._session.selection.set((found[0],), current=found[0], source=SelectionSource.CANVAS)
 
-    def _edit(self, sender: str, signal: str, index: int) -> None:
-        del signal, index
-        surface = _surface(self._workbench)
-        document = self._workbench._session.document
-        found = document.by_name(sender)
-        if surface is None or not found:
-            return
-        choose_step(surface, found[0], found[0])
-
     def _scene(self, event: QMouseEvent) -> Optional[Tuple[float, float]]:
         point = event_pos(event)
         if point is None:
             return None
         scene = self._workbench.canvas.mapToScene(point)
         return (scene.x(), scene.y())
+
+
+def _delete_key(event: QKeyEvent) -> bool:
+    key = enum_value(event.key())
+    return key in (enum_value(Qt.Key.Key_Delete), enum_value(Qt.Key.Key_Backspace))
 
 
 def _surface(workbench: Any) -> Any:

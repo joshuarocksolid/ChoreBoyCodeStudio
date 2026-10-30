@@ -8,6 +8,7 @@ toggles the overlay), UX-ARR-007 (nothing is written until a slot is chosen).
 
 from __future__ import annotations
 
+from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
@@ -27,8 +28,11 @@ from app.features.form_builder.qtside.canvas.layers.connections import (
     drawable_steps,
 )
 from app.features.form_builder.qtside.canvas.layers.logic_badges import badge_tip, build as build_badges
-from app.qt.QtCore import QTimer
+from app.features.form_builder.integration.workbench_ext.connections import links_for
+from app.qt.QtCore import QPointF, QTimer, Qt
+from app.qt.QtTest import QTest
 from app.qt.QtWidgets import QApplication, QWidget
+from tests.unit.features.form_builder.test_workbench import _open
 from tests.form_builder.engine.commands._support import open_log, saved
 
 pytestmark = pytest.mark.unit
@@ -154,7 +158,7 @@ def test_show_all_draws_the_selected_sender_strong_and_the_rest_faint() -> None:
 
 def test_badges_name_the_events_and_hide_below_half_zoom() -> None:
     log = open_log(form(connection("clearButton", "clicked()", "nameEdit", "clear()")))
-    assert badge_tip(log.document, "clearButton") == "1 events: When clicked"
+    assert badge_tip(log.document, "clearButton") == "1 event: When clicked"
     current = log.document.by_name("clearButton")[0]
     static, inputs = _world(log, current)
     assert build_badges(static, inputs, True).items
@@ -169,7 +173,8 @@ def test_badges_name_the_events_and_hide_below_half_zoom() -> None:
         ("", True, False, True, "selected"),
         ("", False, True, True, "all"),
         ("connections", True, False, False, "all"),
-        ("tab_order", True, True, False, "all"),
+        ("tab_order", True, True, False, None),
+        ("buddies", True, True, False, None),
         ("tab_order", True, False, False, None),
     ],
 )
@@ -221,6 +226,103 @@ def test_f4_toggles_the_connections_overlay_and_show_all_is_ctrl_shift_l() -> No
     assert rows["form.action.connectionLink"].shortcut == "Enter"
     assert rows["form.action.connectionForm"].shortcut == "Home"
     assert LINK == "connection_link"
+
+
+def test_the_label_chip_sits_on_the_curve_not_in_a_margin_column() -> None:
+    log = open_log(form(connection("clearButton", "clicked()", "nameEdit", "clear()")))
+    current = log.document.by_name("clearButton")[0]
+    static, inputs = _world(log, current)
+    items = build_arrows(static, inputs, ArrowState("all", ("clearButton", "clicked()", 0)))
+    chips = [
+        item
+        for item in items.items
+        if isinstance(getattr(item, "data", None), tuple) and item.data[0] == "chip" and item.data[2]
+    ]
+    assert len(chips) == 1
+    assert chips[0].rect.x < 800
+    assert abs((chips[0].rect.x + chips[0].rect.width / 2) - 240) < 80
+
+
+@pytest.mark.timeout(180)
+def test_double_click_on_an_arrow_writes_nothing(qapp: QApplication, tmp_path: Path) -> None:
+    text = form(connection("clearButton", "clicked()", "nameEdit", "clear()"))
+    host = QWidget()
+    surface = _open(host, text, tmp_path / "one.ui")
+    host.show()
+    surface.show()
+    qapp.processEvents()
+    before = saved(surface.session.document)
+    links = links_for(surface)
+    assert links is not None
+    links.toggle_show_all()
+    qapp.processEvents()
+    canvas = surface.workbench.canvas
+    point = _arrow_point(canvas, "clearButton")
+    assert point is not None
+
+    def reject() -> None:
+        dialog = QApplication.activeModalWidget()
+        if dialog is not None:
+            dialog.reject()
+
+    QTimer.singleShot(0, reject)
+    QTest.mouseDClick(canvas.viewport(), Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, point)
+    qapp.processEvents()
+    assert QApplication.activeModalWidget() is None
+    assert saved(surface.session.document) == before
+    assert not surface.session.log.entries()
+    qapp.processEvents()
+    surface.release()
+    host.close()
+
+
+@pytest.mark.timeout(180)
+def test_delete_on_an_aimed_arrow_is_one_undo_step(qapp: QApplication, tmp_path: Path) -> None:
+    text = form(connection("clearButton", "clicked()", "nameEdit", "clear()"))
+    host = QWidget()
+    surface = _open(host, text, tmp_path / "one.ui")
+    host.show()
+    surface.show()
+    qapp.processEvents()
+    before = saved(surface.session.document)
+    links = links_for(surface)
+    assert links is not None
+    links.toggle_show_all()
+    qapp.processEvents()
+    canvas = surface.workbench.canvas
+    point = _arrow_point(canvas, "clearButton")
+    assert point is not None
+    canvas.setFocus()
+    QTest.mouseClick(canvas.viewport(), Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, point)
+    qapp.processEvents()
+    QTest.keyClick(canvas, Qt.Key.Key_Delete)
+    qapp.processEvents()
+    assert drawable_steps(surface.session.document) == ()
+    entries = surface.session.log.entries()
+    assert len(entries) == 1
+    assert entries[0].label.startswith("Delete ")
+    assert surface.undo()
+    assert saved(surface.session.document) == before
+    qapp.processEvents()
+    surface.release()
+    host.close()
+
+
+def _arrow_point(canvas: QWidget, sender: str) -> object:
+    for item in canvas.overlay().items:  # type: ignore[attr-defined]
+        data = getattr(item, "data", None)
+        if isinstance(data, tuple) and data and data[0] == "arrow" and data[8] == sender:
+            rect = item.rect
+            view = canvas.mapFromScene(QPointF(rect.x + rect.width / 2, rect.y + rect.height / 2))  # type: ignore[attr-defined]
+            return canvas.viewport().mapFrom(canvas, view)  # type: ignore[attr-defined]
+    return None
+
+
+@pytest.mark.xfail(strict=True, reason="M6.1b opens the step picker on that step (UX-ARR-009)")
+def test_double_click_opens_the_step_picker_on_that_step() -> None:
+    from app.features.form_builder.qtside.pickers import open_for_step  # type: ignore[import-not-found]
+
+    assert callable(open_for_step)
 
 
 @pytest.mark.xfail(strict=True, reason="M6.1b owns qtside/pickers.open_for_link, the event picker and the step picker")

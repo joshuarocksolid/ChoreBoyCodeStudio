@@ -11,14 +11,18 @@ that package exposes ``open_for_link``, a dialog in this file stands in.
 
 from __future__ import annotations
 
-from typing import Any, Callable
+import os
+from typing import Any, Callable, Tuple
 
 from app.features.form_builder.engine.commands.base import CommandRejected
 from app.features.form_builder.engine.commands.catalog_ext.events import steps_added
 from app.features.form_builder.engine.ids import NodeId
-from app.features.form_builder.engine.logic.compat import is_signature, split_signature
+from app.features.form_builder.engine.logic.compat import is_signature, signature_text, split_signature
 from app.features.form_builder.engine.logic.events import read_event
+from app.features.form_builder.engine.logic.events_catalog import event_words, step_words
 from app.features.form_builder.engine.logic.events_codec import EventStep, slot_step
+from app.features.form_builder.engine.query.tab_stops import buddy_of, caption, labels
+from app.features.form_builder.engine.style.classes import widget_chain
 from app.features.form_builder.engine.ui4.nodes import WidgetNode
 from app.features.form_builder.integration.overlay_ext import LinkGesture, LinkView, OverlayKind, ToggleSpec
 from app.features.form_builder.qtside.canvas.layers.connections import LINK, LinkMark
@@ -42,7 +46,7 @@ def register(registry: Any) -> None:
             kind=KIND,
             title="Connections",
             banner_text=BANNER,
-            glyph="buddy",
+            glyph="connections",
             layer=LINK,
             state=_mark,
             toggle=ToggleSpec("Connections", "Connections (F4)"),
@@ -117,13 +121,18 @@ def _stub_open(surface: Any, source: NodeId, target: NodeId) -> None:
     dialog.setObjectName(STUB_NAME)
     dialog.setWindowTitle("Connect %s to %s" % (sender, receiver))
     form = QFormLayout(dialog)
-    signal = QLineEdit("clicked()", dialog)
+    sender_node = surface.session.document.get(source)
+    signal = QLineEdit(_default_signal(sender_node), dialog)
     signal.setObjectName("formBuilder.connectionPickerStub.signal")
     slot = QLineEdit("setFocus()" if receiver != sender else "clear()", dialog)
     slot.setObjectName("formBuilder.connectionPickerStub.slot")
     form.addRow("Signal", signal)
     form.addRow("Slot", slot)
     buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel, dialog)
+    ok = buttons.button(QDialogButtonBox.StandardButton.Ok)
+    if ok is not None:
+        ok.setDefault(True)
+        ok.setAutoDefault(True)
     form.addRow(buttons)
 
     def accept() -> None:
@@ -133,6 +142,79 @@ def _stub_open(surface: Any, source: NodeId, target: NodeId) -> None:
     buttons.accepted.connect(accept)
     buttons.rejected.connect(dialog.reject)
     exec_qt(dialog)
+
+
+def display_name(doc: Any, object_name: str) -> str:
+    """Buddy label, then the widget's own text, then the object name. ``&`` is removed."""
+    if not object_name:
+        return ""
+    for label_id in labels(doc):
+        if buddy_of(doc, label_id) != object_name:
+            continue
+        text = caption(doc, label_id)
+        label = doc.get(label_id)
+        if text and text != getattr(label, "object_name", ""):
+            return text
+    found = doc.by_name(object_name)
+    node = doc.get(found[0]) if found else None
+    if isinstance(node, WidgetNode):
+        return caption(doc, node.id) or object_name
+    return object_name
+
+
+def window_file(surface: Any) -> str:
+    """``<stem>_window.py`` for the open form, or empty when it has no path."""
+    path = str(getattr(surface, "_path", "") or "")
+    stem = os.path.splitext(os.path.basename(path))[0]
+    if not stem:
+        return ""
+    return "%s_window.py" % stem
+
+
+def step_sentence(doc: Any, step: EventStep) -> str:
+    """One step in the words of UX 13.3.8. ``{w}`` is the display name and the object name."""
+    target = step.target if step.verb == "slot" else (doc.root.object_name if step.verb == "call" else "")
+    named = "%s (%s)" % (display_name(doc, target), target) if target else ""
+    chain: Tuple[str, ...] = ()
+    found = doc.by_name(target) if target else None
+    node = doc.get(found[0]) if found else None
+    if isinstance(node, WidgetNode):
+        chain = widget_chain(doc, node)
+    return step_words(step, named, is_form=(bool(target) and target == doc.root.object_name), target_chain=chain)
+
+
+def arrow_status(doc: Any, sender: str, signal: str, index: int) -> str:
+    """UX-ARR-010. Empty when the step is no longer in the document."""
+    bare = split_signature(signal)[0]
+    state = read_event(doc, sender, bare)
+    if index < 0 or index >= len(state.steps):
+        return ""
+    found = doc.by_name(sender)
+    node = doc.get(found[0]) if found else None
+    chain = widget_chain(doc, node) if isinstance(node, WidgetNode) else ()
+    return "When %s is %s: %s. Click to select, Delete to remove." % (
+        display_name(doc, sender),
+        event_words(bare, chain).header,
+        step_sentence(doc, state.steps[index]),
+    )
+
+
+def code_status(method: str, file_name: str) -> str:
+    """The ``{ }`` chip sentence. A form with no path uses the no-window-file line."""
+    if not file_name:
+        return "This form isn't in a project, so it has no window file."
+    return "Calls %s() in %s. Click to go to the code." % (method, file_name)
+
+
+def _default_signal(node: object) -> str:
+    """The class's default event, so OK writes a step the engine accepts."""
+    if not isinstance(node, WidgetNode):
+        return "clicked()"
+    from app.features.form_builder.engine.logic.events_catalog import default_event
+    from app.features.form_builder.engine.ui4.defaults import QtClassTable
+
+    name = default_event(QtClassTable.shared(), node.class_name) or "clicked"
+    return signature_text(name, ())
 
 
 def _name(surface: Any, node: NodeId) -> str:

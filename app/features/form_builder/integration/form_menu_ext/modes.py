@@ -34,7 +34,7 @@ def register(registry: Any) -> None:
     add = registry.add
     add(FormMenuItem("form.action.tabOrder", (_TITLE, "Tab order"), _toggle("tab_order"), rank=0, enabled=_visual))
     add(FormMenuItem("form.action.buddies", (_TITLE, "Buddies"), _toggle("buddies"), rank=1, enabled=_visual))
-    add(FormMenuItem("form.action.tabOrderList", (_TITLE, "Tab order list…"), _list, rank=2, enabled=_visual))
+    add(FormMenuItem("form.action.tabOrderList", (_TITLE, "Tab order list…"), _list, rank=4, enabled=_visual))
     add(
         FormMenuItem(
             "form.help.formKeys",

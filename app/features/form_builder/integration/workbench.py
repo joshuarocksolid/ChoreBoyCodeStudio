@@ -636,6 +636,10 @@ class FormToolbar(QWidget):
         for attr, glyph in _TOOL_GLYPHS:
             button = getattr(self, attr)
             _paint_glyph(button, glyph, tokens, 16)
+        for kind in overlay_kinds().kinds():
+            button = self.overlay_toggles.get(kind.kind)
+            if button is not None and kind.glyph:
+                _paint_glyph(button, kind.glyph, tokens, 16)
 
 
 def _splitter_qss(tokens: ShellThemeTokens) -> str:

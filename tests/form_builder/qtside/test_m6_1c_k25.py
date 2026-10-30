@@ -17,7 +17,7 @@ from app.features.form_builder.qtside.canvas.layers.connections import drawable_
 from app.qt.QtCore import QTimer, Qt
 from app.qt.QtGui import QKeySequence
 from app.qt.QtTest import QTest
-from app.qt.QtWidgets import QApplication, QWidget
+from app.qt.QtWidgets import QApplication, QDialogButtonBox, QWidget
 from tests.form_builder.engine.commands._support import saved
 from tests.unit.features.form_builder.test_workbench import _open
 
@@ -101,17 +101,35 @@ def test_k25_connections_overlay_from_the_keyboard(qapp: QApplication, tmp_path:
     report.append("Tab receiver: %s" % _name(surface))
     assert _name(surface) == "nameEdit"
 
-    def reject() -> None:
+    def accept() -> None:
+        dialog = QApplication.activeModalWidget()
+        if dialog is None:
+            return
+        box = dialog.findChild(QDialogButtonBox)
+        ok = None if box is None else box.button(QDialogButtonBox.StandardButton.Ok)
+        if ok is None:
+            return
+        ok.setFocus()
+        QTest.keyClick(ok, Qt.Key.Key_Return)
+
+    stalled = []
+
+    def give_up() -> None:
         dialog = QApplication.activeModalWidget()
         if dialog is not None:
+            stalled.append(dialog.windowTitle())
             dialog.reject()
 
-    QTimer.singleShot(0, reject)
+    QTimer.singleShot(0, accept)
+    QTimer.singleShot(1500, give_up)
     _click(canvas, Qt.Key.Key_Return)
     _pump(qapp)
-    report.append("Enter opened the stub; bytes unchanged: %s" % (saved(surface.session.document) == original))
-    assert saved(surface.session.document) == original
-    assert not surface.session.log.entries()
+    drawn = drawable_steps(surface.session.document)
+    phone = [step for step in drawn if step.sender == "phoneEdit" and step.receiver == "nameEdit"]
+    report.append("phoneEdit step: %s stalled=%s" % (bool(phone), stalled))
+    assert not stalled
+    assert phone
+    assert len(surface.session.log.entries()) == 1
 
     _click(canvas, Qt.Key.Key_Escape)
     _pump(qapp)
@@ -127,7 +145,22 @@ def test_k25_connections_overlay_from_the_keyboard(qapp: QApplication, tmp_path:
     status = surface.editor_status_sentence()
     count = len(drawable_steps(surface.session.document))
     report.append("Show all status: %s (drawable %d)" % (status, count))
-    assert status == "Showing all %d connections. Ctrl+Shift+L hides them." % count
+    assert status == "Showing all 3 connections. Ctrl+Shift+L hides them."
+    assert count == 3
+    arrows = [
+        item
+        for item in canvas.overlay().items
+        if isinstance(getattr(item, "data", None), tuple)
+        and item.data
+        and item.data[0] == "arrow"
+        and item.data[8] == "phoneEdit"
+    ]
+    report.append("phoneEdit arrow in the layer: %s" % bool(arrows))
+    assert arrows
+    while surface.undo():
+        _pump(qapp)
+    report.append("Undo all restored the file: %s" % (saved(surface.session.document) == original))
+    assert saved(surface.session.document) == original
     _chord(canvas, "Ctrl+Shift+L")
     _pump(qapp)
     assert links_off(surface)
@@ -157,12 +190,10 @@ def test_k25_connections_overlay_from_the_keyboard(qapp: QApplication, tmp_path:
     host2 = QWidget()
     designer = _open(host2, designer_bytes.decode("utf-8"), tmp_path / "designer_made.ui")
     _pump(qapp)
-    before = (tmp_path / "designer_made.ui").read_bytes()
-    if hasattr(designer, "save"):
-        designer.save()
-        _pump(qapp)
-    after = (tmp_path / "designer_made.ui").read_bytes()
-    report.append("designer_made save without an edit kept the file: %s" % (after == before == designer_bytes or after == before))
+    current = designer.content_source().current_text().encode("utf-8")
+    on_disk = (tmp_path / "designer_made.ui").read_bytes()
+    report.append("designer resave bytes match the file: %s" % (current == on_disk == designer_bytes))
+    assert current == on_disk == designer_bytes
     designer.release()
     host2.close()
     print("\n".join(report))

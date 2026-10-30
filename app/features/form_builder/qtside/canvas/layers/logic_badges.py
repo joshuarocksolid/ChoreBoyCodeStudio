@@ -37,7 +37,8 @@ def badge_tip(doc: UiDocument, sender: str) -> str:
     words = ["When %s" % event_words(state.signal_name, chain).header for state in states]
     shown = words[:3]
     extra = len(words) - len(shown)
-    text = "%d events: %s" % (len(words), ", ".join(shown))
+    noun = "event" if len(words) == 1 else "events"
+    text = "%d %s: %s" % (len(words), noun, ", ".join(shown))
     if extra:
         text += " and %d more" % extra
     return text
@@ -65,32 +66,34 @@ def build(static: object, inputs: object, state: Hashable) -> LayerOutput:
     viewport = getattr(inputs, "viewport", None) or page
     if page is None or viewport is None:
         return LayerOutput()
+    bodies = list(_bodies(document, senders, placed))
     requests = []
     tips = {}
     widget_rect = {}
-    for sender in senders:
-        found = document.by_name(sender)
-        rect = placed.get(found[0]) if found else None
-        if rect is None:
-            continue
+    for sender, rect in bodies:
         tips[sender] = badge_tip(document, sender)
         widget_rect[sender] = rect
-        requests.append(ChipRequest(sender, rect, CanvasSize(BADGE, BADGE), BADGE_CORNERS, frozenset()))
+        others = [other for name, other in bodies if name != sender]
+        requests.append(
+            ChipRequest(sender, rect, CanvasSize(BADGE, BADGE), _corners(rect, others), frozenset())
+        )
     if not requests:
         return LayerOutput()
-    seats = place_chips(
-        requests,
-        tuple(getattr(static, "content", ())),
-        tuple(getattr(inputs, "chrome", ())),
-        page,
-        viewport,
-    )
+    content = tuple(getattr(static, "content", ()))
+    fixed = tuple(getattr(inputs, "chrome", ())) + _selection_chip(static, inputs, page, viewport)
+    seats = place_chips(requests, content, fixed, page, viewport, getattr(inputs, "dock", None))
     seated = {str(seat.key): seat.rect for seat in seats}
+    occupied = [item.rect for item in getattr(static, "placed", ())]
     items: List[LayerItem] = []
     for sender, rect in widget_rect.items():
+        seat = seated.get(sender)
+        if seat is None or _covers(seat, occupied, rect):
+            seat = _badge_fallback(rect, page)
+        if _covers(seat, occupied, rect):
+            continue
         items.append(
             LayerItem(
-                rect=seated.get(sender) or _badge_fallback(rect, page),
+                rect=seat,
                 role="select",
                 layer=NAME,
                 data=("badge", sender, tips.get(sender, "")),
@@ -109,6 +112,9 @@ def paint(painter: QPainter, item: LayerItem, palette: CanvasPalette) -> None:
     painter.save()
     try:
         painter.setPen(Qt.PenStyle.NoPen)
+        if float(palette.overlay.min_stroke or 1) >= 2:
+            painter.setBrush(ink)
+            painter.drawEllipse(box.adjusted(-1, -1, 1, 1))
         painter.setBrush(fill)
         painter.drawEllipse(box)
         painter.setPen(ink)
@@ -144,6 +150,85 @@ def tip_at(items: Sequence[object], x: float, y: float) -> str:
     return ""
 
 
+def _bodies(document: UiDocument, senders: Sequence[str], placed: dict) -> Tuple[Tuple[str, CanvasRect], ...]:
+    rows = []
+    for sender in senders:
+        found = document.by_name(sender)
+        rect = placed.get(found[0]) if found else None
+        if rect is not None:
+            rows.append((sender, rect))
+    return tuple(rows)
+
+
+def _corners(rect: CanvasRect, others: Sequence[CanvasRect]) -> Tuple[str, ...]:
+    """The corner away from a neighbour, so a badge is not read as the next widget's."""
+    right = False
+    left = False
+    mid = rect.y + rect.height / 2.0
+    for other in others:
+        if abs((other.y + other.height / 2.0) - mid) > max(rect.height, other.height):
+            continue
+        if other.x >= rect.x + rect.width - 8:
+            right = True
+        if other.x + other.width <= rect.x + 8:
+            left = True
+    if right and not left:
+        return ("above_left", "above_right")
+    return BADGE_CORNERS
+
+
+def _covers(seat: CanvasRect, occupied: Sequence[CanvasRect], own: CanvasRect) -> bool:
+    """True when the badge sits on its widget or on a child inside that widget."""
+    if seat.intersects(own):
+        return True
+    for rect in occupied:
+        if rect == own or not seat.intersects(rect):
+            continue
+        if (
+            rect.x >= own.x
+            and rect.y >= own.y
+            and rect.x + rect.width <= own.x + own.width
+            and rect.y + rect.height <= own.y + own.height
+        ):
+            return True
+    return False
+
+
+def _selection_chip(static: object, inputs: object, page: CanvasRect, viewport: CanvasRect) -> Tuple[CanvasRect, ...]:
+    """The selection chip, seated the same way the frame seats it, as a fixed obstacle."""
+    selection = getattr(inputs, "selection", None)
+    current = getattr(selection, "current", None) if selection is not None else None
+    measure = getattr(inputs, "measure", None)
+    if current is None or not hasattr(selection, "ids") or not callable(measure):
+        return ()
+    document = getattr(inputs, "document")
+    if current == document.root.id:
+        return ()
+    rect = None
+    for item in getattr(static, "placed", ()):
+        if item.node == current:
+            rect = item.rect
+            break
+    if rect is None:
+        return ()
+    from app.features.form_builder.qtside.canvas.core.chips import LABEL_CORNERS
+    from app.features.form_builder.qtside.canvas.core.words import chip_text
+
+    text = chip_text(document, selection, getattr(inputs, "sizing", None))
+    size = CanvasSize(max(1, int(measure(text)) + 12), 18)
+    seats = place_chips(
+        (ChipRequest(("selection", current), rect, size, LABEL_CORNERS, frozenset(), required=True),),
+        tuple(getattr(static, "content", ())),
+        tuple(getattr(inputs, "chrome", ())),
+        page,
+        viewport,
+        getattr(inputs, "dock", None),
+    )
+    if not seats:
+        return ()
+    return (seats[0].rect,)
+
+
 def _chain(doc: UiDocument, sender: str) -> Tuple[str, ...]:
     found = doc.by_name(sender)
     node = doc.node(found[0]) if found else None
@@ -153,13 +238,13 @@ def _chain(doc: UiDocument, sender: str) -> Tuple[str, ...]:
 
 
 def _badge_fallback(rect: CanvasRect, page: Optional[CanvasRect]) -> CanvasRect:
-    """Top-right, just outside the widget. Inside the corner when that would leave the page."""
-    x = rect.x + rect.width - 2
+    """Just above the widget. The left corner when the right one would leave the page."""
+    del page
     y = rect.y - BADGE - 2
-    if page is not None and y < page.y:
-        x = rect.x + max(0, rect.width - BADGE - 2)
-        y = rect.y + 2
-    return CanvasRect(x, y, BADGE, BADGE)
+    right = CanvasRect(rect.x + rect.width - BADGE, y, BADGE, BADGE)
+    if right.x + BADGE <= rect.x + rect.width + 2:
+        return right
+    return CanvasRect(rect.x, y, BADGE, BADGE)
 
 
 def _page(static: object) -> Optional[CanvasRect]:

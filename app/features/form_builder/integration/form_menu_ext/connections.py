@@ -44,7 +44,7 @@ def register(registry: Any) -> None:
             "form.action.showAllConnections",
             (_TITLE, "Show all connections"),
             lambda surface: _toggle(surface),
-            rank=2,
+            rank=3,
             offered=_show_all_offered,
             enabled=_visual,
         )
