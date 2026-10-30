@@ -188,6 +188,7 @@ class SemanticSession:
                     project_root=project_root,
                     trigger_is_manual=True,
                     min_prefix_chars=1,
+                    max_results=UI_INTELLIGENCE_COMPLETION_MAX_RESULTS_DEFAULT,
                 )
                 if (
                     target

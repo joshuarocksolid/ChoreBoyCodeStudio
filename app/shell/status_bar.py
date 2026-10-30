@@ -430,6 +430,12 @@ class ShellStatusBarController:
     def editor_status_text(self) -> str:
         return self._editor_label.text()
 
+    def diagnostics_text(self) -> str:
+        return self._diagnostics_label.text()
+
+    def indent_text(self) -> str:
+        return self._indent_label.text()
+
     def set_diagnostics_counts(self, errors: int, warnings: int) -> None:
         """Update diagnostic counts in the status bar."""
         text = format_diagnostics_counts(errors, warnings)
