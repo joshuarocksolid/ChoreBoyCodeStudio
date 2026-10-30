@@ -919,6 +919,8 @@ An **event** is (sender object name, signal name). Its steps, in run order, are 
 
 **Intents** (`engine/logic/intents/m6.py`) return schema mappings with two routing keys that are never stored: `event` (the signal) and `sender` (only when the step goes on another object's event, the second half of "Keep *a* and *b* in step"). A `slot` mapping without `target` acts on the form.
 
+**Event picker.** `open_event_picker(host, source, target)` in `qtside/pickers` opens the event and step pages. M6.1c's link handler calls it. `host` is the widget that gets focus back. `source` is the sender (an object name, or a sender plus a signal when a step is being added). `target` is the receiver object name, or empty. Esc on the first page writes nothing. The pages do not call the log; only a finished choice does. Code actions are installed with `set_method_actions`, because `qtside` cannot import `integration`.
+
 **Native overloads in generated Python.** uic 6.8 writes `["types"]` after `clicked(...)` of a button (a class deriving from `QAbstractButton`, not that class itself) and `triggered(...)` of a `QToolButton` or `QAction` when the signature has arguments, because PySide6's bare `clicked`/`triggered` is the zero-argument overload and a Qt slot that needs `checked` would raise. The core emitter does the same (`_overload_selector`, checked against uic for every widget class of the table).
 
 **Signal compatibility** (`engine/logic/compat.py`): a slot or method with parameter types *p* fits a signal overload with types *s* when *p* is a prefix of *s* after normalising (`const T&` → `T`, whitespace removed, Qt 6 aliases `qreal` → `double`). The event's overloads come from the class table; own classes from the registry and `<customwidget><slots>`.
