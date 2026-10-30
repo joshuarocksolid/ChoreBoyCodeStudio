@@ -324,8 +324,10 @@ def test_default_handler_service_commits_steps_in_one_transaction_and_writes_no_
     from types import SimpleNamespace
 
     handlers.set_service(None)
-    default = handlers.service()
-    assert isinstance(default, handlers.DefaultHandlerService)
+    default = handlers.DefaultHandlerService()
+    from app.features.form_builder.integration.handlers_code import SERVICE
+
+    assert handlers.service() is SERVICE
     log = _Log()
     surface = SimpleNamespace(session=SimpleNamespace(log=log, scope=FormScope(kind="external", ui_path="/x/a.ui")))
     done = default.make_method(surface, handlers.MethodRequest("Write code for Save clicked", ("a", "b"), method="save"))
@@ -363,6 +365,8 @@ def test_handler_service_is_found_in_handlers_code_without_editing_this_module(
         assert isinstance(handlers.service(), handlers.DefaultHandlerService)
     finally:
         handlers.set_service(None)
+        handlers._CODE = None
+        handlers._CODE_LOOKED = False
         forget_package("m6_handlers_probe")
 
 

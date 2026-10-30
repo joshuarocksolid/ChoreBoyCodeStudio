@@ -598,6 +598,12 @@ class SaveWorkflow:
         if saved_tab.file_path.lower().endswith(".py"):
             host.render_lint_for_file(saved_tab.file_path, trigger="save")
             host.refresh_test_discovery()
+        bridge = getattr(host, "_form_builder_code_bridge", None)
+        if bridge is None:
+            bridge = getattr(getattr(host, "_window", None), "_form_builder_code_bridge", None)
+        notify = getattr(bridge, "notify_saved", None)
+        if callable(notify):
+            notify(saved_tab.file_path)
         getattr(host.logger(), "info")("Saved file: %s", saved_tab.file_path)
         return True
 
