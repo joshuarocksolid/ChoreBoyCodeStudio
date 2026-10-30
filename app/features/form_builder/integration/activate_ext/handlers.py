@@ -65,12 +65,16 @@ def write_for(surface: Any, node_id: NodeId) -> None:
         _narrate(surface, NO_PROJECT if not getattr(scope, "project_root", None) else NO_FORMS)
         return
     state = read_event(doc, sender, signal)
+    named = _named_method(surface, sender, signal)
     for step in state.steps:
         if step.verb == "call" and step.method:
             if not service().go_to(surface, step.method):
                 file_name = _file_name(scope)
                 _narrate(surface, "%s() isn't in %s yet. Press Ctrl+. to create it." % (step.method, file_name))
             return
+    if named:
+        service().go_to(surface, named)
+        return
     if marker_read_only(doc.root.prop("cbcsLogic")):
         _narrate(surface, _NEWER)
         return
@@ -84,6 +88,23 @@ def menu_title(doc: UiDocument, node_id: NodeId) -> str:
         return ""
     header = event_words(signal, class_chain(QtClassTable.shared(), class_name)).header
     return "Write code for \u201c%s\u201d" % header
+
+
+def named_method(surface: Any, sender: str, signal: str) -> str:
+    """The ``on_{sender}_{signal}`` method Qt runs, when the window file has it."""
+    return _named_method(surface, sender, signal)
+
+
+def _named_method(surface: Any, sender: str, signal: str) -> str:
+    if not sender or not signal:
+        return ""
+    read = service().reading(surface)
+    if getattr(read, "status", "") != "ok":
+        return ""
+    name = "on_%s_%s" % (sender, signal)
+    facts = getattr(read, "facts", None)
+    found = facts.method(name) if facts is not None and hasattr(facts, "method") else None
+    return name if found is not None else ""
 
 
 def register(registry: Any) -> None:

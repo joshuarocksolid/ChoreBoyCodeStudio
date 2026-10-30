@@ -51,6 +51,8 @@ def collect_unresolved_import_diagnostics(
                     layout=resolved_layout,
                 ):
                     continue
+                if _generated_ui_pending(project_root, alias.name):
+                    continue
                 diagnostics.append(
                     CodeDiagnostic(
                         code="PY200",
@@ -94,6 +96,8 @@ def collect_unresolved_import_diagnostics(
                 layout=resolved_layout,
             ):
                 continue
+            if _generated_ui_pending(project_root, resolved_module):
+                continue
             diagnostics.append(
                 CodeDiagnostic(
                     code="PY200",
@@ -107,6 +111,18 @@ def collect_unresolved_import_diagnostics(
                 )
             )
     return diagnostics
+
+
+def _generated_ui_pending(project_root: Path, module_name: str) -> bool:
+    """True when ``forms.ui_sale`` is the module ``sale.ui`` will generate on save."""
+    parts = [part for part in module_name.split(".") if part]
+    if not parts:
+        return False
+    leaf = parts[-1]
+    if not leaf.startswith("ui_") or len(leaf) < 4:
+        return False
+    parent = project_root.joinpath(*parts[:-1]) if len(parts) > 1 else project_root
+    return (parent / ("%s.ui" % leaf[3:])).is_file()
 
 
 def _relative_import_display(node: ast.ImportFrom) -> str:

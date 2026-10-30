@@ -283,10 +283,26 @@ def _sync(window: Any, menu: Any, state: _State) -> None:
                 clipboard_has_fragment(),
             )
         text_block = command_id == "form.action.editText" and not editable
+        if command_id == "form.action.createWindowClass" and surface is not None:
+            klass = _window_class_name(surface)
+            if klass:
+                action.setEnabled(False)
+                action.setToolTip("%s is the window class." % klass)
+                continue
         action.setEnabled(visible and available and not text_block)
         action.setToolTip(reason)
     _tidy(menu)
     _sync_help(window, state, surface)
+
+
+def _window_class_name(surface: Any) -> str:
+    from app.features.form_builder.integration.handlers_code import SERVICE
+
+    read = SERVICE.reading(surface)
+    facts = getattr(read, "facts", None)
+    if getattr(read, "status", "") != "ok" or facts is None:
+        return ""
+    return str(getattr(facts, "class_name", "") or "")
 
 
 def _sync_item(action: Any, item: FormMenuItem, surface: Any) -> None:

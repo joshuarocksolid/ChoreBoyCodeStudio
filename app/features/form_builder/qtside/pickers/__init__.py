@@ -262,7 +262,7 @@ def _window(host: QWidget) -> tuple:
     if scope is not None:
         path = getattr(scope, "window_path", None) or ""
     file_name = os.path.basename(path) if path else ""
-    klass = services.session.document.form_class_name()
+    klass = ""
     read_line = _unlistable(scope, file_name)
     methods: tuple = ()
     infos: tuple = ()
@@ -276,6 +276,12 @@ def _window(host: QWidget) -> tuple:
             read_line = "%s can't be read: %s" % (file_name or "The window file", getattr(read, "reason", "") or "it could not be read")
         elif status == "ok" and facts is not None and not getattr(facts, "class_name", ""):
             read_line = "%s has no class that calls self.ui.setupUi(self)." % (file_name or "The window file")
+        elif status == "ok" and facts is not None:
+            klass = str(getattr(facts, "class_name", "") or "")
+    if not klass and services is not None:
+        from app.features.form_builder.engine.codegen.names import python_class_stem
+
+        klass = "%sWindow" % python_class_stem(services.session.document.form_class_name())
     listed = getattr(service, "methods", None)
     if read_line == "" and callable(listed) and surface is not None:
         found = listed(surface)

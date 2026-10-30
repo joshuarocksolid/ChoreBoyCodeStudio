@@ -58,7 +58,7 @@ FIRST_STEP = "That is the first step."
 LAST_STEP = "That is the last step."
 MANY = "Select one widget to see what it does."
 LAYOUT = "Layouts and spacers don't have events. Select a widget."
-CODE_CAPTION = "Double-click it on the form to write code for it."
+CODE_CAPTION = "Use + When\u2026 to pick what happens, or double-click it on the form to write code."
 
 _CODE_DOUBLE = (
     "QPushButton",
@@ -292,6 +292,8 @@ def project_form(doc: UiDocument, classes: QtClassTable) -> Tuple[FormRow, ...]:
             else:
                 lead = sender_display
             words = "%s \u00b7 When %s \u2192 %s" % (lead, header, _row_words(doc, classes, step))
+            if step.verb == "slot" and _layout_named(doc, step.target):
+                words = "%s \u00b7 kept" % words
             found.append(FormRow(state.sender, state.signal_name, index, words, missing))
     return tuple(found)
 
@@ -535,11 +537,19 @@ def _qt_line(doc: UiDocument, classes: QtClassTable, state: EventState) -> str:
     return min(signatures, key=lambda item: len(compat.split_signature(item)[1]))
 
 
+def _layout_named(doc: UiDocument, name: str) -> bool:
+    from app.features.form_builder.engine.ui4.nodes import LayoutNode
+
+    found = doc.by_name(name) if name else ()
+    if not found:
+        return False
+    return isinstance(doc.node(found[0]), LayoutNode)
+
+
 def _aims_at(doc: UiDocument, step: EventStep, target: str) -> bool:
+    del doc
     if step.verb == "slot":
         return step.target == target
-    if step.verb == "call":
-        return target == doc.root.object_name
     return False
 
 

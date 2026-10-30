@@ -37,7 +37,7 @@ def method_page(ctx: object, page: object) -> object:
     )
     sends = _sends(ctx, page.signal)  # type: ignore[attr-defined]
     receive = ""
-    if sends:
+    if _show_receive(ctx, sends, chain, page.signal):  # type: ignore[attr-defined]
         receive = "My method receives %s" % value_words(sends[0], page.signal, chain)  # type: ignore[attr-defined]
     notice = method_line(ctx, suggested, page.signal)  # type: ignore[attr-defined]
     read_line = str(getattr(ctx, "read_line", "") or "")
@@ -165,6 +165,27 @@ def _used_here(ctx: object, signal: str) -> Tuple[str, ...]:
 
 def _attr(obj: object, name: str) -> Any:
     return getattr(obj, name, None)
+
+
+def _show_receive(ctx: object, sends: tuple, chain: tuple, signal: str) -> bool:
+    """The receive line follows the value the chosen signal actually passes.
+
+    A push button that is not checkable does not pass whether it is checked,
+    even though ``clicked`` has a bool overload.
+    """
+    if not sends:
+        return False
+    if sends[0] != "bool":
+        return True
+    if signal == "clicked" and any(name in chain for name in ("QPushButton", "QToolButton")):
+        from app.features.form_builder.engine.logic.events import sender_node
+
+        node = sender_node(ctx.doc, ctx.source.sender)  # type: ignore[attr-defined]
+        if node is None:
+            return False
+        value = node.value("checkable")
+        return bool(getattr(value, "value", False))
+    return True
 
 
 def _fitting(ctx: object, sends: int) -> tuple:

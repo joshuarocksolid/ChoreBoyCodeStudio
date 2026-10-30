@@ -268,8 +268,11 @@ class InspectorPane(QWidget):
             self.properties.reveal_after_selection()
         title = "Behavior"
         behavior = pages.behavior
-        if isinstance(behavior, OneBehavior) and behavior.event_count:
-            title = "Behavior (%d)" % behavior.event_count
+        events = self.behavior.section_widget("events")
+        extra = int(getattr(events, "by_name_count", 0) or 0)
+        counted = (behavior.event_count if isinstance(behavior, OneBehavior) else 0) + extra
+        if counted:
+            title = "Behavior (%d)" % counted
         index = self._tab_index.get(TabId.BEHAVIOR)
         # setTabText relays out the styled tab bar even for the same text.
         if index is not None and self.tabs.tabText(index) != title:

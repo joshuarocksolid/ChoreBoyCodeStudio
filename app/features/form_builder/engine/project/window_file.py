@@ -105,21 +105,29 @@ def read_window(
         )
         _store_file(project_root, relative, read, follow.files)
         return read
-    if token:
-        key = "%s\0%s\0token:%s" % (project_root, relative, token)
-    else:
-        digest = hashlib.sha256(text.encode("utf-8", "surrogatepass")).hexdigest()
-        key = "%s\0%s\0%s" % (project_root, relative, digest)
+    digest = hashlib.sha256(text.encode("utf-8", "surrogatepass")).hexdigest()
+    digest_key = "%s\0%s\0%s" % (project_root, relative, digest)
+    # The token is part of the key, and so is the text. A new revision of
+    # different text cannot reuse the scan stored for the previous text.
+    key = ("%s\0%s\0token:%s\0%s" % (project_root, relative, token, digest)) if token else digest_key
     with _CACHE_LOCK:
         cached_text = _TEXT_CACHE.get(key)
+        if cached_text is None and key != digest_key:
+            cached_text = _TEXT_CACHE.get(digest_key)
     if cached_text is not None and _fresh(project_root, cached_text[1]):
+        if token and key != digest_key:
+            with _CACHE_LOCK:
+                _remember(_TEXT_CACHE, key, cached_text)
         return cached_text[0]
     follow = _Follow()
     read = _stamp_followed(
         _read_text(project_root, relative, text, chain=(), budget=follow), follow
     )
+    stamped = (read, _stamps(project_root, follow.files))
     with _CACHE_LOCK:
-        _remember(_TEXT_CACHE, key, (read, _stamps(project_root, follow.files)))
+        _remember(_TEXT_CACHE, key, stamped)
+        if key != digest_key:
+            _remember(_TEXT_CACHE, digest_key, stamped)
     return read
 
 

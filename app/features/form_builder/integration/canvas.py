@@ -280,8 +280,7 @@ class FormCanvas(QGraphicsView):
         on_extra: Optional[Callable[[], None]],
         on_done: Callable[[], None],
     ) -> None:
-        """The overlay banner over the canvas. The page is not moved."""
-        self.setViewportMargins(0, 0, 0, 0)
+        """The overlay banner over the top gutter. Only a wrap past that gutter moves the page."""
         self._banner.show_mode(glyph, name, sentence, extra, on_extra, on_done)
         self._fit_banner()
         self._banner.raise_()
@@ -293,6 +292,11 @@ class FormCanvas(QGraphicsView):
             return
         height = banner.fitted_height(max(self.width(), 1))
         banner.setGeometry(0, 0, self.width(), height)
+        from app.features.form_builder.qtside.canvas.core.space import GUTTERS
+
+        excess = max(0, height - GUTTERS.top)
+        if self.viewportMargins().top() != excess:
+            self.setViewportMargins(0, excess, 0, 0)
 
     def hide_banner(self) -> None:
         self._banner.hide()

@@ -46,6 +46,20 @@
      </property>
     </widget>
    </item>
+   <item>
+    <widget class="QPushButton" name="applyButton">
+     <property name="text">
+      <string>Apply</string>
+     </property>
+    </widget>
+   </item>
+   <item>
+    <widget class="QPushButton" name="okButton">
+     <property name="text">
+      <string>OK</string>
+     </property>
+    </widget>
+   </item>
   </layout>
  </widget>
  <resources/>

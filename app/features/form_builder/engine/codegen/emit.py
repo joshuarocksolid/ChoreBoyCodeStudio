@@ -588,6 +588,13 @@ class _Emitter:
             return self.form_param
         return "self.%s" % self.names[widget.id]
 
+    def _layout_named(self, name: str) -> bool:
+        found = self.doc.by_name(name) if name else ()
+        if not found:
+            return False
+        node = self.doc.get(found[0])
+        return isinstance(node, LayoutNode)
+
     def ref_name(self, name: str) -> str:
         """Python expression for an XML object name.
 
@@ -1637,6 +1644,10 @@ class _Emitter:
             sender_ref = self.ref_name(sender)
             receiver_ref = self.ref_name(receiver)
             if not sender_ref or not receiver_ref:
+                continue
+            # uic drops a connection whose end is a layout ("Invalid signal/slot
+            # connection") and leaves it in the .ui. Match that: emit nothing.
+            if self._layout_named(sender) or self._layout_named(receiver):
                 continue
             if not self._signal_line_kept(node, sender, signal_name):
                 continue

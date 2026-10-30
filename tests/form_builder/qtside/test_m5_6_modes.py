@@ -21,7 +21,7 @@ from app.features.form_builder.engine.query.tree import effective_tab_order  # n
 from app.features.form_builder.engine.ui4.spec import Fragment  # noqa: E402
 from app.features.form_builder.qtside.canvas.core.frame import Chip  # noqa: E402
 from app.features.form_builder.qtside.canvas.core.overlay import LayerItem  # noqa: E402
-from app.qt.QtCore import QPoint, Qt  # noqa: E402
+from app.qt.QtCore import QPoint, QRect, Qt  # noqa: E402
 from app.qt.QtTest import QTest  # noqa: E402
 from app.qt.QtWidgets import QApplication, QPushButton  # noqa: E402
 from tests.form_builder.qtside.test_m3_keyboard_scripts import Kb, _close, _session  # noqa: E402
@@ -305,5 +305,34 @@ def test_undo_with_the_overlay_open_starts_the_numbering_again(tmp_path: Path, q
         kb.surface._toolbar.xml.click()
         kb.pump()
         assert modes.active == "", "View XML closes the overlay"
+    finally:
+        _close(window, qapp, guard)
+
+
+def test_the_banner_stays_in_the_gutter_until_it_wraps(tmp_path: Path, qapp: QApplication) -> None:
+    """D31: default width does not move the page. A wrapped banner covers no widget."""
+    window, kb, guard = _open(tmp_path, qapp)
+    try:
+        canvas = _canvas(kb)
+        origin = canvas._stage.view_map().page_origin
+        kb.surface.modes.open("connections")
+        kb.pump()
+        after = canvas._stage.view_map().page_origin
+        assert abs(after.x - origin.x) <= 1 and abs(after.y - origin.y) <= 1
+        canvas.resize(236, 520)
+        font = canvas.font()
+        font.setPointSizeF(max(1.0, font.pointSizeF()) * 2)
+        canvas.setFont(font)
+        canvas._fit_banner()
+        kb.pump()
+        banner = canvas.banner
+        band = banner.geometry()
+        for name in ("nameLabel", "nameEdit", "emailEdit", "phoneEdit"):
+            rect = canvas.viewport_rect((kb.session.document.by_name(name)[0],))
+            assert rect is not None
+            origin_pt = canvas.viewport().mapTo(canvas, QPoint(rect.x(), rect.y()))
+            widget = QRect(origin_pt, rect.size())
+            overlap = band.intersected(widget)
+            assert overlap.width() <= 1 and overlap.height() <= 1, name
     finally:
         _close(window, qapp, guard)

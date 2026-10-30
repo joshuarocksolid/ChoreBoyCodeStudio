@@ -185,7 +185,8 @@ class CodeHandlers:
             read = read_window(root, relative, text=text)
         existing = read.facts.method(method) if read.status == "ok" else None
         if existing is not None:
-            outcome = _commit(surface, label or _write_label(request), commands)
+            add_name = _add_label(surface, request, method)
+            outcome = _commit(surface, add_name, _relabel(commands, add_name))
             if outcome.ok:
                 self.go_to(surface, method)
             return outcome
@@ -271,7 +272,10 @@ class CodeHandlers:
         if found is None:
             return False
         line, select = _caret(read, found.line)
-        return bool(surface.code_bridge.open_at(path, line, select))
+        opened = bool(surface.code_bridge.open_at(path, line, select))
+        if opened:
+            _back_hint(surface)
+        return opened
 
     def inherited_names(self, class_name: str) -> Tuple[str, ...]:
         from app.features.form_builder.integration.handler_checks_bridge import inherited_names
@@ -343,6 +347,49 @@ def _params_of(request: Any, method: str) -> Tuple[str, ...]:
                     signal = str(getattr(command, "signal_name", "") or "")
                     return (value_param(signal + "()"),)
     return ()
+
+
+_BACK_HINT_SHOWN = False
+
+
+def _back_hint(surface: Any) -> None:
+    """One sentence the first time code is opened from the form (UX 13.3.8)."""
+    global _BACK_HINT_SHOWN
+    if _BACK_HINT_SHOWN:
+        return
+    narrate = getattr(surface, "narrate", None)
+    if not callable(narrate):
+        return
+    scope = getattr(getattr(surface, "session", None), "scope", None)
+    ui = os.path.basename(str(getattr(scope, "ui_path", "") or "")) or "the form"
+    _BACK_HINT_SHOWN = True
+    narrate("Ctrl+Z in %s takes this back. F12 on the method goes back to the form." % ui)
+
+
+def _add_label(surface: Any, request: Any, method: str) -> str:
+    from app.features.form_builder.engine.query.tab_stops import display_name
+
+    sender = str(getattr(request, "sender", "") or "")
+    words = str(getattr(request, "event_words", "") or "")
+    shown = sender
+    document = getattr(getattr(surface, "session", None), "document", None)
+    if document is not None and sender:
+        shown = display_name(document, sender)
+    if shown and words:
+        return "Add Call %s() to %s %s" % (method, shown, words)
+    return "Add Call %s()" % method
+
+
+def _relabel(commands: Tuple[Any, ...], label: str) -> Tuple[Any, ...]:
+    from dataclasses import replace
+
+    changed = []
+    for command in commands:
+        if hasattr(command, "caption"):
+            changed.append(replace(command, caption=label))
+        else:
+            changed.append(command)
+    return tuple(changed)
 
 
 def _write_label(request: Any) -> str:

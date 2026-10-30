@@ -199,6 +199,13 @@ def target_candidates(doc: UiDocument, classes: QtClassTable, intent: IntentSpec
         if intent.target_slot == "setFocus()":
             if not isinstance(node, WidgetNode) or name == root or not takes_tab_focus(node):
                 continue
+        if intent.target_slot == "clear()" and not any(
+            item in chain for item in (
+                "QLineEdit", "QTextEdit", "QPlainTextEdit", "QComboBox",
+                "QAbstractSpinBox", "QSpinBox", "QDoubleSpinBox",
+            )
+        ):
+            continue
         names.append(name)
     return tuple(names)
 
