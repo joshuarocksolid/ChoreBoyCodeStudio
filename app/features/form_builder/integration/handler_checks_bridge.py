@@ -6,6 +6,7 @@ Not on each keystroke (UX D12). Inherited names come from the stock Qt class
 
 from __future__ import annotations
 
+import hashlib
 import os
 from typing import Any, Dict, Optional, Tuple
 
@@ -35,6 +36,12 @@ def publish(surface: Any) -> None:
     session = getattr(surface, "session", None)
     if session is None or getattr(session, "disposed", False):
         return
+    # Same path, same text, and same form: the rows already published are the
+    # rows a second check would produce. Skip the parse and the publish.
+    key = _check_key(surface, session)
+    memo = getattr(surface, "_cbcs_check_memo", None)
+    if isinstance(memo, tuple) and len(memo) == 2 and memo[0] == key:
+        return
     read = SERVICE.reading(surface)
     classes = QtClassTable.shared()
     base = _qt_base(session, read)
@@ -48,6 +55,12 @@ def publish(surface: Any) -> None:
         connect_by_name=connect,
     )
     surface._cbcs_followed = tuple(getattr(read, "followed", ()) or ())
+    # The read may have followed a base the previous key did not know about.
+    key = _check_key(surface, session)
+    previous = memo[1] if isinstance(memo, tuple) and len(memo) == 2 else None
+    surface._cbcs_check_memo = (key, rows)
+    if previous == rows:
+        return
     session.diagnostics.publish(SOURCE, rows)
 
 
@@ -84,6 +97,43 @@ def _on_saved(surface: Any, path: object) -> None:
         if _same_file(saved, full):
             publish(surface)
             return
+
+
+def _check_key(surface: Any, session: Any) -> Tuple[object, ...]:
+    """Path, text digest, and the form state ``check_handlers`` reads.
+
+    A new buffer, a saved base, or a new document revision misses. Nothing
+    expires by time.
+    """
+    scope = getattr(session, "scope", None)
+    path = str(getattr(scope, "window_path", "") or "")
+    root = str(getattr(scope, "project_root", "") or "")
+    bridge = getattr(surface, "code_bridge", None)
+    reader = getattr(bridge, "text_of", None)
+    text = reader(path) if callable(reader) and path else None
+    if isinstance(text, str):
+        digest: object = hashlib.sha256(text.encode("utf-8", "surrogatepass")).hexdigest()
+    else:
+        try:
+            info = os.stat(path) if path else None
+        except OSError:
+            info = None
+        digest = ("file", 0, -1) if info is None else ("file", info.st_mtime_ns, info.st_size)
+    connect = str(session.document.ui.field("connectslotsbyname") or "") != "false"
+    followed = tuple(getattr(surface, "_cbcs_followed", ()) or ())
+    return (path, digest, int(session.document.revision), connect, _base_stamps(root, followed))
+
+
+def _base_stamps(root: str, followed: Tuple[str, ...]) -> Tuple[object, ...]:
+    found = []
+    for relative in followed:
+        full = os.path.join(root, *str(relative).split("/")) if root else str(relative)
+        try:
+            info = os.stat(full)
+            found.append((str(relative), info.st_mtime_ns, info.st_size))
+        except OSError:
+            found.append((str(relative), 0, -1))
+    return tuple(found)
 
 
 def _same_file(left: str, right: str) -> bool:

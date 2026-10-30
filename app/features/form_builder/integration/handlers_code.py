@@ -203,7 +203,14 @@ class CodeHandlers:
         except ValueError as exc:
             return _fail(surface, str(exc))
         base = read.source if isinstance(read.source, str) else text
-        applied = bridge.apply(path, plan.edit, base_text=base)
+        # Save now, but tell the checks after the form step is stored. Both
+        # then see the same text and the same form, and the second reuses
+        # the first instead of parsing the window file again.
+        notify, pending = _hold_save_notify(bridge)
+        try:
+            applied = bridge.apply(path, plan.edit, base_text=base)
+        finally:
+            bridge.notify_saved = notify  # type: ignore[method-assign]
         if not applied.ok:
             return _fail(surface, applied.reason)
         before = len(surface.session.log.entries())
@@ -217,6 +224,8 @@ class CodeHandlers:
             if applied.inverse is not None:
                 bridge.apply(path, applied.inverse)
             return _fail(surface, outcome.reason)
+        for saved in pending:
+            notify(saved)
         entries = surface.session.log.entries()
         if len(entries) > before:
             book.note(
@@ -387,6 +396,18 @@ def pending_toast(surface: Any) -> str:
     sentence = book.last_notice
     book.last_notice = ""
     return sentence
+
+
+def _hold_save_notify(bridge: Any) -> Tuple[Any, List[str]]:
+    """Keep the save's notify until the caller has stored the form step."""
+    pending: List[str] = []
+    notify = bridge.notify_saved
+
+    def hold(path: str) -> None:
+        pending.append(str(path))
+
+    bridge.notify_saved = hold  # type: ignore[method-assign]
+    return notify, pending
 
 
 def _publish(surface: Any) -> None:
