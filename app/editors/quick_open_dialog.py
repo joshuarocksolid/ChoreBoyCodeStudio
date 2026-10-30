@@ -295,6 +295,7 @@ class QuickOpenDialog(QDialog):
         s_icon = search_icon(self._tokens.text_muted)
         self._search_input.addAction(s_icon, QLineEdit.LeadingPosition)
         self._search_input.textChanged.connect(self._on_text_changed)
+        self._search_input.returnPressed.connect(self._accept_current)
         layout.addWidget(self._search_input)
 
         self._results_stack = QWidget(self)

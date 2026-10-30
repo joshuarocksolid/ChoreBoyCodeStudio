@@ -367,7 +367,16 @@ class InspectorPane(QWidget):
         self._pending = True
         self.flush()
 
-    def _on_diagnostics(self, _found: Tuple[FormDiagnostic, ...]) -> None:
+    def _on_diagnostics(self, found: Tuple[FormDiagnostic, ...]) -> None:
+        ids = self._inspected_ids
+        signature = tuple(
+            (item.key, item.message)
+            for item in found
+            if not ids or item.location.node_id in ids
+        )
+        if signature == getattr(self, "_diag_signature", None):
+            return
+        self._diag_signature = signature
         self._schedule()
 
     def _paint_header(self) -> None:

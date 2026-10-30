@@ -6,12 +6,11 @@ from typing import Optional
 
 from app.features.form_builder.engine.commands.catalog_ext.form_fields import SetFormField
 from app.features.form_builder.engine.diagnostics import FormDiagnostic
-from app.features.form_builder.engine.logic.events import read_events
-from app.features.form_builder.engine.logic.events_catalog import class_chain, event_words
-from app.features.form_builder.engine.ui4.defaults import QtClassTable
+from app.features.form_builder.engine.logic.compat import is_name, is_signature
+from app.features.form_builder.engine.logic.events import read_event, read_events
+from app.features.form_builder.engine.logic.events_catalog import event_words
 from app.features.form_builder.integration.handlers import service
 from app.features.form_builder.integration.problem_fixes import FixContext, ProblemFix
-from app.features.form_builder.qtside.inspector.behavior_ext._rows import Gesture, finish
 
 _GO = (
     "FB202", "FB203", "FB204", "FB205", "FB206", "FB208", "FB209", "FB210", "FB213",
@@ -57,22 +56,16 @@ def create_method(context: FixContext) -> None:
         service().go_to(surface, method)
         return
     sender, signal = call
-    classes = QtClassTable.shared()
-    outcome = finish(
-        context.session.document,
-        classes,
-        sender,
-        Gesture("add_call", signal=signal, method=method, args=0),
-    )
-    if outcome is None or outcome.method is None:
+    state = read_event(context.session.document, sender, signal)
+    if not is_name(method) or state.has_unreadable_list or _unusable(state):
         return
-    # The step is already on the form. Only the stub is missing, so commit no command.
+    from app.features.form_builder.engine.commands.catalog_ext.methods import PairStub
     from app.features.form_builder.integration.handlers import MethodRequest
 
-    header = event_words(signal, class_chain(classes, "")).header
+    header = event_words(signal).header
     service().make_method(
         surface,
-        MethodRequest("Create method", (), method, "", sender, header),
+        MethodRequest("Create method", (PairStub(method),), method, "", sender, header),
     )
 
 
@@ -138,6 +131,18 @@ def _arg_of(fix: object, key: str) -> str:
         if name == key:
             return value
     return ""
+
+
+def _unusable(state: object) -> bool:
+    """A typed step whose name cannot be saved. Same rule the event list uses."""
+    for step in getattr(state, "steps", ()):
+        if getattr(step, "raw", None) is not None:
+            continue
+        if step.verb == "slot" and (not is_name(step.target) or not is_signature(step.slot)):
+            return True
+        if step.verb == "call" and not is_name(step.method):
+            return True
+    return False
 
 
 def _one_call(doc: object, method: str) -> Optional[tuple]:

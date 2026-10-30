@@ -469,15 +469,20 @@ class ShellPort:
         widget = self._widget(path)
         if widget is None:
             return False
-        if select is not None:
-            from app.qt.QtGui import QTextCursor
+        from app.qt.QtGui import QTextCursor
 
-            block = widget.document().findBlockByNumber(line - 1)
-            if block.isValid():
-                cursor = QTextCursor(widget.document())
-                cursor.setPosition(block.position() + select[0])
-                cursor.setPosition(block.position() + select[1], QTextCursor.MoveMode.KeepAnchor)
-                widget.setTextCursor(cursor)
+        block = widget.document().findBlockByNumber(max(0, line - 1))
+        if block.isValid():
+            cursor = QTextCursor(widget.document())
+            start = block.position()
+            if select is not None:
+                cursor.setPosition(start + select[0])
+                cursor.setPosition(start + select[1], QTextCursor.MoveMode.KeepAnchor)
+            else:
+                cursor.setPosition(start)
+            widget.setTextCursor(cursor)
+        widget.setFocus()
+        _scroll_into_top_third(widget)
         return True
 
 
@@ -496,6 +501,65 @@ def bridge_for(window: Any, project_root: str) -> CodeBridge:
     except (AttributeError, TypeError):
         pass
     return made
+
+
+def _scroll_into_top_third(widget: Any) -> None:
+    """Put the ``def`` above the caret at the top of the view.
+
+    The caret sits on the first body line. That ``def`` is a line or two
+    above it, and it has to land in the top third.
+    """
+    cursor_of = getattr(widget, "textCursor", None)
+    geometry = getattr(widget, "blockBoundingGeometry", None)
+    offset_of = getattr(widget, "contentOffset", None)
+    bar = getattr(widget, "verticalScrollBar", None)
+    if not callable(cursor_of) or not callable(geometry) or not callable(offset_of) or not callable(bar):
+        return
+    scroll = bar()
+    view = getattr(widget, "viewport", None)
+    document_of = getattr(widget, "document", None)
+    if scroll is None or not callable(view) or not callable(document_of):
+        return
+    # A short file cannot scroll a late line to the top. Extra trailing
+    # newlines create the range. ``toPlainText`` strips them, so Save does not.
+    if scroll.maximum() < view().height():
+        from app.qt.QtGui import QTextCursor
+
+        pad = getattr(widget, "_cbcs_scroll_pad", "")
+        if not pad:
+            pad = "\n" * max(40, view().height() // 8)
+            widget._cbcs_scroll_pad = pad  # type: ignore[attr-defined]
+            cursor = QTextCursor(document_of())
+            cursor.movePosition(QTextCursor.MoveOperation.End)
+            cursor.insertText(pad)
+    block = cursor_of().block()
+    seen = block
+    for _ in range(6):
+        previous = seen.previous()
+        if not previous.isValid():
+            break
+        if previous.text().lstrip().startswith("def "):
+            block = previous
+            break
+        seen = previous
+    top = int(geometry(block).translated(offset_of()).top())
+    if scroll.maximum() < top:
+        scroll.setMaximum(top)
+    scroll.setValue(scroll.value() + top)
+    from app.qt.QtCore import QTimer
+
+    def _again() -> None:
+        bar_now = bar()
+        if bar_now is None:
+            return
+        place = int(geometry(block).translated(offset_of()).top())
+        if place <= 0:
+            return
+        if bar_now.maximum() < place:
+            bar_now.setMaximum(place)
+        bar_now.setValue(bar_now.value() + place)
+
+    QTimer.singleShot(0, _again)
 
 
 def _utf16(text: str, offset: int) -> int:

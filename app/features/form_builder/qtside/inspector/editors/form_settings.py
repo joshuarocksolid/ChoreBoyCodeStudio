@@ -748,7 +748,7 @@ class _ConnectByNameRow(SettingRow):
             "Methods named on_{widget}_{event} with @Slot run without a step. "
             "Qt Designer calls this Connect slots by name.",
         )
-        self.box = self.guard(QCheckBox("Connect methods by name", self))  # type: ignore[assignment]
+        self.box = self.guard(QCheckBox(self))  # type: ignore[assignment]
         self.box.setObjectName("formBuilder.formSetting.connectslotsbyname.check")
         self.box.setAccessibleName("Form setting: Connect methods by name")
         self.box.toggled.connect(self._toggled)

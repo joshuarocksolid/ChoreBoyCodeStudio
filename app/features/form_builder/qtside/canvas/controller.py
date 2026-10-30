@@ -1529,6 +1529,10 @@ class CanvasController:
         self._view.setAccessibleDescription(describe_selection(self._session.document, state))
 
     def _on_diagnostics(self, _items: object) -> None:
+        badges = self._problems()
+        if badges == getattr(self, "_badge_cache", None):
+            return
+        self._badge_cache = badges
         self._problems_revision += 1
         self._request_frame()
 

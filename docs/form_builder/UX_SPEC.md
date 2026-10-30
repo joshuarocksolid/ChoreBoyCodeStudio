@@ -2815,5 +2815,5 @@ Results (ChoreBoyExp slot, FreeCAD 1.1.1, Python 3.11.14, PySide6 / Qt 6.8.3, pr
 
 ### 16.4 Facts M6 lanes check on the ChoreBoy VM (not owner decisions)
 
-- That PySide6 on ChoreBoy (FreeCAD 1.1.1, PySide6 6.8.3) calls a plain Python method with as many of a signal's values as it accepts, as LOGIC_DESIGN §3.3 measured on macOS (UX-CODE-004 relies on it; if not, stubs always take the event's values). M6.2b runs the probe.
+- Checked on ChoreBoyExp (FreeCAD 1.1.1), 2026-10-30, M6.2b probe: matches macOS; `*args` on clicked receives no values. Zero-argument and one-argument methods work for clicked, textChanged and valueChanged. Stubs are `self` only, plus the optional named parameter from the checkbox, and never `*args`.
 - That the window file opened by double-click takes focus and shows the caret in a CBCS-run session on the VM (UX-CODE-007).

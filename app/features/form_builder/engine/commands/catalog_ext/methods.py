@@ -7,6 +7,7 @@ from typing import ClassVar, Optional
 
 from app.features.form_builder.engine.commands import planning
 from app.features.form_builder.engine.commands.base import PlanContext
+from app.features.form_builder.engine.commands.ops import SetFieldOp
 from app.features.form_builder.engine.logic.compat import split_signature
 from app.features.form_builder.engine.logic.events import read_events
 from app.features.form_builder.engine.ui4.document import UiDocument
@@ -46,7 +47,37 @@ class RemoveMethodDeclaration:
         planning.set_form_slots(doc, ctx, tuple(signals), kept)
 
 
+@dataclass(frozen=True)
+class PairStub:
+    """A form-side partner for a stub written onto a step that already exists.
+
+    The field is set to the value it already has, so the ``.ui`` does not change.
+    Undo of this step is what removes the stub.
+    """
+
+    command_type: ClassVar[str] = "pair_method_stub"
+    method: str
+
+    @property
+    def label(self) -> str:
+        return "Create method %s" % self.method
+
+    def merge_key(self) -> None:
+        return None
+
+    def apply(self, doc: UiDocument, ctx: PlanContext) -> None:
+        # A same-value write is dropped as net-nil, so the stub would have no undo.
+        # An empty author, comment, or exportmacro is omitted from the ``.ui``
+        # (Appendix E), so this partner does not change the file bytes.
+        for name in ("comment", "author", "exportmacro"):
+            if doc.ui.field(name) is None:
+                ctx.do(SetFieldOp(doc.ui.id, name, ""))
+                return
+        raise CommandRejected("Create method needs a form undo step, and this form has no unused text field.")
+
+
 def register(registry: object) -> None:
     add = getattr(registry, "add", None)
     if callable(add):
         add(RemoveMethodDeclaration)
+        add(PairStub)

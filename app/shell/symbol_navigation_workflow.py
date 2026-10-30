@@ -23,6 +23,13 @@ class SymbolNavigationWorkflow:
 
     def handle_go_to_definition_action(self) -> None:
         parent = self._host.dialog_parent()
+        finder = getattr(parent, "window", None)
+        window = finder() if callable(finder) else None
+        surface = getattr(window, "_form_undo_surface", None)
+        go = getattr(surface, "go_to_selected_code", None)
+        if callable(go) and getattr(surface, "isVisible", lambda: False)():
+            go()
+            return
         loaded_project = self._host.loaded_project()
         if loaded_project is None:
             QMessageBox.warning(parent, "Go To Definition", "Open a project first.")

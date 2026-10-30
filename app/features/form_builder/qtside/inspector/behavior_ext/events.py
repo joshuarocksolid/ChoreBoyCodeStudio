@@ -416,6 +416,8 @@ class EventsBody(QWidget):
             return
         if row.unreadable or (event is not None and event.banner):
             open_property_as_text(self, row.property_name, self._sender)
+            return
+        _apply_listed_fix(self, row)
 
     def _by_name_key(self, row: "_Row", event: QKeyEvent) -> bool:
         key = enum_value(event.key())
@@ -781,6 +783,29 @@ def _window_read(surface: object) -> Any:
     return read(surface)
 
 
+def _apply_listed_fix(body: "EventsBody", row: "_Row") -> bool:
+    """Ctrl+. on a call step runs that step's Use fix (FB201)."""
+    surface = _surface(body)
+    run = getattr(surface, "run_problem_fix", None)
+    if surface is None or not callable(run) or not row.method_name:
+        return False
+    for item in surface.session.diagnostics.all():
+        if item.code != "FB201":
+            continue
+        missing = ""
+        offered = False
+        for fix in item.fixes:
+            if fix.fix_id == "use-method":
+                offered = True
+            elif fix.fix_id == "create-method":
+                for name, value in fix.args:
+                    if name == "method":
+                        missing = value
+        if offered and missing == row.method_name:
+            return bool(run("use-method", {"fb_key": item.key}))
+    return False
+
+
 def _by_name(body: "EventsBody", signal: str) -> Tuple[str, ...]:
     surface = _surface(body)
     if surface is None:
@@ -792,7 +817,48 @@ def _by_name(body: "EventsBody", signal: str) -> Tuple[str, ...]:
     if read is None or read.status != "ok":
         return ()
     wanted = "on_%s_%s" % (body._sender, signal)
-    return tuple(item.name for item in read.facts.methods if item.name == wanted and item.slot_types is not None)
+    signatures = _sender_signatures(body)
+    return tuple(
+        item.name
+        for item in read.facts.methods
+        if item.name == wanted and _slot_agrees(item.slot_types, signal, signatures)
+    )
+
+
+def _sender_signatures(body: "EventsBody") -> Tuple[str, ...]:
+    from app.features.form_builder.engine.logic.compat import node_class
+    from app.features.form_builder.engine.logic.events import sender_node
+
+    doc = body._services.session.document
+    node = sender_node(doc, body._sender)
+    if node is None:
+        return ()
+    class_name, _slots = node_class(doc, QtClassTable.shared(), node)
+    return tuple(QtClassTable.shared().signals(class_name))
+
+
+def _slot_agrees(types: Optional[Tuple[str, ...]], signal: str, signatures: Tuple[str, ...]) -> bool:
+    """True only when ``@Slot`` types match the signal. A mismatch is FB206, not a by-name row."""
+    from app.features.form_builder.engine.project.handler_names import signal_name, signature_arg_count
+
+    if types is None:
+        return False
+    overloads = tuple(item for item in signatures if signal_name(item) == signal)
+    if not types:
+        return any(signature_arg_count(item) == 0 for item in overloads)
+    for item in overloads:
+        start = item.find("(")
+        end = item.rfind(")")
+        inner = item[start + 1 : end].strip() if start >= 0 and end > start else ""
+        parts = tuple(part.strip() for part in inner.split(",") if part.strip() and part.strip() != "void")
+        if len(parts) == len(types) and all(_same_type(left, right) for left, right in zip(types, parts)):
+            return True
+    return False
+
+
+def _same_type(left: str, right: str) -> bool:
+    alias = {"str": "QString", "QString": "QString", "string": "QString", "float": "double", "qreal": "double"}
+    return alias.get(left, left) == alias.get(right, right)
 
 
 def _by_name_why() -> str:

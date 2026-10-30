@@ -292,6 +292,23 @@ def _by_name_rows(
                     fixes=(_go(method.name, method.line),),
                 )
             )
+            if not connect_by_name and method.name not in called:
+                rows.append(
+                    _diag(
+                        "FB211",
+                        Severity.INFO,
+                        "Connect methods by name is off, so %s won't run by itself." % method.name,
+                        line=method.line,
+                        prop=method.name,
+                        fixes=(
+                            QuickFix(
+                                "connect-by-name",
+                                "Turn on Connect methods by name",
+                                action="connect-by-name",
+                            ),
+                        ),
+                    )
+                )
             continue
         info = objects.get(obj)
         if info is None:
@@ -314,6 +331,25 @@ def _by_name_rows(
                     fixes=(_go(method.name, method.line),),
                 )
             )
+            if not connect_by_name and method.name not in called:
+                rows.append(
+                    _diag(
+                        "FB211",
+                        Severity.INFO,
+                        "Connect methods by name is off, so %s won't run by itself." % method.name,
+                        line=method.line,
+                        prop=method.name,
+                        node_id=node_id,
+                        object_name=obj,
+                        fixes=(
+                            QuickFix(
+                                "connect-by-name",
+                                "Turn on Connect methods by name",
+                                action="connect-by-name",
+                            ),
+                        ),
+                    )
+                )
             continue
         matched = _slot_matches(method, signatures, signal)
         if connect_by_name and method.name in called and matched:
