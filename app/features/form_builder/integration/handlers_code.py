@@ -216,6 +216,11 @@ class CodeHandlers:
                 bridge.notify_saved = notify  # type: ignore[method-assign]
             if not applied.ok:
                 return _fail(surface, applied.reason)
+            if read.status == "ok":
+                from app.features.form_builder.engine.project.window_file import install_inserted_method
+
+                token_now = bridge.buffer_token(path) if callable(getattr(bridge, "buffer_token", None)) else None
+                install_inserted_method(root, relative, read, plan, None if token_now is None else str(token_now))
             replay = True
             before = len(surface.session.log.entries())
             try:
@@ -328,11 +333,17 @@ def _commit(surface: Any, label: str, commands: Tuple[Any, ...]) -> HandlerOutco
 def _read(surface: Any, path: str, relative: str) -> WindowRead:
     scope = surface.session.scope
     root = str(getattr(scope, "project_root", "") or "")
-    text = surface.code_bridge.text_of(path)
     token = None
     ask = getattr(surface.code_bridge, "buffer_token", None)
     if callable(ask):
         token = ask(path)
+    if token:
+        from app.features.form_builder.engine.project.window_file import peek_window
+
+        peeked = peek_window(root, relative, str(token))
+        if peeked is not None:
+            return peeked
+    text = surface.code_bridge.text_of(path)
     return read_window(root, relative, text=text, token=token)
 
 

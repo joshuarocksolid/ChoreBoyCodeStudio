@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
-from typing import Any, Callable, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from app.qt.QtCore import QEvent, QObject, Qt
 from app.qt.QtGui import QKeyEvent, QResizeEvent
@@ -60,6 +60,7 @@ class EventsBody(QWidget):
         self._chrome = host.services.chrome
         self._refresh: Optional[Callable[[], None]] = None
         self._view: Optional[SenderView] = None
+        self._built: Dict[str, Tuple[SenderView, List["_Group"]]] = {}
         self._sender = ""
         self._chain: List[QWidget] = []
         self._focus: Optional[Tuple[str, int]] = None
@@ -108,6 +109,12 @@ class EventsBody(QWidget):
         self._refresh = refresh
 
     def apply_colors(self, panel: str, text: str) -> None:
+        # Inline row colors were captured from the previous chrome. Drop the
+        # kept groups so the next paint builds them again.
+        for _name, (_shown, groups) in list(self._built.items()):
+            _release_groups(self._events, groups)
+        self._built = {}
+        self._view = None
         chrome = self._chrome
         self.setStyleSheet(
             "QWidget#formBuilder\\.events, QWidget#formBuilder\\.events QWidget { background: %s; color: %s; }"
@@ -201,31 +208,62 @@ class EventsBody(QWidget):
         self._one_read = _window_read(_surface(self)) if shown.kind == "one" else None
         self._one_read_ready = shown.kind == "one"
         try:
-            while self._events.count():
-                item = self._events.takeAt(0)
-                widget = item.widget()
-                if widget is not None:
-                    widget.hide()
-                    widget.setObjectName("")
-                    widget.setParent(None)
-                    widget.deleteLater()
-            self._chain = []
-            if shown.kind != "one":
-                return
-            first = True
-            for event in shown.events:
-                group = _Group(self, event, editing)
-                self._events.addWidget(group)
-                if first and (event.steps or event.unreadable or event.banner):
-                    group.mark_first()
-                    first = False
-                self._chain.extend(group.chain())
-            if editing and not shown.events:
-                self._chain.append(self._when)
+            cached = self._built.get(shown.object_name) if shown.kind == "one" else None
+            if cached is not None and cached[0] == shown:
+                self._show_built(shown.object_name)
+                if editing and not shown.events:
+                    self._chain.append(self._when)
+            else:
+                self._fill_groups(shown, editing)
         finally:
             self._one_read_ready = False
             self.setUpdatesEnabled(True)
         self._place_focus()
+
+    def _fill_groups(self, shown: SenderView, editing: bool) -> None:
+        previous = self._built.pop(shown.object_name, None) if shown.kind == "one" else None
+        if previous is not None:
+            _release_groups(self._events, previous[1])
+        if shown.kind != "one":
+            self._show_built("")
+            return
+        self._show_built("")
+        groups: List[_Group] = []
+        first = True
+        self._chain = []
+        for event in shown.events:
+            group = _Group(self, event, editing)
+            groups.append(group)
+            self._events.addWidget(group)
+            if first and (event.steps or event.unreadable or event.banner):
+                group.mark_first()
+                first = False
+            self._chain.extend(group.chain())
+        if editing and not shown.events:
+            self._chain.append(self._when)
+        if shown.object_name:
+            self._built[shown.object_name] = (shown, groups)
+            while len(self._built) > 4:
+                oldest = next(iter(self._built))
+                if oldest == shown.object_name:
+                    break
+                _release_groups(self._events, self._built.pop(oldest)[1])
+
+    def _show_built(self, name: str) -> None:
+        self._chain = []
+        for sender, (_shown, groups) in self._built.items():
+            visible = sender == name
+            for group in groups:
+                group.setVisible(visible)
+                header = group.header
+                if visible and getattr(group, "_marked_first", False):
+                    header.setObjectName("formBuilder.events.first")
+                    self._chain.extend(group.chain())
+                elif visible:
+                    header.setObjectName("")
+                    self._chain.extend(group.chain())
+                else:
+                    header.setObjectName("")
 
     def first_focus(self) -> Optional[QWidget]:
         """The live row Alt+B should focus. Empty events land on + When…."""
@@ -485,6 +523,20 @@ class EventsBody(QWidget):
         self._run(Gesture("merge", signal=signal))
 
 
+def _release_groups(layout: QVBoxLayout, groups: List["_Group"]) -> None:
+    wanted = {id(group) for group in groups}
+    index = layout.count() - 1
+    while index >= 0:
+        item = layout.itemAt(index)
+        widget = item.widget() if item is not None else None
+        if widget is not None and id(widget) in wanted:
+            layout.takeAt(index)
+            widget.hide()
+            widget.setParent(None)
+            widget.deleteLater()
+        index -= 1
+
+
 class _ThenButton(QPushButton):
     def __init__(self, body: EventsBody, signal: str, parent: QWidget) -> None:
         super().__init__("+ Then\u2026", parent)
@@ -565,6 +617,7 @@ class _Group(QWidget):
         column.addWidget(self.then)
 
     def mark_first(self) -> None:
+        self._marked_first = True
         self.header.setObjectName("formBuilder.events.first")
 
     def chain(self) -> List[QWidget]:
@@ -626,6 +679,7 @@ class _Row(QWidget):
         step: Optional[StepView] = None,
     ) -> None:
         super().__init__(body)
+        self._fitted = False
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self.signal_name = signal
         self.step_index = index
@@ -685,7 +739,10 @@ class _Row(QWidget):
 
     def showEvent(self, event: QEvent) -> None:  # noqa: N802
         super().showEvent(event)
+        if self._fitted and self.width() > 0:
+            return
         self._fit_texts()
+        self._fitted = True
 
     def _fit_texts(self) -> None:
         """Elide the call first, down to about eight characters, then the place.

@@ -8,7 +8,7 @@ sentence, or nothing). Nothing here touches the undo log.
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
-from typing import Dict, Optional, Sequence, Tuple
+from typing import Dict, List, Optional, Sequence, Tuple
 
 from app.features.form_builder.engine.commands.catalog_ext.events import (
     EventEdit,
@@ -247,30 +247,42 @@ def project_sender(
 
 
 def project_incoming(doc: UiDocument, classes: QtClassTable, target: str) -> Tuple[IncomingRow, ...]:
-    """Steps other senders aim at ``target``, in run order."""
+    """Steps other senders aim at ``target``, in run order.
+
+    The index is one pass per document revision. A later sender is a lookup.
+    """
     if not target:
         return ()
-    cache_key = (id(doc), doc.revision, target)
-    cached = _INCOMING_CACHE.get(cache_key)
-    if cached is not None:
-        return cached
-    found = []
+    key = (id(doc), doc.revision)
+    index = _INCOMING_CACHE.get(key)
+    if index is None:
+        index = _incoming_index(doc, classes)
+        _INCOMING_CACHE.clear()
+        _INCOMING_CACHE[key] = index
+    return index.get(target, ())
+
+
+def _incoming_index(
+    doc: UiDocument, classes: QtClassTable
+) -> Dict[str, Tuple[IncomingRow, ...]]:
+    buckets: Dict[str, List[IncomingRow]] = {}
     for state in read_events(doc):
-        if state.sender == target or state.has_unreadable_list:
-            continue
-        aimed = [(index, step) for index, step in enumerate(state.steps) if _aims_at(doc, step, target)]
-        if not aimed:
+        if state.has_unreadable_list:
             continue
         chain = _chain_of(doc, classes, state.sender)
         sender_display = display_name(doc, state.sender)
-        for index, step in aimed:
-            words = "When %s: %s" % (event_clause(state.signal_name, chain, sender_display), _short_words(doc, classes, step))
-            found.append(IncomingRow(state.sender, state.signal_name, index, words))
-    rows = tuple(found)
-    if len(_INCOMING_CACHE) > 24:
-        _INCOMING_CACHE.clear()
-    _INCOMING_CACHE[cache_key] = rows
-    return rows
+        for index, step in enumerate(state.steps):
+            if step.verb != "slot" or not step.target or step.target == state.sender:
+                continue
+            aimed = step.target
+            words = "When %s: %s" % (
+                event_clause(state.signal_name, chain, sender_display),
+                _short_words(doc, classes, step),
+            )
+            buckets.setdefault(aimed, []).append(
+                IncomingRow(state.sender, state.signal_name, index, words)
+            )
+    return {name: tuple(rows) for name, rows in buckets.items()}
 
 
 def project_form(doc: UiDocument, classes: QtClassTable) -> Tuple[FormRow, ...]:
@@ -340,7 +352,7 @@ def finish(doc: UiDocument, classes: QtClassTable, key: str, gesture: Gesture) -
 
 
 _SENDER_CACHE: Dict[Tuple[object, ...], "SenderView"] = {}
-_INCOMING_CACHE: Dict[Tuple[object, ...], Tuple["IncomingRow", ...]] = {}
+_INCOMING_CACHE: Dict[Tuple[object, ...], Dict[str, Tuple["IncomingRow", ...]]] = {}
 
 
 def outline_names(doc: UiDocument) -> Tuple[str, ...]:

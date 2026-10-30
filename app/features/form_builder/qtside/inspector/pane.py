@@ -20,6 +20,7 @@ from app.features.form_builder.qtside.inspector.model import (
     EscAction,
     OneBehavior,
     esc_action,
+    behavior_of,
     project,
     inspected_ids,
     project_header,
@@ -35,7 +36,7 @@ from app.features.form_builder.qtside.theme.chrome import (
     popover_style,
 )
 from app.qt.QtCore import QEvent, QObject, QTimer, Qt
-from app.qt.QtGui import QKeyEvent, QKeySequence, QShowEvent
+from app.qt.QtGui import QColor, QKeyEvent, QKeySequence, QPalette, QShowEvent
 from app.qt.QtWidgets import (
     QApplication,
     QLabel,
@@ -86,6 +87,7 @@ class InspectorPane(QWidget):
         self._short = False
         self._pending = False
         self._stale = False
+        self._properties_held = False
         self._dispatched: Optional[Tuple[int, int]] = None
         self._memo = _TabOrderMemo(session)
         self._log_sub: object = None
@@ -165,6 +167,15 @@ class InspectorPane(QWidget):
     def apply_chrome(self, chrome: FormChrome) -> None:
         self._services.set_chrome(chrome)
         self.setStyleSheet(_stylesheet(chrome))
+        header_fill = QColor(chrome.panel)
+        header_ink = QColor(chrome.text)
+        header_palette = self.header.palette()
+        header_palette.setColor(QPalette.ColorRole.Window, header_fill)
+        header_palette.setColor(QPalette.ColorRole.WindowText, header_ink)
+        header_palette.setColor(QPalette.ColorRole.Base, QColor(chrome.input))
+        header_palette.setColor(QPalette.ColorRole.Text, header_ink)
+        self.header.setPalette(header_palette)
+        self.header.setAutoFillBackground(True)
         self.properties.apply_colors(
             chrome.panel,
             chrome.text,
@@ -204,6 +215,9 @@ class InspectorPane(QWidget):
             return
         self.tabs.setCurrentIndex(index)
         if tab is TabId.PROPERTIES:
+            if self._properties_held:
+                self._pending = True
+                self.flush()
             self.properties.focus_search()
             return
         if tab is TabId.BEHAVIOR:
@@ -240,34 +254,45 @@ class InspectorPane(QWidget):
         session = self._services.session
         document = session.document
         ids = inspected_ids(document, session.selection.state.ids) or (document.root.id,)
-        include_all = self.properties.builds_all_properties()
-        # Layout rows read their choices and defaults from the realized layout.
-        layouts = tuple(layout.id for layout in map(document.layout_of, ids) if layout is not None)
-        live = live_classes(
-            self._realizer,
-            document,
-            ids + layouts,
-            with_values=True,
-        )
-        root = self._realizer.root_widget
-        live_size = None if root is None else (root.width(), root.height())
-        pages = project(
-            session,
-            self._services.catalog,
-            search=self.properties.search,
-            live=live,
-            tab_order=self._memo.get,
-            include_all=include_all,
-            live_size=live_size,
-            sort_properties=self.properties.sorts_properties(),
-        )
-        with self._services.painting():
-            self.properties.paint(pages.body)
-            self.behavior.paint(pages.behavior)
+        behavior_tab = self._tab_index.get(TabId.BEHAVIOR)
+        on_behavior = behavior_tab is not None and self.tabs.currentIndex() == behavior_tab
+        if on_behavior:
+            # Property rows are not on screen. Building them realizes the
+            # widget and walks every property. The Properties tab does that
+            # when it is shown.
+            self._properties_held = True
+            behavior = behavior_of(session, ids)
+            with self._services.painting():
+                self.behavior.paint(behavior)
+        else:
+            include_all = self.properties.builds_all_properties()
+            layouts = tuple(layout.id for layout in map(document.layout_of, ids) if layout is not None)
+            live = live_classes(
+                self._realizer,
+                document,
+                ids + layouts,
+                with_values=True,
+            )
+            root = self._realizer.root_widget
+            live_size = None if root is None else (root.width(), root.height())
+            pages = project(
+                session,
+                self._services.catalog,
+                search=self.properties.search,
+                live=live,
+                tab_order=self._memo.get,
+                include_all=include_all,
+                live_size=live_size,
+                sort_properties=self.properties.sorts_properties(),
+            )
+            behavior = pages.behavior
+            self._properties_held = False
+            with self._services.painting():
+                self.properties.paint(pages.body)
+                self.behavior.paint(behavior)
         if reset_scroll:
             self.properties.reveal_after_selection()
         title = "Behavior"
-        behavior = pages.behavior
         events = self.behavior.section_widget("events")
         extra = int(getattr(events, "by_name_count", 0) or 0)
         counted = (behavior.event_count if isinstance(behavior, OneBehavior) else 0) + extra
@@ -586,6 +611,11 @@ def _stylesheet(chrome: FormChrome) -> str:
             popover_style(LAYOUT_CONFIRM_NAME, chrome),
             _disabled_fields(chrome),
         )
+    ) + (
+        "QWidget#formBuilder\\.inspectorHeader { background: %s; color: %s; }"
+        "QLabel#formBuilder\\.inspectorClass, QLabel#formBuilder\\.inspectorCrumbs"
+        " { color: %s; background: transparent; }"
+        % (chrome.panel, chrome.text, chrome.text)
     ) + control_qss(chrome)
 
 

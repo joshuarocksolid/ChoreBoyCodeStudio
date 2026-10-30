@@ -64,14 +64,31 @@ def publish(surface: Any) -> None:
     session.diagnostics.publish(SOURCE, rows)
 
 
+def _flush_checks(surface: Any) -> None:
+    surface._cbcs_checks_waiting = False
+    session = getattr(surface, "session", None)
+    if session is None or getattr(session, "disposed", False):
+        return
+    publish(surface)
+
+
 def arm(surface: Any) -> None:
-    """Publish now, after a form edit, and when the window file's tab is saved."""
+    """Publish now, after a form edit, and when the window file's tab is saved.
+
+    A later edit coalesces onto the next idle turn. The Problems rows can
+    arrive one frame after the commit.
+    """
     if getattr(surface, "_cbcs_handler_checks", False):
         return
     surface._cbcs_handler_checks = True
 
     def refresh(_change: object = None) -> None:
-        publish(surface)
+        if getattr(surface, "_cbcs_checks_waiting", False):
+            return
+        surface._cbcs_checks_waiting = True
+        from app.qt.QtCore import QTimer
+
+        QTimer.singleShot(0, lambda: _flush_checks(surface))
 
     surface.session.log.subscribe(refresh, priority=PRIORITY_DIAGNOSTICS)
     bridge = getattr(surface, "code_bridge", None)

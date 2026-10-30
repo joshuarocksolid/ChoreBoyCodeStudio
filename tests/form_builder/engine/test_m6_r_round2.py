@@ -55,15 +55,16 @@ def test_the_step_picker_omits_the_events_own_by_name_method() -> None:
         PickerSource("printButton", "clicked"),
         infos=(
             _Info("print_receipt"),
+            _Info("on_refresh"),
             _Info("on_printButton_clicked"),
             _Info("on_saveButton_clicked"),
         ),
     )
     names = [row.payload for row in _code_rows(ctx, "clicked") if row.kind == "method"]
-    assert names == ["print_receipt"]
+    assert names == ["print_receipt", "on_refresh"]
     page = method_page(ctx, Page("step", "", "", 0, (), "", False, "", "", "clicked", "", "", False, -1, ""))
     listed = [row.payload for row in page.rows if row.kind == "method"]
-    assert listed == ["print_receipt"]
+    assert listed == ["print_receipt", "on_refresh"]
 
 
 def test_a_chosen_event_does_not_offer_another_events_step() -> None:
@@ -109,7 +110,9 @@ def test_your_code_skips_dunder_wide_methods_and_other_events() -> None:
     )
     rows = _code_rows(_ctx(doc, PickerSource("printButton", "clicked"), infos=infos), "clicked")
     names = [row.payload for row in rows if row.kind == "method"]
-    assert names == ["print_receipt"]
+    # on_okButton_clicked is not a real handler on this form (there is no
+    # okButton), so it stays pickable. __init__ and the wide method do not.
+    assert names == ["on_okButton_clicked", "print_receipt"]
 
 
 def test_a_layout_connection_is_kept_and_not_emitted(tmp_path: Path) -> None:

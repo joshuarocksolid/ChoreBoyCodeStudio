@@ -1062,7 +1062,8 @@ class FormSurface(QWidget):
         self._refresh_save_state()
         self._rewrite_hover()
         self._refresh_shell_status()
-        self._command_toast.place()
+        if self._command_toast.isVisible():
+            self._command_toast.place()
 
     def _sync_toast(self, change_set: object) -> None:
         if self._toast_held:

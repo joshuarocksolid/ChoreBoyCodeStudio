@@ -105,6 +105,10 @@ def read_window(
         )
         _store_file(project_root, relative, read, follow.files)
         return read
+    if token:
+        peeked = peek_window(project_root, relative, token)
+        if peeked is not None:
+            return peeked
     digest = hashlib.sha256(text.encode("utf-8", "surrogatepass")).hexdigest()
     digest_key = "%s\0%s\0%s" % (project_root, relative, digest)
     # The token is part of the key, and so is the text. A new revision of
@@ -187,6 +191,102 @@ def _store_file(
     key = (os.path.abspath(full), getattr(info, "st_mtime_ns", 0), info.st_size)
     with _CACHE_LOCK:
         _remember(_FILE_CACHE, key, (read, _stamps(project_root, files)))
+
+
+def _token_key(project_root: str, relative: str, token: str) -> str:
+    return "%s\0%s\0rev:%s" % (project_root, relative.replace("\\", "/"), token)
+
+
+def peek_window(project_root: str, relative: str, token: str) -> Optional[WindowRead]:
+    """The reading stored for this buffer token. None when the token is new.
+
+    The token changes when the buffer text changes, so a hit is the same
+    characters the editor holds. A miss reparses.
+    """
+    if not token:
+        return None
+    with _CACHE_LOCK:
+        hit = _TEXT_CACHE.get(_token_key(project_root, relative, token))
+    if hit is None or not _fresh(project_root, hit[1]):
+        return None
+    return hit[0]
+
+
+def install_inserted_method(
+    project_root: str,
+    relative: str,
+    read: WindowRead,
+    plan: object,
+    token: Optional[str],
+) -> WindowRead:
+    """Remember a stub the bridge just inserted, without parsing the file again.
+
+    Line numbers below the insert shift by the inserted line count. A later
+    edit misses this entry because its buffer token is different.
+    """
+    source = read.source if isinstance(read.source, str) else ""
+    edit = getattr(plan, "edit")
+    start = int(edit.start)
+    end = int(edit.end)
+    inserted = str(edit.text)
+    new_source = source[:start] + inserted + source[end:]
+    insert_line = source[:start].count("\n") + 1
+    shift = inserted.count("\n")
+    name = str(getattr(plan, "method_name"))
+    at = inserted.find("def %s" % name)
+    def_line = insert_line + (inserted[:at].count("\n") if at >= 0 else 0)
+    method_text = inserted[at:] if at >= 0 else inserted
+    trailing = 1 if method_text.endswith("\n") or method_text.endswith("\r\n") else 0
+    end_line = def_line + max(0, method_text.count("\n") - trailing)
+    params: Tuple[str, ...] = ()
+    if at >= 0:
+        header = method_text.splitlines()[0]
+        open_paren = header.find("(")
+        close_paren = header.rfind(")")
+        if open_paren >= 0 and close_paren > open_paren:
+            raw = header[open_paren + 1 : close_paren]
+            parts = [part.strip() for part in raw.split(",") if part.strip() and part.strip() != "self"]
+            params = tuple(part.split("=")[0].strip().lstrip("*") for part in parts)
+    added = MethodFacts(
+        name=name,
+        line=def_line,
+        end_line=end_line,
+        params=params,
+        required=len(params),
+        body_is_empty=True,
+        source_hash=str(getattr(plan, "stub_hash")),
+    )
+    shifted = []
+    for method in read.facts.methods:
+        if method.line >= insert_line:
+            shifted.append(replace(method, line=method.line + shift, end_line=method.end_line + shift))
+        else:
+            shifted.append(method)
+    shifted.append(added)
+    class_end = read.facts.end_line
+    if class_end and class_end >= insert_line - 1:
+        class_end += shift
+    facts = replace(read.facts, end_line=class_end, methods=tuple(shifted))
+    patched = replace(read, facts=facts, source=new_source)
+    _store_text(project_root, relative, patched, token, new_source)
+    return patched
+
+
+def _store_text(
+    project_root: str,
+    relative: str,
+    read: WindowRead,
+    token: Optional[str],
+    text: str,
+) -> None:
+    digest = hashlib.sha256(text.encode("utf-8", "surrogatepass")).hexdigest()
+    relative = relative.replace("\\", "/")
+    digest_key = "%s\0%s\0%s" % (project_root, relative, digest)
+    stamped = (read, _stamps(project_root, read.followed))
+    with _CACHE_LOCK:
+        _remember(_TEXT_CACHE, digest_key, stamped)
+        if token:
+            _remember(_TEXT_CACHE, _token_key(project_root, relative, token), stamped)
 
 
 def _remember(cache: Dict, key: object, read: object) -> None:

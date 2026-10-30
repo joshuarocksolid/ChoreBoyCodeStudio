@@ -263,6 +263,9 @@ def _declared_shadows(
     return rows
 
 
+_BY_NAME: Dict[Tuple[object, ...], Tuple[FormDiagnostic, ...]] = {}
+
+
 def _by_name_rows(
     methods: Dict[str, MethodFacts],
     objects: Dict[str, Tuple[str, Optional[NodeId]]],
@@ -272,8 +275,22 @@ def _by_name_rows(
     connect_by_name: bool,
     called: set,
 ) -> List[FormDiagnostic]:
+    """Rows for ``on_{object}_{signal}`` methods. Cached on the window reading and the widgets.
+
+    A step commit does not change either, so the scan does not run again.
+    """
+    key = (
+        tuple(sorted((name, info[0]) for name, info in objects.items())),
+        tuple(sorted((item.name, item.line, item.source_hash) for item in methods.values())),
+        bool(connect_by_name),
+        tuple(sorted(called)),
+    )
+    cached = _BY_NAME.get(key)
+    if cached is not None:
+        return list(cached)
     rows: List[FormDiagnostic] = []
     if not any(name.startswith("on_") for name in methods):
+        _BY_NAME[key] = ()
         return rows
     names = tuple(objects)
     near = _NearNames(names)
@@ -373,6 +390,10 @@ def _by_name_rows(
                     fixes=(_go(method.name, method.line),),
                 )
             )
+    stored = tuple(rows)
+    if len(_BY_NAME) > 8:
+        _BY_NAME.clear()
+    _BY_NAME[key] = stored
     return rows
 
 

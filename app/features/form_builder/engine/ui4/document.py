@@ -9,7 +9,7 @@ import hashlib
 import json
 import os
 import sys
-from typing import Dict, FrozenSet, Iterable, Iterator, List, Literal, Optional, Tuple
+from typing import Any, Dict, FrozenSet, Iterable, Iterator, List, Literal, Optional, Tuple
 
 from app.features.form_builder.engine.ids import DOCUMENT_ID, NodeId
 from app.features.form_builder.engine.logic.codec import read_marker
@@ -98,6 +98,8 @@ class UiDocument:
         self._custom: Dict[str, NodeId] = {}
         self._enum_cache: Optional[Tuple[int, EnumStyle]] = None
         self._logic_count = 0
+        # events.py installs this so one step commit can reuse untouched events.
+        self._revision_listener: Optional[Any] = None
         # Expat folds every line ending to LF. Designer writes a CRLF source
         # back with CRLF on every line, so the choice has to live beside the tree.
         self.newline = "\n"
@@ -354,6 +356,9 @@ class UiDocument:
             raise InvariantError("revision went backwards")
         self._peak = self._revision
         self._enum_cache = None
+        listener = self._revision_listener
+        if listener is not None:
+            listener(self)
 
     def _bind_name(self, node: Node) -> None:
         name = _node_name(node)

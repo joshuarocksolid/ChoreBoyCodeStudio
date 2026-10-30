@@ -472,10 +472,42 @@ def _code_rows(ctx: PickContext, signal: str) -> list:
     return rows
 
 
+_BOUND: weakref.WeakKeyDictionary = weakref.WeakKeyDictionary()
+
+
+def _bound_by_name(ctx: PickContext) -> frozenset:
+    """``on_{object}_{signal}`` names Qt would run for this form (D29)."""
+    cached = _BOUND.get(ctx.doc)
+    if cached is not None and cached[0] == ctx.doc.revision:
+        return cached[1]
+    from app.features.form_builder.engine.project.handler_names import signal_name
+
+    found = []
+    for node in ctx.doc.iter_widgets():
+        obj = node.object_name
+        if not obj:
+            continue
+        class_name, declared = compat.node_class(ctx.doc, ctx.classes, node)
+        if not class_name:
+            continue
+        for signature in compat.signals_of(ctx.classes, class_name, declared):
+            signal = signal_name(signature)
+            if signal:
+                found.append("on_%s_%s" % (obj, signal))
+    names = frozenset(found)
+    _BOUND[ctx.doc] = (ctx.doc.revision, names)
+    return names
+
+
 def _other_event_method(ctx: PickContext, name: str, signal: str) -> bool:
-    """An ``on_`` method is a by-name slot. A step that calls it runs the method twice."""
-    del ctx, signal
-    return name.startswith("on_")
+    """A method Qt already runs by name for this form. A step that calls it runs twice.
+
+    A helper such as ``on_refresh`` does not match a real object and signal, so it stays.
+    """
+    del signal
+    if not name.startswith("on_"):
+        return False
+    return name in _bound_by_name(ctx)
 
 
 def _drop_empty(rows: list) -> list:

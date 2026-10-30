@@ -118,6 +118,7 @@ class TreeSitterHighlighter(
         self._applying_formats = False
         self._last_ts_ranges: list[tuple[int, int]] = []
         self._last_synced_revision: int = document.revision() if document is not None else -1
+        self._local_timer: Any | None = None
         if document is not None:
             document.contentsChange.connect(self._on_contents_change)
             document.contentsChanged.connect(self._on_contents_changed)
@@ -341,6 +342,38 @@ class TreeSitterHighlighter(
             self._resolved_local_tokens = []
         self._last_synced_revision = rev
 
+    def _cancel_local_rebuild(self) -> None:
+        timer = self._local_timer
+        if timer is not None:
+            timer.stop()
+
+    def _schedule_local_rebuild(self) -> None:
+        """Locals can wait. Keyword and syntax colors are already on the edited lines."""
+        timer = self._local_timer
+        if timer is None:
+            from app.qt.QtCore import QTimer
+
+            timer = QTimer(self)
+            timer.setSingleShot(True)
+            timer.timeout.connect(self._apply_deferred_locals)
+            self._local_timer = timer
+        timer.start(150)
+
+    def _apply_deferred_locals(self) -> None:
+        if self._is_disposed or self._tree is None:
+            return
+        self._rebuild_local_tokens()
+        lines = [int(entry.start_point[0]) for entry, _name in self._resolved_local_tokens]
+        if not lines:
+            return
+        start, end = min(lines), max(lines)
+        self._update_capture_cache(
+            changed_ranges=[],
+            full_rebuild=False,
+            fallback_line_ranges=[(start, end)],
+        )
+        self._rehighlight_line_window(start, end)
+
     def _ensure_tree_and_cache(self) -> None:
         if not self._dirty and not self._viewport_dirty and self._capture_cache:
             return
@@ -380,8 +413,12 @@ class TreeSitterHighlighter(
             if new_tree is None:
                 return
             self._tree = new_tree
-            self._rebuild_local_tokens()
             full_rebuild = not used_old_tree
+            if full_rebuild or not self._resolved_local_tokens:
+                self._cancel_local_rebuild()
+                self._rebuild_local_tokens()
+            else:
+                self._schedule_local_rebuild()
             if used_old_tree and old_tree is not None:
                 changed_ranges = old_tree.changed_ranges(new_tree)
             line_count = max(1, self._source_text.count("\n") + 1)

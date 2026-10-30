@@ -11,8 +11,9 @@ is the only writer.
 from __future__ import annotations
 
 import weakref
+from contextlib import contextmanager
 from dataclasses import dataclass, replace
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, Iterator, List, Optional, Set, Tuple
 
 from app.features.form_builder.engine.ids import NodeId
 from app.features.form_builder.engine.logic.codec import checked_hint_points
@@ -156,20 +157,100 @@ def read_event(doc: UiDocument, sender: str, signal_name: str) -> EventState:
 
 
 _READ: weakref.WeakKeyDictionary = weakref.WeakKeyDictionary()
+_FULL = object()
+# doc -> _FULL, or [base revision, set of (sender, signal) edited since that revision]
+_TOUCH: weakref.WeakKeyDictionary = weakref.WeakKeyDictionary()
+_SCOPE: Dict[int, Set[Tuple[str, str]]] = {}
+
+
+@contextmanager
+def event_edits(doc: UiDocument, pairs: Tuple[Tuple[str, str], ...]) -> Iterator[None]:
+    """The bumps inside this block rewrite only these events. Anything else rereads the form."""
+    _bind_revision(doc)
+    previous = _SCOPE.get(id(doc))
+    _SCOPE[id(doc)] = set(pairs)
+    try:
+        yield
+    finally:
+        if previous is None:
+            _SCOPE.pop(id(doc), None)
+        else:
+            _SCOPE[id(doc)] = previous
+
+
+def _bind_revision(doc: UiDocument) -> None:
+    if getattr(doc, "_event_rev_hook", False):
+        return
+    doc._event_rev_hook = True  # type: ignore[attr-defined]
+    current = doc._revision_listener
+
+    def _hook(document: UiDocument) -> None:
+        _on_revision(document)
+        if current is not None:
+            current(document)
+
+    doc._revision_listener = _hook
+
+
+def _on_revision(doc: UiDocument) -> None:
+    scope = _SCOPE.get(id(doc))
+    current = _TOUCH.get(doc, None)
+    if scope is None or current is _FULL:
+        _TOUCH[doc] = _FULL
+        return
+    if not isinstance(current, list):
+        _TOUCH[doc] = [doc.revision - 1, set(scope)]
+        return
+    current[1].update(scope)
 
 
 def read_events(doc: UiDocument) -> Tuple[EventState, ...]:
     """Every event of the form that has a step. Events with native connections come first, in
     ``<connections>`` order of their first connection; list-only events follow in document order.
 
-    One tuple per document revision. Callers that paint a frame share it.
+    One tuple per document revision. A step commit rereads only the senders it edited.
     """
     cached = _READ.get(doc)
     if cached is not None and cached[0] == doc.revision:
         return cached[1]
-    result = _read_events(doc)
+    touch = _TOUCH.get(doc, None)
+    if (
+        cached is not None
+        and isinstance(touch, list)
+        and touch[0] == cached[0]
+    ):
+        result = _splice(doc, cached[1], touch[1])
+    else:
+        result = _read_events(doc)
+    _TOUCH.pop(doc, None)
     _READ[doc] = (doc.revision, result)
     return result
+
+
+def _splice(
+    doc: UiDocument,
+    previous: Tuple[EventState, ...],
+    pairs: Set[Tuple[str, str]],
+) -> Tuple[EventState, ...]:
+    by_key = {(state.sender, state.signal_name): state for state in previous}
+    for sender, signal_name in pairs:
+        state = read_event(doc, sender, signal_name)
+        if state.native or state.list_steps or state.list_error is not None:
+            by_key[(sender, signal_name)] = state
+        else:
+            by_key.pop((sender, signal_name), None)
+    ordered: List[EventState] = []
+    seen: Set[Tuple[str, str]] = set()
+    for state in previous:
+        key = (state.sender, state.signal_name)
+        if key not in by_key:
+            continue
+        ordered.append(by_key[key])
+        seen.add(key)
+    for key, state in by_key.items():
+        if key not in seen:
+            ordered.append(state)
+    return tuple(ordered)
 
 
 def _read_events(doc: UiDocument) -> Tuple[EventState, ...]:

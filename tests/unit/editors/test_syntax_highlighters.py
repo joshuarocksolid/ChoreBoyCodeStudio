@@ -714,6 +714,55 @@ def test_inserting_a_method_rehighlights_the_edit_not_the_file(tmp_path: Any, qa
     assert blocks["n"] < 40, (worked, text_calls, blocks)
 
 
+def test_typing_ten_characters_rebuilds_locals_at_most_once(qapp: QApplication) -> None:
+    from app.qt.QtTest import QTest
+
+    source = "def build(value):\n    return value\n"
+    document, highlighter = _render("/tmp/locals_type.py", source)
+    rebuilds = {"n": 0}
+    real = highlighter._rebuild_local_tokens
+
+    def _count() -> None:
+        rebuilds["n"] += 1
+        real()
+
+    highlighter._rebuild_local_tokens = _count  # type: ignore[method-assign]
+    cursor = QTextCursor(document)
+    cursor.movePosition(QTextCursor.End)
+    for character in "abcdefghij":
+        cursor.insertText(character)
+    assert rebuilds["n"] <= 1, rebuilds
+    QTest.qWait(200)
+    qapp.processEvents()
+    assert rebuilds["n"] == 1, rebuilds
+
+
+def test_a_renamed_local_takes_its_color_after_idle(qapp: QApplication) -> None:
+    from app.qt.QtTest import QTest
+
+    source = "def build(value):\n    return value\n"
+    document, _highlighter = _render("/tmp/locals_rename.py", source)
+    assert _color_at(document, 0, 0) == DEFAULT_LIGHT_PALETTE["keyword"].lower()
+    cursor = QTextCursor(document)
+    cursor.movePosition(QTextCursor.Start)
+    cursor.movePosition(QTextCursor.Right, QTextCursor.MoveAnchor, len("def build("))
+    cursor.movePosition(QTextCursor.Right, QTextCursor.KeepAnchor, len("value"))
+    cursor.insertText("total")
+    cursor = QTextCursor(document)
+    cursor.movePosition(QTextCursor.Start)
+    cursor.movePosition(QTextCursor.Down)
+    line = document.findBlockByNumber(1).text()
+    column = line.index("value")
+    cursor.setPosition(document.findBlockByNumber(1).position() + column)
+    cursor.movePosition(QTextCursor.Right, QTextCursor.KeepAnchor, len("value"))
+    cursor.insertText("total")
+    assert _color_at(document, 0, 0) == DEFAULT_LIGHT_PALETTE["keyword"].lower()
+    QTest.qWait(200)
+    qapp.processEvents()
+    renamed = document.findBlockByNumber(1).text()
+    assert _color_at(document, 1, renamed.index("total")) == DEFAULT_LIGHT_PALETTE["semantic_parameter"].lower()
+
+
 def test_registry_returns_none_for_unknown_extensions_without_sniff_match() -> None:
     document = QTextDocument()
     registry = default_syntax_highlighter_registry()
