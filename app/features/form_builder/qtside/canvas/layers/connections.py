@@ -423,7 +423,7 @@ def _chip_seats(
                 int(spot[0] - size.width / 2), int(spot[1] - size.height / 2), size.width, size.height
             )
     blockers = _solid_rects(document, static) + tuple(found.values())
-    parked_steps.sort(key=lambda pair: 0 if pair[0].kind == "form" else 1)
+    parked_steps.sort(key=lambda pair: 0 if pair[0].kind == "code" else 1)
     for _step, request in parked_steps:
         parked = _on_sender_row(request, page, blockers)
         if parked is None:
@@ -498,12 +498,19 @@ def _on_sender_row(
     nearer_left = origin.x + origin.width / 2 < page.x + page.width / 2
     gutter_x = int(page.x + 4 if nearer_left else page.x + page.width - size.width - 4)
     other_x = int(page.x + page.width - size.width - 4 if nearer_left else page.x + 4)
+    badge_row = (
+        CanvasRect(origin.x, origin.y - 14, 12, 12),
+        CanvasRect(origin.x + max(0, origin.width - 12), origin.y - 14, 12, 12),
+    )
+    taken = tuple(taken) + badge_row
     spots = [CanvasRect(gutter_x, y, size.width, size.height)]
+    # Past the badge on the sender's corner, in the empty space above or below it.
+    inset = origin.x + 16
+    spots.append(CanvasRect(inset, origin.y - size.height - 8, size.width, size.height))
+    spots.append(CanvasRect(inset, origin.y + origin.height + 8, size.width, size.height))
     for stack in range(1, 6):
         spots.append(CanvasRect(gutter_x, y + stack * (size.height + 4), size.width, size.height))
         spots.append(CanvasRect(gutter_x, y - stack * (size.height + 4), size.width, size.height))
-    spots.append(CanvasRect(origin.x, origin.y - size.height - 8, size.width, size.height))
-    spots.append(CanvasRect(origin.x, origin.y + origin.height + 8, size.width, size.height))
     spots.append(CanvasRect(other_x, y, size.width, size.height))
     for spot in spots:
         if _clear_spot(spot, page, taken):
