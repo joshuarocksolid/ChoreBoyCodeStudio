@@ -115,6 +115,8 @@ class TreeSitterHighlighter(
         self._dirty = True
         self._viewport_dirty = True
         self._is_disposed = False
+        self._applying_formats = False
+        self._last_ts_ranges: list[tuple[int, int]] = []
         self._last_synced_revision: int = document.revision() if document is not None else -1
         if document is not None:
             document.contentsChange.connect(self._on_contents_change)
@@ -238,21 +240,45 @@ class TreeSitterHighlighter(
             self.setFormat(span.start_col, span.end_col - span.start_col, token_format)
 
     def _on_contents_change(self, position: int, chars_removed: int, chars_added: int) -> None:
+        if self._applying_formats:
+            return
         self._queued_contents_changes.append((position, chars_removed, chars_added, self._source_text))
 
     def _on_contents_changed(self) -> None:
+        if self._applying_formats:
+            return
         document = self.document()
         if document is None:
             return
         new_source = document.toPlainText()
         if not self._queued_contents_changes:
-            if new_source != self._source_text:
-                self._source_text = new_source
-                self._tree = None
-                self._pending_edits.clear()
-                self._dirty = True
-                self._rehighlight_line_window(0, max(0, document.blockCount() - 1))
-            return
+            # PySide 6.8 emits contentsChanged for a cursor edit and does not emit
+            # contentsChange, so the edit range is not queued. A prefix/suffix scan
+            # finds it. Rehighlighting the whole document here is what turned one
+            # inserted method into hundreds of blocks.
+            if new_source == self._source_text:
+                return
+            self._record_unsignaled_edit(self._source_text, new_source)
+            pending_edit = self._pending_edits[-1]
+        else:
+            pending_edit = self._pending_edit_from_queue(new_source)
+        self._source_text = new_source
+        self._dirty = True
+        line_delta = int(pending_edit.new_end_point[0]) - int(pending_edit.old_end_point[0])
+        if line_delta != 0:
+            self._shift_capture_cache_for_line_delta(pending_edit=pending_edit)
+        rehighlight_start, rehighlight_end = self._rehighlight_window_for_edit(
+            pending_edit=pending_edit,
+            line_delta=line_delta,
+        )
+        self._last_ts_ranges = []
+        self._ensure_tree_and_cache()
+        ranges = [(rehighlight_start, rehighlight_end)]
+        ranges.extend(self._last_ts_ranges)
+        for start_line, end_line in self._merge_line_ranges(ranges):
+            self._rehighlight_line_window(start_line, end_line)
+
+    def _pending_edit_from_queue(self, new_source: str) -> _PendingEdit:
         position, chars_removed, chars_added, old_source = self._queued_contents_changes.pop(0)
         start_char_old = max(0, min(position, len(old_source)))
         old_end_char = max(start_char_old, min(position + chars_removed, len(old_source)))
@@ -267,16 +293,32 @@ class TreeSitterHighlighter(
             new_end_point=self._char_to_point(new_source, new_end_char),
         )
         self._pending_edits.append(pending_edit)
-        self._source_text = new_source
-        self._dirty = True
-        line_delta = int(pending_edit.new_end_point[0]) - int(pending_edit.old_end_point[0])
-        if line_delta != 0:
-            self._shift_capture_cache_for_line_delta(pending_edit=pending_edit)
-        rehighlight_start, rehighlight_end = self._rehighlight_window_for_edit(
-            pending_edit=pending_edit,
-            line_delta=line_delta,
+        return pending_edit
+
+    def _record_unsignaled_edit(self, old_source: str, new_source: str) -> None:
+        """The changed character span when Qt did not emit contentsChange."""
+        prefix = 0
+        limit = min(len(old_source), len(new_source))
+        while prefix < limit and old_source[prefix] == new_source[prefix]:
+            prefix += 1
+        suffix = 0
+        while (
+            suffix < limit - prefix
+            and old_source[len(old_source) - 1 - suffix] == new_source[len(new_source) - 1 - suffix]
+        ):
+            suffix += 1
+        old_end = len(old_source) - suffix
+        new_end = len(new_source) - suffix
+        self._pending_edits.append(
+            _PendingEdit(
+                start_byte=self._char_to_byte_offset(old_source, prefix),
+                old_end_byte=self._char_to_byte_offset(old_source, old_end),
+                new_end_byte=self._char_to_byte_offset(new_source, new_end),
+                start_point=self._char_to_point(old_source, prefix),
+                old_end_point=self._char_to_point(old_source, old_end),
+                new_end_point=self._char_to_point(new_source, new_end),
+            )
         )
-        self._rehighlight_line_window(rehighlight_start, rehighlight_end)
 
     def rehighlight(self) -> None:  # noqa: N802
         self._sync_source_from_document()
@@ -342,6 +384,8 @@ class TreeSitterHighlighter(
             full_rebuild = not used_old_tree
             if used_old_tree and old_tree is not None:
                 changed_ranges = old_tree.changed_ranges(new_tree)
+            line_count = max(1, self._source_text.count("\n") + 1)
+            self._last_ts_ranges = self._line_ranges_from_changed_ranges(changed_ranges, line_count)
         elif self._tree is None:
             self._tree, _ = self._parse_with_optional_tree(None)
             if self._tree is None:
@@ -436,7 +480,20 @@ class TreeSitterHighlighter(
         document = self.document()
         if document is None:
             return
-        block = document.findBlockByNumber(start_line)
-        while block.isValid() and block.blockNumber() <= end_line:
-            self.rehighlightBlock(block)
-            block = block.next()
+        # setFormat emits contentsChange. That signal is a format, not an edit.
+        # Blocking it keeps rehighlightBlock from calling back into this highlighter
+        # and from telling the shell the text changed. Qt 5.15 and 6.8 both honor
+        # QTextDocument.blockSignals.
+        outer = not self._applying_formats
+        if outer:
+            self._applying_formats = True
+            document.blockSignals(True)
+        try:
+            block = document.findBlockByNumber(start_line)
+            while block.isValid() and block.blockNumber() <= end_line:
+                self.rehighlightBlock(block)
+                block = block.next()
+        finally:
+            if outer:
+                document.blockSignals(False)
+                self._applying_formats = False

@@ -240,9 +240,19 @@ def _selection_chip(static: object, inputs: object, page: CanvasRect, viewport: 
 
     text = chip_text(document, selection, getattr(inputs, "sizing", None))
     size = CanvasSize(max(1, int(measure(text)) + 12), 18)
+    root = document.root.id
+    obstacles = []
+    for obstacle in getattr(static, "content", ()):
+        node_id = getattr(obstacle, "node", None)
+        if node_id == root:
+            continue
+        node = document.get(node_id) if node_id is not None else None
+        if isinstance(node, LayoutNode):
+            continue
+        obstacles.append(obstacle)
     seats = place_chips(
         (ChipRequest(("selection", current), rect, size, LABEL_CORNERS, frozenset(), required=True),),
-        tuple(getattr(static, "content", ())),
+        tuple(obstacles),
         tuple(getattr(inputs, "chrome", ())),
         page,
         viewport,

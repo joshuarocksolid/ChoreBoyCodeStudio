@@ -40,6 +40,32 @@ def _ctx(doc: Any, source: PickerSource, target: str = "", infos: tuple = ()) ->
     )
 
 
+def test_the_step_picker_omits_the_events_own_by_name_method() -> None:
+    from app.features.form_builder.qtside.pickers.method_page import method_page
+
+    doc = open_log(_SALE.read_text(encoding="utf-8")).document
+
+    class _Info:
+        def __init__(self, name: str) -> None:
+            self.name = name
+            self.params = ()
+
+    ctx = _ctx(
+        doc,
+        PickerSource("printButton", "clicked"),
+        infos=(
+            _Info("print_receipt"),
+            _Info("on_printButton_clicked"),
+            _Info("on_saveButton_clicked"),
+        ),
+    )
+    names = [row.payload for row in _code_rows(ctx, "clicked") if row.kind == "method"]
+    assert names == ["print_receipt"]
+    page = method_page(ctx, Page("step", "", "", 0, (), "", False, "", "", "clicked", "", "", False, -1, ""))
+    listed = [row.payload for row in page.rows if row.kind == "method"]
+    assert listed == ["print_receipt"]
+
+
 def test_a_chosen_event_does_not_offer_another_events_step() -> None:
     doc = open_log(_SALE.read_text(encoding="utf-8")).document
     page = _step_page(_ctx(doc, PickerSource("nameEdit", "textChanged")), "textChanged", True, -1, "event")

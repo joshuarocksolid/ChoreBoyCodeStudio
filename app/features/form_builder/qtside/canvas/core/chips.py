@@ -48,6 +48,8 @@ class ChipRequest:
     outside: bool = False
     #: Corner seats only. Badges discard a beside or gutter seat, so they skip that scan.
     corners_only: bool = False
+    #: Step chips sit on the sender's row when that side is free, and only then try a corner.
+    beside_first: bool = False
 
 
 @dataclass(frozen=True)
@@ -121,8 +123,12 @@ def place_chips(
         # The page joins the fixed rects, ahead of the chips, so leaders may still cross it.
         walls = [page] + taken if request.outside else taken
         count = len(fixed) + (1 if request.outside else 0)
-        seat: Optional[ChipSeat] = _corner_seat(request, buckets, walls, viewport)
-        if seat is None and not request.corners_only:
+        seat: Optional[ChipSeat] = None
+        if request.beside_first and not request.corners_only:
+            seat = _beside_seat(request, buckets, walls, count, viewport)
+        if seat is None:
+            seat = _corner_seat(request, buckets, walls, viewport)
+        if seat is None and not request.corners_only and not request.beside_first:
             seat = _beside_seat(request, buckets, walls, count, viewport)
         if seat is None and not request.corners_only:
             seat = _gutter_seat(request, buckets, walls, count, page, viewport)
@@ -143,17 +149,31 @@ def _corner_seat(
 ) -> Optional[CornerSeat]:
     """A corner, slid along the target's edge into the viewport when needed."""
     target = request.target
+    stacks = range(5) if request.beside_first else (0,)
     for corner in request.corners:
-        rect = corner_rect(target, request.size, corner)
-        if not _inside(rect, viewport):
-            x = _clamp(rect.x, viewport.x, viewport.x + viewport.width - rect.width)
-            if x >= target.x + target.width or x + rect.width <= target.x:
+        for stack in stacks:
+            rect = corner_rect(target, request.size, corner)
+            if stack:
+                rect = _shift_corner(rect, corner, stack, request.size.height)
+            if not _inside(rect, viewport):
+                x = _clamp(rect.x, viewport.x, viewport.x + viewport.width - rect.width)
+                if x >= target.x + target.width or x + rect.width <= target.x:
+                    continue
+                rect = CanvasRect(x, rect.y, rect.width, rect.height)
+            if not _clear(rect, viewport, buckets, request.exempt, taken):
                 continue
-            rect = CanvasRect(x, rect.y, rect.width, rect.height)
-        if not _clear(rect, viewport, buckets, request.exempt, taken):
-            continue
-        return CornerSeat(request.key, rect, corner)
+            return CornerSeat(request.key, rect, corner)
     return None
+
+
+def _shift_corner(rect: CanvasRect, corner: Corner, stack: int, height: int) -> CanvasRect:
+    """The next free row on the same side of the target."""
+    delta = stack * (height + CHIP_GAP)
+    if corner.startswith("above"):
+        return CanvasRect(rect.x, rect.y - delta, rect.width, rect.height)
+    if corner.startswith("below"):
+        return CanvasRect(rect.x, rect.y + delta, rect.width, rect.height)
+    return rect
 
 
 def _beside_seat(

@@ -42,11 +42,18 @@ class EditorTabBufferWorkflow:
         self._outline_workflow = outline_workflow
         self._markdown_workflow = markdown_workflow
         self._tab_workflow = tab_workflow
+        self._text_revision_by_path: dict[str, int] = {}
 
     def set_editor_manager(self, editor_manager: EditorManager) -> None:
         self._editor_manager = editor_manager
 
     def handle_editor_text_changed(self, file_path: str, editor_widget: CodeEditorWidget) -> None:
+        document = editor_widget.document()
+        revision = int(document.revision()) if document is not None else None
+        if revision is not None and self._text_revision_by_path.get(file_path) == revision:
+            return
+        if revision is not None:
+            self._text_revision_by_path[file_path] = revision
         if self._editor_manager.get_tab(file_path) is None:
             return
         self._editor_tabs_coordinator.advance_buffer_revision(file_path)

@@ -473,13 +473,9 @@ def _code_rows(ctx: PickContext, signal: str) -> list:
 
 
 def _other_event_method(ctx: PickContext, name: str, signal: str) -> bool:
-    """``on_{object}_{event}`` belongs to that event. Other ``on_`` names stay out."""
-    if not name.startswith("on_"):
-        return False
-    prefix = "on_%s_" % ctx.source.sender
-    if not name.startswith(prefix):
-        return True
-    return name[len(prefix):] != signal
+    """An ``on_`` method is a by-name slot. A step that calls it runs the method twice."""
+    del ctx, signal
+    return name.startswith("on_")
 
 
 def _drop_empty(rows: list) -> list:

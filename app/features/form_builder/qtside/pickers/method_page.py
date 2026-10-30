@@ -51,8 +51,12 @@ def method_page(ctx: object, page: object) -> object:
     rows = [Item("make", suggested, "Add %s()" % suggested)]
     rows.append(Item("notice", "", "METHODS IN %s" % ctx.window_file, header=True))  # type: ignore[attr-defined]
     used = _used_here(ctx, page.signal)  # type: ignore[attr-defined]
+    from app.features.form_builder.qtside.pickers.flow import _other_event_method
+
     for info in _fitting(ctx, len(sends)):
         name = str(getattr(info, "name", info))
+        if _other_event_method(ctx, name, str(page.signal)):  # type: ignore[attr-defined]
+            continue
         note = "already here" if name in used else ""
         rows.append(Item("method", name, "%s()" % name, note=note, search=("%s already here" % name) if note else name))
     return Page(

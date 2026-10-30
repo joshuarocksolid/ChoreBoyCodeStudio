@@ -629,6 +629,91 @@ def test_python_invalid_locals_query_reports_diagnostic_without_losing_highlight
     assert _color_at(document, 0, 0) == DEFAULT_LIGHT_PALETTE["keyword"].lower()
 
 
+def test_inserting_a_method_rehighlights_the_edit_not_the_file(tmp_path: Any, qapp: QApplication) -> None:
+    """One inserted method is one buffer update, and only the edited lines are rehighlighted."""
+    from types import SimpleNamespace
+
+    from app.editors.editor_manager import EditorManager
+    from app.shell.editor_tab_buffer_workflow import EditorTabBufferWorkflow
+
+    lines = ["class SaleWindow:", "    def __init__(self):", "        return"]
+    while len(lines) < 1000:
+        lines.append("    def early_%d(self):" % len(lines))
+        lines.append("        return %d" % len(lines))
+    insert_at = len(lines)
+    lines.append("    def marker_after(self):")
+    lines.append("        return 1")
+    while len(lines) < 2000:
+        lines.append("    def later_%d(self):" % len(lines))
+        lines.append("        return %d" % len(lines))
+    source = "\n".join(lines) + "\n"
+    path = tmp_path / "sale_window.py"
+    path.write_text(source, encoding="utf-8")
+    file_path = str(path.resolve())
+    document, highlighter = _render(file_path, source)
+    qapp.processEvents()
+    blocks = {"n": 0}
+    text_calls = {"n": 0}
+    real_block = highlighter.rehighlightBlock
+
+    def _count_block(block: Any) -> None:
+        blocks["n"] += 1
+        real_block(block)
+
+    highlighter.rehighlightBlock = _count_block  # type: ignore[method-assign]
+    manager = EditorManager()
+    manager.open_file_with_content(file_path, source)
+    host = SimpleNamespace(
+        editor_tabs_widget=lambda: object(),
+        local_history_schedule_autosave=lambda *_args: None,
+        editor_auto_save=lambda: False,
+        start_auto_save_to_file_timer=lambda: None,
+        local_history_discard_pending_autosave=lambda *_args: None,
+        local_history_delete_draft=lambda *_args: None,
+        refresh_save_action_states=lambda: None,
+        diagnostics_schedule_realtime_lint=lambda *_args: None,
+        is_shutting_down=lambda: False,
+        status_controller=lambda: None,
+        editor_widgets_by_path=lambda: {},
+    )
+    worked = {"n": 0}
+
+    def _advance(*_args: Any) -> None:
+        worked["n"] += 1
+
+    widget = SimpleNamespace(document=lambda: document, toPlainText=document.toPlainText)
+    workflow = EditorTabBufferWorkflow(
+        host=host,  # type: ignore[arg-type]
+        editor_manager=manager,
+        editor_tabs_coordinator=SimpleNamespace(
+            advance_buffer_revision=_advance,
+            refresh_tab_presentation=lambda *_args: None,
+            promote_preview_tab=lambda *_args: False,
+        ),
+        outline_workflow=SimpleNamespace(schedule_refresh=lambda: None),
+        markdown_workflow=SimpleNamespace(),
+        tab_workflow=SimpleNamespace(),
+    )
+    real_text = workflow.handle_editor_text_changed
+
+    def _count_text(changed_path: str, widget: Any) -> None:
+        text_calls["n"] += 1
+        real_text(changed_path, widget)
+
+    document.contentsChanged.connect(lambda: _count_text(file_path, widget))
+    method = "\n    def print_receipt(self):\n        return 1\n"
+    cursor = QTextCursor(document.findBlockByNumber(insert_at))
+    cursor.insertText(method)
+    qapp.processEvents()
+    after = source.splitlines()[insert_at]
+    assert after.startswith("    def marker_after")
+    marker_line = document.findBlockByNumber(insert_at + method.count("\n")).text()
+    assert marker_line.startswith("    def marker_after"), marker_line
+    assert _color_at(document, insert_at + method.count("\n"), 4) == DEFAULT_LIGHT_PALETTE["keyword"].lower()
+    assert worked["n"] == 1, (worked, text_calls, blocks)
+    assert blocks["n"] < 40, (worked, text_calls, blocks)
+
+
 def test_registry_returns_none_for_unknown_extensions_without_sniff_match() -> None:
     document = QTextDocument()
     registry = default_syntax_highlighter_registry()

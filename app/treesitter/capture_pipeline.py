@@ -224,21 +224,16 @@ class TreeSitterCapturePipelineMixin:
         self._capture_cache = shifted_cache
 
     def _rehighlight_window_for_edit(self, *, pending_edit: _PendingEdit, line_delta: int) -> tuple[int, int]:
-        document = _host(self).document()
+        """The edited lines, plus a few lines of context. A line-count change used to
+        extend this to the end of the file whenever the viewport was unset, so one
+        inserted method rehighlighted every block below it.
+        """
+        del line_delta
         start_line = int(pending_edit.start_point[0])
         end_line = int(pending_edit.new_end_point[0])
         rehighlight_start = max(0, start_line - _RANGE_EXPANSION_LINES)
         rehighlight_end = max(rehighlight_start, end_line + _RANGE_EXPANSION_LINES)
-        if line_delta == 0 or document is None:
-            return (rehighlight_start, rehighlight_end)
-
-        viewport_start, viewport_end = _host(self)._viewport_lines
-        if viewport_start != 0 or viewport_end != 0:
-            rehighlight_start = min(rehighlight_start, viewport_start)
-            rehighlight_end = max(rehighlight_end, viewport_end + _RANGE_EXPANSION_LINES)
-        else:
-            rehighlight_end = max(rehighlight_end, max(0, document.blockCount() - 1))
-        return (rehighlight_start, max(rehighlight_start, rehighlight_end))
+        return (rehighlight_start, rehighlight_end)
 
     def _query_window_for_large_modes(self, line_count: int) -> tuple[int, int] | None:
         start_line, end_line = _host(self)._viewport_lines

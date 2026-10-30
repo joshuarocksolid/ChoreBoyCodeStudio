@@ -20,8 +20,17 @@ class OpenedTabResult:
     promoted_from_preview: bool = False
 
 
+_RESOLVED_PATHS: dict[str, str] = {}
+
+
 def _normalize(file_path: str) -> str:
-    return str(Path(file_path).expanduser().resolve())
+    cached = _RESOLVED_PATHS.get(file_path)
+    if cached is not None:
+        return cached
+    resolved = str(Path(file_path).expanduser().resolve())
+    _RESOLVED_PATHS[file_path] = resolved
+    _RESOLVED_PATHS[resolved] = resolved
+    return resolved
 
 
 class EditorManager:
