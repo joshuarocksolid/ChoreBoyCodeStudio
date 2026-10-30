@@ -1,10 +1,12 @@
-"""Keys of the editing modes (M5.6, UX-OVL-001, UX-MODE-001 .. 007).
+"""Keys of the editing modes (M5.6, UX-OVL-001, UX-MODE-001 .. 007, UX-ARR-005 .. 008).
 
-F8 and F7 toggle the Tab order and Buddies overlays, F3 leaves one, F4 says where
-Connections are until M6, F1 opens the help card of the selected widget. Enter,
-Shift+Enter and Backspace in the Tab order overlay and Enter in the Buddies
-overlay are handled by the canvas while an overlay is open; they are listed here
-(``kind="qt"``) so Form designer keys shows them and the collision test sees them.
+F8 and F7 toggle the Tab order and Buddies overlays, F3 leaves one, F4 toggles
+the Connections overlay, and Ctrl+Shift+L toggles Show all connections. F1 opens
+the help card of the selected widget. Enter, Shift+Enter and Backspace in the
+Tab order overlay, Enter in the Buddies overlay, and Enter and Home in the
+Connections overlay are handled by the canvas while an overlay is open; they are
+listed here (``kind="qt"``) so Form designer keys shows them and the collision
+test sees them.
 """
 
 from __future__ import annotations
@@ -15,6 +17,7 @@ _FORM = ("form_tab",)
 _WIDGETS = ("canvas", "outline", "inspector")
 TAB_OVERLAY = "tab_order_overlay"
 BUDDY_OVERLAY = "buddy_overlay"
+CONNECTIONS_OVERLAY = "connections_overlay"
 
 
 def _tab_order(surface: Any) -> None:
@@ -30,7 +33,15 @@ def _leave(surface: Any) -> None:
 
 
 def _connections(surface: Any) -> None:
-    surface.about_connections()
+    surface.toggle_overlay("connections")
+
+
+def _show_all(surface: Any) -> None:
+    from app.features.form_builder.integration.workbench_ext.connections import links_for
+
+    host = links_for(surface)
+    if host is not None:
+        host.toggle_show_all()
 
 
 def _help(surface: Any) -> None:
@@ -42,7 +53,24 @@ def register(keys: Any) -> None:
     keys.key("form.action.buddies", "Buddies overlay", "F7", _FORM, run=_buddies)
     keys.key("form.action.leaveOverlay", "Leave overlay", "F3", _FORM, run=_leave)
     keys.key("form.action.connections", "Connections", "F4", _FORM, run=_connections)
+    keys.key("form.action.showAllConnections", "Show all connections", "Ctrl+Shift+L", _FORM, run=_show_all)
     keys.key("form.action.widgetHelp", "Help card for the selected widget", "F1", _WIDGETS, run=_help)
+    keys.key(
+        "form.action.connectionLink",
+        "Start or finish a connection",
+        "Enter",
+        (CONNECTIONS_OVERLAY,),
+        kind="qt",
+        available=True,
+    )
+    keys.key(
+        "form.action.connectionForm",
+        "Pick the form as the receiver",
+        "Home",
+        (CONNECTIONS_OVERLAY,),
+        kind="qt",
+        available=True,
+    )
     keys.key("form.action.tabOrderNumber", "Give the selected widget the next number", "Enter", (TAB_OVERLAY,), kind="qt", available=True)
     keys.key("form.action.tabOrderContinue", "Continue numbering from the selected widget", "Shift+Enter", (TAB_OVERLAY,), kind="qt", available=True)
     keys.key("form.action.tabOrderTakeBack", "Take back the last number", "Backspace", (TAB_OVERLAY,), kind="qt", available=True)

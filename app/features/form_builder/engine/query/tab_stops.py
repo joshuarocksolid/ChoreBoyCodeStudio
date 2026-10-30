@@ -72,6 +72,24 @@ def caption_name(doc: UiDocument, node_id: NodeId) -> str:
     return node.object_name if isinstance(node, WidgetNode) else ""
 
 
+def display_name(doc: UiDocument, object_name: str) -> str:
+    """Buddy label, then the widget's own text, then the object name. ``&`` is removed."""
+    if not object_name:
+        return ""
+    for label_id in labels(doc):
+        if buddy_of(doc, label_id) != object_name:
+            continue
+        text = caption(doc, label_id)
+        label = doc.get(label_id)
+        if text and text != getattr(label, "object_name", ""):
+            return text
+    found = doc.by_name(object_name)
+    node = doc.get(found[0]) if found else None
+    if isinstance(node, WidgetNode):
+        return caption(doc, node.id) or object_name
+    return object_name
+
+
 def buddy_of(doc: UiDocument, node_id: NodeId) -> Optional[str]:
     node = doc.get(node_id)
     if not isinstance(node, WidgetNode):

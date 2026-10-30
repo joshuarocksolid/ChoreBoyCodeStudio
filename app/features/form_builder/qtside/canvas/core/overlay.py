@@ -146,7 +146,7 @@ _TITLES = frozenset({"page_tab", "menu_title", "title_band"})
 _BANDS = frozenset({"page_tab", "title_band"})
 _DESCENDS = frozenset({"widget", "layout"})
 #: UX-OVL-003. While one of these layers is on, layout frames fade and hover outlines are not drawn.
-MODE_LAYERS = frozenset({"tab_order", "buddies"})
+MODE_LAYERS = frozenset({"tab_order", "buddies", "connection_link"})
 _DIMMED_ROLES = frozenset({"layout", "layout_faint", "gap", "gap_fill"})
 _DIM = 0.3
 

@@ -18,7 +18,8 @@ An ``OverlayKind`` has:
   overlay is open. ``state(view)`` builds the layer's (hashable) state from a
   ``LinkView``; the default passes the view itself.
 * ``toggle``: ``ToggleSpec(label, tooltip)`` for a toolbar button after Buddies,
-  or None. A registered toggle always shows its text (it has no compact glyph).
+  or None. The button shows ``glyph`` beside its text, and the glyph alone when
+  the toolbar is compact. An unknown glyph name leaves the text in place.
 * ``banner_action``: ``(label, run(surface))`` for the banner's extra button, or None.
 * ``link``: a ``LinkGesture``, or None for an overlay with no link.
 
