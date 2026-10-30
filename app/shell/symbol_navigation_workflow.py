@@ -6,7 +6,7 @@ import time
 from pathlib import Path
 from typing import Any, cast
 
-from app.qt.QtWidgets import QDialog, QInputDialog, QLineEdit, QMessageBox
+from app.qt.QtWidgets import QApplication, QDialog, QInputDialog, QLineEdit, QMessageBox
 
 from app.shell.problems_panel import ResultItem
 from app.shell.quick_symbol_dialog import QuickSymbolDialog
@@ -23,6 +23,15 @@ class SymbolNavigationWorkflow:
 
     def handle_go_to_definition_action(self) -> None:
         parent = self._host.dialog_parent()
+        finder = getattr(parent, "window", None)
+        window = finder() if callable(finder) else None
+        surface = getattr(window, "_form_undo_surface", None)
+        go = getattr(surface, "go_to_selected_code", None)
+        focus = QApplication.focusWidget()
+        inside = getattr(surface, "isAncestorOf", None)
+        if callable(go) and focus is not None and callable(inside) and inside(focus):
+            go()
+            return
         loaded_project = self._host.loaded_project()
         if loaded_project is None:
             QMessageBox.warning(parent, "Go To Definition", "Open a project first.")

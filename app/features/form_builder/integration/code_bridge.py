@@ -54,7 +54,12 @@ TOO_BIG = "That file is too large for Code Studio to change."
 UNREADABLE = "That file can't be read as text, so Code Studio won't change it."
 CHANGED = "That file changed since the plan was made."
 NOT_UTF8 = "That file isn't UTF-8 text, so Code Studio won't change it."
-WRITE_FAILED = "Code Studio couldn't write that file: %s"
+WRITE_FAILED = "Code Studio couldn't change %s: %s."
+
+
+def _change_failed(path: str, reason: object) -> str:
+    name = os.path.basename(path) or str(path)
+    return WRITE_FAILED % (name, reason)
 
 
 class TextEditLike(Protocol):
@@ -163,8 +168,22 @@ class CodeBridge:
         saved = False
         if not was_dirty:
             saved = bool(self._port.save(path))
-        if saved:
-            self.notify_saved(path)
+            if not saved:
+                restore = getattr(self._port, "restore_text", None)
+                if callable(restore):
+                    restore(path, current)
+                else:
+                    undo_last = getattr(self._port, "undo_last_edit", None)
+                    undone = bool(undo_last(path)) if callable(undo_last) else False
+                    if not undone:
+                        self._port.replace_range(path, start, start + len(text), current[start:end])
+                mark = getattr(self._port, "mark_clean", None)
+                if callable(mark):
+                    mark(path)
+                reason = getattr(self._port, "last_save_error", "") or "the file could not be saved"
+                return refused(_change_failed(path, reason))
+            if not getattr(self._port, "save_notifies", False):
+                self.notify_saved(path)
         return BridgeResult(True, "tab", saved=saved, inverse=BridgeEdit(start, start + len(text), current[start:end]))
 
     def _apply_on_disk(
@@ -180,7 +199,7 @@ class CodeBridge:
             os.makedirs(directory, exist_ok=True)
             dir_fd = os.open(directory, _DIR_FLAGS)
         except OSError as exc:
-            return refused(WRITE_FAILED % exc)
+            return refused(_change_failed(path, exc))
         try:
             # Everything below goes through ``dir_fd``: a directory swapped for a
             # symlink after the check above can't redirect the write.
@@ -208,7 +227,7 @@ class CodeBridge:
                 return refused(str(why))
             except OSError as exc:
                 logger.warning("code bridge could not write %s: %s", path, exc)
-                return refused(WRITE_FAILED % exc)
+                return refused(_change_failed(path, exc))
         finally:
             os.close(dir_fd)
         note_written_files((path,))
@@ -416,6 +435,8 @@ class ShellPort:
 
     def __init__(self, window: Any) -> None:
         self._window = window
+        self.last_save_error = ""
+        self.save_notifies = False
 
     def _widget(self, path: str) -> Any:
         controller = getattr(self._window, "_workspace_controller", None)
@@ -454,11 +475,80 @@ class ShellPort:
         return bool(widget is not None and widget.document().isModified())
 
     def save(self, path: str) -> bool:
+        self.last_save_error = ""
         workflow = getattr(self._window, "_save_workflow", None)
         save = getattr(workflow, "save_tab", None)
         if not callable(save):
+            self.last_save_error = "the file could not be saved"
             return False
-        return bool(save(path, show_style_warnings=False, apply_transforms=False))
+        decide = getattr(workflow, "_decide_stale_save", None)
+        if callable(decide) and decide(path, prompt=False) == "abort":
+            self.last_save_error = "the copy on disk changed"
+            return False
+        try:
+            ok = bool(save(path, show_style_warnings=False, apply_transforms=False))
+        except OSError as exc:
+            self.last_save_error = str(exc)
+            return False
+        if not ok:
+            if os.path.isfile(path) and not os.access(path, os.W_OK):
+                self.last_save_error = "the file can't be written"
+            else:
+                self.last_save_error = "the copy on disk changed"
+        return ok
+
+    def undo_last_edit(self, path: str) -> bool:
+        widget = self._widget(path)
+        document = widget.document() if widget is not None else None
+        undo = getattr(document, "undo", None)
+        if not callable(undo):
+            return False
+        undo()
+        return True
+
+    def restore_text(self, path: str, text: str) -> bool:
+        """Put ``text`` back after a refused save, with nothing to redo.
+
+        Undo the bridge's own edit when that restores ``text``, then drop only
+        the redo stack so an earlier edit can still be undone and the caret
+        stays put. Rewrite the buffer only when undo does not restore ``text``.
+        """
+        widget = self._widget(path)
+        if widget is None:
+            return False
+        document = widget.document()
+        cursor = widget.textCursor()
+        caret = int(cursor.position())
+        anchor = int(cursor.anchor())
+        vertical = _scroll_value(widget, "verticalScrollBar")
+        horizontal = _scroll_value(widget, "horizontalScrollBar")
+        undo = getattr(document, "undo", None)
+        if widget.toPlainText() != text and callable(undo):
+            undo()
+        if widget.toPlainText() == text:
+            _clear_redo(document)
+            _restore_caret(widget, anchor, caret)
+            _restore_scroll(widget, "verticalScrollBar", vertical)
+            _restore_scroll(widget, "horizontalScrollBar", horizontal)
+            return True
+        self._write_without_history(widget, text)
+        return widget.toPlainText() == text
+
+    def _write_without_history(self, widget: Any, text: str) -> None:
+        document = widget.document()
+        document.setUndoRedoEnabled(False)
+        widget.setPlainText(text)
+        document.setUndoRedoEnabled(True)
+
+    def mark_clean(self, path: str) -> None:
+        widget = self._widget(path)
+        text = str(widget.toPlainText()) if widget is not None else ""
+        if widget is not None:
+            widget.document().setModified(False)
+        manager = getattr(self._window, "_editor_manager", None)
+        tab = manager.get_tab(path) if manager is not None else None
+        if tab is not None:
+            tab.mark_saved(saved_text=text)
 
     def show(self, path: str, line: int, select: Optional[Tuple[int, int]]) -> bool:
         workflow = getattr(self._window, "_editor_tab_workflow", None)
@@ -469,15 +559,20 @@ class ShellPort:
         widget = self._widget(path)
         if widget is None:
             return False
-        if select is not None:
-            from app.qt.QtGui import QTextCursor
+        from app.qt.QtGui import QTextCursor
 
-            block = widget.document().findBlockByNumber(line - 1)
-            if block.isValid():
-                cursor = QTextCursor(widget.document())
-                cursor.setPosition(block.position() + select[0])
-                cursor.setPosition(block.position() + select[1], QTextCursor.MoveMode.KeepAnchor)
-                widget.setTextCursor(cursor)
+        block = widget.document().findBlockByNumber(max(0, line - 1))
+        if block.isValid():
+            cursor = QTextCursor(widget.document())
+            start = block.position()
+            if select is not None:
+                cursor.setPosition(start + select[0])
+                cursor.setPosition(start + select[1], QTextCursor.MoveMode.KeepAnchor)
+            else:
+                cursor.setPosition(start)
+            widget.setTextCursor(cursor)
+        widget.setFocus()
+        _scroll_into_top_third(widget)
         return True
 
 
@@ -490,12 +585,93 @@ def bridge_for(window: Any, project_root: str) -> CodeBridge:
     found = getattr(window, _ATTRIBUTE, None)
     if isinstance(found, CodeBridge) and found.project_root == project_root:
         return found
-    made = CodeBridge(project_root, ShellPort(window))
+    port = ShellPort(window)
+    made = CodeBridge(project_root, port)
     try:
         setattr(window, _ATTRIBUTE, made)
     except (AttributeError, TypeError):
-        pass
+        return made
+    port.save_notifies = True
     return made
+
+
+def _scroll_value(widget: Any, name: str) -> Optional[int]:
+    bar = getattr(widget, name, None)
+    found = bar() if callable(bar) else None
+    value = getattr(found, "value", None)
+    return int(value()) if callable(value) else None
+
+
+def _restore_scroll(widget: Any, name: str, value: Optional[int]) -> None:
+    if value is None:
+        return
+    bar = getattr(widget, name, None)
+    found = bar() if callable(bar) else None
+    setter = getattr(found, "setValue", None)
+    if callable(setter):
+        setter(value)
+
+
+def _restore_caret(widget: Any, anchor: int, caret: int) -> None:
+    from app.qt.QtGui import QTextCursor
+
+    cursor = widget.textCursor()
+    cursor.setPosition(max(0, anchor))
+    cursor.setPosition(max(0, caret), QTextCursor.MoveMode.KeepAnchor)
+    widget.setTextCursor(cursor)
+
+
+def _clear_redo(document: Any) -> None:
+    clear = getattr(document, "clearUndoRedoStacks", None)
+    if not callable(clear):
+        return
+    from app.qt.QtGui import QTextDocument
+
+    stacks = getattr(QTextDocument, "Stacks", QTextDocument)
+    clear(getattr(stacks, "RedoStack"))
+
+
+def _scroll_into_top_third(widget: Any) -> None:
+    """Move the def toward the top third, only as far as the scroll range allows.
+
+    A short file stays where it is. The document is never changed.
+    """
+    cursor_of = getattr(widget, "textCursor", None)
+    geometry = getattr(widget, "blockBoundingGeometry", None)
+    offset_of = getattr(widget, "contentOffset", None)
+    bar = getattr(widget, "verticalScrollBar", None)
+    if not callable(cursor_of) or not callable(geometry) or not callable(offset_of) or not callable(bar):
+        return
+    scroll = bar()
+    view = getattr(widget, "viewport", None)
+    if scroll is None or not callable(view):
+        return
+    block = cursor_of().block()
+    seen = block
+    for _ in range(6):
+        previous = seen.previous()
+        if not previous.isValid():
+            break
+        if previous.text().lstrip().startswith("def "):
+            block = previous
+            break
+        seen = previous
+
+    def place() -> None:
+        bar_now = bar()
+        if bar_now is None:
+            return
+        where = int(geometry(block).translated(offset_of()).top())
+        third = int(view().height()) // 3
+        delta = where - third
+        if delta == 0:
+            return
+        bar_now.setValue(min(int(bar_now.maximum()), max(0, int(bar_now.value()) + delta)))
+
+    place()
+    from app.qt.QtCore import QTimer
+
+    QTimer.singleShot(0, place)
 
 
 def _utf16(text: str, offset: int) -> int:

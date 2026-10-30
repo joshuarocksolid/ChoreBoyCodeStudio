@@ -324,8 +324,10 @@ def test_default_handler_service_commits_steps_in_one_transaction_and_writes_no_
     from types import SimpleNamespace
 
     handlers.set_service(None)
-    default = handlers.service()
-    assert isinstance(default, handlers.DefaultHandlerService)
+    default = handlers.DefaultHandlerService()
+    from app.features.form_builder.integration.handlers_code import SERVICE
+
+    assert handlers.service() is SERVICE
     log = _Log()
     surface = SimpleNamespace(session=SimpleNamespace(log=log, scope=FormScope(kind="external", ui_path="/x/a.ui")))
     done = default.make_method(surface, handlers.MethodRequest("Write code for Save clicked", ("a", "b"), method="save"))
@@ -363,6 +365,8 @@ def test_handler_service_is_found_in_handlers_code_without_editing_this_module(
         assert isinstance(handlers.service(), handlers.DefaultHandlerService)
     finally:
         handlers.set_service(None)
+        handlers._CODE = None
+        handlers._CODE_LOOKED = False
         forget_package("m6_handlers_probe")
 
 
@@ -427,7 +431,7 @@ def test_a_problem_in_code_carries_its_file_and_line_to_the_row() -> None:
     code_row = dict(rows["sale_window.py can't be read."].detail or {})
     assert code_row["fb_code_path"] == "forms/sale_window.py" and code_row["fb_code_line"] == "7"
     assert code_row["location_label"] == "sale_window.py:7"
-    plain = dict(rows["saveButton: x"].detail or {})
+    plain = dict(rows["x"].detail or {})
     assert "fb_code_path" not in plain and plain["location_label"] == "saveButton"
 
 

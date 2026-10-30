@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Callable, List, Optional, Tuple
+from typing import Any, Callable, List, Optional, Tuple
 
 from app.qt.QtCore import QEvent, QObject, Qt
 from app.qt.QtGui import QKeyEvent, QResizeEvent
@@ -191,6 +191,8 @@ class EventsBody(QWidget):
         self._caption.setVisible(bool(shown.caption))
         self._remember_focus()
         self.setUpdatesEnabled(False)
+        self._one_read = _window_read(_surface(self)) if shown.kind == "one" else None
+        self._one_read_ready = shown.kind == "one"
         try:
             while self._events.count():
                 item = self._events.takeAt(0)
@@ -214,6 +216,7 @@ class EventsBody(QWidget):
             if editing and not shown.events:
                 self._chain.append(self._when)
         finally:
+            self._one_read_ready = False
             self.setUpdatesEnabled(True)
         self._place_focus()
 
@@ -308,6 +311,8 @@ class EventsBody(QWidget):
 
     def _key(self, row: "_Row", event: QKeyEvent) -> bool:
         key = enum_value(event.key())
+        if getattr(row, "_by_name", False):
+            return self._by_name_key(row, event)
         mods = enum_value(event.modifiers())
         alt = bool(mods & enum_value(Qt.KeyboardModifier.AltModifier))
         ctrl = bool(mods & enum_value(Qt.KeyboardModifier.ControlModifier))
@@ -414,13 +419,40 @@ class EventsBody(QWidget):
             return
         if row.unreadable or (event is not None and event.banner):
             open_property_as_text(self, row.property_name, self._sender)
+            return
+        _apply_listed_fix(self, row)
+
+    def _by_name_key(self, row: "_Row", event: QKeyEvent) -> bool:
+        key = enum_value(event.key())
+        mods = enum_value(event.modifiers())
+        shift = bool(mods & enum_value(Qt.KeyboardModifier.ShiftModifier))
+        if key == _UP:
+            self._move(-1)
+            return True
+        if key == _DOWN:
+            self._move(1)
+            return True
+        if key in _ENTER or key == _F12:
+            self._go_code(row.method_name)
+            return True
+        if key == _MENU or (key == _F10 and shift):
+            row.open_menu()
+            return True
+        if key == _ESC:
+            self._to_canvas()
+            return True
+        return True
 
     def _go_code(self, method: str) -> None:
         service = method_actions()
         go = getattr(service, "go_to", None)
         surface = _surface(self)
-        if callable(go) and surface is not None:
-            go(surface, method)
+        if not callable(go) or surface is None or not method:
+            return
+        if go(surface, method):
+            return
+        file_name = _window_file(self) or "the window file"
+        _narrate(self, "%s() isn't in %s yet. Press Ctrl+. to create it." % (method, file_name))
 
     def _to_canvas(self) -> None:
         window = self.window()
@@ -505,6 +537,13 @@ class _Group(QWidget):
                 row.set_error()
             column.addWidget(row)
             self._steps.append(row)
+        for name in _by_name(body, event.signal):
+            words = "%s() runs by its name" % name
+            view = StepView(-2, words, words, False, False, False, True, "", name)
+            row = _Row(body, event.signal, -2, words, words, True, False, False, "", view)
+            row._by_name = True
+            column.addWidget(row)
+            self._steps.append(row)
         self.then = _ThenButton(body, event.signal, self)
         self.then.setVisible(False)
         self.then.setEnabled(self._editable)
@@ -535,6 +574,26 @@ class _Group(QWidget):
     def leaveEvent(self, event: QEvent) -> None:  # noqa: N802
         super().leaveEvent(event)
         self.sync_then()
+
+
+_STEP_MENU_RESERVE = 0
+
+
+def _step_menu_reserve(parent: QWidget) -> int:
+    """Width of the "…" button, measured once.
+
+    Step rows reserve this width with a spacer. The button itself is built on
+    the first hover or focus, so painting a long behavior list does not
+    construct one tool button per step.
+    """
+    global _STEP_MENU_RESERVE
+    if _STEP_MENU_RESERVE:
+        return _STEP_MENU_RESERVE
+    probe = QToolButton(parent)
+    probe.setText("\u22ef")
+    _STEP_MENU_RESERVE = max(probe.sizeHint().width(), 16)
+    probe.setParent(None)
+    return _STEP_MENU_RESERVE
 
 
 class _Row(QWidget):
@@ -572,23 +631,32 @@ class _Row(QWidget):
         line.setContentsMargins(2, 0, 2, 0)
         self._label = QLabel(text, self)
         self._label.setMinimumWidth(0)
-        self._label.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+        self._label.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred)
+        self._label.setToolTip(text)
+        self._label.setAccessibleName(accessible)
         line.addWidget(self._label, 1)
-        # Step rows build the menu button on hover or focus. Header rows show it immediately.
+        # Step rows build the menu button on hover or focus. Header rows show it
+        # immediately. A by-name row puts it last, after the place link.
         self._menu: Optional[QToolButton] = None
-        if index < 0:
+        if index == -1:
             line.addWidget(self._make_menu())
         if step is not None and step.problem:
             badge = QLabel("!", self)
+            badge.setObjectName("formBuilder.events.badge")
             badge.setFixedWidth(12)
             badge.setToolTip(step.problem)
             badge.setStyleSheet("color: %s; background: transparent;" % body._chrome.error)
             line.addWidget(badge)
         if step is not None and step.method:
-            place = QLabel("not checked", self)
-            place.setStyleSheet("color: %s; background: transparent;" % body._chrome.faint)
-            place.setToolTip(step.method)
-            line.addWidget(place)
+            line.addWidget(_place_link(self, body, step.method))
+        if index < -1:
+            line.addWidget(self._make_menu())
+        elif index >= 0:
+            # The "…" appears on hover or focus. Its width stays reserved, so the
+            # place link does not grow into that slot and then draw under the button.
+            self._menu_reserve = _step_menu_reserve(self)
+            self._pointer = False
+            line.addSpacing(self._menu_reserve)
         if problem:
             self._label.setStyleSheet("color: %s;" % body._chrome.error)
         self.installEventFilter(body)
@@ -598,12 +666,69 @@ class _Row(QWidget):
 
     def resizeEvent(self, event: QResizeEvent) -> None:  # noqa: N802
         super().resizeEvent(event)
-        width = self._label.width()
-        if width <= 0:
+        self._fit_texts()
+
+    def showEvent(self, event: QEvent) -> None:  # noqa: N802
+        super().showEvent(event)
+        self._fit_texts()
+
+    def _fit_texts(self) -> None:
+        """Elide the call first, down to about eight characters, then the place.
+
+        The place keeps a trailing ``:NN``. Neither widget is given a maximum
+        width smaller than the text it shows, so glyphs are never clipped.
+        """
+        if self.width() <= 0:
             return
-        shown = _elide_row(self._full, self.fontMetrics(), width)
-        if shown != self._label.text():
-            self._label.setText(shown)
+        call_metrics = self._label.fontMetrics()
+        place = self.findChild(QPushButton, "formBuilder.events.place")
+        place_metrics = place.fontMetrics() if place is not None else call_metrics
+        if self.step_index >= 0:
+            menu_w = int(getattr(self, "_menu_reserve", 0) or 0) + 4
+        elif self._menu is not None and not self._menu.isHidden():
+            menu_w = self._menu.sizeHint().width() + 4
+        else:
+            menu_w = 0
+        badge = 16 if self.findChild(QLabel, "formBuilder.events.badge") is not None else 0
+        available = max(0, self.width() - menu_w - badge - 8)
+        place_full = str(place.property("cbcsFull") or "") if place is not None else ""
+        pad = 8
+        place_natural = _text_width(place_metrics, place_full) + pad if place_full else 0
+        call_full = self._full
+        call_natural = _text_width(call_metrics, call_full) + 4
+        floor_sample = (call_full[:8] + "\u2026") if len(call_full) > 8 else call_full
+        call_floor = _text_width(call_metrics, floor_sample) + 4
+        if call_natural + place_natural <= available:
+            call_shown = call_full
+            place_shown = place_full
+            place_budget = place_natural
+        elif call_floor + place_natural <= available:
+            call_shown = _elide_call(call_full, call_metrics, max(8, available - place_natural))
+            place_shown = place_full
+            place_budget = place_natural
+        else:
+            call_room = min(call_floor, max(8, available))
+            call_shown = _elide_call(call_full, call_metrics, call_room)
+            used = _text_width(call_metrics, call_shown) + 4
+            place_budget = max(8, available - used)
+            place_shown = _elide_place(place_full, place_metrics, max(8, place_budget - pad)) if place_full else ""
+        if self._label.text() != call_shown:
+            self._label.setText(call_shown)
+        if place is None:
+            return
+        # The button centers its text, so the width must cover every glyph.
+        # A shortfall clips the middle. Elide again until the ink fits.
+        place_shown = _fit_place(place_full, place_shown, place_metrics, place_budget, pad)
+        if place.text() != place_shown:
+            place.setText(place_shown)
+        ink = _text_width(place_metrics, place_shown) + pad
+        place.setMaximumWidth(16777215)
+        place.setFixedWidth(max(8, min(place_budget, ink)))
+        reason = str(place.property("cbcsReason") or "")
+        if reason:
+            tip = (place_full + "\n" + reason) if place_shown != place_full and place_full else reason
+            if place.toolTip() != tip:
+                place.setToolTip(tip)
 
     def _make_menu(self) -> QToolButton:
         button = QToolButton(self)
@@ -637,14 +762,23 @@ class _Row(QWidget):
         button.setMenu(menu)
         button.showMenu()
 
-    def _step_menu(self) -> QToolButton:
-        if self._menu is not None:
-            return self._menu
-        button = self._make_menu()
-        layout = self.layout()
-        if layout is not None:
-            layout.addWidget(button)
-        return button
+    def _show_step_menu(self, shown: bool) -> None:
+        if self.step_index < 0:
+            return
+        button = self._menu
+        if shown and button is None:
+            button = self._make_menu()
+            button.setFixedWidth(int(self._menu_reserve))
+            layout = self.layout()
+            if layout is not None and layout.count():
+                # The last item is the reserved spacer. The button takes its place.
+                layout.takeAt(layout.count() - 1)
+            if layout is not None:
+                layout.addWidget(button)
+        if button is None:
+            return
+        button.setText("\u22ef" if shown else "")
+        self._fit_texts()
 
     def set_faint(self, text: str) -> None:
         extra = QLabel(text, self)
@@ -658,7 +792,7 @@ class _Row(QWidget):
         self._label.setStyleSheet("color: %s;" % self._body._chrome.error)
 
     def open_menu(self) -> None:
-        if self.step_index < 0:
+        if self.step_index < 0 and not getattr(self, "_by_name", False):
             self._ensure_header_menu()
             return
         menu = QMenu(self)
@@ -672,31 +806,156 @@ class _Row(QWidget):
             menu.addAction("Change\u2026", lambda: self._body._activate(self))
         if self.method_name:
             menu.addAction("Go to code", lambda: self._body._go_code(self.method_name))
+        if "runs by its name" in self._full:
+            menu.addAction("Why does it run?", lambda: _narrate(self, _by_name_why()))
         menu.popup(self.mapToGlobal(self.rect().bottomLeft()))
 
     def enterEvent(self, event: QEvent) -> None:  # noqa: N802
         super().enterEvent(event)
-        if self.step_index >= 0:
-            self._step_menu().show()
+        self._pointer = True
+        self._show_step_menu(True)
 
     def leaveEvent(self, event: QEvent) -> None:  # noqa: N802
         super().leaveEvent(event)
-        if self.step_index >= 0 and self._menu is not None and not self.hasFocus():
-            self._menu.hide()
+        self._pointer = False
+        self._show_step_menu(self.hasFocus())
 
     def focusInEvent(self, event: QEvent) -> None:  # noqa: N802
         super().focusInEvent(event)
-        if self.step_index >= 0:
-            self._step_menu().show()
+        self._show_step_menu(True)
 
     def focusOutEvent(self, event: QEvent) -> None:  # noqa: N802
         super().focusOutEvent(event)
-        if self.step_index >= 0 and self._menu is not None:
-            self._menu.hide()
+        self._show_step_menu(bool(getattr(self, "_pointer", False)))
 
     def contextMenuEvent(self, event: QEvent) -> None:  # noqa: N802
         self.open_menu()
         event.accept()  # type: ignore[attr-defined]
+
+
+def _place_link(row: QWidget, body: "EventsBody", method: str) -> QPushButton:
+    text, tone, reason = _place_state(body, method)
+    button = QPushButton(text, row)
+    button.setFlat(True)
+    button.setObjectName("formBuilder.events.place")
+    button.setProperty("cbcsFull", text)
+    checked = text == "not checked"
+    button.setProperty("cbcsReason", reason if checked else "")
+    button.setToolTip(reason if checked else text)
+    button.setAccessibleName(text)
+    button.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+    if tone == "warn":
+        color = warning_color(body._chrome)
+    elif tone == "ok":
+        color = body._chrome.muted
+    else:
+        color = body._chrome.faint
+    button.setStyleSheet(
+        "QPushButton { color: %s; background: transparent; border: none; padding: 0px; margin: 0px; }"
+        "QPushButton:focus { border: %dpx solid %s; }"
+        % (color, body._chrome.focus_width, body._chrome.accent)
+    )
+    button.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+    button.clicked.connect(lambda: body._go_code(method))
+    return button
+
+
+def _place_state(body: "EventsBody", method: str) -> Tuple[str, str, str]:
+    file_name = _window_file(body) or "the window file"
+    surface = _surface(body)
+    read = _window_read(surface, body)
+    if surface is None or read is None:
+        return "not checked", "faint", "The window file could not be read."
+    if read.status != "ok":
+        return "not checked", "faint", read.reason or "The window file could not be read."
+    found = read.facts.method(method)
+    if found is None:
+        return "not in %s" % file_name, "warn", method
+    return "%s:%d" % (file_name, found.line), "ok", method
+
+
+def _window_read(surface: object, body: Optional["EventsBody"] = None) -> Any:
+    """The handler service's window read, without qtside importing integration.
+
+    One render reads the window file once and hands that result to every section.
+    """
+    if body is not None and getattr(body, "_one_read_ready", False):
+        return getattr(body, "_one_read", None)
+    from app.features.form_builder.qtside.pickers import method_actions
+
+    if surface is None:
+        return None
+    read = getattr(method_actions(), "reading", None)
+    if not callable(read):
+        return None
+    return read(surface)
+
+
+def _apply_listed_fix(body: "EventsBody", row: "_Row") -> bool:
+    """Ctrl+. on a call step runs that step's Use fix (FB201)."""
+    surface = _surface(body)
+    run = getattr(surface, "run_problem_fix", None)
+    if surface is None or not callable(run) or not row.method_name:
+        return False
+    for item in surface.session.diagnostics.all():
+        if item.code != "FB201":
+            continue
+        missing = ""
+        offered = False
+        for fix in item.fixes:
+            if fix.fix_id == "use-method":
+                offered = True
+            elif fix.fix_id == "create-method":
+                for name, value in fix.args:
+                    if name == "method":
+                        missing = value
+        if offered and missing == row.method_name:
+            return bool(run("use-method", {"fb_key": item.key}))
+    return False
+
+
+def _by_name(body: "EventsBody", signal: str) -> Tuple[str, ...]:
+    surface = _surface(body)
+    if surface is None:
+        return ()
+    document = body._services.session.document
+    if str(document.ui.field("connectslotsbyname") or "") == "false":
+        return ()
+    read = _window_read(surface, body)
+    if read is None or read.status != "ok":
+        return ()
+    wanted = "on_%s_%s" % (body._sender, signal)
+    signatures = _sender_signatures(body)
+    return tuple(
+        item.name
+        for item in read.facts.methods
+        if item.name == wanted and slot_types_match(item.slot_types, signal, signatures)
+    )
+
+
+def _sender_signatures(body: "EventsBody") -> Tuple[str, ...]:
+    from app.features.form_builder.engine.logic.compat import node_class
+    from app.features.form_builder.engine.logic.events import sender_node
+
+    doc = body._services.session.document
+    node = sender_node(doc, body._sender)
+    if node is None:
+        return ()
+    class_name, _slots = node_class(doc, QtClassTable.shared(), node)
+    return tuple(QtClassTable.shared().signals(class_name))
+
+
+def slot_types_match(types: Optional[Tuple[str, ...]], signal: str, signatures: Tuple[str, ...]) -> bool:
+    from app.features.form_builder.engine.project.handler_checks import slot_types_match as match
+
+    return match(types, signal, signatures)
+
+
+def _by_name_why() -> str:
+    return (
+        "Qt runs methods named on_{object}_{event} by themselves, "
+        "because Connect methods by name is on."
+    )
 
 
 def _window_file(widget: QWidget) -> str:
@@ -706,6 +965,66 @@ def _window_file(widget: QWidget) -> str:
     scope = getattr(getattr(services, "session", None), "scope", None)
     path = getattr(scope, "window_path", None) or ""
     return os.path.basename(path) if path else ""
+
+
+def _text_width(metrics: object, text: str) -> int:
+    if not text:
+        return 0
+    advance = int(metrics.horizontalAdvance(text))  # type: ignore[attr-defined]
+    bounds = int(metrics.boundingRect(text).width())  # type: ignore[attr-defined]
+    return max(advance, bounds)
+
+
+def _fit_place(full: str, shown: str, metrics: object, budget: int, pad: int) -> str:
+    """Elide until the place ink, plus padding, fits the button.
+
+    A centered button clips both sides when the text is wider than the button.
+    ``elidedText`` can still be a pixel over, so characters come off until it fits.
+    """
+    if not full:
+        return ""
+    room = max(8, budget - pad)
+    fitted = shown or full
+    if _text_width(metrics, fitted) <= room:
+        return fitted
+    fitted = _elide_place(full, metrics, room)
+    if fitted and _text_width(metrics, fitted) <= room:
+        return fitted
+    suffix = ""
+    body = full
+    if ":" in full:
+        head, tail = full.rsplit(":", 1)
+        if tail.isdigit():
+            suffix = ":" + tail
+            body = head
+    mark = "\u2026"
+    while body and _text_width(metrics, body + mark + suffix) > room:
+        body = body[:-1]
+    return body + mark + suffix if body else mark + suffix
+
+
+def _elide_call(text: str, metrics: object, width: int) -> str:
+    if "A step Code Studio can't edit (" in text:
+        return _elide_row(text, metrics, width)
+    return metrics.elidedText(text, Qt.TextElideMode.ElideRight, max(1, width))  # type: ignore[attr-defined]
+
+
+def _elide_place(text: str, metrics: object, width: int) -> str:
+    """Right-elide a place, keeping a trailing ``:NN`` line suffix."""
+    suffix = ""
+    body = text
+    if ":" in text:
+        head, tail = text.rsplit(":", 1)
+        if tail.isdigit():
+            suffix = ":" + tail
+            body = head
+    elide = metrics.elidedText  # type: ignore[attr-defined]
+    if not suffix:
+        return elide(text, Qt.TextElideMode.ElideRight, max(1, width))
+    room = width - metrics.horizontalAdvance(suffix)  # type: ignore[attr-defined]
+    if room < 8:
+        room = 8
+    return elide(body, Qt.TextElideMode.ElideRight, room) + suffix
 
 
 def _elide_row(text: str, metrics: object, width: int) -> str:
@@ -721,7 +1040,7 @@ def _elide_row(text: str, metrics: object, width: int) -> str:
         if room < 8:
             room = 8
         return head + elide(verb, Qt.TextElideMode.ElideMiddle, room) + tail
-    return elide(text, Qt.TextElideMode.ElideMiddle, width)
+    return elide(text, Qt.TextElideMode.ElideRight, width)
 
 
 def open_property_as_text(widget: QWidget, prop: str, sender: str = "") -> None:

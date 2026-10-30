@@ -176,7 +176,7 @@ def _live_row(tree: QTreeWidget, text: str) -> QTreeWidgetItem | None:
             continue
         for child_index in range(group.childCount()):
             child = group.child(child_index)
-            if child is not None and text in child.text(1):
+            if child is not None and (text in child.text(1) or text in child.text(2)):
                 return child
     return None
 

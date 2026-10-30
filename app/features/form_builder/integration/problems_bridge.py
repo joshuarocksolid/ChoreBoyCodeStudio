@@ -85,8 +85,6 @@ def code_diagnostics_for_form(
         if fixes:
             detail["fixes"] = json.dumps([list(pair) for pair in fixes], ensure_ascii=True)
         message = item.message
-        if obj and not message.startswith("%s:" % obj):
-            message = "%s: %s" % (obj, message)
         rows.append(
             CodeDiagnostic(
                 code=item.code,

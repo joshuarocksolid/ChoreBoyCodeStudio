@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 from typing import Any, Dict, List, Optional
 
-from app.qt.QtCore import QAbstractListModel, QModelIndex, QRect, QSize, Qt, QTimer, Signal
+from app.qt.QtCore import QAbstractListModel, QEvent, QModelIndex, QObject, QRect, QSize, Qt, QTimer, Signal
 from app.qt.QtGui import (
     QColor,
     QFont,
@@ -37,6 +37,21 @@ from app.editors.quick_open import (
 )
 from app.shell.icon_provider import file_icon, search_icon
 from app.shell.theme_tokens import ShellThemeTokens
+
+_PENDING_FOCUS_RESTORE = False
+
+
+def note_focus_restore() -> None:
+    """The next opened tab should take the keyboard back from this dialog."""
+    global _PENDING_FOCUS_RESTORE
+    _PENDING_FOCUS_RESTORE = True
+
+
+def take_focus_restore() -> bool:
+    global _PENDING_FOCUS_RESTORE
+    pending = _PENDING_FOCUS_RESTORE
+    _PENDING_FOCUS_RESTORE = False
+    return pending
 
 
 _ROW_HEIGHT = 32
@@ -295,6 +310,7 @@ class QuickOpenDialog(QDialog):
         s_icon = search_icon(self._tokens.text_muted)
         self._search_input.addAction(s_icon, QLineEdit.LeadingPosition)
         self._search_input.textChanged.connect(self._on_text_changed)
+        self._search_input.installEventFilter(self)
         layout.addWidget(self._search_input)
 
         self._results_stack = QWidget(self)
@@ -359,6 +375,14 @@ class QuickOpenDialog(QDialog):
             global_pos = parent_widget.mapToGlobal(parent_rect.topLeft())
             self.move(global_pos.x() + x, global_pos.y() + y)
         self.show()
+
+    def eventFilter(self, watched: QObject, event: QEvent) -> bool:  # noqa: N802
+        if watched is self._search_input and event.type() == QEvent.Type.KeyPress:
+            if event.key() in (Qt.Key_Return, Qt.Key_Enter):  # type: ignore[attr-defined]
+                self._flush_pending_refresh()
+                self._accept_current()
+                return True
+        return super().eventFilter(watched, event)
 
     def keyPressEvent(self, arg__1: QKeyEvent) -> None:  # noqa: N802
         event = arg__1
@@ -452,11 +476,13 @@ class QuickOpenDialog(QDialog):
             if ranked is not None:
                 path = ranked.candidate.absolute_path
                 _, line = self._parse_query_and_line()
+                # Hide before the signal so Qt's focus restore cannot steal the tab we open.
+                self.hide()
+                note_focus_restore()
                 if line is not None:
                     self.file_selected_at_line.emit(path, line)
                 else:
                     self.file_selected.emit(path)
-                self.hide()
 
     def _on_item_preview(self, index: QModelIndex) -> None:
         self._flush_pending_refresh()

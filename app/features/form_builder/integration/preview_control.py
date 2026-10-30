@@ -27,6 +27,7 @@ from app.features.form_builder.engine.ipc.protocol import (
     Appearance,
     ChildMessage,
     Grab,
+    Log,
     Response,
     SetAppearance,
     ViewClosed,
@@ -48,6 +49,79 @@ from app.qt.QtWidgets import QStyleFactory
 logger = logging.getLogger(__name__)
 
 
+def _connection_nodes(document: object) -> tuple:
+    getter = getattr(document, "connections", None)
+    if not callable(getter):
+        return ()
+    found = getter()
+    if isinstance(found, tuple):
+        return found
+    return ()
+
+
+def methods_for(document: object) -> Tuple[Tuple[str, int], ...]:
+    """Method names the preview child should stand in for. The window file is not read."""
+    from app.features.form_builder.engine.logic.events import declared_methods, read_events
+
+    from app.features.form_builder.engine.logic.compat import split_signature
+    from app.features.form_builder.engine.project.handler_names import signature_arg_count
+
+    found = {}
+    for name, types in declared_methods(document).items():  # type: ignore[arg-type]
+        found[str(name)] = len(types)
+    root = getattr(document, "root", None)
+    form_names = {
+        str(getattr(root, "object_name", "") or ""),
+        str(document.form_class_name()) if hasattr(document, "form_class_name") else "",
+    }
+    for node in _connection_nodes(document):
+        receiver = node.field("receiver")
+        slot = node.field("slot")
+        if isinstance(receiver, str) and receiver in form_names and isinstance(slot, str):
+            found.setdefault(split_signature(slot)[0], signature_arg_count(slot))
+    for state in read_events(document):  # type: ignore[arg-type]
+        for step in state.steps:
+            if step.verb == "call" and step.method:
+                found.setdefault(step.method, int(step.args or 0))
+    return tuple(sorted(found.items()))
+
+
+def would_call_sentence(document: object, method: str, file_name: str = "") -> str:
+    """UX-CODE-016. The event is named only when exactly one event calls the method."""
+    from app.features.form_builder.engine.logic.events import read_events, sender_node
+    from app.features.form_builder.engine.logic.events_catalog import class_chain, event_words
+    from app.features.form_builder.engine.query.tab_stops import display_name
+    from app.features.form_builder.engine.ui4.defaults import QtClassTable
+
+    hits = []
+    for state in read_events(document):  # type: ignore[arg-type]
+        for step in state.steps:
+            if step.verb == "call" and step.method == method:
+                hits.append(state)
+                break
+    if not file_name:
+        file_name = _window_file(document)
+    if len(hits) == 1:
+        state = hits[0]
+        node = sender_node(document, state.sender)  # type: ignore[arg-type]
+        chain = class_chain(QtClassTable.shared(), getattr(node, "class_name", "") or "")
+        words = event_words(state.signal_name, chain).header
+        display = display_name(document, state.sender)  # type: ignore[arg-type]
+        return "Preview: %s %s would call %s() in %s." % (display, words, method, file_name)
+    return "Preview: %s() in %s would run." % (method, file_name)
+
+
+def _window_file(document: object) -> str:
+    scope = getattr(getattr(document, "session", None), "scope", None)
+    path = str(getattr(scope, "window_path", "") or "")
+    if not path:
+        path = str(getattr(document, "path", "") or "")
+    name = path.rsplit("/", 1)[-1]
+    if name.endswith(".ui"):
+        return name[:-3] + "_window.py"
+    return name or "the window file"
+
+
 class PreviewControl:
     def __init__(self, surface: Any, notices: Any, store: Optional[PreviewOptionsStore] = None) -> None:
         self._surface = surface
@@ -59,6 +133,7 @@ class PreviewControl:
         self._unsubscribe: Optional[Callable[[], None]] = None
         self._child_styles: Tuple[str, ...] = ()
         self.last_look: dict = {}
+        self.would_call = ""
         notices.appearance_provider = self.appearance
         self._listeners: List[Callable[[], None]] = []
 
@@ -184,6 +259,16 @@ class PreviewControl:
     def _on_child(self, message: ChildMessage) -> None:
         if isinstance(message, ViewClosed):
             self._open = False
+            return
+        if isinstance(message, Log) and message.kind == "would_call" and message.method:
+            scope = self._surface.session.scope
+            path = str(getattr(scope, "window_path", "") or "")
+            file_name = path.rsplit("/", 1)[-1] if path else ""
+            sentence = would_call_sentence(self._surface.session.document, message.method, file_name)
+            self.would_call = sentence
+            narrate = getattr(self._surface, "narrate", None)
+            if callable(narrate):
+                narrate(sentence)
 
     def _push(self) -> None:
         """A style or screen change reaches an open window with ``set_appearance``."""

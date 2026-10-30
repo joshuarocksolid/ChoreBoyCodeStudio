@@ -255,6 +255,20 @@ class ChildSession:
                 extends[promoted.class_name] = promoted.extends
                 if error is not None:
                     import_failures.append((promoted, error))
+            def announce(name: str, view_id: str = message.view_id) -> None:
+                self._writer.send(
+                    Log(
+                        view_id=view_id,
+                        stream="try",
+                        level="info",
+                        text="",
+                        ts_ms=int(time.time() * 1000),
+                        kind="would_call",
+                        method=name,
+                    )
+                )
+
+            self._materializer.on_would_call = announce
             built = self._materializer.build(message, classes, extends)
             if message.keep_values and saved:
                 restore_texts(built.widget, saved)

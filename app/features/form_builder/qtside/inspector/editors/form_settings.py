@@ -737,9 +737,46 @@ class _Body:
         return None
 
 
+class _ConnectByNameRow(SettingRow):
+    """On unless the form stores ``connectslotsbyname`` as ``false`` (Designer writes it only then)."""
+
+    def __init__(self, body: "_Body") -> None:
+        super().__init__(
+            body,
+            "connectslotsbyname",
+            "Connect methods by name",
+            "Methods named on_{widget}_{event} with @Slot run without a step. "
+            "Qt Designer calls this Connect slots by name.",
+        )
+        self.box = self.guard(QCheckBox(self))  # type: ignore[assignment]
+        self.box.setObjectName("formBuilder.formSetting.connectslotsbyname.check")
+        self.box.setAccessibleName("Form setting: Connect methods by name")
+        self.box.toggled.connect(self._toggled)
+        self.add(self.box)
+
+    def load(self, doc: UiDocument) -> None:
+        value = doc.ui.field("connectslotsbyname")
+        self.set_changed(value == "false")
+        self.box.blockSignals(True)
+        self.box.setChecked(value != "false")
+        self.box.blockSignals(False)
+
+    def first_focus(self) -> Optional[QWidget]:
+        return self.box
+
+    def reset_commands(self) -> list:
+        return [SetFormField("connectslotsbyname", None, "Change form setting: connect methods by name")]
+
+    def _toggled(self, on: bool) -> None:
+        value = None if on else "false"
+        if not self.write(SetFormField("connectslotsbyname", value, "Change form setting: connect methods by name")):
+            self.load(self.body.host.document)
+
+
 class CodeBody(_Body):
     def __init__(self, host: GroupHost, parent: QWidget) -> None:
         super().__init__(host, parent, CODE, "Code")
+        self.add(_ConnectByNameRow(self))
         self.add(_TextRow(self, "author", "Author"))
         self.add(_GapsRow(self))
         self.add(_FunctionsRow(self))

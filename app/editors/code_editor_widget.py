@@ -398,9 +398,12 @@ class CodeEditorWidget(
 
     def go_to_line(self, line_number: int) -> None:
         safe_line = max(1, line_number)
+        block = self.document().findBlockByNumber(safe_line - 1)
         cursor = self.textCursor()
-        cursor.movePosition(QTextCursor.Start)
-        cursor.movePosition(QTextCursor.Down, QTextCursor.MoveAnchor, safe_line - 1)
+        if block.isValid():
+            cursor.setPosition(block.position())
+        else:
+            cursor.movePosition(QTextCursor.End)
         self.setTextCursor(cursor)
         self.setFocus()
 

@@ -30,7 +30,15 @@ from app.features.form_builder.engine.ui4.schema import LayoutDefault, LayoutFun
 from app.features.form_builder.engine.ui4.spec import NodeSpec
 
 #: Fields ``SetFormField`` writes. Anything else is refused.
-TEXT_FIELDS = ("author", "comment", "exportmacro", "pixmapfunction", "language", "displayname")
+TEXT_FIELDS = (
+    "author",
+    "comment",
+    "exportmacro",
+    "pixmapfunction",
+    "language",
+    "displayname",
+    "connectslotsbyname",
+)
 FLAG_FIELDS = ("idbasedtr",)
 LEGACY_FIELDS = ("stdsetdef", "stdSetDef")
 FORM_FIELDS = TEXT_FIELDS + FLAG_FIELDS + LEGACY_FIELDS + ("layoutdefault", "layoutfunction", "includes")

@@ -58,8 +58,8 @@ def open_for_link(surface: QWidget, source_id: object, target_id: object = None,
     services = _services(surface)
     chrome = services.chrome if services is not None else default_chrome()
     picker = EventPicker(surface, chrome, lambda gesture: _commit(surface, parsed, gesture, caption))
-    methods, window_file, window_class = _window(surface)
-    ctx = build_context(doc, parsed, receiver, methods, window_file, window_class)
+    methods, window_file, window_class, infos, read_line = _window(surface)
+    ctx = build_context(doc, parsed, receiver, methods, window_file, window_class, infos, read_line)
     point = at if isinstance(at, QPoint) else None
     picker.open_at(surface, ctx, point)
     return picker
@@ -92,12 +92,35 @@ def open_for_step(
     services = _services(surface)
     chrome = services.chrome if services is not None else default_chrome()
     picker = EventPicker(surface, chrome, lambda gesture: _commit(surface, parsed, gesture))
-    methods, window_file, window_class = _window(surface)
-    ctx = build_context(doc, parsed, "", methods, window_file, window_class)
+    methods, window_file, window_class, infos, read_line = _window(surface)
+    ctx = build_context(doc, parsed, "", methods, window_file, window_class, infos, read_line)
     point = at if isinstance(at, QPoint) else None
     picker.open_at(surface, ctx, point)
     if caption and picker._page is not None:
         picker._apply(replace(picker._page, title=caption))
+    return picker
+
+
+def open_method_page(host: QWidget, sender: str, signal: str) -> EventPicker:
+    """Write code for an event: the method page, with the suggested name selected."""
+    from app.features.form_builder.qtside.pickers.flow import Page
+    from app.features.form_builder.qtside.pickers.method_page import method_page
+
+    parsed = PickerSource(sender, signal)
+    services = _services(host)
+    chrome = services.chrome if services is not None else default_chrome()
+    picker = EventPicker(host, chrome, lambda gesture: _commit(host, parsed, gesture))
+    doc = services.session.document if services is not None else None
+    if doc is None:
+        picker.hide()
+        return picker
+    methods, window_file, window_class, infos, read_line = _window(host)
+    ctx = build_context(doc, parsed, "", methods, window_file, window_class, infos, read_line)
+    picker.open_at(host, ctx)
+    stub = Page("step", "", "", 0, (), "", False, "", "", signal, "", "", False, -1, "")
+    picker._apply(method_page(ctx, stub))
+    picker.field.setFocus()
+    picker.field.selectAll()
     return picker
 
 
@@ -116,8 +139,8 @@ def open_event_picker(host: QWidget, source: object, target: object = "") -> Eve
     if doc is None:
         picker.hide()
         return picker
-    methods, window_file, window_class = _window(host)
-    ctx = build_context(doc, parsed, receiver, methods, window_file, window_class)
+    methods, window_file, window_class, infos, read_line = _window(host)
+    ctx = build_context(doc, parsed, receiver, methods, window_file, window_class, infos, read_line)
     picker.open_at(host, ctx)
     return picker
 
@@ -182,7 +205,7 @@ def _note(host: QWidget, outcome: Outcome) -> None:
 def _status_sentence(host: QWidget, status: str, method: str = "") -> str:
     if status != "METHOD_UNUSED":
         return status
-    _methods, file_name, _klass = _window(host)
+    _methods, file_name, _klass, _infos, _line = _window(host)
     return unused_method_sentence(method, file_name)
 
 
@@ -219,22 +242,44 @@ def _surface(widget: QWidget) -> object:
     return None
 
 
+def _unlistable(scope: object, file_name: str) -> str:
+    if scope is None or not getattr(scope, "project_root", None):
+        return "This form isn't in a project, so it has no window file."
+    if not getattr(scope, "generates", False):
+        return "This form isn't in forms/, so Code Studio doesn't write Python for it."
+    if not file_name:
+        return "This form isn't in a project, so it has no window file."
+    return ""
+
+
 def _window(host: QWidget) -> tuple:
     surface = _surface(host)
     services = _services(host)
     if services is None:
-        return (), "", ""
+        return (), "", "", (), "This form isn't in a project, so it has no window file."
     path = ""
     scope = getattr(services.session, "scope", None)
     if scope is not None:
         path = getattr(scope, "window_path", None) or ""
     file_name = os.path.basename(path) if path else ""
     klass = services.session.document.form_class_name()
+    read_line = _unlistable(scope, file_name)
     methods: tuple = ()
+    infos: tuple = ()
     service = method_actions()
+    reading = getattr(service, "reading", None)
+    if read_line == "" and callable(reading) and surface is not None:
+        read = reading(surface)
+        status = getattr(read, "status", "ok")
+        facts = getattr(read, "facts", None)
+        if status == "syntax_error" or status == "refused":
+            read_line = "%s can't be read: %s" % (file_name or "The window file", getattr(read, "reason", "") or "it could not be read")
+        elif status == "ok" and facts is not None and not getattr(facts, "class_name", ""):
+            read_line = "%s has no class that calls self.ui.setupUi(self)." % (file_name or "The window file")
     listed = getattr(service, "methods", None)
-    if callable(listed) and surface is not None:
+    if read_line == "" and callable(listed) and surface is not None:
         found = listed(surface)
         if isinstance(found, tuple):
+            infos = found
             methods = tuple(str(getattr(item, "name", "")) for item in found)
-    return methods, file_name, klass
+    return methods, file_name, klass, infos, read_line

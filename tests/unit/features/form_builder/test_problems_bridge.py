@@ -33,7 +33,7 @@ def test_a_form_diagnostic_keeps_its_code_and_names_the_widget() -> None:
     assert row.code == "FB003"
     assert row.file_path == "/tmp/invoice.ui"
     assert row.line_number == 12
-    assert row.message == "email: This name is already used."
+    assert row.message == "This name is already used."
     assert row.detail is not None
     assert row.detail["location_label"] == "email"
     assert row.detail["source_label"] == "Form"

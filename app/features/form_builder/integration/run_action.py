@@ -14,8 +14,29 @@ from app.features.form_builder.engine.project.save import write_generated
 from app.features.form_builder.engine.ui4.reader import UiReadError, read_ui
 
 
+def ask_dirty_window(parent: Any, file_name: str) -> str:
+    """``save``, ``run`` or ``cancel``. The sentence is UX-CODE-015."""
+    from app.qt.QtWidgets import QMessageBox
+    from app.qt.qt_compat import exec_qt
+
+    box = QMessageBox(parent)
+    box.setText("Save %s before running? It has code this form calls." % file_name)
+    save = box.addButton("Save and run", _button_role("AcceptRole"))
+    skip = box.addButton("Run without saving", _button_role("DestructiveRole"))
+    box.addButton("Cancel", _button_role("RejectRole"))
+    exec_qt(box)
+    clicked = box.clickedButton()
+    if clicked is save:
+        return "save"
+    if clicked is skip:
+        return "run"
+    return "cancel"
+
+
 def run_open_form(surface: Any, workflow: Any) -> bool:
     """Save a project form, then run its entry point or request a preview."""
+    if not _confirm_window(surface, workflow):
+        return False
     path = str(surface.form_path())
     host = workflow._host
     project = _loaded_project(host)
@@ -54,6 +75,61 @@ def run_open_form(surface: Any, workflow: Any) -> bool:
     else:
         _status(host, "Saved %s." % os.path.basename(path))
     return started
+
+
+def _button_role(name: str) -> Any:
+    from app.qt.QtWidgets import QMessageBox
+
+    nested = getattr(QMessageBox, "ButtonRole", None)
+    if nested is not None and hasattr(nested, name):
+        return getattr(nested, name)
+    return getattr(QMessageBox, name)
+
+
+def _confirm_window(surface: Any, workflow: Any) -> bool:
+    """False when the user cancels the dirty-window prompt."""
+    scope = getattr(getattr(surface, "session", None), "scope", None)
+    path = str(getattr(scope, "window_path", "") or "")
+    document = getattr(getattr(surface, "session", None), "document", None)
+    if not path or document is None or not _calls_code(document):
+        return True
+    if not _window_dirty(surface, workflow, path):
+        return True
+    choice = ask_dirty_window(surface, os.path.basename(path))
+    if choice == "cancel":
+        return False
+    if choice == "run":
+        return True
+    save = getattr(workflow, "save_tab", None)
+    if not callable(save):
+        return False
+    return bool(save(path))
+
+
+def _window_dirty(surface: Any, workflow: Any, path: str) -> bool:
+    """An open window-file tab whose buffer has unsaved edits."""
+    bridge = getattr(surface, "code_bridge", None)
+    if bridge is None or bridge.text_of(path) is None:
+        return False
+    port = getattr(bridge, "_port", None)
+    if port is not None and callable(getattr(port, "is_dirty", None)) and port.is_dirty(path):
+        return True
+    getter = getattr(workflow, "_editor_manager", None)
+    manager = getter() if callable(getter) else None
+    tab = manager.get_tab(path) if manager is not None and hasattr(manager, "get_tab") else None
+    return bool(getattr(tab, "is_dirty", False))
+
+
+def _calls_code(document: Any) -> bool:
+    from app.features.form_builder.engine.logic.events import declared_methods, read_events
+
+    if declared_methods(document):
+        return True
+    for state in read_events(document):
+        for step in state.steps:
+            if step.verb == "call" and step.method:
+                return True
+    return False
 
 
 def _loaded_project(host: Any) -> Any:

@@ -12,7 +12,15 @@ _LIST = ("behavior_list",)
 
 
 def _behavior(surface: Any) -> None:
-    surface.workbench.inspector.focus_tab(TabId.BEHAVIOR)
+    from app.qt.QtWidgets import QWidget
+
+    inspector = surface.workbench.inspector
+    inspector.focus_tab(TabId.BEHAVIOR)
+    events = inspector.findChild(QWidget, "formBuilder.events")
+    first = getattr(events, "first_focus", None)
+    host = first() if callable(first) else None
+    if host is not None:
+        host.setFocus()
 
 
 def _selected_name(surface: Any) -> str:

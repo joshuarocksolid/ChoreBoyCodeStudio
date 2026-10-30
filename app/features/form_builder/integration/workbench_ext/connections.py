@@ -240,6 +240,9 @@ class ConnectionHost(QObject):
         self._select(found.sender)
         self._aimed = (found.sender, found.signal, found.index)
         self.sync()
+        if not double and found.kind == "code":
+            self._go_chip(found)
+            return True
         if double and found.kind == "arrow":
             self._open_step(found, event)
         return True
@@ -255,6 +258,22 @@ class ConnectionHost(QObject):
         from app.features.form_builder.qtside.pickers import open_for_step
 
         open_for_step(surface, located[0], found.signal, found.index, at=_pointer(self._viewport, event))
+
+    def _go_chip(self, found: Any) -> None:
+        """A click on the { } chip opens the method the step calls."""
+        from app.features.form_builder.integration.handlers import service
+
+        surface = _surface(self._workbench)
+        if surface is None:
+            return
+        document = self._workbench._session.document
+        bare = split_signature(found.signal)[0]
+        state = read_event(document, found.sender, bare)
+        if found.index < 0 or found.index >= len(state.steps):
+            return
+        method = state.steps[found.index].method
+        if method:
+            service().go_to(surface, method)
 
     def _on_widget(self, event: QMouseEvent) -> bool:
         canvas = self._canvas

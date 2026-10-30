@@ -779,6 +779,10 @@ class FormSurface(QWidget):
         if self._released:
             return
         self._released = True
+        unlisten = getattr(self, "_cbcs_checks_unlisten", None)
+        if callable(unlisten):
+            unlisten()
+            self._cbcs_checks_unlisten = None
         # A rename still open when the form closes is dropped, not committed.
         self._workbench.outline.finish_rename()
         self._problem_timer.stop()
@@ -1673,7 +1677,7 @@ class FormSurface(QWidget):
         """
         context = getattr(Qt, "WidgetWithChildrenShortcut")
         for command in keys_ext.extra_commands():
-            if command.kind != "new" or not command.shortcut:
+            if command.kind != "new" or not command.shortcut or command.shell_action_id:
                 continue
             run = keys_ext.handler_for(command.command_id)
             if run is None:
@@ -1950,6 +1954,12 @@ class FormSurface(QWidget):
         if found is not None:
             found.currentChanged.connect(self._on_tab_activated)
 
+    def go_to_selected_code(self) -> None:
+        """F12 while this form is the current tab. The shell action calls this."""
+        from app.features.form_builder.integration.keys_ext.code import go_to_code
+
+        go_to_code(self)
+
     def _on_tab_activated(self, _index: int) -> None:
         tab = self._tab_widget
         if tab is None or self._released:
@@ -1959,6 +1969,21 @@ class FormSurface(QWidget):
             return
         if current is self or current.isAncestorOf(self) or self.isAncestorOf(current):
             self._bind_shell_undo()
+            # Quick Open hides after the tab change and restores focus to the
+            # activity bar. Take the canvas on the next turn so Ctrl+Z is the
+            # form's undo while this tab is current.
+            QTimer.singleShot(0, self._focus_canvas_unless_inside)
+
+    def _focus_canvas_unless_inside(self) -> None:
+        if self._released:
+            return
+        focus = QApplication.focusWidget()
+        inside = focus is not None and (focus is self or self.isAncestorOf(focus))
+        if not inside:
+            window = self.window()
+            if isinstance(window, QWidget):
+                window.activateWindow()
+            self._workbench.canvas.setFocus()
 
     def _sync_drawer_escape(self) -> None:
         self._esc.setEnabled(self._workbench.drawer_open() or bool(self._modes.active))
