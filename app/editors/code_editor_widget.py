@@ -396,18 +396,14 @@ class CodeEditorWidget(
         self._destroy_paste_hint_overlay_on_close()
         super().closeEvent(event)
 
-    def toPlainText(self) -> str:  # noqa: N802
-        text = super().toPlainText()
-        pad = getattr(self, "_cbcs_scroll_pad", "")
-        if pad and text.endswith(pad):
-            return text[: -len(pad)]
-        return text
-
     def go_to_line(self, line_number: int) -> None:
         safe_line = max(1, line_number)
+        block = self.document().findBlockByNumber(safe_line - 1)
         cursor = self.textCursor()
-        cursor.movePosition(QTextCursor.Start)
-        cursor.movePosition(QTextCursor.Down, QTextCursor.MoveAnchor, safe_line - 1)
+        if block.isValid():
+            cursor.setPosition(block.position())
+        else:
+            cursor.movePosition(QTextCursor.End)
         self.setTextCursor(cursor)
         self.setFocus()
 

@@ -34,7 +34,9 @@ class YourMethods(QWidget):
         self._column.setContentsMargins(0, 4, 0, 4)
         self._column.setSpacing(2)
         self._overline = QLabel(self)
+        self._overline.setWordWrap(True)
         self._overline.setObjectName("formBuilder.yourMethods.overline")
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self._caption = QLabel(self)
         self._caption.setWordWrap(True)
         self._caption.setObjectName("formBuilder.yourMethods.caption")
@@ -48,6 +50,7 @@ class YourMethods(QWidget):
 
     def apply_colors(self, panel: str, text: str) -> None:
         chrome = self._services.chrome
+        self.setStyleSheet("QWidget#formBuilder.yourMethods { background: %s; }" % panel)
         self._overline.setStyleSheet("color: %s; background: %s;" % (text, panel))
         self._caption.setStyleSheet("color: %s; background: %s;" % (chrome.muted, panel))
         for row in self._rows:
@@ -67,9 +70,12 @@ class YourMethods(QWidget):
         self._caption.setText("Code Studio adds methods to %s and never changes the rest of it." % file_name)
         lines = _lines(self)
         named = _named(doc)
+        base_slots = _base_slots(doc)
         for name in sorted(named):
             phrases, _count = named[name]
             line = lines.get(name)
+            if line is None and name in base_slots:
+                continue
             self._add_method(name, file_name, phrases, line, name in declared_methods(doc))
         declared = doc.ui.field("form_slots")
         signals = declared.signals if isinstance(declared, SlotsDecl) else ()
@@ -128,6 +134,7 @@ class _MethodRow(QWidget):
         self._can_delete = can_delete
         self._warn = warn
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self.setAccessibleName(accessible)
         line = QHBoxLayout(self)
         line.setContentsMargins(2, 0, 2, 0)
@@ -138,9 +145,10 @@ class _MethodRow(QWidget):
     def apply_colors(self, panel: str, text: str) -> None:
         chrome = self._body._services.chrome
         color = warning_color(chrome) if self._warn else text
-        self._label.setStyleSheet("color: %s; background: transparent;" % color)
+        self._label.setStyleSheet("color: %s; background: %s;" % (color, panel))
         self.setStyleSheet(
-            "QWidget:focus { border: %dpx solid %s; background: %s; }" % (chrome.focus_width, chrome.accent, panel)
+            "QWidget { background: %s; } QWidget:focus { border: %dpx solid %s; background: %s; }"
+            % (panel, chrome.focus_width, chrome.accent, panel)
         )
 
     def keyPressEvent(self, event: QKeyEvent) -> None:  # noqa: N802
@@ -169,6 +177,21 @@ def register(registry: object) -> None:
     add = getattr(registry, "add", None)
     if callable(add):
         add(BehaviorSection("your-methods", 50, lambda host: YourMethods(host), _applies))
+
+
+def _base_slots(doc: object) -> set:
+    """Public names of the form's Qt class. A slot of that class is not 'missing'."""
+    root = getattr(doc, "root", None)
+    class_name = str(getattr(root, "class_name", "") or "")
+    if not class_name:
+        return set()
+    from app.qt import QtCore, QtGui, QtWidgets
+
+    for module in (QtWidgets, QtGui, QtCore):
+        found = getattr(module, class_name, None)
+        if isinstance(found, type):
+            return {name for name in dir(found) if not name.startswith("_")}
+    return set()
 
 
 def _file(session: object) -> str:

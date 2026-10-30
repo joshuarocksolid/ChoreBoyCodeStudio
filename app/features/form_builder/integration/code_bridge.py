@@ -163,7 +163,16 @@ class CodeBridge:
         saved = False
         if not was_dirty:
             saved = bool(self._port.save(path))
-        if saved:
+            if not saved:
+                undo_last = getattr(self._port, "undo_last_edit", None)
+                undone = bool(undo_last(path)) if callable(undo_last) else False
+                if not undone:
+                    self._port.replace_range(path, start, start + len(text), current[start:end])
+                mark = getattr(self._port, "mark_clean", None)
+                if callable(mark):
+                    mark(path)
+                reason = getattr(self._port, "last_save_error", "") or "the file could not be saved"
+                return refused(WRITE_FAILED % reason)
             self.notify_saved(path)
         return BridgeResult(True, "tab", saved=saved, inverse=BridgeEdit(start, start + len(text), current[start:end]))
 
@@ -454,11 +463,46 @@ class ShellPort:
         return bool(widget is not None and widget.document().isModified())
 
     def save(self, path: str) -> bool:
+        self.last_save_error = ""
         workflow = getattr(self._window, "_save_workflow", None)
         save = getattr(workflow, "save_tab", None)
         if not callable(save):
+            self.last_save_error = "the file could not be saved"
             return False
-        return bool(save(path, show_style_warnings=False, apply_transforms=False))
+        decide = getattr(workflow, "_decide_stale_save", None)
+        if callable(decide) and decide(path, prompt=False) == "abort":
+            self.last_save_error = "the copy on disk changed"
+            return False
+        try:
+            ok = bool(save(path, show_style_warnings=False, apply_transforms=False))
+        except OSError as exc:
+            self.last_save_error = str(exc)
+            return False
+        if not ok:
+            if os.path.isfile(path) and not os.access(path, os.W_OK):
+                self.last_save_error = "the file can't be written"
+            else:
+                self.last_save_error = "the copy on disk changed"
+        return ok
+
+    def undo_last_edit(self, path: str) -> bool:
+        widget = self._widget(path)
+        document = widget.document() if widget is not None else None
+        undo = getattr(document, "undo", None)
+        if not callable(undo):
+            return False
+        undo()
+        return True
+
+    def mark_clean(self, path: str) -> None:
+        widget = self._widget(path)
+        text = str(widget.toPlainText()) if widget is not None else ""
+        if widget is not None:
+            widget.document().setModified(False)
+        manager = getattr(self._window, "_editor_manager", None)
+        tab = manager.get_tab(path) if manager is not None else None
+        if tab is not None:
+            tab.mark_saved(saved_text=text)
 
     def show(self, path: str, line: int, select: Optional[Tuple[int, int]]) -> bool:
         workflow = getattr(self._window, "_editor_tab_workflow", None)
@@ -504,10 +548,9 @@ def bridge_for(window: Any, project_root: str) -> CodeBridge:
 
 
 def _scroll_into_top_third(widget: Any) -> None:
-    """Put the ``def`` above the caret at the top of the view.
+    """Move the def toward the top third, only as far as the scroll range allows.
 
-    The caret sits on the first body line. That ``def`` is a line or two
-    above it, and it has to land in the top third.
+    A short file stays where it is. The document is never changed.
     """
     cursor_of = getattr(widget, "textCursor", None)
     geometry = getattr(widget, "blockBoundingGeometry", None)
@@ -517,21 +560,8 @@ def _scroll_into_top_third(widget: Any) -> None:
         return
     scroll = bar()
     view = getattr(widget, "viewport", None)
-    document_of = getattr(widget, "document", None)
-    if scroll is None or not callable(view) or not callable(document_of):
+    if scroll is None or not callable(view):
         return
-    # A short file cannot scroll a late line to the top. Extra trailing
-    # newlines create the range. ``toPlainText`` strips them, so Save does not.
-    if scroll.maximum() < view().height():
-        from app.qt.QtGui import QTextCursor
-
-        pad = getattr(widget, "_cbcs_scroll_pad", "")
-        if not pad:
-            pad = "\n" * max(40, view().height() // 8)
-            widget._cbcs_scroll_pad = pad  # type: ignore[attr-defined]
-            cursor = QTextCursor(document_of())
-            cursor.movePosition(QTextCursor.MoveOperation.End)
-            cursor.insertText(pad)
     block = cursor_of().block()
     seen = block
     for _ in range(6):
@@ -542,24 +572,22 @@ def _scroll_into_top_third(widget: Any) -> None:
             block = previous
             break
         seen = previous
-    top = int(geometry(block).translated(offset_of()).top())
-    if scroll.maximum() < top:
-        scroll.setMaximum(top)
-    scroll.setValue(scroll.value() + top)
-    from app.qt.QtCore import QTimer
 
-    def _again() -> None:
+    def place() -> None:
         bar_now = bar()
         if bar_now is None:
             return
-        place = int(geometry(block).translated(offset_of()).top())
-        if place <= 0:
+        where = int(geometry(block).translated(offset_of()).top())
+        third = int(view().height()) // 3
+        delta = where - third
+        if delta == 0:
             return
-        if bar_now.maximum() < place:
-            bar_now.setMaximum(place)
-        bar_now.setValue(bar_now.value() + place)
+        bar_now.setValue(min(int(bar_now.maximum()), max(0, int(bar_now.value()) + delta)))
 
-    QTimer.singleShot(0, _again)
+    place()
+    from app.qt.QtCore import QTimer
+
+    QTimer.singleShot(0, place)
 
 
 def _utf16(text: str, offset: int) -> int:

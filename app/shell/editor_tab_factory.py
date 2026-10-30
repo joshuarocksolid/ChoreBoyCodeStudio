@@ -26,6 +26,36 @@ from app.shell.tab_content_providers import (
 )
 
 
+def _focus_opened_tab(window: Any, file_path: str) -> None:
+    """Focus the opened tab after Quick Open's focus restore.
+
+    Hiding the dialog posts a restore to the widget that was focused before it.
+    A timer started from that restore's turn runs after it, so the tab keeps
+    the keyboard.
+    """
+    registry = window._tab_content_registry
+    focus_primary_surface(registry, file_path, force=True)
+    from app.editors.quick_open_dialog import take_focus_restore
+
+    if not take_focus_restore():
+        return
+
+    def later() -> None:
+        # Quick Open restores the activity bar on its own timer. Take the
+        # keyboard back only from that restore, not from a later click.
+        from app.qt.QtWidgets import QApplication
+
+        focus = QApplication.focusWidget()
+        name = focus.objectName() if focus is not None else ""
+        if name.startswith("shell.activityBar") or name.startswith("quickOpen"):
+            focus_primary_surface(registry, file_path, force=False)
+
+    def after_restore() -> None:
+        QTimer.singleShot(0, later)
+
+    QTimer.singleShot(0, after_restore)
+
+
 def _schedule_buffer_warmup(window: Any) -> None:
     from app.shell.completion_warmup import schedule_open_buffer_warmup
 
@@ -123,11 +153,7 @@ class EditorTabFactory:
             if revealed:
                 window._editor_tab_workflow.refresh_tab_presentation(opened_result.tab.file_path)
                 if not opened_result.tab.is_preview:
-                    focus_primary_surface(
-                        window._tab_content_registry,
-                        opened_result.tab.file_path,
-                        force=True,
-                    )
+                    _focus_opened_tab(window, opened_result.tab.file_path)
             window._refresh_save_action_states()
             window._editor_tab_workflow.update_editor_status_for_path(opened_result.tab.file_path)
             return True
@@ -229,7 +255,7 @@ class EditorTabFactory:
         window._refresh_save_action_states()
         window._editor_tab_workflow.update_editor_status_for_path(opened_result.tab.file_path)
         if not opened_result.tab.is_preview:
-            focus_primary_surface(window._tab_content_registry, opened_result.tab.file_path, force=True)
+            _focus_opened_tab(window, opened_result.tab.file_path)
         if started_at is not None:
             window._logger.info(
                 "File open telemetry: file=%s elapsed_ms=%.2f",

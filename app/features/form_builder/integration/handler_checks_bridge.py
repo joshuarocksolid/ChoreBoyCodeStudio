@@ -62,7 +62,7 @@ def arm(surface: Any) -> None:
     bridge = getattr(surface, "code_bridge", None)
     listen = getattr(bridge, "on_saved", None)
     if callable(listen):
-        listen(lambda _path: publish(surface))
+        surface._cbcs_checks_unlisten = listen(lambda _path: publish(surface))
     publish(surface)
 
 

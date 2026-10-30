@@ -85,41 +85,50 @@ def _back_to_form(kb: Kb) -> None:
     kb.pump(12)
 
 
-def _def_place(editor: QWidget, needle: str) -> str:
-    document = editor.document()  # type: ignore[attr-defined]
-    block = document.begin()
-    target = None
-    lines = []
-    number = 0
-    while block.isValid():
-        number += 1
-        if needle in block.text():
-            target = block
-            lines.append("%d:%s" % (number, block.text()[:50]))
-            break
-        block = block.next()
-    view = editor.viewport()  # type: ignore[attr-defined]
-    if target is None:
-        return "missing %s" % lines
-    top = editor.blockBoundingGeometry(target).translated(editor.contentOffset()).top()  # type: ignore[attr-defined]
-    bar = editor.verticalScrollBar()  # type: ignore[attr-defined]
-    return "top=%s height=%s scroll=%s/%s lines=%s" % (top, view.height(), bar.value(), bar.maximum(), lines)
+def _expected_stub(original: bytes) -> bytes:
+    """The fixture plus the UX-CODE-004 lines after the trailing comment, all CRLF."""
+    added = (
+        "\r\n"
+        "    def print_receipt(self):\r\n"
+        '        """Runs when printButton is clicked."""\r\n'
+        "        pass\r\n"
+    ).encode("ascii")
+    if not original.endswith(b"\r\n"):
+        original += b"\r\n"
+    return original + added
 
 
-def _def_in_top_third(editor: QWidget, needle: str) -> bool:
-    document = editor.document()  # type: ignore[attr-defined]
-    block = document.begin()
-    target = None
-    while block.isValid():
-        if needle in block.text():
-            target = block
-            break
-        block = block.next()
-    if target is None:
-        return False
-    view = editor.viewport()  # type: ignore[attr-defined]
-    top = editor.blockBoundingGeometry(target).translated(editor.contentOffset()).top()  # type: ignore[attr-defined]
-    return 0 <= top < view.height() / 3
+def _space_on_print(kb: Kb, qapp: QApplication) -> list:
+    """Load the form in the preview child and press Space on printButton."""
+    from app.features.form_builder.engine.ipc.protocol import Log, encode_frame
+    from app.features.form_builder.integration.preview_notice import build_load_form
+    from app.features.form_builder.qtside.preview.child.session import ChildSession
+    from app.qt.QtCore import Qt
+    from app.qt.QtTest import QTest
+    from app.qt.QtWidgets import QWidget
+
+    class _Writer:
+        def __init__(self) -> None:
+            self.sent: list = []
+
+        def send(self, message: object) -> None:
+            self.sent.append(message)
+
+    writer = _Writer()
+    child = ChildSession(writer, qapp)  # type: ignore[arg-type]
+    message = build_load_form(kb.surface.session, str(kb.surface.form_path()), "k26-preview")
+    child._handle_line(encode_frame(message))  # noqa: SLF001
+    view = child._views["k26-preview"].widget  # noqa: SLF001
+    button = view.findChild(QWidget, "printButton")
+    assert button is not None
+    button.show()
+    qapp.processEvents()
+    QTest.keyClick(button, Qt.Key.Key_Space)
+    qapp.processEvents()
+    view.hide()
+    view.deleteLater()
+    qapp.processEvents()
+    return [item for item in writer.sent if isinstance(item, Log)]
 
 
 def _codes(kb: Kb) -> list:
@@ -160,9 +169,8 @@ def test_k26_call_your_code(tmp_path: Path, qapp: QApplication) -> None:
         editor = _editor(qapp)
         kb.check(editor.textCursor().selectedText() == "pass", "pass is selected, have %r" % editor.textCursor().selectedText())
         raw = window_file.read_bytes()
-        kb.check(b"def print_receipt" in raw, "stub is on disk")
-        kb.check(b"\r\n" in raw, "CRLF kept")
-        kb.check(b"Notes for the next person" in raw, "trailing comment stays")
+        kb.check(raw == _expected_stub(original_py), "exact stub bytes, tail %r" % raw[-180:])
+        kb.check(b"\n" not in raw.replace(b"\r\n", b""), "every line ending is CRLF")
         tab = window._editor_manager.get_tab(str(window_file))  # noqa: SLF001
         kb.check(tab is not None and tab.is_dirty is False, "the code tab is saved")
 
@@ -180,11 +188,14 @@ def test_k26_call_your_code(tmp_path: Path, qapp: QApplication) -> None:
         kb.check(b"def print_receipt" in window_file.read_bytes(), "Ctrl+Shift+Z restored the stub")
         kb.check("print_receipt" in kb.text(), "Ctrl+Shift+Z restored the step")
 
+        kb.press("Key_3", "Alt")
+        kb.pump()
         kb.press("Key_F12")
         kb.pump(8)
         editor = _editor(qapp)
         kb.check(editor.textCursor().selectedText() == "pass", "F12 selects pass")
-        kb.check(_def_in_top_third(editor, "def print_receipt"), "the def line is in the top third: %s" % _def_place(editor, "def print_receipt"))
+        kb.check(not hasattr(editor, "_cbcs_scroll_pad"), "go to code did not pad the document")
+        kb.check(editor.toPlainText() == window_file.read_text(encoding="utf-8"), "the tab text is the file")
         kb.type("self.close()")
         kb.press("Key_S", "Control")
         kb.pump(8)
@@ -200,6 +211,8 @@ def test_k26_call_your_code(tmp_path: Path, qapp: QApplication) -> None:
         kb.pump()
         kb.check("print_receipt" in kb.text(), "redo restores the step")
 
+        kb.press("Key_3", "Alt")
+        kb.pump()
         kb.press("Key_F12")
         kb.pump(8)
         editor = _editor(qapp)
@@ -223,6 +236,8 @@ def test_k26_call_your_code(tmp_path: Path, qapp: QApplication) -> None:
         kb.check("print_reciept" in kb.text(), "Ctrl+. uses print_reciept, form is %s" % kb.text()[-200:])
         kb.check("FB201" not in _codes(kb), "FB201 is gone, saw %s" % _codes(kb))
 
+        kb.press("Key_3", "Alt")
+        kb.pump()
         kb.press("Key_F12")
         kb.pump(4)
         kb.press("Key_Down")
@@ -240,6 +255,15 @@ def test_k26_call_your_code(tmp_path: Path, qapp: QApplication) -> None:
             "FB208 suggests the event, saw %s | %s"
             % (_codes(kb), window_file.read_text(encoding="utf-8")[-400:].replace("\n", " | ")),
         )
+        kb.press("Key_Return")
+        kb.type("    @Slot()")
+        kb.press("Key_Return")
+        kb.type("def on_saveButton_clicked(self):")
+        kb.press("Key_Return")
+        kb.type("pass")
+        kb.press("Key_S", "Control")
+        kb.pump(8)
+        kb.check(b"def on_saveButton_clicked" in window_file.read_bytes(), "the spelled method is saved")
 
         _back_to_form(kb)
         kb.press("Key_O", "Alt")
@@ -266,16 +290,21 @@ def test_k26_call_your_code(tmp_path: Path, qapp: QApplication) -> None:
         kb.pump()
         kb.check('connectslotsbyname="false"' in kb.text(), "connect by name is off")
         kb.check("FB211" in _codes(kb), "FB211 is reported, saw %s" % _codes(kb))
+        messages = [item.message for item in kb.surface.session.diagnostics.all() if item.code == "FB211"]
+        kb.check(any("on_saveButton_clicked" in item for item in messages), "FB211 names the spelled method, saw %s" % messages)
+        kb.check(not any("on_saveButton_clickd" in item for item in messages), "FB211 does not name the typo, saw %s" % messages)
 
-        kb.press("Key_R", "Control", "Shift")
-        kb.pump(4)
-        from app.features.form_builder.engine.ipc.protocol import Log
+        sent = _space_on_print(kb, qapp)
+        kb.check(any(getattr(item, "method", "") == "print_reciept" for item in sent), "the child sent print_reciept, saw %s" % sent)
         from app.features.form_builder.integration.preview_control import control_for
 
         control = control_for(kb.surface)
         kb.check(control is not None, "preview control exists")
         assert control is not None
-        control._on_child(Log(None, "try", "info", "", 0, kind="would_call", method="print_reciept"))  # noqa: SLF001
+        for item in sent:
+            if getattr(item, "kind", "") == "would_call" and getattr(item, "method", "") == "print_reciept":
+                control._on_child(item)  # noqa: SLF001
+                break
         kb.pump()
         status = str(getattr(kb.surface, "_gesture_sentence", ""))
         kb.check(status.startswith("Preview:"), "preview status, saw %r" % status)
@@ -290,6 +319,7 @@ def test_k26_call_your_code(tmp_path: Path, qapp: QApplication) -> None:
         kept = window_file.read_bytes()
         kb.check(b"self.close()" in kept or b"print_reciept" in kept, "the person's edits stay in the window file")
         kb.check(b"on_saveButton_clickd" in kept, "the typed method stays")
+        kb.check(b"on_saveButton_clicked" in kept, "the spelled method stays")
     finally:
         kb.done(guard)
         _close(window, qapp, guard)

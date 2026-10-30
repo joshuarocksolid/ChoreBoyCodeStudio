@@ -34,6 +34,8 @@ class _Port:
         self.dirty = set(dirty)
         self.sync = sync
         self.shows: List[tuple] = []
+        self.fail_reason = ""
+        self.last_save_error = ""
 
     def open_text(self, path: str) -> Optional[str]:
         return self.tabs.get(path)
@@ -50,10 +52,20 @@ class _Port:
         return path in self.dirty
 
     def save(self, path: str) -> bool:
+        if self.fail_reason:
+            self.last_save_error = self.fail_reason
+            return False
         if self.sync:
             Path(path).write_bytes(self.tabs[path].encode("utf-8"))
         self.dirty.discard(path)
         return True
+
+    def undo_last_edit(self, path: str) -> bool:
+        del path
+        return False
+
+    def mark_clean(self, path: str) -> None:
+        self.dirty.discard(path)
 
     def show(self, path: str, line: int, select: object) -> bool:
         self.shows.append((path, line, select))
@@ -105,7 +117,7 @@ def _request(command: object = None) -> MethodRequest:
 
 
 def test_a_stub_for_an_existing_step_undoes_with_that_step(tmp_path: Path) -> None:
-    from app.features.form_builder.engine.commands.catalog_ext.methods import PairStub
+    from app.features.form_builder.engine.commands.catalog_ext.methods import MethodUndoMark
 
     text = (FIXTURE / "sale_window.py").read_text(encoding="utf-8")
     surface, window, port = _open(tmp_path, text, dirty=True)
@@ -113,7 +125,7 @@ def test_a_stub_for_an_existing_step_undoes_with_that_step(tmp_path: Path) -> No
         SetEventSteps("printButton", "clicked", (call_step("print_receipt"),), caption="Call print_receipt()")
     )
     before = port.tabs[str(window)]
-    request = MethodRequest("Create method", (PairStub("print_receipt"),), "print_receipt", "", "printButton", "clicked")
+    request = MethodRequest("Create method", (MethodUndoMark("print_receipt"),), "print_receipt", "", "printButton", "clicked")
     assert SERVICE.make_method(surface, request).ok
     assert "def print_receipt(self):" in port.tabs[str(window)]
     assert "*args" not in port.tabs[str(window)]
@@ -127,13 +139,13 @@ def test_a_stub_for_an_existing_step_undoes_with_that_step(tmp_path: Path) -> No
 
 
 def test_a_slot_whose_types_disagree_is_not_connected_by_name() -> None:
-    from app.features.form_builder.qtside.inspector.behavior_ext.events import _slot_agrees
+    from app.features.form_builder.engine.project.handler_checks import slot_types_match
 
     clicked = ("clicked()", "clicked(bool)")
-    assert _slot_agrees(("str",), "clicked", clicked) is False
-    assert _slot_agrees(("bool",), "clicked", clicked) is True
-    assert _slot_agrees((), "clicked", clicked) is True
-    assert _slot_agrees(None, "clicked", clicked) is False
+    assert slot_types_match(("str",), "clicked", clicked) is False
+    assert slot_types_match(("bool",), "clicked", clicked) is True
+    assert slot_types_match((), "clicked", clicked) is True
+    assert slot_types_match(None, "clicked", clicked) is False
 
 
 def test_stubs_take_self_and_never_star_args() -> None:

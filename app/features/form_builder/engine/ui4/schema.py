@@ -140,6 +140,7 @@ SCHEMA: Dict[str, KindSpec] = {
             FieldSpec("designerdata", "child:designerdata"),
             FieldSpec("images", "child:images"),
             FieldSpec("present_wrappers", "derived"),
+            FieldSpec("method_undo_mark", "derived"),
         ),
         slots=(
             SlotSpec("root", frozenset({"widget"}), max_len=1, element="widget"),
@@ -458,7 +459,7 @@ for _kind, _names in (
 ):
     for _name in _names:
         FIELD_TYPES[(_kind, _name)] = _INT
-for _name in ("author", "comment", "exportmacro", "class_name", "pixmapfunction"):
+for _name in ("author", "comment", "exportmacro", "class_name", "pixmapfunction", "method_undo_mark"):
     FIELD_TYPES[("ui", _name)] = _TEXT
 for _name in ("class_name", "extends", "addpagemethod", "pixmap"):
     FIELD_TYPES[("customwidget", _name)] = _TEXT

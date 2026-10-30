@@ -6,7 +6,7 @@ import time
 from pathlib import Path
 from typing import Any, cast
 
-from app.qt.QtWidgets import QDialog, QInputDialog, QLineEdit, QMessageBox
+from app.qt.QtWidgets import QApplication, QDialog, QInputDialog, QLineEdit, QMessageBox
 
 from app.shell.problems_panel import ResultItem
 from app.shell.quick_symbol_dialog import QuickSymbolDialog
@@ -27,7 +27,9 @@ class SymbolNavigationWorkflow:
         window = finder() if callable(finder) else None
         surface = getattr(window, "_form_undo_surface", None)
         go = getattr(surface, "go_to_selected_code", None)
-        if callable(go) and getattr(surface, "isVisible", lambda: False)():
+        focus = QApplication.focusWidget()
+        inside = getattr(surface, "isAncestorOf", None)
+        if callable(go) and focus is not None and callable(inside) and inside(focus):
             go()
             return
         loaded_project = self._host.loaded_project()

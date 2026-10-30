@@ -608,7 +608,7 @@ class _Row(QWidget):
         line.setContentsMargins(2, 0, 2, 0)
         self._label = QLabel(text, self)
         self._label.setMinimumWidth(0)
-        self._label.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+        self._label.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred)
         line.addWidget(self._label, 1)
         # Step rows build the menu button on hover or focus. Header rows show it immediately.
         self._menu: Optional[QToolButton] = None
@@ -631,10 +631,19 @@ class _Row(QWidget):
 
     def resizeEvent(self, event: QResizeEvent) -> None:  # noqa: N802
         super().resizeEvent(event)
+        place = self.findChild(QPushButton, "formBuilder.events.place")
+        menu_w = self._menu.sizeHint().width() if self._menu is not None and self._menu.isVisible() else 0
+        call = self.fontMetrics().horizontalAdvance(self._full) + 8
+        spare = self.width() - call - menu_w - 12
+        if place is not None:
+            place.setMaximumWidth(max(40, spare))
+        layout = self.layout()
+        if layout is not None:
+            layout.activate()
         width = self._label.width()
         if width <= 0:
             return
-        shown = _elide_row(self._full, self.fontMetrics(), width)
+        shown = self._full if width >= call else _elide_row(self._full, self.fontMetrics(), width)
         if shown != self._label.text():
             self._label.setText(shown)
 
@@ -741,6 +750,8 @@ def _place_link(row: QWidget, body: "EventsBody", method: str) -> QPushButton:
     button.setObjectName("formBuilder.events.place")
     button.setToolTip(tip)
     button.setAccessibleName(text)
+    button.setMaximumWidth(120)
+    button.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Fixed)
     if tone == "warn":
         color = warning_color(body._chrome)
     elif tone == "ok":
@@ -821,7 +832,7 @@ def _by_name(body: "EventsBody", signal: str) -> Tuple[str, ...]:
     return tuple(
         item.name
         for item in read.facts.methods
-        if item.name == wanted and _slot_agrees(item.slot_types, signal, signatures)
+        if item.name == wanted and slot_types_match(item.slot_types, signal, signatures)
     )
 
 
@@ -837,28 +848,10 @@ def _sender_signatures(body: "EventsBody") -> Tuple[str, ...]:
     return tuple(QtClassTable.shared().signals(class_name))
 
 
-def _slot_agrees(types: Optional[Tuple[str, ...]], signal: str, signatures: Tuple[str, ...]) -> bool:
-    """True only when ``@Slot`` types match the signal. A mismatch is FB206, not a by-name row."""
-    from app.features.form_builder.engine.project.handler_names import signal_name, signature_arg_count
+def slot_types_match(types: Optional[Tuple[str, ...]], signal: str, signatures: Tuple[str, ...]) -> bool:
+    from app.features.form_builder.engine.project.handler_checks import slot_types_match as match
 
-    if types is None:
-        return False
-    overloads = tuple(item for item in signatures if signal_name(item) == signal)
-    if not types:
-        return any(signature_arg_count(item) == 0 for item in overloads)
-    for item in overloads:
-        start = item.find("(")
-        end = item.rfind(")")
-        inner = item[start + 1 : end].strip() if start >= 0 and end > start else ""
-        parts = tuple(part.strip() for part in inner.split(",") if part.strip() and part.strip() != "void")
-        if len(parts) == len(types) and all(_same_type(left, right) for left, right in zip(types, parts)):
-            return True
-    return False
-
-
-def _same_type(left: str, right: str) -> bool:
-    alias = {"str": "QString", "QString": "QString", "string": "QString", "float": "double", "qreal": "double"}
-    return alias.get(left, left) == alias.get(right, right)
+    return match(types, signal, signatures)
 
 
 def _by_name_why() -> str:
@@ -890,7 +883,7 @@ def _elide_row(text: str, metrics: object, width: int) -> str:
         if room < 8:
             room = 8
         return head + elide(verb, Qt.TextElideMode.ElideMiddle, room) + tail
-    return elide(text, Qt.TextElideMode.ElideMiddle, width)
+    return elide(text, Qt.TextElideMode.ElideRight, width)
 
 
 def open_property_as_text(widget: QWidget, prop: str, sender: str = "") -> None:

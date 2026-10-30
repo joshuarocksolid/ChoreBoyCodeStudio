@@ -59,13 +59,13 @@ def create_method(context: FixContext) -> None:
     state = read_event(context.session.document, sender, signal)
     if not is_name(method) or state.has_unreadable_list or _unusable(state):
         return
-    from app.features.form_builder.engine.commands.catalog_ext.methods import PairStub
+    from app.features.form_builder.engine.commands.catalog_ext.methods import MethodUndoMark
     from app.features.form_builder.integration.handlers import MethodRequest
 
     header = event_words(signal).header
     service().make_method(
         surface,
-        MethodRequest("Create method", (PairStub(method),), method, "", sender, header),
+        MethodRequest("Create method", (MethodUndoMark(method),), method, "", sender, header),
     )
 
 

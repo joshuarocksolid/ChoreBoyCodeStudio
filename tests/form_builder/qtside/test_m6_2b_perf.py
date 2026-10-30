@@ -14,6 +14,8 @@ import pytest
 
 pytest.importorskip("app.qt.QtWidgets", exc_type=ImportError)
 
+from app.features.form_builder.engine.commands.catalog_ext.events import SetEventSteps  # noqa: E402
+from app.features.form_builder.engine.logic.events_codec import call_step  # noqa: E402
 from app.features.form_builder.integration.handlers import MethodRequest  # noqa: E402
 from app.features.form_builder.integration.handlers_code import SERVICE  # noqa: E402
 from app.features.form_builder.qtside.pickers import open_method_page  # noqa: E402
@@ -33,6 +35,8 @@ def _window_source() -> str:
         "class RefWindow(QDialog):",
         "    def __init__(self, parent=None):",
         "        super().__init__(parent)",
+        "        self.ui = Ui_Customer()",
+        "        self.ui.setupUi(self)",
         "",
     ]
     for index in range(150):
@@ -69,30 +73,51 @@ def test_method_page_gesture_and_save_checks(tmp_path, qapp: QApplication) -> No
         assert keystroke <= 16.0
         picker.hide()
         qapp.processEvents()
+        # Open the window file first. The timed gestures edit that tab. A dirty
+        # tab is not saved, so the shell's Python lint stays out of the sample.
+        window._editor_tab_workflow.open_file_at_line(str(path), 1)
+        qapp.processEvents()
+        from app.qt.QtGui import QTextCursor
+
+        opened = window._workspace_controller.widget_for_path(str(path))
+        assert opened is not None
+        opened.moveCursor(QTextCursor.MoveOperation.End)
+        opened.insertPlainText("\n# scratch\n")
+        qapp.processEvents()
 
         canvas = surface.workbench.canvas
         inspector = surface.workbench.inspector
-        editor = window.focusWidget()
-        bares = []
-        for _ in range(_RUNS):
-            started = time.process_time()
+
+        def _repaint() -> None:
             canvas.repaint()
             inspector.repaint()
+            editor = window._workspace_controller.widget_for_path(str(path))  # type: ignore[attr-defined]
             if editor is not None:
                 editor.repaint()
             qapp.processEvents()
+
+        bares = []
+        for _ in range(_RUNS):
+            started = time.process_time()
+            _repaint()
             bares.append(time.process_time() - started)
         bare = _p95(bares)
         gestures = []
         for index in range(_RUNS):
             started = time.process_time()
-            SERVICE.make_method(
+            out = SERVICE.make_method(
                 surface,
-                MethodRequest("Write code", (), "made_%d" % index, "", "button0", "clicked"),
+                MethodRequest(
+                    "Write code",
+                    (SetEventSteps("button0", "clicked", (call_step("made_%d" % index),), caption="Call made_%d" % index),),
+                    "made_%d" % index,
+                    "",
+                    "button0",
+                    "clicked",
+                ),
             )
-            canvas.repaint()
-            inspector.repaint()
-            qapp.processEvents()
+            assert out.ok, out
+            _repaint()
             gestures.append(time.process_time() - started)
         added = max(0.0, _p95(gestures) - bare)
         print(

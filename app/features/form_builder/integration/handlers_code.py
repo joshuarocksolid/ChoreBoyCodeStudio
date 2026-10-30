@@ -8,6 +8,7 @@ above it move.
 from __future__ import annotations
 
 import os
+import weakref
 from dataclasses import dataclass
 from typing import Any, List, Optional, Tuple
 
@@ -24,6 +25,9 @@ from app.features.form_builder.engine.project.window_file import file_label, rea
 from app.features.form_builder.integration.handlers import HandlerOutcome, MethodInfo
 
 KEPT = "Removed the step. %s() has your code in it, so it stays in %s."
+RENAMED = "Removed the step. %s() was renamed in %s, so the new name stays."
+DELETED = "Removed the step. %s() is already gone from %s."
+UNREADABLE = "Removed the step. %s can't be read, so %s() was left as it is."
 NO_PROJECT = "This form isn't in a project, so it has no window file."
 NO_FORMS = "This form isn't in forms/, so Code Studio doesn't write Python for it."
 
@@ -43,21 +47,20 @@ class HandlerMemo:
 
 
 class GestureBook:
-    """Maps a log entry to the window-file edit that shared its step.
+    """Memos live on the log entries, and each form has its own book.
 
-    One book serves every open form. Each form's log is wrapped on its own,
-    and the memo is applied against that form's tab.
+    A discarded redo branch drops its entries. The memos go with them, so a
+    later undo cannot fire a toast for a step that is no longer there.
     """
 
     def __init__(self) -> None:
-        self.memos: dict = {}
-        self.redo_ids: dict = {}
-        self.surfaces: dict = {}
+        self.memos: weakref.WeakKeyDictionary = weakref.WeakKeyDictionary()
+        self.surfaces: weakref.WeakKeyDictionary = weakref.WeakKeyDictionary()
         self.last_notice = ""
 
     def arm(self, surface: Any) -> None:
         log = surface.session.log
-        self.surfaces[id(log)] = surface
+        self.surfaces[log] = surface
         if getattr(log, "_cbcs_handlers_armed", False):
             return
         original_undo = log.undo
@@ -69,43 +72,34 @@ class GestureBook:
             tip = entries[-1] if entries else None
             ok = bool(original_undo())
             if ok and tip is not None:
-                book.redo_ids.setdefault(id(log), []).append(id(tip))
                 book.after_undo(log, tip)
             return ok
 
         def redo() -> bool:
-            stack = book.redo_ids.setdefault(id(log), [])
-            tip_id = stack.pop() if stack else None
             ok = bool(original_redo())
-            if not ok and tip_id is not None:
-                stack.append(tip_id)
-                return ok
-            if ok and tip_id is not None:
-                book.after_redo(log, tip_id)
+            if ok:
+                entries = log.entries()
+                tip = entries[-1] if entries else None
+                if tip is not None:
+                    book.after_redo(log, tip)
             return ok
 
         log.undo = undo  # type: ignore[method-assign]
         log.redo = redo  # type: ignore[method-assign]
         log._cbcs_handlers_armed = True
 
-        def on_change(change: Any) -> None:
-            if getattr(change, "origin", "") == "do":
-                book.redo_ids[id(log)] = []
-
-        log.subscribe(on_change, priority=0)
-
     def note(self, entry: Any, memo: HandlerMemo) -> None:
-        self.memos[id(entry)] = memo
+        self.memos[entry] = memo
 
     def after_undo(self, log: Any, entry: Any) -> None:
-        surface = self.surfaces.get(id(log))
-        memo = self.memos.get(id(entry))
+        surface = self.surfaces.get(log)
+        memo = self.memos.get(entry)
         if memo is None or surface is None:
             return
         read = _read(surface, memo.path, memo.relative)
         edit = plan_unstub(read, memo.method_name, memo.stub_hash, memo.blank_lines, memo.opened_line)
         if edit is None:
-            self.last_notice = KEPT % (memo.method_name, file_label(memo.relative))
+            self.last_notice = _kept_sentence(memo, read)
             _narrate(surface, self.last_notice)
             _publish(surface)
             return
@@ -116,9 +110,9 @@ class GestureBook:
             self.last_notice = ""
         _publish(surface)
 
-    def after_redo(self, log: Any, entry_id: int) -> None:
-        surface = self.surfaces.get(id(log))
-        memo = self.memos.get(entry_id)
+    def after_redo(self, log: Any, entry: Any) -> None:
+        surface = self.surfaces.get(log)
+        memo = self.memos.get(entry)
         if memo is None or surface is None:
             return
         read = _read(surface, memo.path, memo.relative)
@@ -144,8 +138,20 @@ class CodeHandlers:
     def __init__(self) -> None:
         self.book = GestureBook()
 
+    def _book(self, surface: Any) -> GestureBook:
+        book = getattr(surface, "_cbcs_gesture_book", None)
+        if not isinstance(book, GestureBook):
+            book = GestureBook()
+            try:
+                surface._cbcs_gesture_book = book
+            except (AttributeError, TypeError):
+                pass
+        self.book = book
+        return book
+
     def make_method(self, surface: Any, request: Any) -> HandlerOutcome:
-        self.book.arm(surface)
+        book = self._book(surface)
+        book.arm(surface)
         waiting = pending_toast(surface)
         if waiting:
             _narrate(surface, waiting)
@@ -156,11 +162,11 @@ class CodeHandlers:
             return _commit(surface, label or "Edit events", commands)
         scope = surface.session.scope
         if not getattr(scope, "generates", False):
-            return HandlerOutcome(False, _ungenerated(scope))
+            return _fail(surface, _ungenerated(scope))
         path = str(getattr(scope, "window_path", "") or "")
         root = str(getattr(scope, "project_root", "") or "")
         if not path or not root:
-            return HandlerOutcome(False, _ungenerated(scope))
+            return _fail(surface, _ungenerated(scope))
         relative = os.path.relpath(path, root).replace("\\", "/")
         bridge = surface.code_bridge
         text = bridge.text_of(path)
@@ -170,10 +176,10 @@ class CodeHandlers:
             try:
                 rendered = render_window_class(surface.session.document, scope=scope)
             except ValueError as exc:
-                return HandlerOutcome(False, str(exc))
+                return _fail(surface, str(exc))
             made = bridge.apply(path, TextEdit(0, 0, rendered))
             if not made.ok:
-                return HandlerOutcome(False, made.reason)
+                return _fail(surface, made.reason)
             created = True
             text = bridge.text_of(path)
             read = read_window(root, relative, text=text)
@@ -195,25 +201,25 @@ class CodeHandlers:
                 event_words=words,
             )
         except ValueError as exc:
-            return HandlerOutcome(False, str(exc))
+            return _fail(surface, str(exc))
         base = read.source if isinstance(read.source, str) else text
         applied = bridge.apply(path, plan.edit, base_text=base)
         if not applied.ok:
-            return HandlerOutcome(False, applied.reason)
+            return _fail(surface, applied.reason)
         before = len(surface.session.log.entries())
         try:
             outcome = _commit(surface, label or _write_label(request), commands)
         except CommandRejected as exc:
             if applied.inverse is not None:
                 bridge.apply(path, applied.inverse)
-            return HandlerOutcome(False, str(exc))
+            return _fail(surface, str(exc))
         if not outcome.ok:
             if applied.inverse is not None:
                 bridge.apply(path, applied.inverse)
-            return outcome
+            return _fail(surface, outcome.reason)
         entries = surface.session.log.entries()
         if len(entries) > before:
-            self.book.note(
+            book.note(
                 entries[-1],
                 HandlerMemo(
                     path,
@@ -229,7 +235,9 @@ class CodeHandlers:
                 ),
             )
         self.go_to(surface, method)
-        _publish(surface)
+        # The form's save listener already published when the step was stored.
+        if not getattr(surface, "_cbcs_handler_checks", False):
+            _publish(surface)
         return HandlerOutcome(True, created_method=True)
 
     def go_to(self, surface: Any, method: str = "") -> bool:
@@ -332,6 +340,24 @@ def _narrate(surface: Any, sentence: str) -> None:
         narrate(sentence)
 
 
+def _fail(surface: Any, reason: str) -> HandlerOutcome:
+    _narrate(surface, reason)
+    return HandlerOutcome(False, reason)
+
+
+def _kept_sentence(memo: HandlerMemo, read: WindowRead) -> str:
+    label = file_label(memo.relative)
+    if read.status != "ok":
+        return UNREADABLE % (label, memo.method_name)
+    method = read.facts.method(memo.method_name)
+    if method is not None:
+        return KEPT % (memo.method_name, label)
+    for item in read.facts.methods:
+        if item.source_hash == memo.stub_hash:
+            return RENAMED % (memo.method_name, label)
+    return DELETED % (memo.method_name, label)
+
+
 def _caret(read: WindowRead, def_line: int) -> Tuple[int, Optional[Tuple[int, int]]]:
     """The first body line. A docstring on the next line is skipped. ``pass`` is selected when that line has it."""
     lines = (read.source or "").splitlines()
@@ -350,8 +376,11 @@ def _caret(read: WindowRead, def_line: int) -> Tuple[int, Optional[Tuple[int, in
 
 def pending_toast(surface: Any) -> str:
     """The undo sentence, once. The next make narrates it when the UI has not asked yet."""
-    sentence = SERVICE.book.last_notice
-    SERVICE.book.last_notice = ""
+    book = getattr(surface, "_cbcs_gesture_book", None)
+    if not isinstance(book, GestureBook):
+        book = SERVICE.book
+    sentence = book.last_notice
+    book.last_notice = ""
     return sentence
 
 

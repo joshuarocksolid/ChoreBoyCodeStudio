@@ -172,11 +172,14 @@ def _fitting(ctx: object, sends: int) -> tuple:
     if isinstance(infos, (list, tuple)) and infos:
         kept = []
         for info in infos:
+            name = str(_attr(info, "name") or "")
+            if name.startswith("__"):
+                continue
             params = _attr(info, "params") or ()
             if isinstance(params, (list, tuple)) and len(params) <= sends:
                 kept.append(info)
         return tuple(kept)
     names = _attr(ctx, "methods") or ()
     if isinstance(names, (list, tuple)):
-        return tuple(names)
+        return tuple(name for name in names if not str(name).startswith("__"))
     return ()

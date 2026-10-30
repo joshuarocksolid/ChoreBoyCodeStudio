@@ -48,14 +48,14 @@ class RemoveMethodDeclaration:
 
 
 @dataclass(frozen=True)
-class PairStub:
+class MethodUndoMark:
     """A form-side partner for a stub written onto a step that already exists.
 
-    The field is set to the value it already has, so the ``.ui`` does not change.
-    Undo of this step is what removes the stub.
+    The mark is not written into the ``.ui``. Each call stores a new value, so
+    the log keeps every one and one undo removes that stub.
     """
 
-    command_type: ClassVar[str] = "pair_method_stub"
+    command_type: ClassVar[str] = "method_undo_mark"
     method: str
 
     @property
@@ -66,18 +66,15 @@ class PairStub:
         return None
 
     def apply(self, doc: UiDocument, ctx: PlanContext) -> None:
-        # A same-value write is dropped as net-nil, so the stub would have no undo.
-        # An empty author, comment, or exportmacro is omitted from the ``.ui``
-        # (Appendix E), so this partner does not change the file bytes.
-        for name in ("comment", "author", "exportmacro"):
-            if doc.ui.field(name) is None:
-                ctx.do(SetFieldOp(doc.ui.id, name, ""))
-                return
-        raise CommandRejected("Create method needs a form undo step, and this form has no unused text field.")
+        previous = doc.ui.field("method_undo_mark")
+        count = 0
+        if isinstance(previous, str) and previous.isdigit():
+            count = int(previous)
+        ctx.do(SetFieldOp(doc.ui.id, "method_undo_mark", str(count + 1)))
 
 
 def register(registry: object) -> None:
     add = getattr(registry, "add", None)
     if callable(add):
         add(RemoveMethodDeclaration)
-        add(PairStub)
+        add(MethodUndoMark)

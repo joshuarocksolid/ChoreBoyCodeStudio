@@ -231,7 +231,7 @@ def test_problems_panel_shows_a_form_row(qapp, tmp_path: Path) -> None:  # type:
     root = tree.invisibleRootItem()
     assert root is not None
     walk(root)
-    assert any("email: This name is already used." in label for label in labels)
+    assert any("This name is already used." in label for label in labels)
     assert "email" in labels
     out = Path(os.environ.get("CBCS_FB_SCREENSHOT_DIR") or tmp_path)
     out.mkdir(parents=True, exist_ok=True)

@@ -273,6 +273,8 @@ def _by_name_rows(
     called: set,
 ) -> List[FormDiagnostic]:
     rows: List[FormDiagnostic] = []
+    if not any(name.startswith("on_") for name in methods):
+        return rows
     names = tuple(objects)
     near = _NearNames(names)
     for method in methods.values():
@@ -292,23 +294,6 @@ def _by_name_rows(
                     fixes=(_go(method.name, method.line),),
                 )
             )
-            if not connect_by_name and method.name not in called:
-                rows.append(
-                    _diag(
-                        "FB211",
-                        Severity.INFO,
-                        "Connect methods by name is off, so %s won't run by itself." % method.name,
-                        line=method.line,
-                        prop=method.name,
-                        fixes=(
-                            QuickFix(
-                                "connect-by-name",
-                                "Turn on Connect methods by name",
-                                action="connect-by-name",
-                            ),
-                        ),
-                    )
-                )
             continue
         info = objects.get(obj)
         if info is None:
@@ -331,25 +316,6 @@ def _by_name_rows(
                     fixes=(_go(method.name, method.line),),
                 )
             )
-            if not connect_by_name and method.name not in called:
-                rows.append(
-                    _diag(
-                        "FB211",
-                        Severity.INFO,
-                        "Connect methods by name is off, so %s won't run by itself." % method.name,
-                        line=method.line,
-                        prop=method.name,
-                        node_id=node_id,
-                        object_name=obj,
-                        fixes=(
-                            QuickFix(
-                                "connect-by-name",
-                                "Turn on Connect methods by name",
-                                action="connect-by-name",
-                            ),
-                        ),
-                    )
-                )
             continue
         matched = _slot_matches(method, signatures, signal)
         if connect_by_name and method.name in called and matched:
@@ -417,6 +383,7 @@ def _calls(
     registry: Sequence[object],
 ) -> List[_Call]:
     found: List[_Call] = []
+    nodes = _nodes_by_name(doc)
     root_name = doc.root.object_name or ""
     form_name = doc.form_class_name()
     for node in doc.connections():
@@ -438,7 +405,7 @@ def _calls(
             )
         )
     for owner_name, (class_name, node_id) in objects.items():
-        node = _node_for(doc, owner_name)
+        node = nodes.get(owner_name)
         if node is None:
             continue
         for prop in node.properties():
@@ -496,14 +463,15 @@ def _objects(doc: UiDocument) -> Dict[str, Tuple[str, Optional[NodeId]]]:
     return found
 
 
-def _node_for(doc: UiDocument, name: str) -> object:
+def _nodes_by_name(doc: UiDocument) -> Dict[str, object]:
+    found: Dict[str, object] = {}
     for widget in doc.iter_widgets():
-        if widget.object_name == name:
-            return widget
+        if widget.object_name:
+            found[widget.object_name] = widget
     for node in doc.iter_preorder():
-        if isinstance(node, ActionNode) and node.name == name:
-            return node
-    return None
+        if isinstance(node, ActionNode) and node.name and node.name not in found:
+            found[node.name] = node
+    return found
 
 
 def _signatures(
@@ -561,11 +529,18 @@ def _qt_base(bases: Tuple[str, ...], classes: object) -> str:
     return "QWidget"
 
 
-def _slot_matches(method: MethodFacts, signatures: Sequence[str], signal: str) -> bool:
-    if method.slot_types is None:
+def slot_types_match(
+    types: Optional[Tuple[str, ...]], signal: str, signatures: Sequence[str]
+) -> bool:
+    """True when ``@Slot`` types match one overload of ``signal``. None does not match."""
+    if types is None:
         return False
     overloads = [item for item in signatures if signal_name(item) == signal]
-    return _types_match(method.slot_types, overloads)
+    return _types_match(types, overloads)
+
+
+def _slot_matches(method: MethodFacts, signatures: Sequence[str], signal: str) -> bool:
+    return slot_types_match(method.slot_types, signal, signatures)
 
 
 def _types_match(types: Tuple[str, ...], overloads: Sequence[str]) -> bool:

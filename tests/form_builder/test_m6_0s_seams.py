@@ -431,7 +431,7 @@ def test_a_problem_in_code_carries_its_file_and_line_to_the_row() -> None:
     code_row = dict(rows["sale_window.py can't be read."].detail or {})
     assert code_row["fb_code_path"] == "forms/sale_window.py" and code_row["fb_code_line"] == "7"
     assert code_row["location_label"] == "sale_window.py:7"
-    plain = dict(rows["saveButton: x"].detail or {})
+    plain = dict(rows["x"].detail or {})
     assert "fb_code_path" not in plain and plain["location_label"] == "saveButton"
 
 

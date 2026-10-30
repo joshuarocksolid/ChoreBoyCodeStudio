@@ -80,7 +80,7 @@ def test_the_problems_rows_offer_edit_style_sheet_and_it_opens_the_drawer_on_tha
         qapp.processEvents()
         rows = code_diagnostics_for_form("/work/a.ui", session.diagnostics.all())
         bad = [row for row in rows if row.code == "FB033"]
-        assert len(bad) == 1 and bad[0].message.startswith("okButton: The style sheet of okButton can't be read")
+        assert len(bad) == 1 and bad[0].message.startswith("The style sheet of okButton can't be read")
         assert json.loads(bad[0].detail["fixes"]) == [["edit-style-sheet", "Edit style sheet"]]
         assert surface.run_problem_fix("edit-style-sheet", bad[0].detail)
         assert surface.workbench.under_canvas_key() == "style"

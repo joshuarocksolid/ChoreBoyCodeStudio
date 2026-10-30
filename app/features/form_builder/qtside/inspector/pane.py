@@ -368,11 +368,8 @@ class InspectorPane(QWidget):
         self.flush()
 
     def _on_diagnostics(self, found: Tuple[FormDiagnostic, ...]) -> None:
-        ids = self._inspected_ids
         signature = tuple(
-            (item.key, item.message)
-            for item in found
-            if not ids or item.location.node_id in ids
+            (item.key, item.message, str(item.location.node_id)) for item in found
         )
         if signature == getattr(self, "_diag_signature", None):
             return

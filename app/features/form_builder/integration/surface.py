@@ -779,6 +779,10 @@ class FormSurface(QWidget):
         if self._released:
             return
         self._released = True
+        unlisten = getattr(self, "_cbcs_checks_unlisten", None)
+        if callable(unlisten):
+            unlisten()
+            self._cbcs_checks_unlisten = None
         # A rename still open when the form closes is dropped, not committed.
         self._workbench.outline.finish_rename()
         self._problem_timer.stop()
