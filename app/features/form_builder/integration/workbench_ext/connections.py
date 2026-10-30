@@ -54,6 +54,9 @@ def layer_plan(
     return badges, None
 
 
+_SURFACE_WAITS = 20
+
+
 def links_for(surface: Any) -> Optional["ConnectionHost"]:
     canvas = getattr(getattr(surface, "workbench", None), "canvas", None)
     host = getattr(canvas, "_cbcs_connection_links", None)
@@ -69,7 +72,7 @@ def register(slots: Any) -> None:
 def attach(workbench: Any) -> None:
     host = ConnectionHost(workbench)
     workbench.canvas._cbcs_connection_links = host
-    QTimer.singleShot(0, host.sync)
+    QTimer.singleShot(0, host, host.sync)
 
 
 class ConnectionHost(QObject):
@@ -83,6 +86,9 @@ class ConnectionHost(QObject):
         self._aimed: Optional[Tuple[str, str, int]] = None
         self._wired = False
         self._log_sub: object = None
+        self._waits = 0
+        self._canvas: Optional[QObject] = None
+        self._viewport: Optional[QObject] = None
 
     @property
     def show_all(self) -> bool:
@@ -107,7 +113,10 @@ class ConnectionHost(QObject):
         workbench = self._workbench
         surface = _surface(workbench)
         if surface is None or not hasattr(surface, "_modes"):
-            QTimer.singleShot(0, self.sync)
+            # A workbench without a surface (inspector-only hosts) never gets one; stop asking.
+            self._waits += 1
+            if self._waits <= _SURFACE_WAITS:
+                QTimer.singleShot(0, self, self.sync)
             return
         self._wire(surface)
         canvas = workbench.canvas
@@ -129,17 +138,23 @@ class ConnectionHost(QObject):
         self._announce()
 
     def eventFilter(self, watched: QObject, event: QEvent) -> bool:
-        canvas = self._workbench.canvas
-        kind = enum_value(event.type())
-        types = getattr(QEvent, "Type", QEvent)
-        if watched is canvas.viewport() and isinstance(event, QMouseEvent):
+        # Qt also calls this while the canvas is being torn down: look only at
+        # mouse and key events, and compare against the objects stored when the
+        # filter was installed instead of asking the canvas for them.
+        if isinstance(event, QMouseEvent):
+            if watched is not self._viewport:
+                return False
+            kind = enum_value(event.type())
+            types = getattr(QEvent, "Type", QEvent)
             if kind in (enum_value(types.MouseButtonPress), enum_value(types.MouseButtonDblClick)):
                 return self._press(event, kind == enum_value(types.MouseButtonDblClick))
             if kind == enum_value(types.MouseMove):
                 self._hover_at(event)
-                return False
-        if watched is canvas and kind == enum_value(types.KeyPress) and isinstance(event, QKeyEvent):
-            return self._key(event)
+            return False
+        if isinstance(event, QKeyEvent) and watched is self._canvas:
+            types = getattr(QEvent, "Type", QEvent)
+            if enum_value(event.type()) == enum_value(types.KeyPress):
+                return self._key(event)
         return False
 
     def _wire(self, surface: Any) -> None:
@@ -147,10 +162,14 @@ class ConnectionHost(QObject):
             return
         self._wired = True
         canvas = self._workbench.canvas
+        self._canvas = canvas
+        self._viewport = canvas.viewport()
         canvas.installEventFilter(self)
-        canvas.viewport().installEventFilter(self)
+        self._viewport.installEventFilter(self)
         self._workbench.inspector.tabs.currentChanged.connect(self.sync)
-        self._log_sub = self._workbench._session.log.subscribe(self.sync, priority=PRIORITY_VIEWS + 1)
+        subscription = self._workbench._session.log.subscribe(self.sync, priority=PRIORITY_VIEWS + 1)
+        self._log_sub = subscription
+        self._workbench.destroyed.connect(lambda *_: subscription.close())
         toolbar = getattr(surface, "_toolbar", None)
         if toolbar is None:
             return
