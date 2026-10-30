@@ -1,0 +1,186 @@
+# pyright: reportAttributeAccessIssue=false, reportArgumentType=false, reportOptionalMemberAccess=false
+"""K25, keyboard only (UX_SPEC §12.3). The event and step pickers are M6.1b's.
+
+Steps that need those pickers stop at this lane's stub and are reported by the
+strict xfail in test_m6_1c_connections.py. This script checks the keys this
+lane owns: F4, Enter, Home, Esc, and Ctrl+Shift+L.
+"""
+
+from __future__ import annotations
+
+import warnings
+from pathlib import Path
+
+import pytest
+
+from app.features.form_builder.qtside.canvas.layers.connections import drawable_steps
+from app.qt.QtCore import QTimer, Qt
+from app.qt.QtGui import QKeySequence
+from app.qt.QtTest import QTest
+from app.qt.QtWidgets import QApplication, QWidget
+from tests.form_builder.engine.commands._support import saved
+from tests.unit.features.form_builder.test_workbench import _open
+
+pytestmark = pytest.mark.unit
+
+_SALE = Path(__file__).resolve().parents[1] / "fixtures" / "m6" / "forms" / "sale.ui"
+_DESIGNER = Path(__file__).resolve().parents[1] / "fixtures" / "m6" / "forms" / "designer_made.ui"
+
+
+def _pump(qapp: QApplication) -> None:
+    for _ in range(6):
+        qapp.processEvents()
+
+
+def _name(surface: object) -> str:
+    document = surface.session.document  # type: ignore[attr-defined]
+    current = surface.session.selection.state.current  # type: ignore[attr-defined]
+    node = document.get(current) if current is not None else None
+    return getattr(node, "object_name", "") or ""
+
+
+def _click(widget: QWidget, key: Qt.Key, modifier: Qt.KeyboardModifier = Qt.KeyboardModifier.NoModifier) -> None:
+    QTest.keyClick(widget, key, modifier)
+
+
+def _chord(widget: QWidget, sequence: str) -> None:
+    """Press the key the installed QShortcut listens for, including Mac Command."""
+    combo = QKeySequence(sequence)[0]
+    key = combo.key() if hasattr(combo, "key") else Qt.Key(int(combo) & 0x01FFFFFF)
+    mods = combo.keyboardModifiers() if hasattr(combo, "keyboardModifiers") else Qt.KeyboardModifier(int(combo) & 0xFE000000)
+    window = widget.window()
+    window.activateWindow()
+    # Offscreen drops the active window when the picker dialog closes. A chord
+    # after that reaches the shortcut only once the window is active again.
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", DeprecationWarning)
+        QApplication.setActiveWindow(window)
+    widget.setFocus()
+    QTest.keyClick(widget, key, mods)
+
+
+@pytest.mark.timeout(180)
+def test_k25_connections_overlay_from_the_keyboard(qapp: QApplication, tmp_path: Path) -> None:
+    host = QWidget()
+    surface = _open(host, _SALE.read_text(encoding="utf-8"), tmp_path / "sale.ui")
+    host.show()
+    surface.show()
+    _pump(qapp)
+    canvas = surface.workbench.canvas
+    canvas.setFocus()
+    _pump(qapp)
+    original = saved(surface.session.document)
+    report = []
+
+    _click(canvas, Qt.Key.Key_F4)
+    _pump(qapp)
+    banner = canvas._banner
+    label = banner.findChild(QWidget, "formBuilder.overlayBannerText")
+    report.append("F4 banner: visible=%s text=%s" % (banner.isVisible(), "" if label is None else label.text()))
+    assert surface.modes.active == "connections"
+    assert banner.isVisible()
+
+    for _ in range(12):
+        if _name(surface) == "phoneEdit":
+            break
+        _click(canvas, Qt.Key.Key_Tab)
+        _pump(qapp)
+    report.append("Tab reached: %s" % _name(surface))
+    assert _name(surface) == "phoneEdit"
+
+    _click(canvas, Qt.Key.Key_Return)
+    _pump(qapp)
+    report.append("Enter link source: %s" % _name(surface))
+    assert surface.modes.link_source == surface.session.document.by_name("phoneEdit")[0]
+
+    for _ in range(12):
+        if _name(surface) == "nameEdit":
+            break
+        _click(canvas, Qt.Key.Key_Tab)
+        _pump(qapp)
+    report.append("Tab receiver: %s" % _name(surface))
+    assert _name(surface) == "nameEdit"
+
+    def reject() -> None:
+        dialog = QApplication.activeModalWidget()
+        if dialog is not None:
+            dialog.reject()
+
+    QTimer.singleShot(0, reject)
+    _click(canvas, Qt.Key.Key_Return)
+    _pump(qapp)
+    report.append("Enter opened the stub; bytes unchanged: %s" % (saved(surface.session.document) == original))
+    assert saved(surface.session.document) == original
+    assert not surface.session.log.entries()
+
+    _click(canvas, Qt.Key.Key_Escape)
+    _pump(qapp)
+    if surface.modes.active == "connections":
+        _click(canvas, Qt.Key.Key_Escape)
+        _pump(qapp)
+    report.append("Esc closed overlay: %s" % (surface.modes.active == ""))
+    assert surface.modes.active == ""
+
+    canvas.setFocus()
+    _chord(canvas, "Ctrl+Shift+L")
+    _pump(qapp)
+    status = surface.editor_status_sentence()
+    count = len(drawable_steps(surface.session.document))
+    report.append("Show all status: %s (drawable %d)" % (status, count))
+    assert status == "Showing all %d connections. Ctrl+Shift+L hides them." % count
+    _chord(canvas, "Ctrl+Shift+L")
+    _pump(qapp)
+    assert links_off(surface)
+
+    _click(canvas, Qt.Key.Key_F4)
+    _pump(qapp)
+    save = surface.session.document.by_name("saveButton")[0]
+    surface.session.selection.set((save,), current=save, source=_source())
+    _click(canvas, Qt.Key.Key_Return)
+    _pump(qapp)
+    _click(canvas, Qt.Key.Key_Home)
+    _pump(qapp)
+    report.append("Home targets the form: %s" % (surface.modes.link_source == save and _candidate_is_root(surface)))
+    assert surface.modes.link_source == save
+    assert _candidate_is_root(surface)
+    _click(canvas, Qt.Key.Key_Escape)
+    _pump(qapp)
+    _click(canvas, Qt.Key.Key_Escape)
+    _pump(qapp)
+    assert saved(surface.session.document) == original and not surface.session.log.entries()
+    report.append("Esc twice wrote nothing")
+
+    surface.release()
+    host.close()
+
+    designer_bytes = _DESIGNER.read_bytes()
+    host2 = QWidget()
+    designer = _open(host2, designer_bytes.decode("utf-8"), tmp_path / "designer_made.ui")
+    _pump(qapp)
+    before = (tmp_path / "designer_made.ui").read_bytes()
+    if hasattr(designer, "save"):
+        designer.save()
+        _pump(qapp)
+    after = (tmp_path / "designer_made.ui").read_bytes()
+    report.append("designer_made save without an edit kept the file: %s" % (after == before == designer_bytes or after == before))
+    designer.release()
+    host2.close()
+    print("\n".join(report))
+
+
+def links_off(surface: object) -> bool:
+    from app.features.form_builder.integration.workbench_ext.connections import links_for
+
+    host = links_for(surface)
+    return host is not None and not host.show_all
+
+
+def _source() -> object:
+    from app.features.form_builder.engine.query.selection import SelectionSource
+
+    return SelectionSource.CANVAS
+
+
+def _candidate_is_root(surface: object) -> bool:
+    modes = surface.modes  # type: ignore[attr-defined]
+    return modes._link_candidate == surface.session.document.root.id  # type: ignore[attr-defined]
