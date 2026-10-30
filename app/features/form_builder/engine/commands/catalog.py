@@ -13,6 +13,7 @@ from app.features.form_builder.engine.commands import planning
 from app.features.form_builder.engine.commands.base import PlanContext
 from app.features.form_builder.engine.commands.placement import Placement
 from app.features.form_builder.engine.commands.catalog_ext.events import require_logic_writable
+from app.features.form_builder.engine.logic.compat import signature_text, split_signature
 from app.features.form_builder.engine.ids import NodeId
 from app.features.form_builder.engine.ui4.document import UiDocument
 from app.features.form_builder.engine.ui4.spec import Fragment, NodeSpec
@@ -514,6 +515,20 @@ class AddConnection(_CommandBase):
         )
 
 
+def _connection_end_changed(node: Any, sender: Optional[str], receiver: Optional[str], slot: Optional[str]) -> bool:
+    """True when this edit moves the arrow's sender, receiver, or slot."""
+    if sender is not None and node.field("sender") != sender:
+        return True
+    if receiver is not None and node.field("receiver") != receiver:
+        return True
+    if slot is None:
+        return False
+    current = node.field("slot")
+    if not isinstance(current, str):
+        return True
+    return signature_text(*split_signature(current)) != signature_text(*split_signature(slot))
+
+
 @dataclass(frozen=True)
 class EditConnection(_CommandBase):
     """Change the connection fields that are not None."""
@@ -529,8 +544,8 @@ class EditConnection(_CommandBase):
     def apply(self, doc: UiDocument, ctx: PlanContext) -> None:
         require_logic_writable(doc)
         node = doc.get(self.id)
-        if node is not None and self.receiver is not None and node.field("receiver") != self.receiver:
-            # A hint point belongs to the old endpoint (UX D7); the new one starts without.
+        if node is not None and _connection_end_changed(node, self.sender, self.receiver, self.slot):
+            # A hint point belongs to the old arrow end (UX D7). Sender, receiver, or slot.
             planning.set_field(doc, ctx, self.id, "hints", None)
         planning.edit_connection(
             doc, ctx, self.id, self.sender, self.signal, self.receiver, self.slot
