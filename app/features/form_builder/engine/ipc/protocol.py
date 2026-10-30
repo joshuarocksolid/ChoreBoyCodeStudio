@@ -150,6 +150,7 @@ class LoadForm:
     type: Literal["load_form"] = "load_form"
     resource_modules: Tuple[ResourceModule, ...] = ()
     promoted: Tuple[PromotedClass, ...] = ()
+    form_methods: Tuple[Tuple[str, int], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -282,6 +283,8 @@ class Log:
     ts_ms: int
     type: Literal["log"] = "log"
     source: Optional[SourceRef] = None
+    kind: str = ""
+    method: str = ""
 
 
 @dataclass(frozen=True)

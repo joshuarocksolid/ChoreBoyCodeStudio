@@ -33,7 +33,14 @@ class Materialized:
 
 
 class FormMaterializer:
-    """The seam codegen replaces by filling ``LoadForm.module_source``."""
+    """The seam codegen replaces by filling ``LoadForm.module_source``.
+
+    ``on_would_call`` is set by the preview child. A stand-in method sends the
+    method name and never imports the window file.
+    """
+
+    def __init__(self) -> None:
+        self.on_would_call = None  # type: Optional[object]
 
     def build(
         self,
@@ -41,20 +48,21 @@ class FormMaterializer:
         classes: Dict[str, type],
         extends: Dict[str, str],
     ) -> Materialized:
+        methods = tuple(getattr(request, "form_methods", ()) or ())
         if request.module_source:
-            return Materialized(self._from_module(request.module_source, request.module_name), ())
+            return Materialized(self._from_module(request.module_source, request.module_name, methods), ())
         if request.ui_xml:
             return self._from_xml(request.ui_xml, classes, extends)
         raise RuntimeError("load_form needs module_source or ui_xml")
 
-    def _from_module(self, source: str, module_name: str) -> QWidget:
+    def _from_module(self, source: str, module_name: str, methods: Tuple[Tuple[str, int], ...] = ()) -> QWidget:
         module = types.ModuleType(module_name)
         module.__file__ = "<%s>" % module_name
         sys.modules[module_name] = module
         exec(compile(source, module.__file__, "exec"), module.__dict__)
         ui_cls = _ui_class(module)
         if ui_cls is not None:
-            host = _host_for(ui_cls, source)
+            host = _host_for(ui_cls, source, methods, self.on_would_call)
             _ensure_size(host)
             host.show()
             return host
@@ -131,7 +139,28 @@ class _PromotedLoader(QUiLoader):
         return widget
 
 
-def _host_for(ui_cls: type, source: str) -> QWidget:
+def _stand_in(kind: type, methods: Tuple[Tuple[str, int], ...], on_call: object) -> type:
+    """A subclass with one method per name, installed before ``setupUi`` connects them."""
+    if not methods:
+        return kind
+    namespace = {}
+    for name, _count in methods:
+        def stand_in(self: QWidget, *args: object, _name: str = name) -> None:
+            del self, args
+            if callable(on_call):
+                on_call(_name)
+
+        stand_in.__name__ = name
+        namespace[name] = stand_in
+    return type(kind.__name__, (kind,), namespace)
+
+
+def _host_for(
+    ui_cls: type,
+    source: str,
+    methods: Tuple[Tuple[str, int], ...] = (),
+    on_call: object = None,
+) -> QWidget:
     """The window ``setupUi`` fills: a main window for ``setCentralWidget``, a dialog for ``accept``, else a widget.
 
     The generated class does not name its root class, so the module's own calls say what it needs
@@ -146,7 +175,7 @@ def _host_for(ui_cls: type, source: str) -> QWidget:
         order = (QWidget, QDialog, QMainWindow)
     error: Optional[AttributeError] = None
     for kind in order:
-        host = kind()
+        host = _stand_in(kind, methods, on_call)()
         try:
             ui_cls().setupUi(host)
             return host

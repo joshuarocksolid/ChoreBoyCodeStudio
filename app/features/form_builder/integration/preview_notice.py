@@ -38,6 +38,7 @@ from app.features.form_builder.engine.project.custom_widgets import module_for_h
 from app.features.form_builder.engine.ui4.nodes import CustomWidgetNode, WidgetNode
 from app.features.form_builder.engine.ui4.schema import HeaderDecl
 from app.features.form_builder.engine.ui4.writer import write_ui
+from app.features.form_builder.integration.preview_control import methods_for
 from app.features.form_builder.integration.custom_registry import project_root_of
 from app.features.form_builder.integration.toast import ToastNote
 from app.features.form_builder.qtside.dialogs.promote import friendly_of
@@ -141,6 +142,7 @@ def build_load_form(
         keep_values=False,
         revision=int(document.revision),
         promoted=promoted_for(document, root),
+        form_methods=methods_for(document),
     )
 
 
