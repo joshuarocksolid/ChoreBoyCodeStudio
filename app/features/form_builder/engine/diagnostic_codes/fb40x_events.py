@@ -8,7 +8,7 @@ Nothing here blocks saving (CONTRACTS 7.3).
 
 from __future__ import annotations
 
-from typing import List, Tuple
+from typing import List, Optional, Set, Tuple
 
 from app.features.form_builder.engine.diagnostics import (
     CODES,
@@ -24,8 +24,13 @@ declare("FB404", Severity.WARNING, "An event is stored in two places.")
 SOURCE = "events"
 
 
-def event_diagnostics(doc: object) -> Tuple[FormDiagnostic, ...]:
-    """FB404 per event with native connections and a step list, FB405 per step that acts on a missing object."""
+def event_diagnostics(
+    doc: object, only: Optional[Set[Tuple[str, str]]] = None
+) -> Tuple[FormDiagnostic, ...]:
+    """FB404 per event with native connections and a step list, FB405 per step that acts on a missing object.
+
+    ``only`` limits the scan to those ``(sender, signal)`` pairs. The other rows stay as they were.
+    """
     # Imported here: these modules import the diagnostics registry and must not load while it fills.
     from app.features.form_builder.engine.commands.catalog_ext.events import MergeEventStorage
     from app.features.form_builder.engine.logic.events import read_events, signal_property
@@ -39,6 +44,8 @@ def event_diagnostics(doc: object) -> Tuple[FormDiagnostic, ...]:
     names = doc.names()
     found: List[FormDiagnostic] = []
     for state in read_events(doc):
+        if only is not None and (state.sender, state.signal_name) not in only:
+            continue
         owner = doc.by_name(state.sender)
         node = doc.node(owner[0]) if owner else None
         chain = class_chain(classes, node_class(doc, classes, node)[0]) if node is not None else ()

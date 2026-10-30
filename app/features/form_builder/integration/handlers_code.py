@@ -381,6 +381,13 @@ def _warm_first_commit(surface: Any) -> None:
     document = getattr(session, "document", None)
     if document is not None:
         read_events(document)
+    # The first double-click opens the code tab. Loading the grammar there is
+    # the same work on every form, so the idle turn does it once.
+    try:
+        from app.treesitter.loader import initialize_tree_sitter_runtime
+    except ImportError:
+        return
+    initialize_tree_sitter_runtime()
 
 
 def _read(surface: Any, path: str, relative: str) -> WindowRead:

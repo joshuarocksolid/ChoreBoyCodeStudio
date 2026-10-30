@@ -176,7 +176,7 @@ def _slots(doc: object) -> tuple:
 
 def _check(doc: object, label: object) -> None:
     got = read_events(doc)  # type: ignore[arg-type]
-    full = _read_events(doc)  # type: ignore[arg-type]
+    full = _read_events(doc)[0]  # type: ignore[arg-type]
     if got == full:
         return
     got_keys = [(state.sender, state.signal_name) for state in got]

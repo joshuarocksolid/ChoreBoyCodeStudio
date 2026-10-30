@@ -60,6 +60,32 @@ def _empty(status: ReadStatus, reason: str, line: int, relative: str) -> WindowR
     return WindowRead(status, reason, line, WindowFacts(), relative)
 
 
+def line_count(text: str) -> int:
+    """How many lines ``source_lines`` would return, without building them."""
+    if not text:
+        return 0
+    breaks = 0
+    last_end = 0
+    for match in _LINE_BREAK.finditer(text):
+        breaks += 1
+        last_end = match.end()
+    if last_end < len(text):
+        return breaks + 1
+    return breaks
+
+
+def line_start(text: str, line: int) -> int:
+    """Offset where a 1-based line begins. Past the last line is ``len(text)``."""
+    if line <= 1:
+        return 0
+    seen = 0
+    for match in _LINE_BREAK.finditer(text):
+        seen += 1
+        if seen == line - 1:
+            return match.end()
+    return len(text)
+
+
 def source_lines(text: str, keepends: bool = False) -> List[str]:
     """Lines as Python numbers them: split on CRLF, CR and LF only.
 
@@ -239,8 +265,11 @@ def install_inserted_method(
     name = str(getattr(plan, "method_name"))
     patched = _patch_inserted(read, source, new_source, start, end, inserted, name)
     if patched is None:
-        return read_window(project_root, relative, text=new_source, token=token)
+        parsed = read_window(project_root, relative, text=new_source, token=token)
+        _remember_disk(project_root, relative, parsed, new_source)
+        return parsed
     _store_text(project_root, relative, patched, token, new_source)
+    _remember_disk(project_root, relative, patched, new_source)
     return patched
 
 
@@ -270,7 +299,8 @@ def _patch_inserted(
     after_line = _breaks(source[:end]) + 1
     shift = _breaks(inserted) - _breaks(source[start:end])
     def_line = edit_line + _breaks(inserted[:at])
-    method_text = inserted[at:]
+    # The indent shares the def line. The hash covers that whole line.
+    method_text = prefix + inserted[at:]
     body = method_text.splitlines()
     while body and not body[-1].strip():
         body.pop()
@@ -294,10 +324,7 @@ def _patch_inserted(
             shifted.append(replace(method, line=method.line + shift, end_line=method.end_line + shift))
         else:
             shifted.append(method)
-    lines = source_lines(new_source)
-    if not (1 <= def_line <= end_line <= len(lines)):
-        return None
-    chunk = "\n".join(lines[def_line - 1 : end_line])
+    chunk = "\n".join(body)
     added = MethodFacts(
         name=name,
         line=def_line,
@@ -305,7 +332,7 @@ def _patch_inserted(
         params=params,
         required=required,
         has_varargs=has_varargs,
-        body_is_empty=_stub_body_empty(lines[def_line:end_line]),
+        body_is_empty=_stub_body_empty(body[1:]),
         source_hash=method_source_hash(chunk),
     )
     shifted.append(added)
@@ -385,6 +412,26 @@ def _seed_text_cache(project_root: str, relative: str, read: WindowRead) -> None
     text = read.source
     if isinstance(text, str):
         _store_text(project_root, relative, read, None, text)
+
+
+def _remember_disk(project_root: str, relative: str, read: WindowRead, text: str) -> None:
+    """The on-disk file is this text, so the next disk read skips the parse.
+
+    The gesture writes the file before it asks for this. A reader that has no
+    editor buffer yet (the tab is still opening) looks up the file cache, and
+    the prewarm entry is for the previous bytes.
+    """
+    relative = relative.replace("\\", "/")
+    full = os.path.join(project_root, *relative.split("/")) if project_root else relative
+    if not project_root or not inside_project(full, project_root):
+        return
+    try:
+        data = _read_regular(full, project_root)
+    except OSError:
+        return
+    if data is None or data != text.encode("utf-8"):
+        return
+    _store_file(project_root, relative, read, tuple(read.followed))
 
 
 def _store_text(

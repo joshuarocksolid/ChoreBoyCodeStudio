@@ -7,7 +7,7 @@ connection, and does not import Qt.
 
 from __future__ import annotations
 
-from typing import List, Tuple
+from typing import List, Optional, Set, Tuple
 
 from app.features.form_builder.engine.diagnostics import (
     CODES,
@@ -41,12 +41,19 @@ def _token(step: EventStep) -> str:
     return ""
 
 
-def name_diagnostics(doc: object) -> Tuple[FormDiagnostic, ...]:
-    """One FB406 per event that holds a bad name, including a native connection."""
+def name_diagnostics(
+    doc: object, only: Optional[Set[Tuple[str, str]]] = None
+) -> Tuple[FormDiagnostic, ...]:
+    """One FB406 per event that holds a bad name, including a native connection.
+
+    ``only`` limits the scan to those ``(sender, signal)`` pairs.
+    """
     assert isinstance(doc, UiDocument)
     info = CODES["FB406"]
     found: List[FormDiagnostic] = []
     for state in read_events(doc):
+        if only is not None and (state.sender, state.signal_name) not in only:
+            continue
         names = tuple(token for token in (_token(step) for step in state.steps) if token)
         if not names:
             continue
