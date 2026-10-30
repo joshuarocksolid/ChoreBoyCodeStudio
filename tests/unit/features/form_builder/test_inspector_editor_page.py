@@ -345,18 +345,18 @@ def test_adding_a_connection_keeps_the_sender_selected(tmp_path: Path, qapp: QAp
         tabs.setCurrentIndex(behavior)
         pane.flush()
         qapp.processEvents()
-        add = next(button for button in pane.findChildren(QPushButton) if "Add connection" in button.text())
+        add = next(button for button in pane.findChildren(QPushButton) if button.text().startswith("+ When"))
         add.click()
         qapp.processEvents()
-        signal = pane.findChild(QComboBox, "formBuilder.draftSignal")
-        slot = pane.findChild(QComboBox, "formBuilder.draftSlot")
-        assert signal is not None and slot is not None
-        signal.hidePopup()
-        slot.setCurrentIndex(0)
-        slot.activated.emit(0)
+        search = surface.findChild(QLineEdit, "formBuilder.eventPickerSearch")
+        assert search is not None
+        QTest.keyClick(search, Qt.Key_Return)
+        qapp.processEvents()
+        QTest.keyClicks(search, "close")
+        qapp.processEvents()
+        QTest.keyClick(search, Qt.Key_Return)
         pane.flush()
         qapp.processEvents()
-        # The committed row takes focus but does not reopen its "When" popup.
         assert not any(combo.view().isVisible() for combo in pane.findChildren(QComboBox))
         assert len(session.document.connections()) == 1
         assert session.selection.state.ids == (sender,)
@@ -364,13 +364,13 @@ def test_adding_a_connection_keeps_the_sender_selected(tmp_path: Path, qapp: QAp
         name = surface.findChild(QLineEdit, "formBuilder.inspectorName")
         assert name is not None and name.text() == "okButtonWithAVeryLongObjectName"
         assert add.isEnabled()
-        assert pane.findChild(QWidget, "formBuilder.connectionDraft") is None
+        picker = surface.findChild(QWidget, "formBuilder.eventPicker")
+        assert picker is None or not picker.isVisible()
         session.log.undo()
         pane.flush()
         qapp.processEvents()
         assert session.document.connections() == ()
         assert session.selection.state.ids == (sender,)
-        # Redo selects the ConnectionNode again; the inspector shows its sender.
         session.log.redo()
         pane.flush()
         qapp.processEvents()
@@ -378,9 +378,9 @@ def test_adding_a_connection_keeps_the_sender_selected(tmp_path: Path, qapp: QAp
         assert name.text() == "okButtonWithAVeryLongObjectName" and not name.isReadOnly()
         assert tabs.tabText(behavior) == "Behavior (1)"
         assert add.isEnabled()
-        # Remove keeps the sender too, not the <ui> node.
-        remove = next(button for button in pane.findChildren(QToolButton) if button.text() == "Remove")
-        remove.click()
+        row = next(widget for widget in pane.findChildren(QWidget) if "Close this form" in widget.accessibleName())
+        row.setFocus()
+        QTest.keyClick(row, Qt.Key_Delete)
         pane.flush()
         qapp.processEvents()
         assert session.document.connections() == ()

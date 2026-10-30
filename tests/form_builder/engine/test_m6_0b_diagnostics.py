@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
-
 from app.features.form_builder.engine.diagnostic_codes import discover
 from app.features.form_builder.engine.diagnostic_codes.fb4xx_logic import event_words, logic_diagnostics
 from app.features.form_builder.engine.diagnostics import CODES, Severity
@@ -82,11 +80,6 @@ def test_a_number_marker_from_qt_designer_is_read() -> None:
     assert open_session(number.replace("<number>3", "<number>1"), "/tmp/a.ui").logic_read_only() is False
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="Owner of engine/session.py (wiring lane): FormSession.open publishes only 'reader' and 'connections'; "
-    "logic_diagnostics (M6.0b) is not published yet, so FB401 to FB403 never reach Problems.",
-)
 def test_session_open_publishes_logic_diagnostics() -> None:
     session = open_session(form(marker="2"), "/tmp/a.ui")
     assert "FB402" in [item.code for item in session.diagnostics.all()]

@@ -199,6 +199,10 @@ def test_unset_font_bold_writes_only_bold(qapp: QApplication) -> None:
         _close(window, pane, realizer, session, qapp)
 
 
+def _when_button(pane: InspectorPane) -> QPushButton:
+    return next(button for button in pane.findChildren(QPushButton) if button.text().startswith("+ When"))
+
+
 def test_add_connection_stays_a_draft_until_a_slot_is_picked(qapp: QApplication) -> None:
     window, pane, session, realizer = _pane(qapp)
     try:
@@ -206,29 +210,26 @@ def test_add_connection_stays_a_draft_until_a_slot_is_picked(qapp: QApplication)
         pane.focus_tab(TabId.BEHAVIOR)
         pane.flush()
         qapp.processEvents()
-        add = next(button for button in pane.findChildren(QPushButton) if "Add connection" in button.text())
+        add = _when_button(pane)
         before = len(session.document.connections())
+        depth = len(session.log.entries())
         add.click()
         qapp.processEvents()
         assert len(session.document.connections()) == before
-        draft = pane.findChild(QWidget, "formBuilder.connectionDraft")
-        slot = pane.findChild(QComboBox, "formBuilder.draftSlot")
-        signal = pane.findChild(QComboBox, "formBuilder.draftSignal")
-        assert draft is not None and slot is not None and signal is not None
-        assert draft.parentWidget() is not None
-        layout = draft.parentWidget().layout()
-        assert layout is not None and layout.indexOf(draft) == 0
-        assert slot.currentIndex() == -1
-        signal.hidePopup()
-        assert slot.count() > 0
-        slot.setCurrentIndex(0)
-        chosen = slot.currentText()
-        slot.activated.emit(0)
+        assert len(session.log.entries()) == depth
+        search = window.findChild(QLineEdit, "formBuilder.eventPickerSearch")
+        assert search is not None and search.isVisible()
+        QTest.keyClick(search, Qt.Key_Return)
+        qapp.processEvents()
+        QTest.keyClicks(search, "close")
+        qapp.processEvents()
+        QTest.keyClick(search, Qt.Key_Return)
         pane.flush()
+        qapp.processEvents()
         connections = [node for node in session.document.connections() if isinstance(node, ConnectionNode)]
         assert len(connections) == before + 1
-        assert connections[0].slot == chosen
-        assert pane.findChild(QWidget, "formBuilder.connectionDraft") is None
+        assert connections[0].slot == "close()"
+        assert window.findChild(QWidget, "formBuilder.eventPicker") is None or not window.findChild(QWidget, "formBuilder.eventPicker").isVisible()
     finally:
         _close(window, pane, realizer, session, qapp)
 
@@ -239,17 +240,20 @@ def test_escape_discards_a_connection_draft(qapp: QApplication) -> None:
         _select(session, "okButton")
         pane.focus_tab(TabId.BEHAVIOR)
         pane.flush()
-        add = next(button for button in pane.findChildren(QPushButton) if "Add connection" in button.text())
+        text = session.text()
+        depth = len(session.log.entries())
+        add = _when_button(pane)
         add.click()
         qapp.processEvents()
-        signal = pane.findChild(QComboBox, "formBuilder.draftSignal")
-        assert signal is not None
-        signal.hidePopup()
-        signal.setFocus()
-        QTest.keyClick(signal, Qt.Key_Escape)
+        search = window.findChild(QLineEdit, "formBuilder.eventPickerSearch")
+        assert search is not None
+        search.setFocus()
+        QTest.keyClick(search, Qt.Key_Escape)
         qapp.processEvents()
-        assert pane.findChild(QWidget, "formBuilder.connectionDraft") is None
-        assert session.document.connections() == ()
+        picker = window.findChild(QWidget, "formBuilder.eventPicker")
+        assert picker is None or not picker.isVisible()
+        assert session.text() == text
+        assert len(session.log.entries()) == depth
     finally:
         _close(window, pane, realizer, session, qapp)
 
@@ -260,13 +264,11 @@ def test_leaving_the_page_discards_a_connection_draft(qapp: QApplication) -> Non
         _select(session, "okButton")
         pane.focus_tab(TabId.BEHAVIOR)
         pane.flush()
-        add = next(button for button in pane.findChildren(QPushButton) if "Add connection" in button.text())
+        add = _when_button(pane)
         add.click()
         qapp.processEvents()
-        signal = pane.findChild(QComboBox, "formBuilder.draftSignal")
-        assert signal is not None
-        signal.hidePopup()
-        # Offscreen leaves no active window after a popup closes; xcb restores it.
+        search = window.findChild(QLineEdit, "formBuilder.eventPickerSearch")
+        assert search is not None
         qapp.setActiveWindow(window)
         qapp.processEvents()
         outside = QLineEdit(window)
@@ -275,7 +277,8 @@ def test_leaving_the_page_discards_a_connection_draft(qapp: QApplication) -> Non
         outside.setFocus()
         qapp.processEvents()
         assert qapp.focusWidget() is outside
-        assert pane.findChild(QWidget, "formBuilder.connectionDraft") is None
+        picker = window.findChild(QWidget, "formBuilder.eventPicker")
+        assert picker is None or not picker.isVisible()
         assert session.document.connections() == ()
     finally:
         _close(window, pane, realizer, session, qapp)
