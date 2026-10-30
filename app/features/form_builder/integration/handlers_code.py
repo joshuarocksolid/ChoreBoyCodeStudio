@@ -207,25 +207,32 @@ class CodeHandlers:
         # then see the same text and the same form, and the second reuses
         # the first instead of parsing the window file again.
         notify, pending = _hold_save_notify(bridge)
+        replay = False
         try:
-            applied = bridge.apply(path, plan.edit, base_text=base)
+            try:
+                applied = bridge.apply(path, plan.edit, base_text=base)
+            finally:
+                bridge.notify_saved = notify  # type: ignore[method-assign]
+            if not applied.ok:
+                return _fail(surface, applied.reason)
+            replay = True
+            before = len(surface.session.log.entries())
+            try:
+                outcome = _commit(surface, label or _write_label(request), commands)
+            except CommandRejected as exc:
+                replay = False
+                if applied.inverse is not None:
+                    bridge.apply(path, applied.inverse)
+                return _fail(surface, str(exc))
+            if not outcome.ok:
+                replay = False
+                if applied.inverse is not None:
+                    bridge.apply(path, applied.inverse)
+                return _fail(surface, outcome.reason)
         finally:
-            bridge.notify_saved = notify  # type: ignore[method-assign]
-        if not applied.ok:
-            return _fail(surface, applied.reason)
-        before = len(surface.session.log.entries())
-        try:
-            outcome = _commit(surface, label or _write_label(request), commands)
-        except CommandRejected as exc:
-            if applied.inverse is not None:
-                bridge.apply(path, applied.inverse)
-            return _fail(surface, str(exc))
-        if not outcome.ok:
-            if applied.inverse is not None:
-                bridge.apply(path, applied.inverse)
-            return _fail(surface, outcome.reason)
-        for saved in pending:
-            notify(saved)
+            if replay:
+                for saved in pending:
+                    notify(saved)
         entries = surface.session.log.entries()
         if len(entries) > before:
             book.note(

@@ -170,7 +170,7 @@ def test_redo_after_a_refused_save_changes_nothing(tmp_path: Path, qapp: QApplic
         window._save_workflow.save_tab = _refuse  # type: ignore[method-assign]
         outcome = SERVICE.make_method(kb.surface, _request())
         assert outcome.ok is False
-        assert outcome.reason == "Code Studio couldn't change sale_window.py: the copy on disk changed"
+        assert outcome.reason == "Code Studio couldn't change sale_window.py: the copy on disk changed."
         assert editor.toPlainText() == before
         editor.setFocus()
         _pump(qapp)

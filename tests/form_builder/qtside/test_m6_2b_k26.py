@@ -98,7 +98,7 @@ def _expected_stub(original: bytes) -> bytes:
     return original + added
 
 
-def _space_on_print(kb: Kb, qapp: QApplication) -> list:
+def _space_on_print(kb: Kb, qapp: QApplication, view_id: str = "k26-preview") -> list:
     """Load the form in the preview child and press Space on printButton."""
     from app.features.form_builder.engine.ipc.protocol import Log, encode_frame
     from app.features.form_builder.integration.preview_notice import build_load_form
@@ -116,9 +116,9 @@ def _space_on_print(kb: Kb, qapp: QApplication) -> list:
 
     writer = _Writer()
     child = ChildSession(writer, qapp)  # type: ignore[arg-type]
-    message = build_load_form(kb.surface.session, str(kb.surface.form_path()), "k26-preview")
+    message = build_load_form(kb.surface.session, str(kb.surface.form_path()), view_id)
     child._handle_line(encode_frame(message))  # noqa: SLF001
-    view = child._views["k26-preview"].widget  # noqa: SLF001
+    view = child._views[view_id].widget  # noqa: SLF001
     button = view.findChild(QWidget, "printButton")
     assert button is not None
     button.show()
@@ -132,23 +132,15 @@ def _space_on_print(kb: Kb, qapp: QApplication) -> list:
 
 
 def _deliver_would_call(control: object, sent: list) -> None:
-    """Hand the child's Log to the pool the way a real frame is delivered.
+    """Hand the child's Log to the pool. Preview already subscribed ``_on_child``.
 
-    ``preview`` subscribes ``_on_child``. The test does not call that method.
+    The frame keeps the view id the child sent. The test does not subscribe
+    and does not rewrite it.
     """
-    from dataclasses import replace
-
     pool = control._notices.pool()  # type: ignore[attr-defined]
-    if control._unsubscribe is None:  # type: ignore[attr-defined]
-        control._unsubscribe = pool.subscribe(  # type: ignore[attr-defined]
-            control._notices.view_id,  # type: ignore[attr-defined]
-            control._on_child,  # type: ignore[attr-defined]
-        )
-    view_id = control._notices.view_id  # type: ignore[attr-defined]
     for item in sent:
         if getattr(item, "kind", "") == "would_call" and getattr(item, "method", "") == "print_reciept":
-            delivered = item if getattr(item, "view_id", None) in (None, view_id) else replace(item, view_id=view_id)
-            pool._deliver(delivered)  # noqa: SLF001
+            pool._deliver(item)  # noqa: SLF001
             return
 
 
@@ -315,13 +307,20 @@ def test_k26_call_your_code(tmp_path: Path, qapp: QApplication) -> None:
         kb.check(any("on_saveButton_clicked" in item for item in messages), "FB211 names the spelled method, saw %s" % messages)
         kb.check(not any("on_saveButton_clickd" in item for item in messages), "FB211 does not name the typo, saw %s" % messages)
 
-        sent = _space_on_print(kb, qapp)
-        kb.check(any(getattr(item, "method", "") == "print_reciept" for item in sent), "the child sent print_reciept, saw %s" % sent)
+        kb.press("Key_R", "Control", "Shift")
+        kb.pump()
         from app.features.form_builder.integration.preview_control import control_for
 
         control = control_for(kb.surface)
         kb.check(control is not None, "preview control exists")
         assert control is not None
+        kb.check(control._unsubscribe is not None, "Ctrl+Shift+R subscribed the preview")  # noqa: SLF001
+        sent = _space_on_print(kb, qapp, control._notices.view_id)  # noqa: SLF001
+        kb.check(any(getattr(item, "method", "") == "print_reciept" for item in sent), "the child sent print_reciept, saw %s" % sent)
+        kb.check(
+            any(getattr(item, "view_id", None) == control._notices.view_id for item in sent),  # noqa: SLF001
+            "the child kept its view id",
+        )
         _deliver_would_call(control, sent)
         kb.pump()
         status = str(getattr(kb.surface, "_gesture_sentence", ""))

@@ -576,6 +576,26 @@ class _Group(QWidget):
         self.sync_then()
 
 
+_STEP_MENU_RESERVE = 0
+
+
+def _step_menu_reserve(parent: QWidget) -> int:
+    """Width of the "…" button, measured once.
+
+    Step rows reserve this width with a spacer. The button itself is built on
+    the first hover or focus, so painting a long behavior list does not
+    construct one tool button per step.
+    """
+    global _STEP_MENU_RESERVE
+    if _STEP_MENU_RESERVE:
+        return _STEP_MENU_RESERVE
+    probe = QToolButton(parent)
+    probe.setText("\u22ef")
+    _STEP_MENU_RESERVE = max(probe.sizeHint().width(), 16)
+    probe.setParent(None)
+    return _STEP_MENU_RESERVE
+
+
 class _Row(QWidget):
     def __init__(
         self,
@@ -631,6 +651,12 @@ class _Row(QWidget):
             line.addWidget(_place_link(self, body, step.method))
         if index < -1:
             line.addWidget(self._make_menu())
+        elif index >= 0:
+            # The "…" appears on hover or focus. Its width stays reserved, so the
+            # place link does not grow into that slot and then draw under the button.
+            self._menu_reserve = _step_menu_reserve(self)
+            self._pointer = False
+            line.addSpacing(self._menu_reserve)
         if problem:
             self._label.setStyleSheet("color: %s;" % body._chrome.error)
         self.installEventFilter(body)
@@ -657,7 +683,12 @@ class _Row(QWidget):
         call_metrics = self._label.fontMetrics()
         place = self.findChild(QPushButton, "formBuilder.events.place")
         place_metrics = place.fontMetrics() if place is not None else call_metrics
-        menu_w = self._menu.sizeHint().width() + 4 if self._menu is not None and not self._menu.isHidden() else 0
+        if self.step_index >= 0:
+            menu_w = int(getattr(self, "_menu_reserve", 0) or 0) + 4
+        elif self._menu is not None and not self._menu.isHidden():
+            menu_w = self._menu.sizeHint().width() + 4
+        else:
+            menu_w = 0
         badge = 16 if self.findChild(QLabel, "formBuilder.events.badge") is not None else 0
         available = max(0, self.width() - menu_w - badge - 8)
         place_full = str(place.property("cbcsFull") or "") if place is not None else ""
@@ -693,6 +724,11 @@ class _Row(QWidget):
         ink = _text_width(place_metrics, place_shown) + pad
         place.setMaximumWidth(16777215)
         place.setFixedWidth(max(8, min(place_budget, ink)))
+        reason = str(place.property("cbcsReason") or "")
+        if reason:
+            tip = (place_full + "\n" + reason) if place_shown != place_full and place_full else reason
+            if place.toolTip() != tip:
+                place.setToolTip(tip)
 
     def _make_menu(self) -> QToolButton:
         button = QToolButton(self)
@@ -726,14 +762,23 @@ class _Row(QWidget):
         button.setMenu(menu)
         button.showMenu()
 
-    def _step_menu(self) -> QToolButton:
-        if self._menu is not None:
-            return self._menu
-        button = self._make_menu()
-        layout = self.layout()
-        if layout is not None:
-            layout.addWidget(button)
-        return button
+    def _show_step_menu(self, shown: bool) -> None:
+        if self.step_index < 0:
+            return
+        button = self._menu
+        if shown and button is None:
+            button = self._make_menu()
+            button.setFixedWidth(int(self._menu_reserve))
+            layout = self.layout()
+            if layout is not None and layout.count():
+                # The last item is the reserved spacer. The button takes its place.
+                layout.takeAt(layout.count() - 1)
+            if layout is not None:
+                layout.addWidget(button)
+        if button is None:
+            return
+        button.setText("\u22ef" if shown else "")
+        self._fit_texts()
 
     def set_faint(self, text: str) -> None:
         extra = QLabel(text, self)
@@ -767,23 +812,21 @@ class _Row(QWidget):
 
     def enterEvent(self, event: QEvent) -> None:  # noqa: N802
         super().enterEvent(event)
-        if self.step_index >= 0:
-            self._step_menu().show()
+        self._pointer = True
+        self._show_step_menu(True)
 
     def leaveEvent(self, event: QEvent) -> None:  # noqa: N802
         super().leaveEvent(event)
-        if self.step_index >= 0 and self._menu is not None and not self.hasFocus():
-            self._menu.hide()
+        self._pointer = False
+        self._show_step_menu(self.hasFocus())
 
     def focusInEvent(self, event: QEvent) -> None:  # noqa: N802
         super().focusInEvent(event)
-        if self.step_index >= 0:
-            self._step_menu().show()
+        self._show_step_menu(True)
 
     def focusOutEvent(self, event: QEvent) -> None:  # noqa: N802
         super().focusOutEvent(event)
-        if self.step_index >= 0 and self._menu is not None:
-            self._menu.hide()
+        self._show_step_menu(bool(getattr(self, "_pointer", False)))
 
     def contextMenuEvent(self, event: QEvent) -> None:  # noqa: N802
         self.open_menu()
@@ -791,12 +834,14 @@ class _Row(QWidget):
 
 
 def _place_link(row: QWidget, body: "EventsBody", method: str) -> QPushButton:
-    text, tone, _tip = _place_state(body, method)
+    text, tone, reason = _place_state(body, method)
     button = QPushButton(text, row)
     button.setFlat(True)
     button.setObjectName("formBuilder.events.place")
     button.setProperty("cbcsFull", text)
-    button.setToolTip(text)
+    checked = text == "not checked"
+    button.setProperty("cbcsReason", reason if checked else "")
+    button.setToolTip(reason if checked else text)
     button.setAccessibleName(text)
     button.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
     if tone == "warn":
@@ -943,7 +988,7 @@ def _fit_place(full: str, shown: str, metrics: object, budget: int, pad: int) ->
     if _text_width(metrics, fitted) <= room:
         return fitted
     fitted = _elide_place(full, metrics, room)
-    if _text_width(metrics, fitted) <= room:
+    if fitted and _text_width(metrics, fitted) <= room:
         return fitted
     suffix = ""
     body = full

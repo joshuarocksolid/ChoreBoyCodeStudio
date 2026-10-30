@@ -54,7 +54,7 @@ TOO_BIG = "That file is too large for Code Studio to change."
 UNREADABLE = "That file can't be read as text, so Code Studio won't change it."
 CHANGED = "That file changed since the plan was made."
 NOT_UTF8 = "That file isn't UTF-8 text, so Code Studio won't change it."
-WRITE_FAILED = "Code Studio couldn't change %s: %s"
+WRITE_FAILED = "Code Studio couldn't change %s: %s."
 
 
 def _change_failed(path: str, reason: object) -> str:
@@ -509,21 +509,28 @@ class ShellPort:
     def restore_text(self, path: str, text: str) -> bool:
         """Put ``text`` back after a refused save, with nothing to redo.
 
-        Undo is used only when it restores ``text``. Either way the document is
-        rewritten with the undo stack off, so Ctrl+Shift+Z cannot bring the
-        stub back without the form step.
+        Undo the bridge's own edit when that restores ``text``, then drop only
+        the redo stack so an earlier edit can still be undone and the caret
+        stays put. Rewrite the buffer only when undo does not restore ``text``.
         """
         widget = self._widget(path)
         if widget is None:
             return False
         document = widget.document()
+        cursor = widget.textCursor()
+        caret = int(cursor.position())
+        anchor = int(cursor.anchor())
+        vertical = _scroll_value(widget, "verticalScrollBar")
+        horizontal = _scroll_value(widget, "horizontalScrollBar")
         undo = getattr(document, "undo", None)
         if widget.toPlainText() != text and callable(undo):
             undo()
-        if widget.toPlainText() != text:
-            redo = getattr(document, "redo", None)
-            if callable(redo):
-                redo()
+        if widget.toPlainText() == text:
+            _clear_redo(document)
+            _restore_caret(widget, anchor, caret)
+            _restore_scroll(widget, "verticalScrollBar", vertical)
+            _restore_scroll(widget, "horizontalScrollBar", horizontal)
+            return True
         self._write_without_history(widget, text)
         return widget.toPlainText() == text
 
@@ -586,6 +593,42 @@ def bridge_for(window: Any, project_root: str) -> CodeBridge:
         return made
     port.save_notifies = True
     return made
+
+
+def _scroll_value(widget: Any, name: str) -> Optional[int]:
+    bar = getattr(widget, name, None)
+    found = bar() if callable(bar) else None
+    value = getattr(found, "value", None)
+    return int(value()) if callable(value) else None
+
+
+def _restore_scroll(widget: Any, name: str, value: Optional[int]) -> None:
+    if value is None:
+        return
+    bar = getattr(widget, name, None)
+    found = bar() if callable(bar) else None
+    setter = getattr(found, "setValue", None)
+    if callable(setter):
+        setter(value)
+
+
+def _restore_caret(widget: Any, anchor: int, caret: int) -> None:
+    from app.qt.QtGui import QTextCursor
+
+    cursor = widget.textCursor()
+    cursor.setPosition(max(0, anchor))
+    cursor.setPosition(max(0, caret), QTextCursor.MoveMode.KeepAnchor)
+    widget.setTextCursor(cursor)
+
+
+def _clear_redo(document: Any) -> None:
+    clear = getattr(document, "clearUndoRedoStacks", None)
+    if not callable(clear):
+        return
+    from app.qt.QtGui import QTextDocument
+
+    stacks = getattr(QTextDocument, "Stacks", QTextDocument)
+    clear(getattr(stacks, "RedoStack"))
 
 
 def _scroll_into_top_third(widget: Any) -> None:

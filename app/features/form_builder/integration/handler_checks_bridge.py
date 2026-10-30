@@ -121,7 +121,28 @@ def _check_key(surface: Any, session: Any) -> Tuple[object, ...]:
         digest = ("file", 0, -1) if info is None else ("file", info.st_mtime_ns, info.st_size)
     connect = str(session.document.ui.field("connectslotsbyname") or "") != "false"
     followed = tuple(getattr(surface, "_cbcs_followed", ()) or ())
-    return (path, digest, int(session.document.revision), connect, _base_stamps(root, followed))
+    return (
+        path,
+        digest,
+        int(session.document.revision),
+        connect,
+        _base_stamps(root, followed),
+        _registry_stamp(root),
+    )
+
+
+def _registry_stamp(root: str) -> Tuple[object, ...]:
+    """mtime and size of ``cbcs/project.json``, where custom widgets are stored."""
+    from app.core.constants import PROJECT_MANIFEST_FILENAME, PROJECT_META_DIRNAME
+
+    if not root:
+        return ("registry", 0, -1)
+    full = os.path.join(root, PROJECT_META_DIRNAME, PROJECT_MANIFEST_FILENAME)
+    try:
+        info = os.stat(full)
+    except OSError:
+        return ("registry", 0, -1)
+    return ("registry", info.st_mtime_ns, info.st_size)
 
 
 def _base_stamps(root: str, followed: Tuple[str, ...]) -> Tuple[object, ...]:

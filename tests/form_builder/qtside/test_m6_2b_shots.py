@@ -131,6 +131,11 @@ def _shoot(qapp: QApplication, folder: Path, scale: str) -> None:
             _pump(qapp)
             _grab(events, folder / ("events-by-name-%s-%s-236.png" % (mode, scale)))
             _grab(events, folder / ("events-connected-by-name-%s-%s-236.png" % (mode, scale)))
+            step_rows = [row for row in events.findChildren(QWidget) if getattr(row, "step_index", -1) >= 0]
+            if step_rows:
+                step_rows[0].setFocus()
+                _pump(qapp)
+                _grab(events, folder / ("events-focused-%s-%s-236.png" % (mode, scale)))
             _clear_inspector_width(window, qapp)
             surface.session.selection.set((root_id,), source="canvas")
             inspector.flush()
