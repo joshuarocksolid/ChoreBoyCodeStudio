@@ -141,7 +141,7 @@ class ConnectionHost(QObject):
         if scope is None:
             canvas.hide_layer(ARROWS)
         else:
-            canvas.show_layer(ARROWS, ArrowState(scope, self._hover))
+            canvas.show_layer(ARROWS, ArrowState(scope, self._hover, self._aimed))
         self._announce()
 
     def eventFilter(self, watched: QObject, event: QEvent) -> bool:
@@ -227,10 +227,13 @@ class ConnectionHost(QObject):
             return True
         found = mark_at(items, point[0], point[1])
         if found is None or not found.sender:
-            self._aimed = None
+            if self._aimed is not None:
+                self._aimed = None
+                self.sync()
             return False
         self._select(found.sender)
         self._aimed = (found.sender, found.signal, found.index)
+        self.sync()
         return True
 
     def _on_widget(self, event: QMouseEvent) -> bool:

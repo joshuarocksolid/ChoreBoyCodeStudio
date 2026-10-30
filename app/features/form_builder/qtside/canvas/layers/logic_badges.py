@@ -12,8 +12,8 @@ from app.features.form_builder.engine.logic.events import events_of_sender, read
 from app.features.form_builder.engine.logic.events_catalog import event_words
 from app.features.form_builder.engine.style.classes import widget_chain
 from app.features.form_builder.engine.ui4.document import UiDocument
-from app.features.form_builder.engine.ui4.nodes import WidgetNode
-from app.features.form_builder.qtside.canvas.core.chips import BADGE_CORNERS, ChipRequest, place_chips
+from app.features.form_builder.engine.ui4.nodes import LayoutNode, WidgetNode
+from app.features.form_builder.qtside.canvas.core.chips import BADGE_CORNERS, ChipRequest, CornerSeat, place_chips
 from app.features.form_builder.qtside.canvas.core.overlay import LayerItem, LayerOutput
 from app.features.form_builder.qtside.canvas.core.space import CanvasPoint, CanvasRect, CanvasSize
 from app.features.form_builder.qtside.canvas.layers import CanvasLayer
@@ -67,29 +67,36 @@ def build(static: object, inputs: object, state: Hashable) -> LayerOutput:
     if page is None or viewport is None:
         return LayerOutput()
     bodies = list(_bodies(document, senders, placed))
+    others_all = _other_widgets(document, static)
     requests = []
     tips = {}
     widget_rect = {}
     for sender, rect in bodies:
         tips[sender] = badge_tip(document, sender)
         widget_rect[sender] = rect
-        others = [other for name, other in bodies if name != sender]
+        others = [other for other in others_all if other != rect]
         requests.append(
             ChipRequest(sender, rect, CanvasSize(BADGE, BADGE), _corners(rect, others), frozenset())
         )
     if not requests:
         return LayerOutput()
-    content = tuple(getattr(static, "content", ()))
-    fixed = tuple(getattr(inputs, "chrome", ())) + _selection_chip(static, inputs, page, viewport)
+    content = _badge_content(document, static)
+    bands = tuple(obstacle.rect for obstacle in getattr(static, "content", ()) if getattr(obstacle, "band", False))
+    fixed = tuple(getattr(inputs, "chrome", ())) + _selection_chip(static, inputs, page, viewport) + bands
     seats = place_chips(requests, content, fixed, page, viewport, getattr(inputs, "dock", None))
-    seated = {str(seat.key): seat.rect for seat in seats}
+    seated = {}
+    for seat in seats:
+        if isinstance(seat, CornerSeat) and _on_own_edge(seat.rect, widget_rect.get(str(seat.key), seat.rect)):
+            seated[str(seat.key)] = seat.rect
     occupied = [item.rect for item in getattr(static, "placed", ())]
+    blockers = list(others_all) + list(bands)
     items: List[LayerItem] = []
     for sender, rect in widget_rect.items():
         seat = seated.get(sender)
-        if seat is None or _covers(seat, occupied, rect):
-            seat = _badge_fallback(rect, page)
-        if _covers(seat, occupied, rect):
+        neighbours = [other for other in blockers if other != rect]
+        if seat is None or _covers(seat, occupied, rect) or _hits(seat, neighbours):
+            seat = _badge_fallback(rect, neighbours)
+        if seat is None or _covers(seat, occupied, rect) or _hits(seat, neighbours):
             continue
         items.append(
             LayerItem(
@@ -161,20 +168,29 @@ def _bodies(document: UiDocument, senders: Sequence[str], placed: dict) -> Tuple
 
 
 def _corners(rect: CanvasRect, others: Sequence[CanvasRect]) -> Tuple[str, ...]:
-    """The corner away from a neighbour, so a badge is not read as the next widget's."""
+    """The corner away from a neighbour or a child that owns that corner."""
     right = False
     left = False
     mid = rect.y + rect.height / 2.0
     for other in others:
-        if abs((other.y + other.height / 2.0) - mid) > max(rect.height, other.height):
+        inside = (
+            other.x >= rect.x - 1
+            and other.y >= rect.y - 1
+            and other.x + other.width <= rect.x + rect.width + 1
+            and other.y + other.height <= rect.y + rect.height + 1
+        )
+        same_row = abs((other.y + other.height / 2.0) - mid) <= max(rect.height, other.height)
+        if not inside and not same_row:
             continue
-        if other.x >= rect.x + rect.width - 8:
+        if other.x + other.width >= rect.x + rect.width - 24:
             right = True
-        if other.x + other.width <= rect.x + 8:
+        if other.x <= rect.x + 24:
             left = True
     if right and not left:
-        return ("above_left", "above_right")
-    return BADGE_CORNERS
+        return ("above_left", "below_left", "above_right", "below_right")
+    if left and not right:
+        return ("above_right", "below_right", "above_left", "below_left")
+    return BADGE_CORNERS + ("below_right", "below_left")
 
 
 def _covers(seat: CanvasRect, occupied: Sequence[CanvasRect], own: CanvasRect) -> bool:
@@ -237,14 +253,81 @@ def _chain(doc: UiDocument, sender: str) -> Tuple[str, ...]:
     return widget_chain(doc, node)
 
 
-def _badge_fallback(rect: CanvasRect, page: Optional[CanvasRect]) -> CanvasRect:
-    """Just above the widget. The left corner when the right one would leave the page."""
-    del page
-    y = rect.y - BADGE - 2
-    right = CanvasRect(rect.x + rect.width - BADGE, y, BADGE, BADGE)
-    if right.x + BADGE <= rect.x + rect.width + 2:
-        return right
-    return CanvasRect(rect.x, y, BADGE, BADGE)
+def _badge_content(document: UiDocument, static: object) -> Tuple[object, ...]:
+    """Other widgets and title bands. The page rect is not a wall."""
+    root = document.root.id
+    kept: List[object] = []
+    seen = set()
+    for obstacle in getattr(static, "content", ()):
+        node_id = getattr(obstacle, "node", None)
+        if node_id == root:
+            continue
+        node = document.get(node_id) if node_id is not None else None
+        if isinstance(node, LayoutNode):
+            continue
+        kept.append(obstacle)
+        seen.add(node_id)
+    for item in getattr(static, "placed", ()):
+        node_id = getattr(item, "node", None)
+        if node_id == root or node_id in seen:
+            continue
+        node = document.get(node_id) if node_id is not None else None
+        if isinstance(node, WidgetNode):
+            kept.append(item if hasattr(item, "band") else _Obstacle(item.node, item.rect))
+    return tuple(kept)
+
+
+class _Obstacle:
+    def __init__(self, node: object, rect: CanvasRect, band: bool = False) -> None:
+        self.node = node
+        self.rect = rect
+        self.band = band
+
+
+def _other_widgets(document: UiDocument, static: object) -> List[CanvasRect]:
+    root = document.root.id
+    rects = []
+    for item in getattr(static, "placed", ()):
+        node_id = getattr(item, "node", None)
+        if node_id == root:
+            continue
+        node = document.get(node_id) if node_id is not None else None
+        if isinstance(node, LayoutNode):
+            continue
+        rect = getattr(item, "rect", None)
+        if isinstance(rect, CanvasRect):
+            rects.append(rect)
+    return rects
+
+
+def _on_own_edge(seat: CanvasRect, own: CanvasRect) -> bool:
+    """The badge stays on this widget's top or bottom edge, not in the gap beside it."""
+    overlap = min(seat.x + seat.width, own.x + own.width) - max(seat.x, own.x)
+    if overlap < seat.width / 2:
+        return False
+    above = seat.y + seat.height <= own.y + 2 and own.y - (seat.y + seat.height) <= 8
+    below = seat.y >= own.y + own.height - 2 and seat.y - (own.y + own.height) <= 8
+    return above or below
+
+
+def _hits(seat: CanvasRect, blockers: Sequence[CanvasRect]) -> bool:
+    return any(seat.intersects(other) for other in blockers)
+
+
+def _badge_fallback(rect: CanvasRect, blockers: Sequence[CanvasRect]) -> Optional[CanvasRect]:
+    """A corner of this widget that clears the title band and every other widget."""
+    y_above = rect.y - BADGE - 2
+    y_below = rect.y + rect.height + 2
+    spots = (
+        CanvasRect(rect.x + rect.width - BADGE, y_above, BADGE, BADGE),
+        CanvasRect(rect.x, y_above, BADGE, BADGE),
+        CanvasRect(rect.x + rect.width - BADGE, y_below, BADGE, BADGE),
+        CanvasRect(rect.x, y_below, BADGE, BADGE),
+    )
+    for spot in spots:
+        if not _hits(spot, blockers) and not spot.intersects(rect):
+            return spot
+    return None
 
 
 def _page(static: object) -> Optional[CanvasRect]:

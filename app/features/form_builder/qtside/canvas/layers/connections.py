@@ -20,6 +20,7 @@ from app.features.form_builder.engine.logic.compat import signature_text, split_
 from app.features.form_builder.engine.logic.events import read_events, step_targets
 from app.features.form_builder.engine.logic.events_codec import EventStep
 from app.features.form_builder.engine.ui4.document import UiDocument
+from app.features.form_builder.engine.ui4.nodes import LayoutNode
 from app.features.form_builder.qtside.canvas.core.chips import (
     LABEL_CORNERS,
     ChipRequest,
@@ -58,10 +59,15 @@ class DrawnStep:
 
 @dataclass(frozen=True)
 class ArrowState:
-    """Idle arrow layer. ``scope`` is ``selected`` or ``all``. ``hover`` is ``(sender, signal, index)``."""
+    """Idle arrow layer. ``scope`` is ``selected`` or ``all``.
+
+    ``hover`` and ``aimed`` are ``(sender, signal, index)``. An aimed arrow
+    keeps the heavier stroke and its label until the aim moves.
+    """
 
     scope: str
     hover: Optional[Tuple[str, str, int]] = None
+    aimed: Optional[Tuple[str, str, int]] = None
 
     def __post_init__(self) -> None:
         if self.scope not in ("selected", "all"):
@@ -153,11 +159,12 @@ def build_arrows(static: object, inputs: object, state: Hashable) -> LayerOutput
     if not visible:
         return LayerOutput()
     measure = getattr(inputs, "measure", None)
-    seats = _chip_seats(static, inputs, visible, placed, measure, state.hover)
+    seats, leaders = _chip_seats(static, inputs, visible, placed, measure, state.hover, state.aimed)
     items: List[LayerItem] = []
     blocked = _centers(document, visible, placed)
     for step in visible:
-        chip = seats.get((step.sender, step.signal, step.index))
+        key = (step.sender, step.signal, step.index)
+        chip = seats.get(key)
         target = placed.get(_id_of(document, step.receiver))
         if step.kind == "widget":
             if target is None:
@@ -166,7 +173,7 @@ def build_arrows(static: object, inputs: object, state: Hashable) -> LayerOutput
             if origin is None:
                 continue
             start, c1, c2, end, head = curve(origin, target, blocked)
-            weight, dashed = _ink(state.scope, step, selected)
+            weight, dashed = _ink(state.scope, step, selected, state.aimed)
             items.append(_arrow_item(start, c1, c2, end, head, weight, dashed, step))
         elif chip is not None:
             origin = placed.get(_id_of(document, step.sender))
@@ -174,8 +181,12 @@ def build_arrows(static: object, inputs: object, state: Hashable) -> LayerOutput
                 continue
             start, c1, c2, end, head = curve(origin, chip, blocked)
             items.append(_arrow_item(start, c1, c2, end, head, "code" if step.kind == "code" else "strong", False, step))
-        if chip is not None and (step.sender, step.signal, step.index) in seats:
-            items.append(_chip_item(chip, step, state.hover))
+        if chip is not None and key in seats:
+            items.append(_chip_item(chip, step, state.hover, state.aimed))
+        leader = leaders.get(key)
+        if leader is not None:
+            bounds = _bounds(leader)
+            items.append(LayerItem(rect=bounds, role="select", layer=ARROWS, data=("leader", leader[0], leader[1])))
     return LayerOutput(tuple(items))
 
 
@@ -216,6 +227,8 @@ def paint(painter: QPainter, item: LayerItem, palette: CanvasPalette) -> None:
         _paint_curve(painter, "strong", False, data[1:5], data[5], overlay)
     elif kind == "chip":
         _paint_chip(painter, item.rect, str(data[1]), str(data[2]), overlay)
+    elif kind == "leader":
+        _paint_leader(painter, data[1], data[2], overlay)
     elif kind == "frame":
         _stroke_rect(painter, item.rect, _qcolor(overlay.select), max(2.0, overlay.min_stroke))
     elif kind == "page":
@@ -230,19 +243,27 @@ def paint(painter: QPainter, item: LayerItem, palette: CanvasPalette) -> None:
 
 
 def mark_at(items: Sequence[object], x: float, y: float) -> Optional[Mark]:
-    """The topmost arrow, code chip, form chip or label under ``(x, y)``."""
+    """The chip under ``(x, y)``, or the arrow nearest that point inside the hit band."""
     point = CanvasPoint(int(x), int(y))
+    nearest: Optional[Mark] = None
+    nearest_distance: Optional[float] = None
     for item in reversed(tuple(items)):
         if not isinstance(item, LayerItem):
             continue
         data = item.data
         if not isinstance(data, tuple) or not data:
             continue
-        if data[0] == "chip" and item.rect.contains(point):
+        if data[0] == "chip" and item.rect.contains(point) and data[2]:
             return Mark(str(data[1]), str(data[3]), str(data[4]), int(data[5]))
-        if data[0] == "arrow" and _near(data[3], data[4], data[5], data[6], data[7], x, y):
-            return Mark("arrow", str(data[8]), str(data[9]), int(data[10]))
-    return None
+        if data[0] != "arrow":
+            continue
+        distance = _distance(data[3], data[4], data[5], data[6], data[7], x, y)
+        if distance > _HIT:
+            continue
+        if nearest_distance is None or distance < nearest_distance:
+            nearest = Mark("arrow", str(data[8]), str(data[9]), int(data[10]))
+            nearest_distance = distance
+    return nearest
 
 
 def _signal_of(bare: str, listed: Optional[str], native: Tuple[str, ...], index: int) -> str:
@@ -270,7 +291,14 @@ def _visible(steps: Sequence[DrawnStep], scope: str, selected: str) -> Tuple[Dra
     return tuple(step for step in steps if step.sender == selected or step.receiver == selected)
 
 
-def _ink(scope: str, step: DrawnStep, selected: str) -> Tuple[str, bool]:
+def _ink(
+    scope: str,
+    step: DrawnStep,
+    selected: str,
+    aimed: Optional[Tuple[str, str, int]] = None,
+) -> Tuple[str, bool]:
+    if aimed == (step.sender, step.signal, step.index):
+        return ("aimed", False)
     if scope == "all":
         return ("strong" if step.sender == selected else "faint", False)
     incoming = bool(selected) and step.receiver == selected and step.sender != selected
@@ -296,9 +324,14 @@ def _arrow_item(
     )
 
 
-def _chip_item(rect: CanvasRect, step: DrawnStep, hover: Optional[Tuple[str, str, int]]) -> LayerItem:
+def _chip_item(
+    rect: CanvasRect,
+    step: DrawnStep,
+    hover: Optional[Tuple[str, str, int]],
+    aimed: Optional[Tuple[str, str, int]] = None,
+) -> LayerItem:
     key = (step.sender, step.signal, step.index)
-    show_label = step.kind == "widget" and hover == key
+    show_label = step.kind == "widget" and (hover == key or aimed == key)
     if step.kind == "widget" and not show_label:
         return LayerItem(rect=rect, role="select", layer=ARROWS, data=("chip", "label", "", step.sender, step.signal, step.index))
     text = _chip_text(step)
@@ -329,21 +362,25 @@ def _chip_seats(
     placed: dict,
     measure: object,
     hover: Optional[Tuple[str, str, int]],
-) -> dict:
+    aimed: Optional[Tuple[str, str, int]] = None,
+) -> Tuple[dict, dict]:
     document = getattr(inputs, "document")
     page = _page_rect(static)
     viewport = getattr(inputs, "viewport", None) or page
     if page is None or viewport is None:
-        return {}
+        return {}, {}
     width_of = measure if callable(measure) else (lambda text: max(12, len(text) * 7))
     content = tuple(getattr(static, "content", ()))
     fixed = tuple(getattr(inputs, "chrome", ()))
     blocked = _centers(document, steps, placed)
+    label_content = _label_obstacles(document, content)
     requests = []
     curves = {}
+    parked_steps = []
     for step in steps:
         key = (step.sender, step.signal, step.index)
-        if step.kind == "widget" and hover != key:
+        lit = hover == key or aimed == key
+        if step.kind == "widget" and not lit:
             continue
         origin = placed.get(_id_of(document, step.sender))
         if origin is None:
@@ -354,59 +391,163 @@ def _chip_seats(
             if target is None:
                 continue
             start, c1, c2, end, _head = curve(origin, target, blocked)
-            curves[key] = (start, c1, c2, end)
+            curves[key] = (start, c1, c2, end, size)
             spot = _bezier(start, c1, c2, end, 0.5)
             requests.append(ChipRequest(key, CanvasRect(int(spot[0]), int(spot[1]), 1, 1), size, LABEL_CORNERS, frozenset()))
         else:
-            # Beside the sender. The solver's last seat is the gutter on this row.
-            requests.append(ChipRequest(key, origin, size, LABEL_CORNERS, frozenset(), outside=True))
-    if not requests:
-        return {}
-    seats = place_chips(requests, content, fixed, page, viewport)
-    found = {seat.key: seat.rect for seat in seats}
-    for request in requests:
-        if request.key in found or request.key not in curves:
-            continue
-        start, c1, c2, end = curves[request.key]
-        for sample in (0.35, 0.65, 0.25, 0.75, 0.15, 0.85):
-            spot = _bezier(start, c1, c2, end, sample)
-            slide = ChipRequest(
-                request.key, CanvasRect(int(spot[0]), int(spot[1]), 1, 1), request.size, LABEL_CORNERS, frozenset()
+            parked_steps.append((step, ChipRequest(key, origin, size, LABEL_CORNERS, frozenset())))
+    found: dict = {}
+    leaders: dict = {}
+    if requests:
+        seats = place_chips(requests, label_content, fixed, page, viewport)
+        found = {seat.key: seat.rect for seat in seats}
+        for request in requests:
+            if request.key in found or request.key not in curves:
+                continue
+            start, c1, c2, end, _size = curves[request.key]
+            for sample in (0.35, 0.65, 0.25, 0.75, 0.15, 0.85):
+                spot = _bezier(start, c1, c2, end, sample)
+                slide = ChipRequest(
+                    request.key, CanvasRect(int(spot[0]), int(spot[1]), 1, 1), request.size, LABEL_CORNERS, frozenset()
+                )
+                seated = place_chips((slide,), label_content, fixed + tuple(found.values()), page, viewport)
+                if seated:
+                    found[request.key] = seated[0].rect
+                    break
+        for request in requests:
+            if request.key in found or request.key not in curves:
+                continue
+            start, c1, c2, end, size = curves[request.key]
+            spot = _bezier(start, c1, c2, end, 0.5)
+            found[request.key] = CanvasRect(
+                int(spot[0] - size.width / 2), int(spot[1] - size.height / 2), size.width, size.height
             )
-            seated = place_chips((slide,), content, fixed + tuple(found.values()), page, viewport)
-            if seated:
-                found[request.key] = seated[0].rect
-                break
-    for request in requests:
-        if request.key in found or request.key in curves:
+    blockers = _solid_rects(document, static) + tuple(found.values())
+    parked_steps.sort(key=lambda pair: 0 if pair[0].kind == "form" else 1)
+    for _step, request in parked_steps:
+        parked = _on_sender_row(request, page, blockers)
+        if parked is None:
             continue
-        parked = _on_sender_row(request, page, tuple(found.values()))
-        if parked is not None:
-            found[request.key] = parked
-    return found
+        rect, leader = parked
+        found[request.key] = rect
+        blockers = blockers + (rect,)
+        if leader is not None:
+            leaders[request.key] = leader
+    return found, leaders
 
 
-def _on_sender_row(request: ChipRequest, page: CanvasRect, taken: Sequence[CanvasRect]) -> Optional[CanvasRect]:
-    """Beside the sender, on its row. The nearer gutter is the last seat, never a column of leftovers."""
+def _label_obstacles(document: UiDocument, content: Sequence[object]) -> Tuple[object, ...]:
+    """Leaf widgets and title bands. Empty layout cells and the page itself stay open."""
+    root = document.root.id
+    kept = []
+    for obstacle in content:
+        node_id = getattr(obstacle, "node", None)
+        if getattr(obstacle, "band", False):
+            kept.append(obstacle)
+            continue
+        if node_id == root:
+            continue
+        node = document.get(node_id) if node_id is not None else None
+        if isinstance(node, LayoutNode):
+            continue
+        kept.append(obstacle)
+    return tuple(kept)
+
+
+def _solid_rects(document: UiDocument, static: object) -> Tuple[CanvasRect, ...]:
+    """Placed widgets and content, without the page and without empty layout cells."""
+    root = document.root.id
+    rects: List[CanvasRect] = []
+    seen = set()
+    for item in getattr(static, "placed", ()):
+        node_id = getattr(item, "node", None)
+        if node_id == root or node_id in seen:
+            continue
+        node = document.get(node_id) if node_id is not None else None
+        if isinstance(node, LayoutNode):
+            continue
+        rect = getattr(item, "rect", None)
+        if isinstance(rect, CanvasRect):
+            rects.append(rect)
+            seen.add(node_id)
+    for obstacle in getattr(static, "content", ()):
+        node_id = getattr(obstacle, "node", None)
+        if node_id == root or node_id in seen:
+            continue
+        if not getattr(obstacle, "band", False):
+            node = document.get(node_id) if node_id is not None else None
+            if isinstance(node, LayoutNode):
+                continue
+        rect = getattr(obstacle, "rect", None)
+        if isinstance(rect, CanvasRect):
+            rects.append(rect)
+    return tuple(rects)
+
+
+def _on_sender_row(
+    request: ChipRequest, page: CanvasRect, taken: Sequence[CanvasRect]
+) -> Optional[Tuple[CanvasRect, Optional[Tuple[Point, Point]]]]:
+    """The nearer gutter on the sender's row, then empty space above or below.
+
+    A spot that covers a widget or another chip is never returned. The last
+    seat is the nearest free gutter, with a short leader back to the sender.
+    """
     origin = request.target
     size = request.size
     y = int(origin.y + (origin.height - size.height) / 2)
-    gap = 8
-    spots = [
-        CanvasRect(origin.x + origin.width + gap, y, size.width, size.height),
-        CanvasRect(origin.x - size.width - gap, y, size.width, size.height),
-    ]
-    for step in range(1, 4):
-        spots.append(CanvasRect(origin.x + origin.width + gap + step * (size.width + 4), y, size.width, size.height))
-        spots.append(CanvasRect(origin.x - gap - (step + 1) * (size.width + 4), y, size.width, size.height))
-    nearer_right = origin.x + origin.width / 2 >= page.x + page.width / 2
-    gutter_x = page.x + page.width - size.width - 4 if nearer_right else page.x + 4
-    spots.append(CanvasRect(int(gutter_x), y, size.width, size.height))
+    nearer_left = origin.x + origin.width / 2 < page.x + page.width / 2
+    gutter_x = int(page.x + 4 if nearer_left else page.x + page.width - size.width - 4)
+    other_x = int(page.x + page.width - size.width - 4 if nearer_left else page.x + 4)
+    spots = [CanvasRect(gutter_x, y, size.width, size.height)]
+    for stack in range(1, 6):
+        spots.append(CanvasRect(gutter_x, y + stack * (size.height + 4), size.width, size.height))
+        spots.append(CanvasRect(gutter_x, y - stack * (size.height + 4), size.width, size.height))
+    spots.append(CanvasRect(origin.x, origin.y - size.height - 8, size.width, size.height))
+    spots.append(CanvasRect(origin.x, origin.y + origin.height + 8, size.width, size.height))
+    spots.append(CanvasRect(other_x, y, size.width, size.height))
     for spot in spots:
-        if any(spot.intersects(other) for other in taken):
-            continue
-        return spot
-    return spots[0]
+        if _clear_spot(spot, page, taken):
+            return spot, None
+    best: Optional[CanvasRect] = None
+    best_distance: Optional[int] = None
+    for gx in (gutter_x, other_x):
+        for step in range(-16, 17):
+            spot = CanvasRect(gx, y + step * 8, size.width, size.height)
+            if not _clear_spot(spot, page, taken):
+                continue
+            distance = abs(spot.y - y)
+            if best_distance is None or distance < best_distance:
+                best = spot
+                best_distance = distance
+    if best is None:
+        return None
+    return best, _leader_line(best, origin)
+
+
+def _clear_spot(spot: CanvasRect, page: CanvasRect, taken: Sequence[CanvasRect]) -> bool:
+    if spot.x < page.x or spot.y < page.y:
+        return False
+    if spot.x + spot.width > page.x + page.width or spot.y + spot.height > page.y + page.height:
+        return False
+    return not any(spot.intersects(other) for other in taken)
+
+
+def _leader_line(chip: CanvasRect, origin: CanvasRect) -> Tuple[Point, Point]:
+    chip_mid = (chip.x + chip.width // 2, chip.y + chip.height // 2)
+    sender_mid = (origin.x + origin.width // 2, origin.y + origin.height // 2)
+    if chip.x + chip.width <= origin.x:
+        start = (chip.x + chip.width, chip_mid[1])
+        end = (origin.x, sender_mid[1])
+    elif chip.x >= origin.x + origin.width:
+        start = (chip.x, chip_mid[1])
+        end = (origin.x + origin.width, sender_mid[1])
+    elif chip.y + chip.height <= origin.y:
+        start = (chip_mid[0], chip.y + chip.height)
+        end = (sender_mid[0], origin.y)
+    else:
+        start = (chip_mid[0], chip.y)
+        end = (sender_mid[0], origin.y + origin.height)
+    return start, end
 
 
 def _bezier(start: Point, c1: Point, c2: Point, end: Point, t: float) -> Point:
@@ -497,10 +638,16 @@ def _samples(start: Point, c1: Point, c2: Point, end: Point) -> Tuple[Point, ...
 
 
 def _near(start: Point, c1: Point, c2: Point, end: Point, head: Tuple[Point, ...], x: float, y: float) -> bool:
+    return _distance(start, c1, c2, end, head, x, y) <= _HIT
+
+
+def _distance(start: Point, c1: Point, c2: Point, end: Point, head: Tuple[Point, ...], x: float, y: float) -> float:
+    best = None
     for point in _samples(start, c1, c2, end) + tuple(head):
-        if math.hypot(point[0] - x, point[1] - y) <= _HIT:
-            return True
-    return False
+        distance = math.hypot(point[0] - x, point[1] - y)
+        if best is None or distance < best:
+            best = distance
+    return best if best is not None else _HIT + 1
 
 
 def _bounds(points: Sequence[Point]) -> CanvasRect:
@@ -561,6 +708,9 @@ def _paint_curve(painter: QPainter, weight: str, dashed: bool, points: Sequence[
     elif weight == "faint":
         color = _qcolor(getattr(overlay, "connect_faint"))
         width = 1.5 if getattr(overlay, "min_stroke") >= 2 else 1.0
+    elif weight == "aimed":
+        color = _qcolor(getattr(overlay, "connect"))
+        width = 3.0 if getattr(overlay, "min_stroke") >= 2 else 2.5
     else:
         color = _qcolor(getattr(overlay, "connect"))
         width = 2.0 if getattr(overlay, "min_stroke") >= 2 else 1.5
@@ -589,6 +739,17 @@ def _paint_curve(painter: QPainter, weight: str, dashed: bool, points: Sequence[
         painter.setPen(Qt.PenStyle.NoPen)
         painter.setBrush(color)
         painter.drawPolygon([QPointF(point[0], point[1]) for point in head])
+    finally:
+        painter.restore()
+
+
+def _paint_leader(painter: QPainter, start: Point, end: Point, overlay: object) -> None:
+    color = _qcolor(getattr(overlay, "connect"))
+    width = 1.5 if getattr(overlay, "min_stroke") >= 2 else 1.0
+    painter.save()
+    try:
+        painter.setPen(QPen(color, width))
+        painter.drawLine(QPointF(start[0], start[1]), QPointF(end[0], end[1]))
     finally:
         painter.restore()
 

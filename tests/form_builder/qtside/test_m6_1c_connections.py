@@ -15,10 +15,11 @@ from typing import Any
 import pytest
 
 from app.features.form_builder.engine.commands.catalog_ext.events import SetEventSteps
-from app.features.form_builder.engine.logic.events_codec import slot_step, write_list
+from app.features.form_builder.engine.logic.events_codec import call_step, slot_step, write_list
 from app.features.form_builder.integration import keys_ext
 from app.features.form_builder.integration.overlay_ext import connections as overlay
 from app.features.form_builder.integration.workbench_ext.connections import layer_plan
+from app.features.form_builder.qtside.canvas.core.overlay import LayerItem
 from app.features.form_builder.qtside.canvas.core.space import CanvasPoint, CanvasRect, Size, ViewMap
 from app.features.form_builder.qtside.canvas.layers.connections import (
     LINK,
@@ -26,6 +27,7 @@ from app.features.form_builder.qtside.canvas.layers.connections import (
     build_arrows,
     curve,
     drawable_steps,
+    mark_at,
 )
 from app.features.form_builder.qtside.canvas.layers.logic_badges import badge_tip, build as build_badges
 from app.features.form_builder.integration.workbench_ext.connections import links_for
@@ -241,6 +243,159 @@ def test_the_label_chip_sits_on_the_curve_not_in_a_margin_column() -> None:
     assert len(chips) == 1
     assert chips[0].rect.x < 800
     assert abs((chips[0].rect.x + chips[0].rect.width / 2) - 240) < 80
+
+
+class _Obstacle:
+    def __init__(self, node: object, rect: CanvasRect, band: bool = False) -> None:
+        self.node = node
+        self.rect = rect
+        self.band = band
+
+
+def _sale_world(log: Any) -> tuple:
+    """sale.ui widgets on the button row the gate photographed, plus the form layout as content."""
+    document = log.document
+    boxes = {
+        "Sale": CanvasRect(0, 0, 520, 240),
+        "nameLabel": CanvasRect(16, 16, 64, 22),
+        "nameEdit": CanvasRect(96, 12, 200, 26),
+        "phoneLabel": CanvasRect(16, 52, 64, 22),
+        "phoneEdit": CanvasRect(96, 48, 200, 26),
+        "clearButton": CanvasRect(16, 148, 88, 28),
+        "printButton": CanvasRect(112, 148, 120, 28),
+        "saveButton": CanvasRect(240, 148, 80, 28),
+        "cancelButton": CanvasRect(328, 196, 72, 24),
+        "buttonBox": CanvasRect(200, 190, 210, 36),
+    }
+    placed = []
+    content = []
+    for name, rect in boxes.items():
+        found = document.by_name(name)
+        assert found, name
+        obstacle = _Obstacle(found[0], rect)
+        placed.append(obstacle)
+        content.append(obstacle)
+    layout = document.root.layout
+    assert layout is not None
+    content.append(_Obstacle(layout.id, CanvasRect(8, 8, 500, 220)))
+    content.append(_Obstacle(document.root.id, CanvasRect(0, 0, 520, 22), band=True))
+    static = SimpleNamespace(view=_view(), placed=tuple(placed), content=tuple(content))
+    current = document.by_name("clearButton")[0]
+    inputs = SimpleNamespace(
+        document=document,
+        selection=SimpleNamespace(current=current, ids=(current,)),
+        viewport=CanvasRect(0, 0, 800, 600),
+        chrome=(),
+        measure=lambda text: len(text) * 7,
+    )
+    return static, inputs, boxes
+
+
+def test_sale_code_and_form_chips_cover_no_widget() -> None:
+    text = (Path(__file__).resolve().parents[1] / "fixtures" / "m6" / "forms" / "sale.ui").read_text(encoding="utf-8")
+    log = open_log(text)
+    log.execute(
+        SetEventSteps(
+            "clearButton",
+            "clicked",
+            (call_step("print_receipt"), slot_step("Sale", "accept()")),
+        )
+    )
+    static, inputs, boxes = _sale_world(log)
+    items = build_arrows(static, inputs, ArrowState("all", None)).items
+    chips = [
+        item
+        for item in items
+        if isinstance(item.data, tuple) and item.data[0] == "chip" and item.data[1] in ("code", "form")
+    ]
+    clear = [chip for chip in chips if chip.data[3] == "clearButton"]
+    assert {chip.data[1] for chip in clear} == {"code", "form"}
+    widgets = [boxes[name] for name in boxes if name != "Sale"]
+    for chip in chips:
+        covered = [name for name, rect in boxes.items() if name != "Sale" and chip.rect.intersects(rect)]
+        assert not covered, (chip.data[1], chip.data[2], covered, chip.rect)
+
+
+def test_hovering_a_sale_step_keeps_its_label_chip() -> None:
+    text = (Path(__file__).resolve().parents[1] / "fixtures" / "m6" / "forms" / "sale.ui").read_text(encoding="utf-8")
+    log = open_log(text)
+    log.execute(SetEventSteps("clearButton", "clicked", (slot_step("nameEdit", "clear()"),)))
+    static, inputs, _boxes = _sale_world(log)
+    drawn = drawable_steps(log.document)
+    step = next(item for item in drawn if item.sender == "clearButton" and item.kind == "widget")
+    items = build_arrows(static, inputs, ArrowState("all", (step.sender, step.signal, step.index))).items
+    chips = [
+        item
+        for item in items
+        if isinstance(item.data, tuple) and item.data[0] == "chip" and item.data[1] == "label" and item.data[2]
+    ]
+    assert len(chips) == 1
+    assert "clear" in str(chips[0].data[2]).lower() or "name" in str(chips[0].data[2]).lower()
+
+
+def test_a_click_nearer_arrow_a_aims_a() -> None:
+    def arrow(x: int, sender: str) -> LayerItem:
+        point = (x, 0)
+        return LayerItem(
+            CanvasRect(x, 0, 1, 1),
+            "select",
+            1.0,
+            "connections",
+            ("arrow", "faint", False, point, point, point, point, (point, point, point), sender, "clicked()", 0),
+        )
+
+    items = [arrow(0, "A"), arrow(8, "B")]
+    aimed = mark_at(items, 2, 0)
+    assert aimed is not None and aimed.sender == "A"
+    other = mark_at(items, 6, 0)
+    assert other is not None and other.sender == "B"
+
+
+def test_an_aimed_arrow_is_the_heavy_stroke_and_keeps_its_label() -> None:
+    log = open_log(form(connection("clearButton", "clicked()", "nameEdit", "clear()")))
+    current = log.document.by_name("clearButton")[0]
+    static, inputs = _world(log, current)
+    items = build_arrows(static, inputs, ArrowState("all", None, ("clearButton", "clicked()", 0))).items
+    arrows = [item for item in items if isinstance(item.data, tuple) and item.data[0] == "arrow"]
+    labels = [
+        item
+        for item in items
+        if isinstance(item.data, tuple) and item.data[0] == "chip" and item.data[2]
+    ]
+    assert arrows and arrows[0].data[1] == "aimed"
+    assert len(labels) == 1
+
+
+def test_badges_stay_off_neighbours_and_the_title_band() -> None:
+    text = (Path(__file__).resolve().parents[1] / "fixtures" / "m6" / "forms" / "sale.ui").read_text(encoding="utf-8")
+    log = open_log(text)
+    log.execute(SetEventSteps("phoneEdit", "returnPressed", (slot_step("nameEdit", "setFocus()"),)))
+    log.execute(SetEventSteps("buttonBox", "accepted", (slot_step("Sale", "accept()"),)))
+    static, inputs, boxes = _sale_world(log)
+    badges = {
+        item.data[1]: item.rect
+        for item in build_badges(static, inputs, None).items
+        if isinstance(item.data, tuple) and item.data[0] == "badge"
+    }
+    band = CanvasRect(0, 0, 520, 22)
+    for rect in badges.values():
+        assert not rect.intersects(band)
+    assert "phoneEdit" in badges and "buttonBox" in badges
+    assert not badges["phoneEdit"].intersects(boxes["nameEdit"])
+    overlap = min(badges["phoneEdit"].x + badges["phoneEdit"].width, boxes["phoneEdit"].x + boxes["phoneEdit"].width) - max(
+        badges["phoneEdit"].x, boxes["phoneEdit"].x
+    )
+    assert overlap >= badges["phoneEdit"].width / 2
+    assert not badges["buttonBox"].intersects(boxes["cancelButton"])
+    assert badges["buttonBox"].x <= boxes["buttonBox"].x + 4
+
+
+def test_an_unknown_glyph_falls_back_instead_of_raising(qapp: QApplication) -> None:
+    del qapp
+    from app.features.form_builder.integration.workbench import _glyph_icon
+
+    assert _glyph_icon("not-a-real-glyph", "#000000", "#888888", 16, 1.0).isNull()
+    assert not _glyph_icon("connections", "#000000", "#888888", 16, 1.0).isNull()
 
 
 @pytest.mark.timeout(180)

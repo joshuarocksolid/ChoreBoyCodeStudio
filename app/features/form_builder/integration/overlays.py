@@ -654,7 +654,7 @@ class OverlayModes:
         if gesture is None:
             return ""
         document = self._session.document
-        from app.features.form_builder.integration.overlay_ext.connections import display_name
+        from app.features.form_builder.engine.query.tab_stops import display_name
 
         if self._link_source is not None:
             source = document.get(self._link_source)

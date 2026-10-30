@@ -129,6 +129,7 @@ def test_k25_connections_overlay_from_the_keyboard(qapp: QApplication, tmp_path:
     report.append("phoneEdit step: %s stalled=%s" % (bool(phone), stalled))
     assert not stalled
     assert phone
+    assert phone[0].signal == "returnPressed()"
     assert len(surface.session.log.entries()) == 1
 
     _click(canvas, Qt.Key.Key_Escape)

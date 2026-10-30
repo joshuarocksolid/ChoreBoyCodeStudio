@@ -224,17 +224,25 @@ def _dpr(widget: QWidget) -> float:
 
 
 def _glyph_icon(glyph: str, color: str, faint: str, logical: int, dpr: float) -> QIcon:
+    try:
+        normal = paint_glyph(glyph, color, logical, dpr)
+        quiet = paint_glyph(glyph, faint, logical, dpr)
+    except KeyError:
+        return QIcon()
     icon = QIcon()
     mode = getattr(QIcon, "Mode", QIcon)
-    icon.addPixmap(paint_glyph(glyph, color, logical, dpr), getattr(mode, "Normal"))
-    icon.addPixmap(paint_glyph(glyph, faint, logical, dpr), getattr(mode, "Disabled"))
+    icon.addPixmap(normal, getattr(mode, "Normal"))
+    icon.addPixmap(quiet, getattr(mode, "Disabled"))
     return icon
 
 
 def _paint_glyph(button: QToolButton, glyph: str, tokens: ShellThemeTokens, logical: int) -> None:
     color = tokens.icon_primary or tokens.text_primary
     faint = tokens.gutter_text or color
-    button.setIcon(_glyph_icon(glyph, color, faint, logical, _dpr(button)))
+    icon = _glyph_icon(glyph, color, faint, logical, _dpr(button))
+    if icon.isNull():
+        return
+    button.setIcon(icon)
     button.setIconSize(QSize(logical, logical))
 
 
@@ -403,6 +411,8 @@ class FormToolbar(QWidget):
                 continue
             toggle = _tool(kind.toggle.label, "formBuilder.overlay.%s" % kind.kind, kind.toggle.tooltip, self)
             toggle.setCheckable(True)
+            toggle.setProperty("formBuilder.fullLabel", kind.toggle.label)
+            toggle.setToolButtonStyle(_button_style("ToolButtonTextBesideIcon"))
             self.overlay_toggles[kind.kind] = toggle
             row.addWidget(toggle)
 
@@ -584,6 +594,11 @@ class FormToolbar(QWidget):
         style = _button_style("ToolButtonIconOnly" if compact else "ToolButtonTextBesideIcon")
         self.tab_order.setToolButtonStyle(style)
         self.buddies.setToolButtonStyle(style)
+        for button in self.overlay_toggles.values():
+            label = str(button.property("formBuilder.fullLabel") or "")
+            button.setText("" if compact else label)
+            button.setToolButtonStyle(style)
+            button.setAccessibleName(_control_name(button.text(), button.toolTip()))
         self.tab_order.setAccessibleName(_control_name(self.tab_order.text(), self.tab_order.toolTip()))
         self.buddies.setAccessibleName(_control_name(self.buddies.text(), self.buddies.toolTip()))
         self.text_size.setVisible(not compact)

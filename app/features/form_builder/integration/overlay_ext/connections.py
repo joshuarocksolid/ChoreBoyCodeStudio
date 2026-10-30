@@ -21,7 +21,7 @@ from app.features.form_builder.engine.logic.compat import is_signature, signatur
 from app.features.form_builder.engine.logic.events import read_event
 from app.features.form_builder.engine.logic.events_catalog import event_words, step_words
 from app.features.form_builder.engine.logic.events_codec import EventStep, slot_step
-from app.features.form_builder.engine.query.tab_stops import buddy_of, caption, labels
+from app.features.form_builder.engine.query.tab_stops import display_name
 from app.features.form_builder.engine.style.classes import widget_chain
 from app.features.form_builder.engine.ui4.nodes import WidgetNode
 from app.features.form_builder.integration.overlay_ext import LinkGesture, LinkView, OverlayKind, ToggleSpec
@@ -144,24 +144,6 @@ def _stub_open(surface: Any, source: NodeId, target: NodeId) -> None:
     exec_qt(dialog)
 
 
-def display_name(doc: Any, object_name: str) -> str:
-    """Buddy label, then the widget's own text, then the object name. ``&`` is removed."""
-    if not object_name:
-        return ""
-    for label_id in labels(doc):
-        if buddy_of(doc, label_id) != object_name:
-            continue
-        text = caption(doc, label_id)
-        label = doc.get(label_id)
-        if text and text != getattr(label, "object_name", ""):
-            return text
-    found = doc.by_name(object_name)
-    node = doc.get(found[0]) if found else None
-    if isinstance(node, WidgetNode):
-        return caption(doc, node.id) or object_name
-    return object_name
-
-
 def window_file(surface: Any) -> str:
     """``<stem>_window.py`` for the open form, or empty when it has no path."""
     path = str(getattr(surface, "_path", "") or "")
@@ -207,12 +189,19 @@ def code_status(method: str, file_name: str) -> str:
 
 
 def _default_signal(node: object) -> str:
-    """The class's default event, so OK writes a step the engine accepts."""
+    """The class's default event, so OK writes a step the engine accepts.
+
+    A line edit stores ``returnPressed()``. ``editingFinished`` fires when focus
+    leaves the field, which would start another link on every Tab.
+    """
     if not isinstance(node, WidgetNode):
         return "clicked()"
     from app.features.form_builder.engine.logic.events_catalog import default_event
+    from app.features.form_builder.engine.style.classes import stock_chain
     from app.features.form_builder.engine.ui4.defaults import QtClassTable
 
+    if "QLineEdit" in stock_chain(node.class_name):
+        return signature_text("returnPressed", ())
     name = default_event(QtClassTable.shared(), node.class_name) or "clicked"
     return signature_text(name, ())
 
