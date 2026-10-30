@@ -176,6 +176,7 @@ class Outcome:
     method: Optional[MethodAsk] = None
     focus_signal: str = ""
     focus_index: int = -1
+    unused_method: str = ""
 
 
 def count_events(doc: UiDocument, sender: str) -> int:
@@ -245,11 +246,12 @@ def project_incoming(doc: UiDocument, classes: QtClassTable, target: str) -> Tup
     for state in read_events(doc):
         if state.sender == target or state.has_unreadable_list:
             continue
+        aimed = [(index, step) for index, step in enumerate(state.steps) if _aims_at(doc, step, target)]
+        if not aimed:
+            continue
         chain = _chain_of(doc, classes, state.sender)
         sender_display = display_name(doc, state.sender)
-        for index, step in enumerate(state.steps):
-            if not _aims_at(doc, step, target):
-                continue
+        for index, step in aimed:
             words = "When %s: %s" % (event_clause(state.signal_name, chain, sender_display), _short_words(doc, classes, step))
             found.append(IncomingRow(state.sender, state.signal_name, index, words))
     return tuple(found)
@@ -391,7 +393,7 @@ def _event_view(
         state.signal_name,
         "When %s" % words.header,
         qt,
-        "Event, %s, Qt signal %s" % (state.signal_name, qt or (state.signal_name + "()")),
+        "Event, %s%s" % (words.header, (", Qt signal %s" % qt) if qt else ""),
         steps,
         read_only,
         False,
@@ -628,12 +630,14 @@ def _delete(
     steps = tuple(item for index, item in enumerate(state.steps) if index != gesture.index)
     caption = "Delete %s" % _short_words(doc, classes, step)
     status = ""
+    unused = ""
     if step.verb == "call" and step.method and not _method_used_elsewhere(
         doc, step.method, sender, state.signal_name, gesture.index
     ):
         status = "METHOD_UNUSED"
+        unused = step.method
     focus = min(gesture.index, len(steps) - 1)
-    return _written(sender, state.signal_name, steps, caption, status, focus)
+    return _written(sender, state.signal_name, steps, caption, status, focus, unused)
 
 
 def _method_used_elsewhere(
@@ -778,6 +782,13 @@ def _change_event(doc: UiDocument, classes: QtClassTable, sender: str, gesture: 
     return Outcome(command, "", None, new, len(destination.steps))
 
 
+def unused_method_sentence(method: str, file_name: str) -> str:
+    """§13.3.8. Empty when the method or the window file is missing."""
+    if not method or not file_name:
+        return ""
+    return "Removed the step. %s() is still in %s. \u00b7 Undo" % (method, file_name)
+
+
 def _written(
     sender: str,
     signal: str,
@@ -785,8 +796,16 @@ def _written(
     caption: str,
     status: str,
     focus: int,
+    unused: str = "",
 ) -> Outcome:
-    return Outcome(SetEventSteps(sender, signal, steps, caption=caption), status, None, signal, focus)
+    return Outcome(
+        SetEventSteps(sender, signal, steps, caption=caption),
+        status,
+        None,
+        signal,
+        focus,
+        unused,
+    )
 
 
 def _fits(step: EventStep, overloads: Tuple[Tuple[str, Tuple[str, ...]], ...]) -> bool:

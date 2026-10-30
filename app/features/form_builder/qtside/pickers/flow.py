@@ -5,6 +5,7 @@ Nothing here calls the log. The widget does, and only for a commit.
 
 from __future__ import annotations
 
+import weakref
 from dataclasses import dataclass, replace
 from typing import Optional, Sequence, Tuple
 
@@ -60,6 +61,7 @@ class Item:
     note: str = ""
     enabled: bool = True
     header: bool = False
+    search: str = ""
 
 
 @dataclass(frozen=True)
@@ -376,17 +378,27 @@ def _pair_page(
     return _select_first(page)
 
 
-_TARGET_ROWS: dict = {}
+_TARGET_ROWS: weakref.WeakKeyDictionary = weakref.WeakKeyDictionary()
 
 
 def _target_rows(ctx: PickContext) -> Tuple[Item, ...]:
-    key = (id(ctx.doc), ctx.doc.revision, ctx.source.sender)
-    cached = _TARGET_ROWS.get(key)
-    if cached is None:
-        cached = tuple(Item("target", name, _target_line(ctx, name)) for name in _widget_names(ctx))
-        _TARGET_ROWS.clear()
-        _TARGET_ROWS[key] = cached
-    return cached
+    bucket = _TARGET_ROWS.get(ctx.doc)
+    key = (ctx.doc.revision, ctx.source.sender)
+    if bucket is None or bucket[0] != key:
+        rows = tuple(Item("target", name, _target_line(ctx, name)) for name in _widget_names(ctx))
+        bucket = (key, rows)
+        _TARGET_ROWS[ctx.doc] = bucket
+    return bucket[1]
+
+
+def _intent_search(ctx: PickContext, spec: IntentSpec) -> str:
+    """Target names and the slot, so the step filter finds "name", "setFocus" and "clear()"."""
+    parts = [spec.target_slot]
+    if spec.needs_target:
+        for name in target_candidates(ctx.doc, ctx.classes, spec, ctx.source.sender):
+            parts.append(name)
+            parts.append(display_name(ctx.doc, name))
+    return " ".join(part for part in parts if part)
 
 
 def _target_page(
@@ -425,7 +437,7 @@ def _intent_rows(ctx: PickContext, event: Optional[str]) -> list:
     if specs:
         rows.append(Item("header", "", "DO THIS", header=True))
         for spec in specs:
-            rows.append(Item("intent", spec.intent_id, spec.words))
+            rows.append(Item("intent", spec.intent_id, spec.words, search=_intent_search(ctx, spec)))
     return rows
 
 
@@ -487,9 +499,7 @@ def _signal_signature(ctx: PickContext, name: str) -> str:
     chosen = with_args[0] if with_args else (overloads[0] if overloads else None)
     if chosen is None:
         return name + "()"
-    if chosen[1]:
-        return "%s(%s)" % (chosen[0], ",".join(chosen[1]))
-    return chosen[0] + "()"
+    return chosen[0]
 
 
 def _filter(rows: Tuple[Item, ...], text: str) -> Tuple[Item, ...]:
@@ -502,7 +512,7 @@ def _filter(rows: Tuple[Item, ...], text: str) -> Tuple[Item, ...]:
         if item.header:
             pending = item
             continue
-        hay = " ".join((item.text, item.faint, item.payload, item.note)).casefold()
+        hay = " ".join((item.text, item.faint, item.payload, item.note, item.search)).casefold()
         if needle in hay:
             if pending is not None:
                 found.append(pending)
@@ -512,7 +522,8 @@ def _filter(rows: Tuple[Item, ...], text: str) -> Tuple[Item, ...]:
             pending = None
     if not any(not item.header for item in found):
         sentence = "Nothing matches \u201c%s\u201d." % text
-        return (Item("header", "", sentence, header=True),)
+        kept = tuple(item for item in rows if item.kind == "widget-action")
+        return (Item("header", "", sentence, header=True),) + kept
     return tuple(found)
 
 
@@ -567,10 +578,10 @@ def _intent(ctx: PickContext, intent_id: str) -> Optional[IntentSpec]:
 
 def _intent_fits_target(ctx: PickContext, intent_id: str) -> bool:
     spec = _intent(ctx, intent_id)
-    if spec is None:
+    if spec is None or not ctx.target:
         return False
     if not spec.needs_target:
-        return True
+        return ctx.target == ctx.doc.root.object_name
     return ctx.target in target_candidates(ctx.doc, ctx.classes, spec, ctx.source.sender)
 
 
@@ -664,7 +675,10 @@ def _target_line(ctx: PickContext, name: str) -> str:
     friendly = friendly_class(class_name) if class_name else ""
     if name == ctx.doc.root.object_name:
         return "This form (%s)" % name
-    return "%s (%s) \u00b7 %s" % (display_name(ctx.doc, name), name, friendly)
+    shown = display_name(ctx.doc, name)
+    if shown == name:
+        return "%s \u00b7 %s" % (name, friendly) if friendly else name
+    return "%s (%s) \u00b7 %s" % (shown, name, friendly)
 
 
 def _used_methods(ctx: PickContext, signal: str) -> set:

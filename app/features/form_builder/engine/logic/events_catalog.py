@@ -47,17 +47,17 @@ _BY_SIGNAL: Dict[str, EventWords] = {
     "clicked": EventWords("clicked", "clicked", "clicked", "{display} is clicked"),
     "pressed": EventWords("pressed", "pressed", "pressed", "{display} is pressed"),
     "released": EventWords("released", "released", "released", "{display} is released"),
-    "toggled": EventWords("checked or unchecked", "checked or unchecked", "toggled", "{display} is turned on or off"),
-    "editingFinished": EventWords("editing is finished", "finished editing", "done", "editing of {display} is finished"),
+    "toggled": EventWords("checked or unchecked", "checked or unchecked", "toggled", "{display} is checked or unchecked"),
+    "editingFinished": EventWords("editing is finished", "finished editing", "done", "you finish editing {display}"),
     "returnPressed": EventWords("Enter is pressed", "given Enter", "enter", "Enter is pressed in {display}"),
     "textChanged": EventWords("the text changes", "changed", "text_changed", "the text of {display} changes"),
-    "textEdited": EventWords("the text is typed", "changed", "typed", "the text of {display} is typed"),
+    "textEdited": EventWords("the text is typed", "changed", "typed", "the text is typed in {display}"),
     "currentIndexChanged": EventWords("the choice changes", "changed", "changed", "the choice of {display} changes"),
     "valueChanged": EventWords("the value changes", "changed", "changed", "the value of {display} changes"),
     "dateChanged": EventWords("the date changes", "changed", "changed", "the date of {display} changes"),
     "timeChanged": EventWords("the time changes", "changed", "changed", "the time of {display} changes"),
     "dateTimeChanged": EventWords("the date or time changes", "changed", "changed", "the date or time of {display} changes"),
-    "itemActivated": EventWords("an item is opened", "opened", "opened", "an item of {display} is opened"),
+    "itemActivated": EventWords("an item is opened", "opened", "opened", "an item in {display} is opened"),
     "currentRowChanged": EventWords("another row is chosen", "moved to another row", "row_changed", "the row of {display} changes"),
     "accepted": EventWords("OK is pressed", "accepted", "ok", "OK is pressed in {display}"),
     "rejected": EventWords("Cancel is pressed", "cancelled", "cancel", "Cancel is pressed in {display}"),
@@ -68,9 +68,9 @@ _BY_SIGNAL: Dict[str, EventWords] = {
 #: Words that depend on the class the signal belongs to: (signal, class in the chain).
 _BY_CLASS: Dict[Tuple[str, str], EventWords] = {
     ("clicked", "QDialogButtonBox"): EventWords(
-        "any of its buttons is clicked", "clicked", "button_clicked", "a button of {display} is clicked"
+        "any of its buttons is clicked", "clicked", "button_clicked", "a button in {display} is clicked"
     ),
-    ("activated", "QComboBox"): EventWords("a choice is picked", "picked", "picked", "a choice of {display} is picked"),
+    ("activated", "QComboBox"): EventWords("a choice is picked", "picked", "picked", "a choice is picked in {display}"),
     ("currentChanged", "QTabWidget"): EventWords(
         "the page changes", "switched to another page", "page_changed", "the page of {display} changes"
     ),

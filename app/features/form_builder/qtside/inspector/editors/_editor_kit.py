@@ -20,7 +20,8 @@ def project_locale() -> QLocale:
     return QLocale(getattr(language, "English"), getattr(territory, "UnitedStates"))
 
 # UX spec fb.warning swatches: light, dark, high-contrast light, high-contrast dark.
-_WARNING = ((217, 119, 6), (229, 161, 0), (122, 69, 0), (255, 215, 0))
+# Light amber is dark enough for 4.5:1 on the white inspector. The others already clear that bar.
+_WARNING = ((138, 75, 8), (229, 161, 0), (122, 69, 0), (255, 215, 0))
 
 
 def change_label(label: str) -> str:

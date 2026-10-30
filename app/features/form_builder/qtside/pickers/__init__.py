@@ -15,7 +15,13 @@ from app.qt.QtWidgets import QWidget
 from app.features.form_builder.engine.project.handler_names import value_param
 from app.features.form_builder.engine.ui4.defaults import QtClassTable
 from app.features.form_builder.qtside.inspector._services import Dropped, Rejected
-from app.features.form_builder.qtside.inspector.behavior_ext._rows import Gesture, MethodAsk, Outcome, finish
+from app.features.form_builder.qtside.inspector.behavior_ext._rows import (
+    Gesture,
+    MethodAsk,
+    Outcome,
+    finish,
+    unused_method_sentence,
+)
 from app.features.form_builder.qtside.pickers.flow import PickerSource
 from app.features.form_builder.qtside.pickers.popover import EventPicker, build_context
 from app.features.form_builder.qtside.theme.chrome import default_chrome
@@ -51,13 +57,11 @@ def open_for_link(surface: QWidget, source_id: object, target_id: object = None,
     parsed = PickerSource.parse(sender)
     services = _services(surface)
     chrome = services.chrome if services is not None else default_chrome()
-    picker = EventPicker(surface, chrome, lambda gesture: _commit(surface, parsed, gesture))
+    picker = EventPicker(surface, chrome, lambda gesture: _commit(surface, parsed, gesture, caption))
     methods, window_file, window_class = _window(surface)
     ctx = build_context(doc, parsed, receiver, methods, window_file, window_class)
     point = at if isinstance(at, QPoint) else None
     picker.open_at(surface, ctx, point)
-    if picker._page is not None:
-        picker._apply(replace(picker._page, title=caption))
     return picker
 
 
@@ -118,7 +122,7 @@ def open_event_picker(host: QWidget, source: object, target: object = "") -> Eve
     return picker
 
 
-def _commit(host: QWidget, source: PickerSource, gesture: Gesture) -> None:
+def _commit(host: QWidget, source: PickerSource, gesture: Gesture, link_caption: Optional[str] = None) -> None:
     services = _services(host)
     if services is None:
         return
@@ -134,14 +138,17 @@ def _commit(host: QWidget, source: PickerSource, gesture: Gesture) -> None:
         _narrate(host, outcome.status)
         return
     _note(host, outcome)
-    result = services.execute(outcome.command)
+    command = outcome.command
+    if link_caption and command is not None and hasattr(command, "caption"):
+        command = replace(command, caption=link_caption)
+    result = services.execute(command)
     if isinstance(result, Rejected):
         _narrate(host, result.message)
         return
     if isinstance(result, Dropped):
         return
     if outcome.status:
-        _narrate(host, _status_sentence(host, outcome.status))
+        _narrate(host, _status_sentence(host, outcome.status, outcome.unused_method))
 
 
 def _method(host: QWidget, gesture: Gesture, ask: MethodAsk) -> None:
@@ -172,13 +179,11 @@ def _note(host: QWidget, outcome: Outcome) -> None:
         note(outcome.focus_signal, outcome.focus_index)
 
 
-def _status_sentence(host: QWidget, status: str) -> str:
+def _status_sentence(host: QWidget, status: str, method: str = "") -> str:
     if status != "METHOD_UNUSED":
         return status
     _methods, file_name, _klass = _window(host)
-    if not file_name:
-        return ""
-    return "%s. \u00b7 Undo" % file_name
+    return unused_method_sentence(method, file_name)
 
 
 def _narrate(host: QWidget, sentence: str) -> None:

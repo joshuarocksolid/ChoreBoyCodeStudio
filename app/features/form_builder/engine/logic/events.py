@@ -10,6 +10,7 @@ is the only writer.
 
 from __future__ import annotations
 
+import weakref
 from dataclasses import dataclass, replace
 from typing import Any, Dict, List, Optional, Set, Tuple
 
@@ -154,9 +155,24 @@ def read_event(doc: UiDocument, sender: str, signal_name: str) -> EventState:
     )
 
 
+_READ: weakref.WeakKeyDictionary = weakref.WeakKeyDictionary()
+
+
 def read_events(doc: UiDocument) -> Tuple[EventState, ...]:
     """Every event of the form that has a step. Events with native connections come first, in
-    ``<connections>`` order of their first connection; list-only events follow in document order."""
+    ``<connections>`` order of their first connection; list-only events follow in document order.
+
+    One tuple per document revision. Callers that paint a frame share it.
+    """
+    cached = _READ.get(doc)
+    if cached is not None and cached[0] == doc.revision:
+        return cached[1]
+    result = _read_events(doc)
+    _READ[doc] = (doc.revision, result)
+    return result
+
+
+def _read_events(doc: UiDocument) -> Tuple[EventState, ...]:
     keys: List[Tuple[str, str]] = []
     seen: Set[Tuple[str, str]] = set()
     for node in doc.connections():

@@ -7,13 +7,15 @@ the reading order otherwise. Everything here is O(form).
 
 from __future__ import annotations
 
+import weakref
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple
 
 from app.features.form_builder.engine.ids import NodeId
+from app.features.form_builder.engine.query.actions import plain_text, text_of
 from app.features.form_builder.engine.query.tree import effective_tab_order, reading_order
 from app.features.form_builder.engine.ui4.document import UiDocument
-from app.features.form_builder.engine.ui4.nodes import LayoutNode, WidgetNode
+from app.features.form_builder.engine.ui4.nodes import ActionNode, LayoutNode, WidgetNode
 from app.features.form_builder.engine.ui4.values import CStringValue, StringValue
 
 
@@ -72,26 +74,25 @@ def caption_name(doc: UiDocument, node_id: NodeId) -> str:
     return node.object_name if isinstance(node, WidgetNode) else ""
 
 
-_NAMES: dict = {}
+_NAMES: weakref.WeakKeyDictionary = weakref.WeakKeyDictionary()
 
 
 def display_name(doc: UiDocument, object_name: str) -> str:
     """Buddy label, then the widget's own text, then the object name. ``&`` is removed.
 
-    One bucket per document revision, so a large form does not walk every label again.
+    The form uses its window title. An action uses its text. One bucket per
+    document revision, so a large form does not walk every label again.
     """
     if not object_name:
         return ""
-    key = (id(doc), doc.revision)
-    bucket = _NAMES.get(key)
-    if bucket is None:
-        _NAMES.clear()
-        bucket = {}
-        _NAMES[key] = bucket
-    found = bucket.get(object_name)
+    bucket = _NAMES.get(doc)
+    if bucket is None or bucket[0] != doc.revision:
+        bucket = (doc.revision, {})
+        _NAMES[doc] = bucket
+    found = bucket[1].get(object_name)
     if found is None:
         found = _display_name(doc, object_name)
-        bucket[object_name] = found
+        bucket[1][object_name] = found
     return found
 
 
@@ -106,7 +107,15 @@ def _display_name(doc: UiDocument, object_name: str) -> str:
     found = doc.by_name(object_name)
     node = doc.get(found[0]) if found else None
     if isinstance(node, WidgetNode):
+        if node.id == doc.root.id:
+            title = plain_text(text_of(node, "windowTitle"))
+            if title and title != object_name:
+                return title
         return caption(doc, node.id) or object_name
+    if isinstance(node, ActionNode):
+        label = plain_text(text_of(node))
+        if label and label != object_name:
+            return label
     return object_name
 
 
@@ -125,13 +134,21 @@ def is_label(doc: UiDocument, node_id: NodeId) -> bool:
     return isinstance(node, WidgetNode) and node.class_name == "QLabel"
 
 
+_LABELS: weakref.WeakKeyDictionary = weakref.WeakKeyDictionary()
+
+
 def labels(doc: UiDocument) -> Tuple[NodeId, ...]:
-    """Every QLabel with a name, in document order."""
-    return tuple(
+    """Every QLabel with a name, in document order. One walk per document revision."""
+    cached = _LABELS.get(doc)
+    if cached is not None and cached[0] == doc.revision:
+        return cached[1]
+    found = tuple(
         node.id
         for node in doc.iter_preorder()
         if isinstance(node, WidgetNode) and node.class_name == "QLabel" and node.object_name
     )
+    _LABELS[doc] = (doc.revision, found)
+    return found
 
 
 def buddy_choices(doc: UiDocument) -> Tuple[Stop, ...]:

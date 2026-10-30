@@ -10,7 +10,13 @@ from app.features.form_builder.engine.query.selection import SelectionSource
 from app.features.form_builder.engine.ui4.defaults import QtClassTable
 from app.features.form_builder.qtside.inspector._services import Dropped, Rejected
 from app.features.form_builder.qtside.inspector.behavior_ext import BehaviorSection, SectionHost, SectionInputs
-from app.features.form_builder.qtside.inspector.behavior_ext._rows import FormRow, Gesture, finish, project_form
+from app.features.form_builder.qtside.inspector.behavior_ext._rows import (
+    FormRow,
+    Gesture,
+    finish,
+    project_form,
+    unused_method_sentence,
+)
 
 
 class FormEventsBody(QWidget):
@@ -84,6 +90,8 @@ class FormEventsBody(QWidget):
         result = self._services.execute(outcome.command)
         if isinstance(result, (Rejected, Dropped)):
             return
+        if outcome.status == "METHOD_UNUSED":
+            _narrate(self, unused_method_sentence(outcome.unused_method, _window_file(self)))
 
 
 class _FormRow(QLabel):
@@ -111,6 +119,27 @@ class _FormRow(QLabel):
             self._body.delete(self._row)
             return
         super().keyPressEvent(event)  # type: ignore[arg-type]
+
+
+def _window_file(widget: QWidget) -> str:
+    import os
+
+    services = getattr(widget, "_services", None)
+    scope = getattr(getattr(services, "session", None), "scope", None)
+    path = getattr(scope, "window_path", None) or ""
+    return os.path.basename(path) if path else ""
+
+
+def _narrate(widget: QWidget, sentence: str) -> None:
+    if not sentence:
+        return
+    current = widget.parentWidget()
+    while current is not None:
+        narrate = getattr(current, "narrate", None)
+        if callable(narrate):
+            narrate(sentence)
+            return
+        current = current.parentWidget()
 
 
 def _applies(inputs: SectionInputs) -> bool:

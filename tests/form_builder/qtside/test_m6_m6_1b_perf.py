@@ -1,8 +1,9 @@
 # pyright: reportAttributeAccessIssue=false
 """UX-M6-003. Process CPU time on the 300-widget reference form.
 
-Picker keystrokes stay within 16 ms p95, including Qt. Behavior's added share
-of a select stays within 16 ms p95 over the Properties-tab flush.
+Selecting a widget with 20 events, a picker keystroke (including processEvents),
+and a commit through to the repainted canvas and inspector each stay within
+16 ms p95. The commit figure is the added cost over a bare repaint.
 """
 
 from __future__ import annotations
@@ -15,6 +16,8 @@ import pytest
 
 pytest.importorskip("app.qt.QtWidgets", exc_type=ImportError)
 
+from app.features.form_builder.engine.commands.catalog_ext.events import SetEventSteps  # noqa: E402
+from app.features.form_builder.engine.logic.events_codec import slot_step  # noqa: E402
 from app.features.form_builder.engine.query.selection import SelectionSource  # noqa: E402
 from app.features.form_builder.qtside.inspector.pane import TabId  # noqa: E402
 from app.features.form_builder.qtside.pickers import open_event_picker  # noqa: E402
@@ -56,18 +59,11 @@ def _form() -> str:
             "<connection><sender>button%d</sender><signal>clicked()</signal><receiver>edit%d</receiver><slot>clear()</slot></connection>"
             % (i, i)
         )
-    for signal in (
-        "itemClicked(QListWidgetItem*)",
-        "itemActivated(QListWidgetItem*)",
-        "currentRowChanged(int)",
-        "currentTextChanged(QString)",
-    ):
-        for n in range(5):
-            conns.append(
-                "<connection><sender>bigList</sender><signal>%s</signal><receiver>Ref</receiver><slot>close()</slot></connection>"
-                % signal
-            )
-            del n
+    for index in range(20):
+        conns.append(
+            "<connection><sender>bigList</sender><signal>sig%d()</signal><receiver>Ref</receiver><slot>close()</slot></connection>"
+            % index
+        )
     return (
         '<?xml version="1.0" encoding="UTF-8"?>\n<ui version="4.0">\n <class>Ref</class>\n'
         ' <widget class="QDialog" name="Ref">\n  <layout class="QVBoxLayout" name="verticalLayout">\n%s\n  </layout>\n </widget>\n'
@@ -102,10 +98,32 @@ def test_behavior_share_and_picker_keystroke(tmp_path, qapp: QApplication) -> No
             return _p95(samples)
 
         properties = measure(TabId.PROPERTIES, "bigList")
-        behavior = measure(TabId.BEHAVIOR, "bigList")
-        share = max(0.0, behavior - properties)
-        print("properties p95 %.2f ms  behavior p95 %.2f ms  share %.2f ms" % (properties, behavior, share))
-        assert share <= 16.0
+        inspector.focus_tab(TabId.BEHAVIOR)
+        kb.pump()
+        page = inspector.behavior
+        original = page.paint
+        behavior_samples = []
+
+        def timed(view):
+            started = time.process_time()
+            original(view)
+            if getattr(view, "sender_name", "") == "bigList":
+                behavior_samples.append(time.process_time() - started)
+
+        page.paint = timed  # type: ignore[method-assign]
+        try:
+            for _ in range(12):
+                select("edit3")
+                inspector.flush()
+                qapp.processEvents()
+                select("bigList")
+                inspector.flush()
+                qapp.processEvents()
+        finally:
+            page.paint = original  # type: ignore[method-assign]
+        behavior = _p95(behavior_samples)
+        print("properties p95 %.2f ms  behavior p95 %.2f ms" % (properties, behavior))
+        assert behavior <= 16.0
 
         select("button0")
         inspector.focus_tab(TabId.BEHAVIOR)
@@ -138,5 +156,35 @@ def test_behavior_share_and_picker_keystroke(tmp_path, qapp: QApplication) -> No
             % (keystroke, _p95(pumps), os.getloadavg())
         )
         assert keystroke <= 16.0
+        pumped = _p95(pumps)
+        print("processEvents p95 %.2f ms" % pumped)
+        assert pumped <= 16.0
+
+        canvas = kb.surface.workbench.canvas
+        bares = []
+        for _ in range(8):
+            started = time.process_time()
+            canvas.repaint()
+            inspector.repaint()
+            qapp.processEvents()
+            bares.append(time.process_time() - started)
+        bare = _p95(bares)
+        one = (slot_step("edit0", "clear()"),)
+        commits = []
+        for index in range(8):
+            steps = one if index % 2 == 0 else ()
+            started = time.process_time()
+            session.log.execute(SetEventSteps("button0", "clicked", steps, caption="Connect"))
+            qapp.processEvents()
+            canvas.repaint()
+            inspector.repaint()
+            qapp.processEvents()
+            commits.append(time.process_time() - started)
+        added = max(0.0, _p95(commits) - bare)
+        print(
+            "bare repaint p95 %.2f ms  commit p95 %.2f ms  added %.2f ms  load %s"
+            % (bare, _p95(commits), added, os.getloadavg())
+        )
+        assert added <= 16.0
     finally:
         _close(window, qapp, guard)

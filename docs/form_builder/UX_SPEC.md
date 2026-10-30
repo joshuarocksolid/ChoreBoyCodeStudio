@@ -2321,7 +2321,7 @@ The lane split, owned files and parity rows are in `PLAN.md` ("M6 lanes"). Claus
 | D23 | Layouts and spacers as senders or receivers | Not offered. A drag that ends on a layout or spacer connects to the widget that holds the layout; one that starts on a spacer does nothing. Existing layout connections in a file are kept, listed in the form's event table, and generate as uic does | Designer allows layout endpoints (R3 2), but layouts have no events and almost no slots a form uses. Keeping them round-trips the file |
 | D24 | Step lists for an overloaded event | The UI shows one event per signal name ("When clicked" covers `clicked()` and `clicked(bool)`). Native storage picks the overload with the fewest arguments that the step needs; a step list connects the overload with the most arguments, so any step can use a prefix of its values (CONTRACTS §15.6) | Designer lists overloads twice; owners shouldn't have to choose |
 | D26 | A step whose name Code Studio can't use | FB406, same severity as FB401. The steps stay on screen, read-only, with Open as text. The event is kept as it is and does nothing. This includes a native connection. (orchestrator, 2026-10-29) | A bad name must be a Problems row, not only a banner |
-| D27 | Sentences after "When" | Each event-words row has a clause that is a complete English clause after "When" ("{display} is clicked", "editing of {display} is finished", "Enter is pressed in {display}"). Headers stay the short words. An event with no row uses "{display} sends {signal}". (orchestrator, 2026-10-29) | "When Name is editing is finished" is not a sentence |
+| D27 | Sentences after "When" | Each event-words row has a clause that is a complete English clause after "When" ("{display} is clicked", "you finish editing {display}", "Enter is pressed in {display}"). Prefer "in" over "of". `toggled` is "{display} is checked or unchecked". Headers stay the short words. An event with no row uses "{display} sends {signal}". (orchestrator, 2026-10-29) | "When Name is editing is finished" is not a sentence |
 
 **UX-M6-001** `all M6` `[C]` Copy for M6 follows section 9.5, UX-M4-005 and UX-M5-007. In addition, on-screen text says "event" (never "signal" outside tooltips, the Qt-names line and the "MORE EVENTS" list's Qt column), "step", "method" for your code, "window file" only in captions ("Code Studio adds methods to the window file, shop_window.py."), and never "slot" for a method (the word appears only in the Qt column and the tooltip "Qt calls these slots."). Behavior is spelled the US way (UX-COPY-001); LOGIC_DESIGN's "behaviour" is not on screen. Every sentence a lane may show is in the 13.3.8 tables; a new one needs a spec change.
 
@@ -2594,25 +2594,25 @@ The pain 22 test: a misspelled signal (`on_okButton_clickd`) is FB208; `@Slot() 
 | --- | --- | --- | --- | --- |
 | `clicked` | "clicked" | "clicked" | `clicked` | "{display} is clicked" |
 | `pressed` / `released` | "pressed" / "released" | same | `pressed` / `released` | "{display} is pressed" / "{display} is released" |
-| `toggled` | "checked or unchecked" | "checked or unchecked" | `toggled` | "{display} is turned on or off" |
-| `editingFinished` | "editing is finished" (header "When editing is finished") | "finished editing" | `done` | "editing of {display} is finished" |
+| `toggled` | "checked or unchecked" | "checked or unchecked" | `toggled` | "{display} is checked or unchecked" |
+| `editingFinished` | "editing is finished" (header "When editing is finished") | "finished editing" | `done` | "you finish editing {display}" |
 | `returnPressed` | "Enter is pressed" | "given Enter" | `enter` | "Enter is pressed in {display}" |
-| `textChanged` / `textEdited` | "the text changes" / "the text is typed" | "changed" | `text_changed` / `typed` | "the text of {display} changes" / "the text of {display} is typed" |
+| `textChanged` / `textEdited` | "the text changes" / "the text is typed" | "changed" | `text_changed` / `typed` | "the text of {display} changes" / "the text is typed in {display}" |
 | `currentIndexChanged` | "the choice changes" | "changed" | `changed` | "the choice of {display} changes" |
-| `activated` (combo box) | "a choice is picked" | "picked" | `picked` | "a choice of {display} is picked" |
+| `activated` (combo box) | "a choice is picked" | "picked" | `picked` | "a choice is picked in {display}" |
 | `activated` (any other) | "activated" | "activated" | `activated` | "{display} is activated" |
 | `valueChanged` | "the value changes" | "changed" | `changed` | "the value of {display} changes" |
 | `dateChanged`, `timeChanged`, `dateTimeChanged` | "the date changes", "the time changes", "the date or time changes" | "changed" | `changed` | "the date of {display} changes", "the time of {display} changes", "the date or time of {display} changes" |
 | `currentChanged` (tabs, stack, toolbox) | "the page changes" | "switched to another page" | `page_changed` | "the page of {display} changes" |
-| `itemActivated` | "an item is opened" | "opened" | `opened` | "an item of {display} is opened" |
+| `itemActivated` | "an item is opened" | "opened" | `opened` | "an item in {display} is opened" |
 | `currentRowChanged` | "another row is chosen" | "moved to another row" | `row_changed` | "the row of {display} changes" |
 | `accepted` / `rejected` (button box, dialog) | "OK is pressed" / "Cancel is pressed" | "accepted" / "cancelled" | `ok` / `cancel` | "OK is pressed in {display}" / "Cancel is pressed in {display}" |
-| `clicked(QAbstractButton*)` (button box) | "any of its buttons is clicked" | "clicked" | `button_clicked` | "a button of {display} is clicked" |
+| `clicked(QAbstractButton*)` (button box) | "any of its buttons is clicked" | "clicked" | `button_clicked` | "a button in {display} is clicked" |
 | `triggered` (action) | "chosen" | "chosen" | the action's text rule (UX-CODE-001) | "{display} is chosen" |
 | `finished` (dialog) | "it closes" | "closed" | `closed` | "{display} closes" |
 | any other | the signal name, as Qt writes it | the signal name | the signal name in `snake_case` | "{display} sends {signal}" |
 
-D27. A sentence uses the clause: "When {clause}." Headers stay "When {words}" ("When clicked", "When OK is pressed"). The step picker title is "Then… (When {clause})".
+D27. A sentence uses the clause: "When {clause}." Headers stay "When {words}" ("When clicked", "When OK is pressed"). The step picker title is "Then… (When {clause})". Prefer "in" ("the text is typed in {display}", "a choice is picked in {display}", "an item in {display} is opened", "a button in {display} is clicked"). `toggled` is "{display} is checked or unchecked", matching its header. `editingFinished` is "you finish editing {display}".
 
 **Value words** ("My method receives {words}"): bool "whether it's checked"; QString "the new text"; int "the new number" (index signals: "the number of the new choice"; tabs: "the number of the new page"); double "the new number"; QDate "the new date"; QTime "the new time"; QDateTime "the new date and time"; QAbstractButton* "the button that was clicked". **Type words** (UX-PICK-006 reasons): bool "yes or no", int "a whole number", double "a number", QString "text", QDate "a date", other types their Qt name.
 

@@ -5,8 +5,8 @@ from __future__ import annotations
 from dataclasses import replace
 from typing import Callable, Optional
 
-from app.qt.QtCore import QAbstractListModel, QEvent, QObject, QPoint, QRect, Qt
-from app.qt.QtGui import QKeyEvent
+from app.qt.QtCore import QAbstractListModel, QEvent, QObject, QPoint, QRect, QSize, Qt
+from app.qt.QtGui import QColor, QKeyEvent
 from app.qt.QtWidgets import (
     QApplication,
     QCheckBox,
@@ -14,6 +14,9 @@ from app.qt.QtWidgets import (
     QLabel,
     QLineEdit,
     QListView,
+    QStyledItemDelegate,
+    QStyle,
+    QStyleOptionViewItem,
     QVBoxLayout,
     QWidget,
 )
@@ -34,7 +37,9 @@ from app.features.form_builder.qtside.pickers.flow import (
 from app.features.form_builder.qtside.theme.chrome import FormChrome, popover_style
 
 _WIDTH = 320
-_ROW = 28
+_ROW = 24
+_FAINT = int(enum_value(Qt.ItemDataRole.UserRole)) + 1
+_NOTE = int(enum_value(Qt.ItemDataRole.UserRole)) + 2
 _ENTER = frozenset({enum_value(Qt.Key.Key_Return), enum_value(Qt.Key.Key_Enter)})
 _ESCAPE = enum_value(Qt.Key.Key_Escape)
 _UP = enum_value(Qt.Key.Key_Up)
@@ -101,6 +106,10 @@ class EventPicker(QFrame):
         self._model = _RowModel(self)
         self.rows = QListView(self)
         self.rows.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self.rows.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.rows.setTextElideMode(Qt.TextElideMode.ElideMiddle)
+        self.rows.setUniformItemSizes(True)
+        self.rows.setItemDelegate(_RowDelegate(chrome, self.rows))
         self.rows.setObjectName("formBuilder.eventPickerList")
         self.rows.setAccessibleName("Choices")
         self.rows.setFocusPolicy(Qt.FocusPolicy.NoFocus)
@@ -294,22 +303,22 @@ class EventPicker(QFrame):
 
     def _fill(self, page: Page) -> None:
         # Every match is in the model. The view paints only the rows in view.
-        labels = []
+        rows = []
         flags = []
         enabled = Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable
+        notes = False
         for item in page.rows:
-            label = item.text
-            if item.faint:
-                label = "%s  %s" % (item.text, item.faint)
-            labels.append(label)
+            rows.append((item.text, item.faint, item.note, item.header, item.enabled))
             flags.append(Qt.ItemFlag.NoItemFlags if item.header or not item.enabled else enabled)
-        self._model.set_rows(labels, flags)
+            notes = notes or bool(item.note)
+        self.rows.setUniformItemSizes(not notes)
+        self._model.set_rows(rows, flags)
         if page.rows:
             current = self._model.index(min(page.current, len(page.rows) - 1), 0)
             self.rows.setCurrentIndex(current)
             self.rows.scrollTo(current)
         shown = min(max(len(page.rows), 1), 8)
-        height = shown * _ROW + 8
+        height = shown * (_ROW + (16 if notes else 0)) + 8
         if self.rows.height() != height:
             self.rows.setFixedHeight(height)
 
@@ -328,11 +337,14 @@ class EventPicker(QFrame):
             " border-radius: 4px; padding: 4px 8px; }"
             "%(f)s QLineEdit:focus { border: %(focus)dpx solid %(accent)s; }"
             "%(f)s QListView { color: %(text)s; background: %(panel)s; border: none; outline: none; }"
-            "%(f)s QListView::item:selected { background: %(hover)s; border: %(focus)dpx solid %(accent)s; }"
+            "%(f)s QListView::item { color: %(text)s; }"
+            "%(f)s QListView::item:selected { color: %(text)s; background: %(hover)s; border: %(focus)dpx solid %(accent)s; }"
+            "%(f)s QListView::item:disabled { color: %(muted)s; }"
             "%(f)s QCheckBox { color: %(text)s; }"
         ) % {
             "f": frame,
             "text": chrome.text,
+            "muted": chrome.muted,
             "input": chrome.input,
             "border": chrome.border,
             "panel": chrome.panel,
@@ -347,19 +359,37 @@ class _RowModel(QAbstractListModel):
 
     def __init__(self, parent: QWidget) -> None:
         super().__init__(parent)
-        self._labels: list = []
+        self._rows: list = []
         self._flags: list = []
+        chrome = parent._chrome  # type: ignore[attr-defined]
+        self._text = QColor(chrome.text)
+        self._muted = QColor(chrome.muted)
+        self._faint = QColor(chrome.faint)
 
     def rowCount(self, parent: object = None) -> int:  # noqa: N802
         if parent is not None and parent.isValid():  # type: ignore[attr-defined]
             return 0
-        return len(self._labels)
+        return len(self._rows)
 
     def data(self, index: object, role: int = 0) -> object:
         if not index.isValid():  # type: ignore[attr-defined]
             return None
-        if role == enum_value(Qt.ItemDataRole.DisplayRole):
-            return self._labels[index.row()]  # type: ignore[attr-defined]
+        text, faint, note, header, enabled = self._rows[index.row()]  # type: ignore[attr-defined]
+        kind = enum_value(role) if not isinstance(role, int) else role
+        if kind == enum_value(Qt.ItemDataRole.DisplayRole):
+            return text
+        if kind == enum_value(Qt.ItemDataRole.ForegroundRole):
+            if header or not enabled:
+                return self._muted
+            if faint and not text:
+                return self._faint
+            return self._text
+        if kind == _FAINT:
+            return faint
+        if kind == _NOTE:
+            return note
+        if kind == enum_value(Qt.ItemDataRole.SizeHintRole):
+            return QSize(0, _ROW + (16 if note else 0))
         return None
 
     def flags(self, index: object) -> object:
@@ -367,13 +397,68 @@ class _RowModel(QAbstractListModel):
             return Qt.ItemFlag.NoItemFlags
         return self._flags[index.row()]  # type: ignore[attr-defined]
 
-    def set_rows(self, labels: list, flags: list) -> None:
-        if labels == self._labels and flags == self._flags:
+    def set_rows(self, rows: list, flags: list) -> None:
+        if rows == self._rows and flags == self._flags:
             return
         self.beginResetModel()
-        self._labels = labels
+        self._rows = rows
         self._flags = flags
         self.endResetModel()
+
+
+class _RowDelegate(QStyledItemDelegate):
+    """Words on the first line, the signature in faint, the reason on the next line."""
+
+    def __init__(self, chrome: FormChrome, parent: QWidget) -> None:
+        super().__init__(parent)
+        self._faint = QColor(chrome.faint)
+        self._muted = QColor(chrome.muted)
+
+    def paint(self, painter: object, option: object, index: object) -> None:  # noqa: N802
+        style = option.widget.style()  # type: ignore[attr-defined]
+        drawn = QStyleOptionViewItem(option)  # type: ignore[arg-type]
+        self.initStyleOption(drawn, index)  # type: ignore[arg-type]
+        drawn.text = ""
+        style.drawControl(QStyle.ControlElement.CE_ItemViewItem, drawn, painter, option.widget)  # type: ignore[attr-defined]
+        text = index.data(enum_value(Qt.ItemDataRole.DisplayRole)) or ""  # type: ignore[attr-defined]
+        faint = index.data(_FAINT) or ""  # type: ignore[attr-defined]
+        note = index.data(_NOTE) or ""  # type: ignore[attr-defined]
+        color = index.data(enum_value(Qt.ItemDataRole.ForegroundRole))  # type: ignore[attr-defined]
+        painter.save()  # type: ignore[attr-defined]
+        painter.setPen(color if isinstance(color, QColor) else self._muted)  # type: ignore[attr-defined]
+        rect = option.rect.adjusted(8, 0, -8, 0)  # type: ignore[attr-defined]
+        metrics = painter.fontMetrics()  # type: ignore[attr-defined]
+        line = QRect(rect)
+        if note:
+            line.setHeight(_ROW)
+        main = str(text)
+        if faint:
+            gap = metrics.horizontalAdvance("  " + str(faint))
+            room = max(8, line.width() - gap)
+            main = metrics.elidedText(main, Qt.TextElideMode.ElideMiddle, room)
+        else:
+            main = metrics.elidedText(main, Qt.TextElideMode.ElideMiddle, line.width())
+        painter.drawText(line, enum_value(Qt.AlignmentFlag.AlignVCenter) | enum_value(Qt.AlignmentFlag.AlignLeft), main)  # type: ignore[attr-defined]
+        if faint:
+            used = metrics.horizontalAdvance(main + "  ")
+            faint_rect = QRect(line)
+            faint_rect.setLeft(line.left() + used)
+            painter.setPen(self._faint)  # type: ignore[attr-defined]
+            painter.drawText(  # type: ignore[attr-defined]
+                faint_rect,
+                enum_value(Qt.AlignmentFlag.AlignVCenter) | enum_value(Qt.AlignmentFlag.AlignLeft),
+                metrics.elidedText(str(faint), Qt.TextElideMode.ElideRight, max(8, faint_rect.width())),
+            )
+        if note:
+            note_rect = QRect(rect)
+            note_rect.setTop(rect.top() + _ROW - 2)
+            painter.setPen(self._muted)  # type: ignore[attr-defined]
+            painter.drawText(  # type: ignore[attr-defined]
+                note_rect,
+                enum_value(Qt.AlignmentFlag.AlignLeft) | enum_value(Qt.AlignmentFlag.AlignTop),
+                metrics.elidedText(str(note), Qt.TextElideMode.ElideMiddle, note_rect.width()),
+            )
+        painter.restore()  # type: ignore[attr-defined]
 
 
 def watched_empty(page: Optional[Page]) -> bool:

@@ -116,6 +116,12 @@ def test_every_catalog_clause_is_one_sentence() -> None:
         sentence = "When %s." % event_clause(signal, chain, "Name")
         assert sentence.endswith("."), sentence
         assert re.search(r"\bis\b.+\bis\b", sentence) is None, sentence
+    assert event_clause("toggled", (), "Name") == "Name is checked or unchecked"
+    assert event_clause("editingFinished", (), "Name") == "you finish editing Name"
+    assert event_clause("textEdited", (), "Name") == "the text is typed in Name"
+    assert event_clause("itemActivated", (), "Name") == "an item in Name is opened"
+    assert event_clause("activated", ("QComboBox",), "Name") == "a choice is picked in Name"
+    assert event_clause("clicked", ("QDialogButtonBox",), "Name") == "a button in Name is clicked"
 
 
 def test_outline_lists_labels_gauges_and_actions() -> None:

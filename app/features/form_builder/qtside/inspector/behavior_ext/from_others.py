@@ -31,6 +31,8 @@ class IncomingBody(QWidget):
             item = self._list.takeAt(0)
             widget = item.widget()
             if widget is not None:
+                widget.hide()
+                widget.setParent(None)
                 widget.deleteLater()
         view = inputs.view
         if not isinstance(view, OneBehavior) or not view.sender_name:

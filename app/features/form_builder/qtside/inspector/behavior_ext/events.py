@@ -31,6 +31,7 @@ from app.features.form_builder.qtside.inspector.behavior_ext._rows import (
     StepView,
     finish,
     project_sender,
+    unused_method_sentence,
 )
 from app.features.form_builder.qtside.inspector.editors._editor_kit import warning_color
 from app.features.form_builder.qtside.inspector.model import ManyBehavior
@@ -189,25 +190,31 @@ class EventsBody(QWidget):
         self._caption.setText(shown.caption)
         self._caption.setVisible(bool(shown.caption))
         self._remember_focus()
-        while self._events.count():
-            item = self._events.takeAt(0)
-            widget = item.widget()
-            if widget is not None:
-                widget.setObjectName("")
-                widget.deleteLater()
-        self._chain = []
-        if shown.kind != "one":
-            return
-        first = True
-        for event in shown.events:
-            group = _Group(self, event, editing)
-            self._events.addWidget(group)
-            if first and (event.steps or event.unreadable or event.banner):
-                group.mark_first()
-                first = False
-            self._chain.extend(group.chain())
-        if editing and not shown.events:
-            self._chain.append(self._when)
+        self.setUpdatesEnabled(False)
+        try:
+            while self._events.count():
+                item = self._events.takeAt(0)
+                widget = item.widget()
+                if widget is not None:
+                    widget.hide()
+                    widget.setObjectName("")
+                    widget.setParent(None)
+                    widget.deleteLater()
+            self._chain = []
+            if shown.kind != "one":
+                return
+            first = True
+            for event in shown.events:
+                group = _Group(self, event, editing)
+                self._events.addWidget(group)
+                if first and (event.steps or event.unreadable or event.banner):
+                    group.mark_first()
+                    first = False
+                self._chain.extend(group.chain())
+            if editing and not shown.events:
+                self._chain.append(self._when)
+        finally:
+            self.setUpdatesEnabled(True)
         self._place_focus()
 
     def first_focus(self) -> Optional[QWidget]:
@@ -395,7 +402,9 @@ class EventsBody(QWidget):
             return
         if isinstance(result, Dropped):
             return
-        if outcome.status:
+        if outcome.status == "METHOD_UNUSED":
+            _narrate(self, unused_method_sentence(outcome.unused_method, _window_file(self)))
+        elif outcome.status:
             _narrate(self, outcome.status)
 
     def _fix(self, row: "_Row") -> None:
@@ -461,19 +470,20 @@ class _Group(QWidget):
             column.addWidget(banner)
         if event.stored_twice:
             note = QWidget(self)
-            line = QHBoxLayout(note)
-            line.setContentsMargins(0, 0, 0, 0)
+            stack = QVBoxLayout(note)
+            stack.setContentsMargins(0, 0, 0, 0)
+            stack.setSpacing(2)
             label = QLabel(TWO_PLACES, note)
             label.setWordWrap(True)
             label.setMinimumWidth(0)
             label.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred)
-            label.setStyleSheet("color: %s;" % body._chrome.muted)
-            line.addWidget(label, 1)
+            label.setStyleSheet("color: %s;" % warning_color(body._chrome))
+            stack.addWidget(label)
             merge = QPushButton("Merge", note)
             merge.setAccessibleName("Merge")
             merge.clicked.connect(lambda: body._merge(event.signal))
             merge.setEnabled(self._editable)
-            line.addWidget(merge)
+            stack.addWidget(merge, 0, Qt.AlignmentFlag.AlignLeft)
             column.addWidget(note)
         self._steps: List[_Row] = []
         for step in event.steps:
@@ -542,6 +552,7 @@ class _Row(QWidget):
         step: Optional[StepView] = None,
     ) -> None:
         super().__init__(body)
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self.signal_name = signal
         self.step_index = index
         self.locked = locked
@@ -563,14 +574,10 @@ class _Row(QWidget):
         self._label.setMinimumWidth(0)
         self._label.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
         line.addWidget(self._label, 1)
-        self._menu = QToolButton(self)
-        self._menu.setText("\u22ef")
-        self._menu.setAccessibleName("Event menu")
-        self._menu.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
-        self._menu.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        if index >= 0:
-            self._menu.hide()
-        line.addWidget(self._menu)
+        # Step rows build the menu button on hover or focus. Header rows show it immediately.
+        self._menu: Optional[QToolButton] = None
+        if index < 0:
+            line.addWidget(self._make_menu())
         if step is not None and step.problem:
             badge = QLabel("!", self)
             badge.setFixedWidth(12)
@@ -594,13 +601,31 @@ class _Row(QWidget):
         width = self._label.width()
         if width <= 0:
             return
-        shown = self.fontMetrics().elidedText(self._full, Qt.TextElideMode.ElideMiddle, width)
+        shown = _elide_row(self._full, self.fontMetrics(), width)
         if shown != self._label.text():
             self._label.setText(shown)
 
+    def _make_menu(self) -> QToolButton:
+        button = QToolButton(self)
+        button.setText("\u22ef")
+        button.setAccessibleName("Event menu")
+        button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        button.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self._menu = button
+        return button
+
     def menu_button(self, event: EventView) -> QToolButton:
         self._event = event
-        menu = QMenu(self._menu)
+        button = self._menu or self._make_menu()
+        button.pressed.connect(self._ensure_header_menu)
+        return button
+
+    def _ensure_header_menu(self) -> None:
+        button = self._menu
+        event = self._event
+        if button is None or event is None or button.menu() is not None:
+            return
+        menu = QMenu(button)
         if event.unreadable or (event.locked and event.banner):
             menu.addAction(
                 "Open as text",
@@ -609,8 +634,17 @@ class _Row(QWidget):
         elif not event.locked:
             menu.addAction("Change event\u2026", lambda: self._body._change_event(event.signal, self))
             menu.addAction("Delete the event", lambda: self._body._delete_event(event.signal))
-        self._menu.setMenu(menu)
-        return self._menu
+        button.setMenu(menu)
+        button.showMenu()
+
+    def _step_menu(self) -> QToolButton:
+        if self._menu is not None:
+            return self._menu
+        button = self._make_menu()
+        layout = self.layout()
+        if layout is not None:
+            layout.addWidget(button)
+        return button
 
     def set_faint(self, text: str) -> None:
         extra = QLabel(text, self)
@@ -625,7 +659,7 @@ class _Row(QWidget):
 
     def open_menu(self) -> None:
         if self.step_index < 0:
-            self._menu.showMenu()
+            self._ensure_header_menu()
             return
         menu = QMenu(self)
         if not self.readonly:
@@ -643,21 +677,51 @@ class _Row(QWidget):
     def enterEvent(self, event: QEvent) -> None:  # noqa: N802
         super().enterEvent(event)
         if self.step_index >= 0:
-            self._menu.show()
+            self._step_menu().show()
 
     def leaveEvent(self, event: QEvent) -> None:  # noqa: N802
         super().leaveEvent(event)
-        if self.step_index >= 0 and not self.hasFocus():
+        if self.step_index >= 0 and self._menu is not None and not self.hasFocus():
             self._menu.hide()
 
     def focusInEvent(self, event: QEvent) -> None:  # noqa: N802
         super().focusInEvent(event)
         if self.step_index >= 0:
-            self._menu.show()
+            self._step_menu().show()
+
+    def focusOutEvent(self, event: QEvent) -> None:  # noqa: N802
+        super().focusOutEvent(event)
+        if self.step_index >= 0 and self._menu is not None:
+            self._menu.hide()
 
     def contextMenuEvent(self, event: QEvent) -> None:  # noqa: N802
         self.open_menu()
         event.accept()  # type: ignore[attr-defined]
+
+
+def _window_file(widget: QWidget) -> str:
+    import os
+
+    services = getattr(widget, "_services", None)
+    scope = getattr(getattr(services, "session", None), "scope", None)
+    path = getattr(scope, "window_path", None) or ""
+    return os.path.basename(path) if path else ""
+
+
+def _elide_row(text: str, metrics: object, width: int) -> str:
+    """Elide the middle of a row. An unreadable verb keeps its sentence and elides only the verb."""
+    marker = "A step Code Studio can't edit ("
+    elide = getattr(metrics, "elidedText")
+    if marker in text and text.endswith(")"):
+        start = text.index(marker) + len(marker)
+        head = text[:start]
+        verb = text[start:-1]
+        tail = ")"
+        room = width - metrics.horizontalAdvance(head + tail)  # type: ignore[attr-defined]
+        if room < 8:
+            room = 8
+        return head + elide(verb, Qt.TextElideMode.ElideMiddle, room) + tail
+    return elide(text, Qt.TextElideMode.ElideMiddle, width)
 
 
 def open_property_as_text(widget: QWidget, prop: str, sender: str = "") -> None:
