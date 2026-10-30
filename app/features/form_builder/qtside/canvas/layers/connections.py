@@ -161,6 +161,8 @@ def build_arrows(static: object, inputs: object, state: Hashable) -> LayerOutput
     measure = getattr(inputs, "measure", None)
     seats, leaders = _chip_seats(static, inputs, visible, placed, measure, state.hover, state.aimed)
     items: List[LayerItem] = []
+    # Chips go after every arrow and leader so no line is painted across a chip (UX-ARR-003).
+    chips: List[LayerItem] = []
     blocked = _centers(document, visible, placed)
     for step in visible:
         key = (step.sender, step.signal, step.index)
@@ -182,12 +184,12 @@ def build_arrows(static: object, inputs: object, state: Hashable) -> LayerOutput
             start, c1, c2, end, head = curve(origin, chip, blocked)
             items.append(_arrow_item(start, c1, c2, end, head, "code" if step.kind == "code" else "strong", False, step))
         if chip is not None and key in seats:
-            items.append(_chip_item(chip, step, state.hover, state.aimed))
+            chips.append(_chip_item(chip, step, state.hover, state.aimed))
         leader = leaders.get(key)
         if leader is not None:
             bounds = _bounds(leader)
             items.append(LayerItem(rect=bounds, role="select", layer=ARROWS, data=("leader", leader[0], leader[1])))
-    return LayerOutput(tuple(items))
+    return LayerOutput(tuple(items) + tuple(chips))
 
 
 def build_link(static: object, inputs: object, state: Hashable) -> LayerOutput:
@@ -504,6 +506,17 @@ def _on_sender_row(
     )
     taken = tuple(taken) + badge_row
     spots = [CanvasRect(gutter_x, y, size.width, size.height)]
+    # Designer's place: the gutter just outside the page edge, beside the sender (UX-ARR-004).
+    outside_x = int(page.x - size.width - 8 if nearer_left else page.x + page.width + 8)
+    if _clear_spot(spots[0], page, taken):
+        return spots[0], None
+    for stack in range(0, 4):
+        for spot in (
+            CanvasRect(outside_x, y + stack * (size.height + 4), size.width, size.height),
+            CanvasRect(outside_x, y - stack * (size.height + 4), size.width, size.height),
+        ):
+            if not any(spot.intersects(other) for other in taken):
+                return spot, None
     # Past the badge on the sender's corner, in the empty space above or below it.
     inset = origin.x + 16
     spots.append(CanvasRect(inset, origin.y - size.height - 8, size.width, size.height))

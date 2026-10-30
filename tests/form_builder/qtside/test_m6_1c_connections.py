@@ -316,6 +316,40 @@ def test_sale_code_and_form_chips_cover_no_widget() -> None:
         assert not covered, (chip.data[1], chip.data[2], covered, chip.rect)
 
 
+def test_chips_paint_above_every_arrow_and_leader() -> None:
+    """UX-ARR-003: arrows are drawn below chips and never cross one."""
+    text = (Path(__file__).resolve().parents[1] / "fixtures" / "m6" / "forms" / "sale.ui").read_text(encoding="utf-8")
+    log = open_log(text)
+    log.execute(
+        SetEventSteps("clearButton", "clicked", (call_step("print_receipt"), slot_step("Sale", "accept()")))
+    )
+    static, inputs, _boxes = _sale_world(log)
+    items = build_arrows(static, inputs, ArrowState("all", None)).items
+    kinds = [item.data[0] for item in items if isinstance(item.data, tuple)]
+    assert "chip" in kinds
+    first_chip = kinds.index("chip")
+    assert all(kind == "chip" for kind in kinds[first_chip:]), kinds
+
+
+def test_button_box_form_chips_sit_beside_the_button_box() -> None:
+    """UX-ARR-004: a form chip is in the gutter next to its sender, on the sender's row."""
+    text = (Path(__file__).resolve().parents[1] / "fixtures" / "m6" / "forms" / "sale.ui").read_text(encoding="utf-8")
+    log = open_log(text)
+    static, inputs, boxes = _sale_world(log)
+    items = build_arrows(static, inputs, ArrowState("all", None)).items
+    chips = [
+        item
+        for item in items
+        if isinstance(item.data, tuple) and item.data[0] == "chip" and item.data[1] == "form" and item.data[3] == "buttonBox"
+    ]
+    assert chips
+    box = boxes["buttonBox"]
+    for chip in chips:
+        assert chip.rect.y < box.y + box.height and chip.rect.y + chip.rect.height > box.y, (chip.rect, box)
+        covered = [name for name, rect in boxes.items() if name != "Sale" and chip.rect.intersects(rect)]
+        assert not covered, covered
+
+
 def test_hovering_a_sale_step_keeps_its_label_chip() -> None:
     text = (Path(__file__).resolve().parents[1] / "fixtures" / "m6" / "forms" / "sale.ui").read_text(encoding="utf-8")
     log = open_log(text)
