@@ -99,3 +99,58 @@ def test_an_unknown_step_stays_in_the_command_and_is_not_edited() -> None:
     assert steps[1].enabled is False
     codes = [item.code for item in logic_diagnostics(doc)]
     assert "FB401" not in codes
+
+
+_HINTED = """<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>Form</class>
+ <widget class="QWidget" name="Form">
+  <layout class="QVBoxLayout" name="verticalLayout">
+   <item><widget class="QLineEdit" name="nameEdit"/></item>
+   <item><widget class="QPushButton" name="clearButton"/></item>
+  </layout>
+ </widget>
+ <resources/>
+ <connections>
+  <connection>
+   <sender>clearButton</sender>
+   <signal>clicked()</signal>
+   <receiver>nameEdit</receiver>
+   <slot>clear()</slot>
+   <hints>
+    <hint type="sourcelabel"><x>40</x><y>90</y></hint>
+    <hint type="destinationlabel"><x>120</x><y>30</y></hint>
+   </hints>
+  </connection>
+ </connections>
+</ui>
+"""
+
+
+def _hint_block(text: str) -> str:
+    return text[text.index("<hints>"):text.index("</hints>")] if "<hints>" in text else ""
+
+
+def test_the_list_keeps_designer_hints_off_then_on_and_on_an_unchanged_end() -> None:
+    """D25: the list's gestures carry hints; changing the arrow's end drops them (D7)."""
+    from tests.form_builder.engine.commands._support import saved
+
+    classes = QtClassTable.shared()
+
+    def run(log, gesture) -> None:
+        outcome = finish(log.document, classes, "clearButton", gesture)
+        assert outcome is not None and outcome.command is not None
+        log.execute(outcome.command)
+
+    log = open_log(_HINTED)
+    original = _hint_block(saved(log.document))
+    run(log, Gesture("toggle", "clicked", 0))
+    run(log, Gesture("toggle", "clicked", 0))
+    assert _hint_block(saved(log.document)) == original
+    # Stored as a list while off: re-choosing the same end must carry the hints.
+    run(log, Gesture("toggle", "clicked", 0))
+    run(log, Gesture("replace_slot", "clicked", 0, target="nameEdit", slot="clear()"))
+    run(log, Gesture("toggle", "clicked", 0))
+    assert _hint_block(saved(log.document)) == original
+    run(log, Gesture("replace_slot", "clicked", 0, target="nameEdit", slot="selectAll()"))
+    assert "<hints>" not in saved(log.document)

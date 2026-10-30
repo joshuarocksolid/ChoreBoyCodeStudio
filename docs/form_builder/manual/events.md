@@ -27,5 +27,5 @@ In the list: Up and Down move, Enter changes the row, Delete removes it, Alt+Up 
 
 The header's … menu is "Change event…" and "Delete the event". An event stored in two places shows "This event is stored in two places." and a Merge button. Merge is one undo step, "Merge the {event} event".
 
-## Undo and Designer labels
-Turning a step off, or back on, can change how the event is stored. The status says: "Undo restores the Designer label positions. Turning this step off and back on does not." Undo puts the form back, including those label positions. Turning the step off and on again does not.
+## Designer labels
+Turning a step off and back on keeps a Qt Designer connection's label positions. Pointing a step at a different widget or action drops them, because the arrow's end moved. Undo always puts the form back exactly.

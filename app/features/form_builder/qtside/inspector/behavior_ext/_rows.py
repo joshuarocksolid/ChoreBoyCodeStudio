@@ -46,9 +46,6 @@ from app.features.form_builder.engine.ui4.values import CStringValue
 UNSAVABLE = (
     "This event has a step Code Studio can't save, so it is shown as it is and can't be changed here."
 )
-STORAGE_NOTE = (
-    "Undo restores the Designer label positions. Turning this step off and back on does not."
-)
 NEWER_NOTICE = (
     "This form's behavior was saved by a newer version of Code Studio. "
     "You can read it here but not change it. Layout edits still work."
@@ -566,12 +563,9 @@ def _toggle(
         return None
     steps = list(state.steps)
     steps[gesture.index] = replace(step, enabled=not step.enabled)
-    before = all(item.plain for item in state.steps)
-    after = all(item.plain for item in steps)
     verb = "Turn on" if step.enabled is False else "Turn off"
     caption = "%s %s" % (verb, _short_words(doc, classes, step))
-    status = STORAGE_NOTE if before != after else ""
-    return _written(sender, state.signal_name, tuple(steps), caption, status, gesture.index)
+    return _written(sender, state.signal_name, tuple(steps), caption, "", gesture.index)
 
 
 def _move(
@@ -643,7 +637,12 @@ def _replace_slot(
     old = state.steps[gesture.index]
     if _readonly_step(old):
         return None
-    new = slot_step(gesture.target, gesture.slot)
+    # Carry the old step so its Designer hints survive when the arrow end is unchanged;
+    # the engine drops them when the target or slot changes (D7).
+    if old.verb == "slot":
+        new = replace(old, target=gesture.target, slot=gesture.slot)
+    else:
+        new = slot_step(gesture.target, gesture.slot)
     steps = list(state.steps)
     steps[gesture.index] = new
     caption = "Change %s to %s" % (_short_words(doc, classes, old), _short_words(doc, classes, new))

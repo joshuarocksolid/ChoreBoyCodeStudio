@@ -2690,7 +2690,6 @@ Header sentences use "When {display name} is {words}" in the step picker title a
 | Newer logic pasted | "The pasted widgets have behavior from a newer version of Code Studio, so this form's behavior is now read-only here. · Undo" | toast |
 | Event can't be read (FB401) | "This event can't be read (line {n}). It is kept as it is and does nothing when the form runs." | `fb.error` |
 | Event can't be saved | "This event has a step Code Studio can't save, so it is shown as it is and can't be changed here." | `fb.error` |
-| Turning a native step off or back on | "Undo restores the Designer label positions. Turning this step off and back on does not." | status |
 | Unknown step (FB403) | "A step Code Studio can't edit ({verb})" | `fb.warning` |
 | Your methods caption | "Code Studio adds methods to {file} and never changes the rest of it." | Caption |
 | Declaration in use | "{name} is used by {n} steps. Delete those steps first." | status |
