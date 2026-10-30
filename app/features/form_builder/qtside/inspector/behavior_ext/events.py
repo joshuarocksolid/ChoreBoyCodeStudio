@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Callable, List, Optional, Tuple
+from typing import Any, Callable, List, Optional, Tuple
 
 from app.qt.QtCore import QEvent, QObject, Qt
 from app.qt.QtGui import QKeyEvent, QResizeEvent
@@ -308,6 +308,8 @@ class EventsBody(QWidget):
 
     def _key(self, row: "_Row", event: QKeyEvent) -> bool:
         key = enum_value(event.key())
+        if getattr(row, "_by_name", False):
+            return self._by_name_key(row, event)
         mods = enum_value(event.modifiers())
         alt = bool(mods & enum_value(Qt.KeyboardModifier.AltModifier))
         ctrl = bool(mods & enum_value(Qt.KeyboardModifier.ControlModifier))
@@ -415,12 +417,37 @@ class EventsBody(QWidget):
         if row.unreadable or (event is not None and event.banner):
             open_property_as_text(self, row.property_name, self._sender)
 
+    def _by_name_key(self, row: "_Row", event: QKeyEvent) -> bool:
+        key = enum_value(event.key())
+        mods = enum_value(event.modifiers())
+        shift = bool(mods & enum_value(Qt.KeyboardModifier.ShiftModifier))
+        if key == _UP:
+            self._move(-1)
+            return True
+        if key == _DOWN:
+            self._move(1)
+            return True
+        if key in _ENTER or key == _F12:
+            self._go_code(row.method_name)
+            return True
+        if key == _MENU or (key == _F10 and shift):
+            row.open_menu()
+            return True
+        if key == _ESC:
+            self._to_canvas()
+            return True
+        return True
+
     def _go_code(self, method: str) -> None:
         service = method_actions()
         go = getattr(service, "go_to", None)
         surface = _surface(self)
-        if callable(go) and surface is not None:
-            go(surface, method)
+        if not callable(go) or surface is None or not method:
+            return
+        if go(surface, method):
+            return
+        file_name = _window_file(self) or "the window file"
+        _narrate(self, "%s() isn't in %s yet. Press Ctrl+. to create it." % (method, file_name))
 
     def _to_canvas(self) -> None:
         window = self.window()
@@ -505,6 +532,13 @@ class _Group(QWidget):
                 row.set_error()
             column.addWidget(row)
             self._steps.append(row)
+        for name in _by_name(body, event.signal):
+            words = "%s() runs by its name" % name
+            view = StepView(-2, words, words, False, False, False, True, "", name)
+            row = _Row(body, event.signal, -2, words, words, True, False, False, "", view)
+            row._by_name = True
+            column.addWidget(row)
+            self._steps.append(row)
         self.then = _ThenButton(body, event.signal, self)
         self.then.setVisible(False)
         self.then.setEnabled(self._editable)
@@ -585,10 +619,7 @@ class _Row(QWidget):
             badge.setStyleSheet("color: %s; background: transparent;" % body._chrome.error)
             line.addWidget(badge)
         if step is not None and step.method:
-            place = QLabel("not checked", self)
-            place.setStyleSheet("color: %s; background: transparent;" % body._chrome.faint)
-            place.setToolTip(step.method)
-            line.addWidget(place)
+            line.addWidget(_place_link(self, body, step.method))
         if problem:
             self._label.setStyleSheet("color: %s;" % body._chrome.error)
         self.installEventFilter(body)
@@ -658,7 +689,7 @@ class _Row(QWidget):
         self._label.setStyleSheet("color: %s;" % self._body._chrome.error)
 
     def open_menu(self) -> None:
-        if self.step_index < 0:
+        if self.step_index < 0 and not getattr(self, "_by_name", False):
             self._ensure_header_menu()
             return
         menu = QMenu(self)
@@ -672,6 +703,8 @@ class _Row(QWidget):
             menu.addAction("Change\u2026", lambda: self._body._activate(self))
         if self.method_name:
             menu.addAction("Go to code", lambda: self._body._go_code(self.method_name))
+        if "runs by its name" in self._full:
+            menu.addAction("Why does it run?", lambda: _narrate(self, _by_name_why()))
         menu.popup(self.mapToGlobal(self.rect().bottomLeft()))
 
     def enterEvent(self, event: QEvent) -> None:  # noqa: N802
@@ -697,6 +730,76 @@ class _Row(QWidget):
     def contextMenuEvent(self, event: QEvent) -> None:  # noqa: N802
         self.open_menu()
         event.accept()  # type: ignore[attr-defined]
+
+
+def _place_link(row: QWidget, body: "EventsBody", method: str) -> QPushButton:
+    text, tone, tip = _place_state(body, method)
+    button = QPushButton(text, row)
+    button.setFlat(True)
+    button.setObjectName("formBuilder.events.place")
+    button.setToolTip(tip)
+    button.setAccessibleName(text)
+    if tone == "warn":
+        color = warning_color(body._chrome)
+    elif tone == "ok":
+        color = body._chrome.muted
+    else:
+        color = body._chrome.faint
+    button.setStyleSheet(
+        "QPushButton { color: %s; background: transparent; border: none; }"
+        "QPushButton:focus { border: %dpx solid %s; }"
+        % (color, body._chrome.focus_width, body._chrome.accent)
+    )
+    button.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+    button.clicked.connect(lambda: body._go_code(method))
+    return button
+
+
+def _place_state(body: "EventsBody", method: str) -> Tuple[str, str, str]:
+    file_name = _window_file(body) or "the window file"
+    surface = _surface(body)
+    read = _window_read(surface)
+    if surface is None or read is None:
+        return "not checked", "faint", "The window file could not be read."
+    if read.status != "ok":
+        return "not checked", "faint", read.reason or "The window file could not be read."
+    found = read.facts.method(method)
+    if found is None:
+        return "not in %s" % file_name, "warn", method
+    return "%s:%d" % (file_name, found.line), "ok", method
+
+
+def _window_read(surface: object) -> Any:
+    """The handler service's window read, without qtside importing integration."""
+    from app.features.form_builder.qtside.pickers import method_actions
+
+    if surface is None:
+        return None
+    read = getattr(method_actions(), "reading", None)
+    if not callable(read):
+        return None
+    return read(surface)
+
+
+def _by_name(body: "EventsBody", signal: str) -> Tuple[str, ...]:
+    surface = _surface(body)
+    if surface is None:
+        return ()
+    document = body._services.session.document
+    if str(document.ui.field("connectslotsbyname") or "") == "false":
+        return ()
+    read = _window_read(surface)
+    if read is None or read.status != "ok":
+        return ()
+    wanted = "on_%s_%s" % (body._sender, signal)
+    return tuple(item.name for item in read.facts.methods if item.name == wanted and item.slot_types is not None)
+
+
+def _by_name_why() -> str:
+    return (
+        "Qt runs methods named on_{object}_{event} by themselves, "
+        "because Connect methods by name is on."
+    )
 
 
 def _window_file(widget: QWidget) -> str:
