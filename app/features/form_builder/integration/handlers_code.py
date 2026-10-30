@@ -169,8 +169,8 @@ class CodeHandlers:
             return _fail(surface, _ungenerated(scope))
         relative = os.path.relpath(path, root).replace("\\", "/")
         bridge = surface.code_bridge
-        text = bridge.text_of(path)
-        read = read_window(root, relative, text=text)
+        read = _read(surface, path, relative)
+        text = read.source if isinstance(read.source, str) else bridge.text_of(path)
         created = False
         if read.status == "missing":
             try:
@@ -328,6 +328,59 @@ def _commit(surface: Any, label: str, commands: Tuple[Any, ...]) -> HandlerOutco
     except CommandRejected as exc:
         return HandlerOutcome(False, str(exc))
     return HandlerOutcome(True)
+
+
+def prewarm_window_read(surface: Any) -> None:
+    """Parse the window file on an idle turn so the first double-click does not.
+
+    Does not open a tab. A missing file stays missing until the gesture that
+    creates it.
+    """
+    if getattr(surface, "_cbcs_window_prewarmed", False):
+        return
+    located = SERVICE._located(surface)
+    if located is None:
+        return
+    path, root, relative = located
+    bridge = getattr(surface, "code_bridge", None)
+    token = None
+    text = None
+    if bridge is not None:
+        ask = getattr(bridge, "buffer_token", None)
+        if callable(ask):
+            token = ask(path)
+        if token:
+            reader = getattr(bridge, "text_of", None)
+            if callable(reader):
+                got = reader(path)
+                if isinstance(got, str):
+                    text = got
+    if isinstance(text, str):
+        read_window(root, relative, text=text, token=str(token) if token else None)
+        _warm_first_commit(surface)
+        surface._cbcs_window_prewarmed = True
+        return
+    read = read_window(root, relative)
+    if read.status == "ok":
+        _warm_first_commit(surface)
+        surface._cbcs_window_prewarmed = True
+
+
+def _warm_first_commit(surface: Any) -> None:
+    """Import the first command's helpers and remember the form's events.
+
+    Both are paid once. On the idle turn they stay off the first double-click.
+    """
+    from app.features.form_builder.engine import diagnostic_codes
+    from app.features.form_builder.engine.commands.participants import default_registry
+    from app.features.form_builder.engine.logic.events import read_events
+
+    diagnostic_codes.discover()
+    default_registry()
+    session = getattr(surface, "session", None)
+    document = getattr(session, "document", None)
+    if document is not None:
+        read_events(document)
 
 
 def _read(surface: Any, path: str, relative: str) -> WindowRead:

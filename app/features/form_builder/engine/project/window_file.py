@@ -98,12 +98,14 @@ def read_window(
     if text is None:
         cached = _cached_file(project_root, relative)
         if cached is not None:
+            _seed_text_cache(project_root, relative, cached)
             return cached
         follow = _Follow()
         read = _stamp_followed(
             _read_path(project_root, relative, chain=(), budget=follow), follow
         )
         _store_file(project_root, relative, read, follow.files)
+        _seed_text_cache(project_root, relative, read)
         return read
     if token:
         peeked = peek_window(project_root, relative, token)
@@ -221,55 +223,168 @@ def install_inserted_method(
 ) -> WindowRead:
     """Remember a stub the bridge just inserted, without parsing the file again.
 
-    Line numbers below the insert shift by the inserted line count. A later
-    edit misses this entry because its buffer token is different.
+    Line numbers below the edit shift by the net line count, and the new method
+    is placed where it sits in the class. A replacement that cuts through a
+    method is parsed instead of patched. A later edit misses this entry
+    because its buffer token is different.
     """
     source = read.source if isinstance(read.source, str) else ""
     edit = getattr(plan, "edit")
     start = int(edit.start)
     end = int(edit.end)
     inserted = str(edit.text)
+    if not (0 <= start <= end <= len(source)):
+        return read
     new_source = source[:start] + inserted + source[end:]
-    insert_line = source[:start].count("\n") + 1
-    shift = inserted.count("\n")
     name = str(getattr(plan, "method_name"))
+    patched = _patch_inserted(read, source, new_source, start, end, inserted, name)
+    if patched is None:
+        return read_window(project_root, relative, text=new_source, token=token)
+    _store_text(project_root, relative, patched, token, new_source)
+    return patched
+
+
+def _patch_inserted(
+    read: WindowRead,
+    source: str,
+    new_source: str,
+    start: int,
+    end: int,
+    inserted: str,
+    name: str,
+) -> Optional[WindowRead]:
+    """The reading after the edit, or None when the lines cannot be shifted exactly."""
+    facts = read.facts
+    if read.status != "ok" or not facts.class_name:
+        return None
+    if not _at_line_boundary(source, start) or not _at_line_boundary(source, end):
+        return None
     at = inserted.find("def %s" % name)
-    def_line = insert_line + (inserted[:at].count("\n") if at >= 0 else 0)
-    method_text = inserted[at:] if at >= 0 else inserted
-    trailing = 1 if method_text.endswith("\n") or method_text.endswith("\r\n") else 0
-    end_line = def_line + max(0, method_text.count("\n") - trailing)
-    params: Tuple[str, ...] = ()
-    if at >= 0:
-        header = method_text.splitlines()[0]
-        open_paren = header.find("(")
-        close_paren = header.rfind(")")
-        if open_paren >= 0 and close_paren > open_paren:
-            raw = header[open_paren + 1 : close_paren]
-            parts = [part.strip() for part in raw.split(",") if part.strip() and part.strip() != "self"]
-            params = tuple(part.split("=")[0].strip().lstrip("*") for part in parts)
+    if at < 0:
+        return None
+    line_break = max(inserted.rfind("\n", 0, at), inserted.rfind("\r", 0, at))
+    prefix = inserted[line_break + 1 : at] if line_break >= 0 else inserted[:at]
+    if prefix.strip():
+        return None
+    edit_line = _breaks(source[:start]) + 1
+    after_line = _breaks(source[:end]) + 1
+    shift = _breaks(inserted) - _breaks(source[start:end])
+    def_line = edit_line + _breaks(inserted[:at])
+    method_text = inserted[at:]
+    body = method_text.splitlines()
+    while body and not body[-1].strip():
+        body.pop()
+    if not body:
+        return None
+    end_line = def_line + len(body) - 1
+    header = method_text.splitlines()[0] if method_text.splitlines() else ""
+    parsed = _stub_params(header)
+    if parsed is None:
+        return None
+    params, required, has_varargs = parsed
+    shifted = []
+    for method in facts.methods:
+        if method.name == name:
+            return None
+        overlaps = method.line < after_line and method.end_line >= edit_line
+        inside = end == start and method.line < edit_line <= method.end_line
+        if overlaps or inside:
+            return None
+        if method.line >= after_line:
+            shifted.append(replace(method, line=method.line + shift, end_line=method.end_line + shift))
+        else:
+            shifted.append(method)
+    lines = source_lines(new_source)
+    if not (1 <= def_line <= end_line <= len(lines)):
+        return None
+    chunk = "\n".join(lines[def_line - 1 : end_line])
     added = MethodFacts(
         name=name,
         line=def_line,
         end_line=end_line,
         params=params,
-        required=len(params),
-        body_is_empty=True,
-        source_hash=str(getattr(plan, "stub_hash")),
+        required=required,
+        has_varargs=has_varargs,
+        body_is_empty=_stub_body_empty(lines[def_line:end_line]),
+        source_hash=method_source_hash(chunk),
     )
-    shifted = []
-    for method in read.facts.methods:
-        if method.line >= insert_line:
-            shifted.append(replace(method, line=method.line + shift, end_line=method.end_line + shift))
-        else:
-            shifted.append(method)
     shifted.append(added)
-    class_end = read.facts.end_line
-    if class_end and class_end >= insert_line - 1:
+    shifted.sort(key=lambda item: item.line)
+    class_end = facts.end_line
+    if class_end and edit_line <= class_end + 1:
+        if end > start and after_line > class_end + 1:
+            return None
         class_end += shift
-    facts = replace(read.facts, end_line=class_end, methods=tuple(shifted))
-    patched = replace(read, facts=facts, source=new_source)
-    _store_text(project_root, relative, patched, token, new_source)
-    return patched
+    patched_facts = replace(facts, end_line=class_end, methods=tuple(shifted))
+    return replace(read, facts=patched_facts, source=new_source)
+
+
+def _breaks(text: str) -> int:
+    return sum(1 for _ in _LINE_BREAK.finditer(text))
+
+
+def _at_line_boundary(text: str, offset: int) -> bool:
+    if offset == 0 or offset == len(text):
+        return True
+    previous = text[offset - 1]
+    if previous == "\n":
+        return True
+    return previous == "\r" and text[offset : offset + 1] != "\n"
+
+
+def _stub_params(header: str) -> Optional[Tuple[Tuple[str, ...], int, bool]]:
+    """``(params, required, has_varargs)`` for a plain ``def`` header, else None."""
+    open_paren = header.find("(")
+    close_paren = header.rfind(")")
+    if open_paren < 0 or close_paren <= open_paren:
+        return None
+    raw = header[open_paren + 1 : close_paren]
+    if any(char in raw for char in "*[]{}:()"):
+        return None
+    names: List[str] = []
+    required = 0
+    skipped_self = False
+    for part in raw.split(","):
+        piece = part.strip()
+        if not piece or piece == "/":
+            continue
+        if not skipped_self:
+            skipped_self = True
+            continue
+        name = piece.split("=", 1)[0].strip()
+        if not name.isidentifier():
+            return None
+        names.append(name)
+        if "=" not in piece:
+            required += 1
+    return tuple(names), required, False
+
+
+def _stub_body_empty(lines: Sequence[str]) -> bool:
+    """True when the body is only ``pass``, ``...``, or a docstring."""
+    quote: Optional[str] = None
+    for line in lines:
+        stripped = line.strip()
+        if quote is not None:
+            if quote in stripped:
+                quote = None
+            continue
+        if not stripped or stripped in ("pass", "..."):
+            continue
+        if stripped.startswith('"""') or stripped.startswith("'''"):
+            mark = stripped[:3]
+            if mark not in stripped[3:]:
+                quote = mark
+            continue
+        return False
+    return quote is None
+
+
+def _seed_text_cache(project_root: str, relative: str, read: WindowRead) -> None:
+    """A disk read answers a later read of the same characters without parsing again."""
+    text = read.source
+    if isinstance(text, str):
+        _store_text(project_root, relative, read, None, text)
 
 
 def _store_text(

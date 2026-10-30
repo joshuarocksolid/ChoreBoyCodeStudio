@@ -910,6 +910,23 @@ class FormSurface(QWidget):
         super().showEvent(event)  # type: ignore[arg-type]
         self._apply_responsive()
         self._attach_tab_watch()
+        self._arm_window_prewarm()
+
+    def _arm_window_prewarm(self) -> None:
+        if self._released or getattr(self, "_cbcs_window_prewarmed", False):
+            return
+        if getattr(self, "_cbcs_window_prewarm_armed", False):
+            return
+        self._cbcs_window_prewarm_armed = True
+        QTimer.singleShot(0, self._run_window_prewarm)
+
+    def _run_window_prewarm(self) -> None:
+        self._cbcs_window_prewarm_armed = False
+        if self._released:
+            return
+        from app.features.form_builder.integration.handlers_code import prewarm_window_read
+
+        prewarm_window_read(self)
 
     def focusInEvent(self, event: object) -> None:  # noqa: N802
         super().focusInEvent(event)  # type: ignore[arg-type]
