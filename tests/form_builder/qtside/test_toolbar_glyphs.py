@@ -68,6 +68,10 @@ def test_toolbar_and_rails_show_glyphs_and_keep_tooltips(tmp_path: Path, qapp: Q
         assert buddies.text() == "Buddies"
         assert not tab_order.icon().isNull() and not buddies.icon().isNull()
         assert tab_order.toolButtonStyle() == _style("ToolButtonTextBesideIcon")
+        connections = _button(surface, "formBuilder.overlay.connections")
+        assert connections.text() == "Connections"
+        assert not connections.icon().isNull()
+        assert connections.toolButtonStyle() == _style("ToolButtonTextBesideIcon")
 
         preview = _button(surface, "formBuilder.preview")
         overflow = _button(surface, "formBuilder.overflow")
@@ -80,8 +84,11 @@ def test_toolbar_and_rails_show_glyphs_and_keep_tooltips(tmp_path: Path, qapp: Q
         toolbar.set_compact(True)
         assert tab_order.text() == ""
         assert buddies.text() == ""
+        assert connections.text() == ""
         assert tab_order.toolButtonStyle() == _style("ToolButtonIconOnly")
+        assert connections.toolButtonStyle() == _style("ToolButtonIconOnly")
         assert not tab_order.icon().isNull()
+        assert not connections.icon().isNull()
 
         for name, tip in (
             ("formBuilder.leftRail.outline", "Outline"),

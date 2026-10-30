@@ -654,12 +654,14 @@ class OverlayModes:
         if gesture is None:
             return ""
         document = self._session.document
+        from app.features.form_builder.engine.query.tab_stops import display_name
+
         if self._link_source is not None:
             source = document.get(self._link_source)
-            name = source.object_name if isinstance(source, WidgetNode) else ""
+            name = display_name(document, source.object_name) if isinstance(source, WidgetNode) and source.object_name else ""
             return gesture.start_status(name) if gesture.start_status else ""
         if current_name and gesture.hover_status:
-            return gesture.hover_status(current_name)
+            return gesture.hover_status(display_name(document, current_name))
         return ""
 
     def start_registered_link(self, source: NodeId) -> bool:

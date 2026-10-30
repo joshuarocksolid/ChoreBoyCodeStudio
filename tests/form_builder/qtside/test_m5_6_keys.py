@@ -121,7 +121,8 @@ def _check_help_item() -> None:
 def _check_status_f4(kb: Kb) -> None:
     kb.surface.workbench.canvas.setFocus()
     kb.press("Key_F4")
-    assert "Connections are in the Behavior tab. Alt+4 goes there." in kb.surface.editor_status_sentence()
+    # M6.1c: F4 is Designer's Edit Signals/Slots, the Connections overlay (UX-M6-006).
+    assert "drag to another widget to connect" in kb.surface.editor_status_sentence()
 
 
 def _check_f3(kb: Kb) -> None:
@@ -351,5 +352,11 @@ def test_a_form_with_no_inputs_says_so(tmp_path: Path, qapp: QApplication) -> No
 def test_the_form_menu_has_the_overlay_items_in_order() -> None:
     registry = form_menu_ext.default_registry()
     overlay = [(item.rank, item.path[-1]) for _module, item in registry.items(form_menu_ext.FORM) if item.path[0] == "Overlays"]
-    assert [name for _rank, name in sorted(overlay)] == ["Tab order", "Buddies", "Tab order list…"]
+    assert [name for _rank, name in sorted(overlay)] == [
+        "Tab order",
+        "Buddies",
+        "Connections",
+        "Show all connections",
+        "Tab order list…",
+    ]
     assert QKeySequence(_form_key("form.action.tabOrder")).toString() == "F8"

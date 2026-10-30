@@ -14,7 +14,7 @@ from app.qt.QtCore import Qt
 from app.qt.QtGui import QIcon, QKeyEvent
 from app.qt.QtWidgets import QFrame, QHBoxLayout, QLabel, QPushButton, QWidget
 
-HEIGHT = 36
+HEIGHT = 52
 
 
 class EnterButton(QPushButton):
@@ -47,6 +47,8 @@ class ModeBanner(QFrame):
         self._sentence = QLabel(self)
         self._sentence.setObjectName("formBuilder.overlayBannerText")
         self._sentence.setAccessibleName("Overlay instruction")
+        self._sentence.setWordWrap(True)
+        self._sentence.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         self._extra = EnterButton(self)
         self._extra.setObjectName("formBuilder.overlayBannerExtra")
         self._extra.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
