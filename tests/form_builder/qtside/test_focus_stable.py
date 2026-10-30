@@ -173,6 +173,9 @@ def _unexpected(
     if label == "rename" and home == "canvas":
         allowed.add("QLineEdit")
         allowed.add("formBuilder.outlineRename")
+        # Double-click on a button opens the method page (UX D8).
+        allowed.add("formBuilder.eventPickerSearch")
+        allowed.add("formBuilder.eventPickerMethod")
     found = []
     for step, name in changes:
         if name not in allowed and name != home_name:

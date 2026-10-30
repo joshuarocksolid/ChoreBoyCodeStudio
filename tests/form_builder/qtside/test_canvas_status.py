@@ -30,7 +30,7 @@ def test_hover_sets_the_status_sentence_until_a_gesture_speaks(tmp_path: Path) -
         assert isinstance(canvas, FormCanvas)
         _move(canvas, "okButton")
         hovered = surface.editor_status_sentence()
-        assert hovered == "okButton · Push button · double-click to edit text"
+        assert hovered == "okButton · Push button · click to select · double-click to write code"
         button = surface._session.document.by_name("okButton")[0]  # type: ignore[attr-defined]  # noqa: SLF001
         assert surface._workbench.outline.hover_node() == button  # type: ignore[attr-defined]  # noqa: SLF001
         surface.narrate("Widgets in a layout move by drag in a later release.")

@@ -292,6 +292,7 @@ class EventPicker(QFrame):
             self.search.setText(page.filter)
         self.notice.setText(page.notice)
         self.notice.setVisible(bool(page.notice))
+        _paint_notice(self.notice, page.notice)
         self.check.setVisible(bool(page.check))
         self.check.setText(page.check)
         if self.check.isChecked() != page.checked:
@@ -465,7 +466,16 @@ def watched_empty(page: Optional[Page]) -> bool:
     return page is not None and not page.filter
 
 
-def build_context(doc: object, source: PickerSource, target: str, methods: tuple, window_file: str, window_class: str) -> PickContext:
+def build_context(
+    doc: object,
+    source: PickerSource,
+    target: str,
+    methods: tuple,
+    window_file: str,
+    window_class: str,
+    method_infos: tuple = (),
+    read_line: str = "",
+) -> PickContext:
     from app.features.form_builder.engine.ui4.document import UiDocument
 
     assert isinstance(doc, UiDocument)
@@ -484,4 +494,24 @@ def build_context(doc: object, source: PickerSource, target: str, methods: tuple
         remembered_base(kind),
         taken,
         (),
+        tuple(method_infos),
+        read_line,
     )
+
+
+def _paint_notice(label: object, sentence: str) -> None:
+    """Error lines use the diagnostic colour. The rest stay muted. Both come from the shell theme."""
+    from app.features.form_builder.qtside.pickers.method_page import method_blocks
+
+    widget = label
+    tokens = None
+    while widget is not None:
+        tokens = getattr(widget, "_tokens", None)
+        if tokens is not None:
+            break
+        widget = widget.parentWidget()
+    if tokens is None:
+        return
+    color = tokens.diag_error_color if method_blocks(sentence) else tokens.text_muted
+    if color:
+        label.setStyleSheet("color: %s; background: transparent;" % color)

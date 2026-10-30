@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import weakref
 from dataclasses import dataclass, replace
-from typing import Optional, Sequence, Tuple
+from typing import Any, Optional, Sequence, Tuple
 
 from app.features.form_builder.engine.logic import compat
 from app.features.form_builder.engine.logic.events import read_event, sender_node
@@ -31,7 +31,7 @@ from app.features.form_builder.qtside.inspector.behavior_ext._rows import (
     friendly_class,
     outline_names,
 )
-from app.features.form_builder.qtside.pickers.method_page import method_notice, method_page
+from app.features.form_builder.qtside.pickers.method_page import method_blocks, method_notice, method_page
 
 _BASES = ("QWidget", "QObject")
 
@@ -111,6 +111,8 @@ class PickContext:
     show_base: bool
     taken: Tuple[str, ...] = ()
     inherited: Tuple[str, ...] = ()
+    method_infos: Tuple[Any, ...] = ()
+    read_line: str = ""
 
 
 def opening(ctx: PickContext) -> Page:
@@ -225,8 +227,9 @@ def _enter(ctx: PickContext, page: Page) -> object:
         return Commit(Gesture("add_slot", signal=page.signal, target=page.picked_target, slot=item.payload))
     if item.kind == "make":
         name = page.field.strip()
-        if not ctx.window_file or not compat.is_name(name):
-            return replace(page, notice=method_notice(ctx, page, name))
+        notice = method_notice(ctx, page, name)
+        if not ctx.window_file or method_blocks(notice):
+            return replace(page, notice=notice)
         return Commit(
             Gesture(
                 "add_call",
