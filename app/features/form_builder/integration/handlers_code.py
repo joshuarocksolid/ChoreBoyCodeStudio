@@ -325,7 +325,11 @@ def _read(surface: Any, path: str, relative: str) -> WindowRead:
     scope = surface.session.scope
     root = str(getattr(scope, "project_root", "") or "")
     text = surface.code_bridge.text_of(path)
-    return read_window(root, relative, text=text)
+    token = None
+    ask = getattr(surface.code_bridge, "buffer_token", None)
+    if callable(ask):
+        token = ask(path)
+    return read_window(root, relative, text=text, token=token)
 
 
 def _params_of(request: Any, method: str) -> Tuple[str, ...]:

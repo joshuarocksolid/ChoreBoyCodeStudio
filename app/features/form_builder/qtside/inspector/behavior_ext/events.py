@@ -146,9 +146,14 @@ class EventsBody(QWidget):
         if not self._picker_open():
             return False
         picker = self._picker
+        self._picker = None
         if picker is None:
             return False
-        picker.hide()
+        release = getattr(picker, "release", None)
+        if callable(release):
+            release()
+        else:
+            picker.hide()
         return True
 
     def note_added(self, signal: str, index: int) -> None:
@@ -390,7 +395,15 @@ class EventsBody(QWidget):
         if self._view is not None and self._view.read_only:
             self._run(Gesture("toggle"))
             return
+        previous = self._picker
         self._picker = open_event_picker(host, source, "")
+        if previous is not None and previous is not self._picker:
+            release = getattr(previous, "release", None)
+            if callable(release):
+                try:
+                    release()
+                except RuntimeError:
+                    pass
 
     def _run(self, gesture: Gesture) -> None:
         doc = self._services.session.document

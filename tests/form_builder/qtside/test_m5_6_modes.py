@@ -138,17 +138,20 @@ def test_each_tab_order_badge_sits_on_its_own_widget_with_a_flow_line(tmp_path: 
         _close(window, qapp, guard)
 
 
-def test_the_banner_names_the_overlay_pushes_the_page_down_and_offers_reset(tmp_path: Path, qapp: QApplication) -> None:
+def test_the_banner_names_the_overlay_and_the_page_stays_put(tmp_path: Path, qapp: QApplication) -> None:
     window, kb, guard = _open(tmp_path, qapp)
     try:
         modes = kb.surface.modes
         canvas = _canvas(kb)
         before = canvas.viewport().y()
+        origin = canvas._stage.view_map().page_origin
         modes.open("tab_order")
         kb.pump()
         banner = canvas.banner
         assert banner.isVisible() and banner.name() == "Tab order"
-        assert canvas.viewport().y() >= before + banner.height()
+        assert canvas.viewport().y() == before
+        after = canvas._stage.view_map().page_origin
+        assert abs(after.x - origin.x) <= 1 and abs(after.y - origin.y) <= 1
         assert [b.text() for b in banner.findChildren(QPushButton)] == ["Reset to reading order", "Done · Esc"]
         modes.assign("phoneEdit")
         assert kb.session.document.tabstops() is not None

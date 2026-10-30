@@ -90,7 +90,9 @@ def method_source_hash(text: str) -> str:
     return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
 
 
-def read_window(project_root: str, relative: str, text: Optional[str] = None) -> WindowRead:
+def read_window(
+    project_root: str, relative: str, text: Optional[str] = None, token: Optional[str] = None
+) -> WindowRead:
     """The window class and its methods. Never imports or runs the file."""
     relative = relative.replace("\\", "/")
     if text is None:
@@ -103,8 +105,11 @@ def read_window(project_root: str, relative: str, text: Optional[str] = None) ->
         )
         _store_file(project_root, relative, read, follow.files)
         return read
-    digest = hashlib.sha256(text.encode("utf-8", "surrogatepass")).hexdigest()
-    key = "%s\0%s\0%s" % (project_root, relative, digest)
+    if token:
+        key = "%s\0%s\0token:%s" % (project_root, relative, token)
+    else:
+        digest = hashlib.sha256(text.encode("utf-8", "surrogatepass")).hexdigest()
+        key = "%s\0%s\0%s" % (project_root, relative, digest)
     with _CACHE_LOCK:
         cached_text = _TEXT_CACHE.get(key)
     if cached_text is not None and _fresh(project_root, cached_text[1]):

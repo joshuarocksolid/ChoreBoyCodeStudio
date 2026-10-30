@@ -8,7 +8,7 @@ sentence, or nothing). Nothing here touches the undo log.
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
-from typing import Optional, Sequence, Tuple
+from typing import Dict, Optional, Sequence, Tuple
 
 from app.features.form_builder.engine.commands.catalog_ext.events import (
     EventEdit,
@@ -214,13 +214,17 @@ def project_sender(
     read_only = marker_read_only(doc.root.prop("cbcsLogic"))
     notice = NEWER_NOTICE if read_only else ""
     default = default_event(classes, class_name) or ""
+    cache_key = (id(doc), doc.revision, sender, bool(qt_names))
+    cached = _SENDER_CACHE.get(cache_key)
+    if cached is not None:
+        return cached
     events = tuple(
         _event_view(doc, classes, state, chain, qt_names, read_only)
         for state in events_of_sender(doc, sender)
     )
     empty = _empty_sentence(display, default, chain)
     caption = "" if read_only else (CODE_CAPTION if _goes_to_code(chain) and not events else "")
-    return SenderView(
+    view = SenderView(
         "one",
         line,
         display,
@@ -236,12 +240,20 @@ def project_sender(
         count_events(doc, sender),
         default,
     )
+    if len(_SENDER_CACHE) > 24:
+        _SENDER_CACHE.clear()
+    _SENDER_CACHE[cache_key] = view
+    return view
 
 
 def project_incoming(doc: UiDocument, classes: QtClassTable, target: str) -> Tuple[IncomingRow, ...]:
     """Steps other senders aim at ``target``, in run order."""
     if not target:
         return ()
+    cache_key = (id(doc), doc.revision, target)
+    cached = _INCOMING_CACHE.get(cache_key)
+    if cached is not None:
+        return cached
     found = []
     for state in read_events(doc):
         if state.sender == target or state.has_unreadable_list:
@@ -254,7 +266,11 @@ def project_incoming(doc: UiDocument, classes: QtClassTable, target: str) -> Tup
         for index, step in aimed:
             words = "When %s: %s" % (event_clause(state.signal_name, chain, sender_display), _short_words(doc, classes, step))
             found.append(IncomingRow(state.sender, state.signal_name, index, words))
-    return tuple(found)
+    rows = tuple(found)
+    if len(_INCOMING_CACHE) > 24:
+        _INCOMING_CACHE.clear()
+    _INCOMING_CACHE[cache_key] = rows
+    return rows
 
 
 def project_form(doc: UiDocument, classes: QtClassTable) -> Tuple[FormRow, ...]:
@@ -321,6 +337,10 @@ def finish(doc: UiDocument, classes: QtClassTable, key: str, gesture: Gesture) -
     return None
 
 
+_SENDER_CACHE: Dict[Tuple[object, ...], "SenderView"] = {}
+_INCOMING_CACHE: Dict[Tuple[object, ...], Tuple["IncomingRow", ...]] = {}
+
+
 def outline_names(doc: UiDocument) -> Tuple[str, ...]:
     """Every widget and action, in outline order, then the form if it was not first."""
     names = []
@@ -352,7 +372,9 @@ def _event_view(
     read_only: bool,
 ) -> EventView:
     words = event_words(state.signal_name, chain)
-    qt = _qt_line(doc, classes, state) if qt_names else ""
+    signal = _qt_line(doc, classes, state)
+    qt = signal if qt_names else ""
+    clause = (", Qt signal %s" % signal) if signal else ""
     prop = state.list_property or signal_property(state.signal_name)
     if state.has_unreadable_list:
         line = state.list_error[0] if state.list_error else 1
@@ -377,7 +399,7 @@ def _event_view(
             state.signal_name,
             "When %s" % words.header,
             qt,
-            "Event, %s" % state.signal_name,
+            "Event, %s%s" % (state.signal_name, clause),
             steps,
             True,
             False,
@@ -393,7 +415,7 @@ def _event_view(
         state.signal_name,
         "When %s" % words.header,
         qt,
-        "Event, %s%s" % (words.header, (", Qt signal %s" % qt) if qt else ""),
+        "Event, %s%s" % (words.header, clause),
         steps,
         read_only,
         False,
@@ -420,8 +442,9 @@ def _step_view(
         words = "%s (missing)" % step.target
     else:
         words = _row_words(doc, classes, step)
-        if not step.enabled:
-            words = "%s (off)" % words
+    spoken = words
+    if not unknown and not missing and not step.enabled:
+        words = "%s (off)" % words
     problem = ""
     if missing:
         problem = "Step %d of %s %s acts on %s, which isn't on this form." % (
@@ -430,7 +453,7 @@ def _step_view(
             header,
             step.target,
         )
-    accessible = "When %s, step %d of %d: %s" % (header, index + 1, max(len(state.steps), 1), words)
+    accessible = "When %s, step %d of %d: %s" % (header, index + 1, max(len(state.steps), 1), spoken)
     if not step.enabled and not unknown:
         accessible += ", turned off"
     if problem:

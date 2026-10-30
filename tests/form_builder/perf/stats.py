@@ -151,25 +151,33 @@ def measure(
     samples: int,
     prepare: Optional[Callable[[], None]] = None,
     cleanup: Optional[Callable[[], None]] = None,
+    collect_each: bool = False,
 ) -> Distribution:
     """Time ``fn`` after ``warmup`` discarded calls.
 
     ``prepare`` and ``cleanup`` run outside the clock. Garbage collection is
     off for the timed calls so a collection does not land in one sample.
+    ``collect_each`` collects before every sample instead, and leaves
+    collection enabled, for rows whose budget is close to the work.
     """
     if warmup < 0 or samples < 1:
         raise ValueError("warmup must be >= 0 and samples must be >= 1")
     taken: list[Sample] = []
-    gc.collect()
-    gc.disable()
+    if not collect_each:
+        gc.collect()
+        gc.disable()
     try:
         for _turn in range(warmup):
+            if collect_each:
+                gc.collect()
             if prepare is not None:
                 prepare()
             fn()
             if cleanup is not None:
                 cleanup()
         for _turn in range(samples):
+            if collect_each:
+                gc.collect()
             if prepare is not None:
                 prepare()
             cpu_started = time.process_time()

@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import Any, Callable, Mapping, Protocol, Sequence, cast
 
+from app.qt.QtCore import QTimer
 from app.qt.QtWidgets import QFileDialog, QMessageBox, QWidget
 
 from app.core import constants
@@ -35,6 +37,9 @@ from app.shell.unsaved_changes_dialog import prompt_for_unsaved_changes
 
 
 PYTHON_STYLE_SAVE_GUARDRAIL_CHAR_LIMIT = 250_000
+
+
+logger = logging.getLogger(__name__)
 
 
 class SaveWorkflowPort(Protocol):
@@ -536,6 +541,33 @@ class SaveWorkflow:
             return "proceed"
         return resolver(file_path)
 
+    def _lint_and_notify(self, path: str) -> None:
+        host = self._host
+        if path.lower().endswith(".py"):
+            host.render_lint_for_file(path, trigger="save")
+            host.refresh_test_discovery()
+        bridge = getattr(host, "_form_builder_code_bridge", None)
+        if bridge is None:
+            bridge = getattr(getattr(host, "_window", None), "_form_builder_code_bridge", None)
+        notify = getattr(bridge, "notify_saved", None)
+        if callable(notify):
+            notify(path)
+
+    def _defer_followups(self, path: str, content: str, source: str) -> None:
+        history = self._local_history
+
+        def write() -> None:
+            try:
+                history.record_checkpoint(path, content, source=source)
+            except Exception:
+                logger.exception("deferred local-history checkpoint failed for %s", path)
+            try:
+                self._lint_and_notify(path)
+            except Exception:
+                logger.exception("deferred save follow-up failed for %s", path)
+
+        QTimer.singleShot(0, write)
+
     def save_tab(
         self,
         file_path: str,
@@ -544,6 +576,7 @@ class SaveWorkflow:
         checkpoint_source: str = "save",
         apply_transforms: bool = True,
         check_stale_disk: bool = True,
+        defer_history: bool = False,
     ) -> bool:
         host = self._host
         stale_decision = (
@@ -575,12 +608,19 @@ class SaveWorkflow:
             host.refresh_tab_presentation(saved_tab.file_path)
 
         self._local_history.discard_pending_autosave(saved_tab.file_path)
-        self._local_history.record_checkpoint(
-            saved_tab.file_path,
-            saved_tab.current_content,
-            source=checkpoint_source,
-        )
         self._local_history.delete_draft(saved_tab.file_path)
+        if defer_history:
+            # The file is already on disk and the tab is already clean. The
+            # checkpoint, lint, and test refresh run on the next turn. A crash
+            # before that turn loses a history row of text that is already the
+            # file, and a Problems refresh, not the save.
+            self._defer_followups(saved_tab.file_path, saved_tab.current_content, checkpoint_source)
+        else:
+            self._local_history.record_checkpoint(
+                saved_tab.file_path,
+                saved_tab.current_content,
+                source=checkpoint_source,
+            )
         project_id, _project_root = self._local_history.local_history_context_for_path(saved_tab.file_path)
         loaded_project = host.loaded_project()
         if not path_existed_before_save and project_id is not None:
@@ -595,15 +635,8 @@ class SaveWorkflow:
             )
         host.refresh_save_action_states()
         host.update_editor_status_for_path(saved_tab.file_path)
-        if saved_tab.file_path.lower().endswith(".py"):
-            host.render_lint_for_file(saved_tab.file_path, trigger="save")
-            host.refresh_test_discovery()
-        bridge = getattr(host, "_form_builder_code_bridge", None)
-        if bridge is None:
-            bridge = getattr(getattr(host, "_window", None), "_form_builder_code_bridge", None)
-        notify = getattr(bridge, "notify_saved", None)
-        if callable(notify):
-            notify(saved_tab.file_path)
+        if not defer_history:
+            self._lint_and_notify(saved_tab.file_path)
         getattr(host.logger(), "info")("Saved file: %s", saved_tab.file_path)
         return True
 

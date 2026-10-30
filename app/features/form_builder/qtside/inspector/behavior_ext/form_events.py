@@ -51,7 +51,12 @@ class FormEventsBody(QWidget):
 
     def paint(self, inputs: SectionInputs) -> None:
         self._chrome = self._services.chrome
-        self._rows = project_form(inputs.session.document, QtClassTable.shared())
+        doc = inputs.session.document
+        revision = doc.revision
+        if revision == getattr(self, "_rows_rev", None):
+            return
+        self._rows_rev = revision
+        self._rows = project_form(doc, QtClassTable.shared())
         self._title.setText("ALL EVENTS ON THIS FORM %d" % len(self._rows))
         self._refill()
 

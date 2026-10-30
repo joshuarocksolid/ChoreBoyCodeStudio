@@ -186,9 +186,7 @@ class EventPicker(QFrame):
         if isinstance(new, QWidget) and (new is self or self.isAncestorOf(new)):
             return
         # A click outside already moved focus. Close without pulling it back.
-        self._unlisten()
-        self.hide()
-        self.deleteLater()
+        self.release()
 
     def eventFilter(self, watched: QObject, event: QEvent) -> bool:  # noqa: N802
         check = getattr(self, "check", None)
@@ -323,11 +321,16 @@ class EventPicker(QFrame):
         if self.rows.height() != height:
             self.rows.setFixedHeight(height)
 
-    def _shut(self) -> None:
+    def release(self) -> None:
+        """Drop the popup. A hidden picker must not stay parented or listening."""
         self._unlisten()
-        host = self._host
         self.hide()
+        self.setParent(None)
         self.deleteLater()
+
+    def _shut(self) -> None:
+        host = self._host
+        self.release()
         if host is not None:
             host.setFocus()
 

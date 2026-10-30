@@ -446,6 +446,7 @@ def _collect(
     rows.extend(_sizing_rows(forms, samples, warmup, enforce_absolute, wall_on))
     rows.extend(_m4_rows(samples, warmup, enforce_absolute, wall_on))
     rows.extend(_m5_rows(samples, warmup, enforce_absolute, wall_on))
+    rows.extend(_m6_rows(samples, warmup, enforce_absolute, wall_on))
 
     probe = documents[sizes[0]]
     rows.append(
@@ -526,11 +527,19 @@ def _timed(
     wall_on: bool,
     prepare: Optional[Callable[[], None]] = None,
     cleanup: Optional[Callable[[], None]] = None,
+    collect_each: bool = False,
 ) -> Tuple[Row, Distribution]:
     enforced = budget_ms if enforce_absolute else None
 
     def once() -> Distribution:
-        return measure(fn, warmup=warmup, samples=samples, prepare=prepare, cleanup=cleanup)
+        return measure(
+            fn,
+            warmup=warmup,
+            samples=samples,
+            prepare=prepare,
+            cleanup=cleanup,
+            collect_each=collect_each,
+        )
 
     attempt = sample_until_budget(once, enforced)
     return _row_from_attempt(point, widgets, attempt, budget_ms, enforce_absolute, wall_on), attempt.distribution
@@ -2847,6 +2856,154 @@ def run_m5_speed(*, samples: int = 15, warmup: int = 3, only: Sequence[str] = ()
     try:
         wall_on = wall_policy(load_start, load_start)[0]
         rows = tuple(_m5_rows(samples, warmup, True, wall_on, only))
+    finally:
+        if previous is None:
+            os.environ.pop("CBCS_FB_VALIDATE", None)
+        else:
+            os.environ["CBCS_FB_VALIDATE"] = previous
+    load_end = _read_load()
+    enforced, wall = wall_policy(load_start, load_end)
+    if not enforced:
+        rows = tuple(_drop_wall_failures(row) for row in rows)
+    return SpeedReport(
+        profile="mac",
+        interpreter=sys.version.split()[0],
+        qt_version=raw_qt.qt_version(),
+        load_start=load_start,
+        load_end=load_end,
+        wall=wall,
+        samples=samples,
+        warmup=warmup,
+        cpu_tolerance=CPU_TOLERANCE,
+        cpus=_cpu_count(),
+        rows=rows,
+    )
+
+
+M6_POINTS: Tuple[str, ...] = tuple(
+    name for group_names in (
+        ("m6 codec 50 steps", "m6 rename 40 events", "m6 read window 100 KB", "m6 read window 1 MB", "m6 read window cached", "m6 code checks cached"),
+        (
+            "m6 behavior fill",
+            "m6 picker keystroke",
+            "m6 step commit command",
+            "m6 step commit added",
+            "m6 arrows",
+            "m6 show all",
+            "m6 open connections",
+            "m6 link drag frame",
+            "m6 double-click tab open",
+            "m6 double-click dirty tab",
+            "m6 double-click file not open",
+            "m6 F12 tab open",
+            "m6 F12 not open",
+            "m6 save 40 step lists",
+        ),
+    )
+    for name in group_names
+)
+
+
+def _m6_rows(
+    samples: int,
+    warmup: int,
+    enforce_absolute: bool,
+    wall_on: bool,
+    only: Sequence[str] = (),
+) -> List[Row]:
+    """The UX-M6-003 rows. ``only`` limits the run to m6_paths group keys."""
+    try:
+        m6 = importlib.import_module("tests.form_builder.perf.m6_paths")
+    except ImportError as exc:
+        return [Row(point, None, None, None, None, "-", "skip", str(exc)) for point in M6_POINTS]
+    rows: List[Row] = []
+    for group in m6.GROUPS:
+        if only and group.key not in only:
+            continue
+        try:
+            specs, teardown = group.build()
+        except Exception as exc:
+            rows.extend(
+                Row(point, widgets, None, None, None, _ms_budget(budget), "skip", "could not build: %r" % (exc,))
+                for point, widgets, budget in group.names
+            )
+            continue
+        try:
+            built = {spec.point for spec in specs}
+            for spec in specs:
+                try:
+                    row, dist = _timed(
+                        spec.point,
+                        spec.widgets,
+                        spec.fn,
+                        spec.budget_ms,
+                        samples=samples,
+                        warmup=warmup,
+                        enforce_absolute=enforce_absolute,
+                        wall_on=wall_on,
+                        prepare=spec.prepare,
+                        cleanup=spec.cleanup,
+                        collect_each=True,
+                    )
+                    if spec.baseline is not None:
+                        base = measure(
+                            spec.baseline,
+                            warmup=warmup,
+                            samples=samples,
+                            collect_each=True,
+                        )
+                        p50 = max(0.0, (dist.cpu_p50 - base.cpu_p50) * 1000.0)
+                        p95 = max(0.0, (dist.cpu_p95 - base.cpu_p95) * 1000.0)
+                        budget = spec.budget_ms
+                        if enforce_absolute:
+                            verdict = "pass" if cpu_within_budget(p95, budget) else "fail"
+                        else:
+                            verdict = "reported"
+                        row = Row(
+                            row.point,
+                            row.widgets,
+                            dist.n,
+                            p50,
+                            p95,
+                            row.budget,
+                            verdict,
+                            _join("added over the repaint", row.detail),
+                        )
+                    if spec.note:
+                        row = _with_detail(row, spec.note)
+                except Exception as exc:
+                    row = Row(
+                        spec.point,
+                        spec.widgets,
+                        None,
+                        None,
+                        None,
+                        _ms_budget(spec.budget_ms),
+                        "fail",
+                        "could not measure: %r" % (exc,),
+                    )
+                rows.append(row)
+            rows.extend(
+                Row(point, widgets, None, None, None, _ms_budget(budget), "skip", "not built")
+                for point, widgets, budget in group.names
+                if point not in built
+            )
+        finally:
+            try:
+                teardown()
+            except Exception as exc:
+                rows.append(Row("m6 %s teardown" % group.key, None, None, None, None, "-", "reported", repr(exc)))
+    return rows
+
+
+def run_m6_speed(*, samples: int = 40, warmup: int = 3, only: Sequence[str] = ()) -> SpeedReport:
+    """Only the M6 rows. The CLI prints them with ``format_table``."""
+    load_start = _read_load()
+    previous = os.environ.get("CBCS_FB_VALIDATE")
+    os.environ["CBCS_FB_VALIDATE"] = "0"
+    try:
+        wall_on = wall_policy(load_start, load_start)[0]
+        rows = tuple(_m6_rows(samples, warmup, True, wall_on, only))
     finally:
         if previous is None:
             os.environ.pop("CBCS_FB_VALIDATE", None)

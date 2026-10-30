@@ -21,6 +21,7 @@ from app.features.form_builder.engine.logic.events_catalog import (
 )
 from app.features.form_builder.engine.logic.events_codec import slot_step
 from app.features.form_builder.engine.logic.intents.m6 import IntentSpec, default_target, intents_for, target_candidates
+from app.features.form_builder.engine.logic.phrases import steps_removed
 from app.features.form_builder.engine.project.handler_names import value_param
 from app.features.form_builder.engine.ui4.defaults import QtClassTable
 from app.features.form_builder.engine.query.tab_stops import display_name
@@ -248,7 +249,7 @@ def _picked_event(ctx: PickContext, page: Page, signal: str) -> object:
         if dropped:
             chain = _sender_chain(ctx)
             words = event_words(signal, chain).header
-            sentence = "%d steps can't run on %s and will be removed." % (dropped, words)
+            sentence = steps_removed(dropped, words)
             rows = (
                 Item("notice", "", sentence, header=True),
                 Item("confirm-yes", signal, "Change event"),

@@ -18,6 +18,7 @@ _PLAIN = (
 )
 _BAD = '[{"do": "slot", "target": "123bad", "slot": "clear()"}]'
 _UNKNOWN = '[{"do": "hyperjump"}, {"do": "slot", "target": "nameEdit", "slot": "clear()"}]'
+_OFF = '[{"do": "slot", "target": "nameEdit", "slot": "clear()", "enabled": false}]'
 
 
 def _form(steps: str, owner: str = "clearButton") -> str:
@@ -44,6 +45,29 @@ def _form(steps: str, owner: str = "clearButton") -> str:
 
 def _doc(steps: str):
     return open_log(_form(steps)).document
+
+
+def test_the_header_names_the_qt_signal_when_qt_names_are_off() -> None:
+    view = project_sender(_doc(_PLAIN), QtClassTable.shared(), "clearButton", qt_names=False)
+    assert view.events[0].qt == ""
+    assert "Qt signal clicked()" in view.events[0].accessible
+
+
+def test_a_turned_off_step_says_turned_off_once() -> None:
+    view = project_sender(_doc(_OFF), QtClassTable.shared(), "clearButton")
+    step = view.events[0].steps[0]
+    assert step.words.endswith("(off)")
+    assert step.accessible.endswith(", turned off")
+    assert "(off)" not in step.accessible
+
+
+def test_one_step_is_singular() -> None:
+    from app.features.form_builder.engine.logic.phrases import steps_removed, used_by_steps
+
+    assert used_by_steps("print_receipt", 1) == "print_receipt is used by 1 step. Delete those steps first."
+    assert used_by_steps("print_receipt", 2) == "print_receipt is used by 2 steps. Delete those steps first."
+    assert steps_removed(1, "clicked") == "1 step can't run on clicked and will be removed."
+    assert steps_removed(3, "clicked") == "3 steps can't run on clicked and will be removed."
 
 
 def test_a_bad_identifier_locks_the_event_without_fb401_or_fb403() -> None:

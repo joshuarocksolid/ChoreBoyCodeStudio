@@ -177,6 +177,7 @@ def _formula(rng: random.Random, old: str, new: str) -> Tuple[str, str]:
     return "".join(before), "".join(after)
 
 
+@pytest.mark.logic("L-logic-references")
 def test_rename_changes_exactly_the_name_tokens() -> None:
     rng = random.Random(_seed())
     for _ in range(800):

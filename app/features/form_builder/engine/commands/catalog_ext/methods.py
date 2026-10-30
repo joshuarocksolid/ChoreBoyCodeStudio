@@ -10,6 +10,7 @@ from app.features.form_builder.engine.commands.base import PlanContext
 from app.features.form_builder.engine.commands.ops import SetFieldOp
 from app.features.form_builder.engine.logic.compat import split_signature
 from app.features.form_builder.engine.logic.events import read_events
+from app.features.form_builder.engine.logic.phrases import used_by_steps
 from app.features.form_builder.engine.ui4.document import UiDocument
 from app.features.form_builder.engine.ui4.schema import SlotsDecl
 from app.features.form_builder.engine.commands.base import CommandRejected
@@ -37,9 +38,7 @@ class RemoveMethodDeclaration:
                 if step.verb == "call" and step.method == self.method:
                     used += 1
         if used:
-            raise CommandRejected(
-                "%s is used by %d steps. Delete those steps first." % (self.method, used)
-            )
+            raise CommandRejected(used_by_steps(self.method, used))
         declared = doc.ui.field("form_slots")
         signals = declared.signals if isinstance(declared, SlotsDecl) else ()
         slots = declared.slots if isinstance(declared, SlotsDecl) else ()
