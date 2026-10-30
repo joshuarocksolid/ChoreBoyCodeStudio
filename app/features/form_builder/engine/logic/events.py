@@ -10,16 +10,17 @@ is the only writer.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, Dict, List, Optional, Set, Tuple
 
 from app.features.form_builder.engine.ids import NodeId
+from app.features.form_builder.engine.logic.codec import checked_hint_points
 from app.features.form_builder.engine.logic.compat import signature_text, split_signature
 from app.features.form_builder.engine.logic.events_codec import EventStep, StepList, read_list
 from app.features.form_builder.engine.logic.storage import signal_of_property, signal_property
 from app.features.form_builder.engine.ui4.document import UiDocument
 from app.features.form_builder.engine.ui4.nodes import Node
-from app.features.form_builder.engine.ui4.schema import SlotsDecl
+from app.features.form_builder.engine.ui4.schema import ConnectionHint, SlotsDecl
 from app.features.form_builder.engine.ui4.values import StringValue
 
 @dataclass(frozen=True)
@@ -89,6 +90,24 @@ def native_step(doc: UiDocument, receiver: str, slot: str) -> EventStep:
     return EventStep("slot", target=receiver, slot=signature_text(name, params))
 
 
+def _connection_hint_points(node: Node) -> Tuple[Tuple[str, int, int], ...]:
+    """A connection's ``<hints>`` in document order, or empty when they are not typed points.
+
+    An opaque ``<hints>`` block stays on the element. It has no step form, so a later
+    conversion that deletes the element cannot copy it.
+    """
+    raw = node.field("hints")
+    if not isinstance(raw, tuple) or not raw:
+        return ()
+    points: List[Tuple[object, ...]] = []
+    for item in raw:
+        if not isinstance(item, ConnectionHint):
+            return ()
+        points.append((item.type, item.x, item.y))
+    checked = checked_hint_points(points)
+    return checked if checked is not None else ()
+
+
 def step_key(doc: UiDocument, step: EventStep) -> Tuple[object, ...]:
     """What makes two plain steps the same connection (CONTRACTS 15.6 rule 3): receiver and slot."""
     if step.verb == "call":
@@ -111,7 +130,12 @@ def read_event(doc: UiDocument, sender: str, signal_name: str) -> EventState:
             continue
         if split_signature(signal)[0] != signal_name:
             continue
-        native.append(NativeRef(node.id, signal, receiver, slot, native_step(doc, receiver, slot)))
+        step = native_step(doc, receiver, slot)
+        if step.verb == "slot":
+            points = _connection_hint_points(node)
+            if points:
+                step = replace(step, hints=points)
+        native.append(NativeRef(node.id, signal, receiver, slot, step))
     key = signal_property(signal_name)
     owner = sender_node(doc, sender)
     entry = owner.prop(key) if owner is not None else None
