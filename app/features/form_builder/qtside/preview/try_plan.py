@@ -12,7 +12,6 @@ import os
 from decimal import Decimal
 from typing import Dict, List, Optional, Sequence, Tuple
 
-from app.features.form_builder.engine.ipc.protocol import Appearance, TryDataPlan, TryStart
 from app.features.form_builder.engine.logic.checks import FormulaCheck, read_checks
 from app.features.form_builder.engine.logic.events import read_events
 from app.features.form_builder.engine.logic.formula import analyze
@@ -130,98 +129,10 @@ def value_to_wire(value: object, annotation: str) -> str:
     return str(value)
 
 
-def preview_request(
-    session: object,
-    path: str,
-    view_id: str,
-    *,
-    run_behavior: bool = True,
-    keep_values: bool = False,
-    window_values: Sequence[Tuple[str, str]] = (),
-    appearance: Optional[Appearance] = None,
-) -> object:
-    """``TryStart`` when behavior runs, otherwise today's ``LoadForm``."""
-    from app.features.form_builder.integration.preview_notice import build_load_form
-
-    document = session.document
-    if run_behavior and form_has_logic(document):
-        started = build_try_start(
-            session,
-            path,
-            view_id,
-            keep_values=keep_values,
-            window_values=window_values,
-            appearance=appearance,
-        )
-        if started is not None:
-            return started
-    message = build_load_form(session, path, view_id, appearance=appearance)
-    if keep_values and not message.keep_values:
-        from dataclasses import replace
-
-        return replace(message, keep_values=True)
-    return message
-
-
-def build_try_start(
-    session: object,
-    path: str,
-    view_id: str,
-    *,
-    keep_values: bool = False,
-    window_values: Sequence[Tuple[str, str]] = (),
-    appearance: Optional[Appearance] = None,
-    request_id: str = "",
-) -> Optional[TryStart]:
-    """The traced module and the window-value strip. ``None`` when there is no module yet."""
-    from app.features.form_builder.engine.codegen.api import generate_form_module
-    from app.features.form_builder.integration.preview_control import methods_for
-    from app.features.form_builder.integration.preview_notice import project_root_of, promoted_for
-
-    document = session.document
-    scope = session.scope
-    root = project_root_of(session)
-    if not root or not getattr(scope, "generates", False):
-        return None
-    made = generate_form_module(document, scope=scope, source_bytes=None, trace=True)
-    if not made.text:
-        return None
-    specs = window_method_specs(document, scope)
-    annotations = {name: annotation for name, annotation in specs}
-    values: List[Tuple[str, object]] = []
-    for name, text in window_values:
-        value = wire_to_value(text, annotations.get(name, ""))
-        if value is not None:
-            values.append((name, value))
-    methods = dict(methods_for(document))
-    for name, _annotation in specs:
-        methods.setdefault(name, 0)
-    import uuid
-
-    class_name, _facts = _class_name(scope)
-    root_widget = getattr(document, "root", None)
-    base = str(getattr(root_widget, "class_name", "") or "QWidget")
-    return TryStart(
-        request_id=request_id or uuid.uuid4().hex,
-        view_id=view_id,
-        module_name=getattr(scope, "module_name", None) or "ui_preview",
-        module_source=made.text,
-        window_class_name=class_name or "Window",
-        base_class=base,
-        window_values=tuple(values),
-        data=TryDataPlan(),
-        show_form=True,
-        run_behavior=True,
-        form_path=path,
-        project_root=root,
-        sys_path=(root,) if root else (),
-        appearance=appearance if appearance is not None else Appearance(),
-        keep_values=keep_values,
-        revision=int(getattr(document, "revision", 0) or 0),
-        promoted=promoted_for(document, root),
-        form_methods=tuple(sorted(methods.items())),
-        window_methods=specs,
-    )
+def window_class_name(scope: object) -> str:
+    """The class ``read_window`` found, or blank when the file is not a window class."""
+    name, _facts = _class_name(scope)
+    return name
 
 
 def _nodes(document: object) -> List[object]:

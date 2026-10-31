@@ -33,13 +33,14 @@ class TryEvent:
 
 @dataclass(frozen=True)
 class TryLine:
-    """One row of "What ran". ``ref`` is the source column."""
+    """One row of "What ran". ``ref`` is the raw source key. ``details`` lists a grouped burst."""
 
     sentence: str
     ref: str
     source: SourceRef
     kind: str
     method: str = ""
+    details: Tuple[str, ...] = ()
 
 
 def step_counts(source: str) -> Dict[str, int]:
@@ -63,6 +64,31 @@ def handler_ref(source: str, name: str) -> str:
     if match is None:
         return name
     return match.group("ref")
+
+
+_RULE_WORDS = {
+    "cbcsEnabledWhen": "Enabled when",
+    "cbcsVisibleWhen": "Visible when",
+    "cbcsReadOnlyWhen": "Read-only when",
+    "cbcsValue": "Value",
+    "cbcsDefault": "Default",
+    "cbcsValidate": "Checks",
+}
+
+
+def source_label(ref: str) -> str:
+    """The Source column words. The raw key stays on the line for the tooltip and Copy."""
+    text = ref or ""
+    if ": When " in text:
+        widget, _, signal = text.partition(": When ")
+        return "%s · When %s" % (widget.strip(), signal.strip())
+    widget, sep, key = text.partition(":")
+    if not sep:
+        return text
+    words = _RULE_WORDS.get(key.strip(), key.strip())
+    if not widget.strip():
+        return words
+    return "%s · %s" % (widget.strip(), words)
 
 
 def source_of(ref: str, step_index: Optional[int] = None) -> SourceRef:
@@ -112,6 +138,7 @@ def fold(
                         ref=first.ref,
                         source=source_of(first.ref),
                         kind="rule",
+                        details=tuple(item.ref for item in rules),
                     )
                 )
                 rules_written = True

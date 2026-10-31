@@ -223,9 +223,19 @@ def test_a_when_with_an_error_skips_only_that_step(tmp_path: Path, qapp: Any) ->
     assert win.ui.nameEdit.text() == "kept"
 
 
+def _drop_imported_forms() -> None:
+    """A cached ``forms`` package from an earlier test hides this test's package."""
+    for name in list(sys.modules):
+        if name == "forms" or name.startswith("forms."):
+            sys.modules.pop(name, None)
+
+
 def test_each_verb_emits_and_runs(tmp_path: Path, qapp: Any) -> None:
     del qapp
-    from PySide6.QtWidgets import QDialog, QMessageBox
+    from PySide6 import QtWidgets
+    from PySide6.QtWidgets import QApplication, QDialog, QMessageBox
+
+    saved_box = QtWidgets.QMessageBox
 
     (tmp_path / "customer.ui").write_text("<ui/>", encoding="utf-8")
     forms = tmp_path / "pkg"
@@ -245,6 +255,7 @@ def test_each_verb_emits_and_runs(tmp_path: Path, qapp: Any) -> None:
         "        return super().show()\n",
         encoding="utf-8",
     )
+    _drop_imported_forms()
     sys.path.insert(0, str(forms))
     seen: List[str] = []
 
@@ -298,24 +309,35 @@ def test_each_verb_emits_and_runs(tmp_path: Path, qapp: Any) -> None:
     ):
         assert fragment in source, fragment
     calls: List[Any] = []
+    win = None
     try:
         win = _load(source, calls, boxes=_Box)
         win.ui.giftCheck.setEnabled(False)
         win.ui.nameEdit.hide()
         win.ui.clearButton.click()
+        assert win.ui.nameEdit.text() == ""
+        assert not win.ui.giftCheck.isEnabled()
+        assert not win.ui.phoneEdit.isVisible()
+        assert calls == [("m_done", ())]
+        assert win.result() == QDialog.DialogCode.Accepted
+        assert "info" in seen and "ask" in seen
+        import importlib
+
+        customer_window = importlib.import_module("forms.customer_window")
+        assert customer_window.CustomerWindow.seen is True
     finally:
+        if win is not None:
+            win.close()
+        app = QApplication.instance()
+        if app is not None:
+            for widget in list(app.topLevelWidgets()):
+                if type(widget).__name__ == "CustomerWindow":
+                    widget.close()
+                    widget.deleteLater()
         if str(forms) in sys.path:
             sys.path.remove(str(forms))
-    assert win.ui.nameEdit.text() == ""
-    assert not win.ui.giftCheck.isEnabled()
-    assert not win.ui.phoneEdit.isVisible()
-    assert calls == [("m_done", ())]
-    assert win.result() == QDialog.DialogCode.Accepted
-    assert "info" in seen and "ask" in seen
-    import importlib
-
-    customer_window = importlib.import_module("forms.customer_window")
-    assert customer_window.CustomerWindow.seen is True
+        _drop_imported_forms()
+        QtWidgets.QMessageBox = saved_box
 
 
 def test_ask_no_stops_the_list(tmp_path: Path, qapp: Any) -> None:

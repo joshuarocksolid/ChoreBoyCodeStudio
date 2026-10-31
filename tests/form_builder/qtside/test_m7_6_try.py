@@ -28,7 +28,7 @@ from app.features.form_builder.engine.logic.events_codec import EventStep, call_
 from app.features.form_builder.engine.project.forms import FormScope
 from app.features.form_builder.engine.ui4.reader import read_ui
 from app.features.form_builder.qtside.preview.child.session import ChildSession
-from app.features.form_builder.qtside.preview.try_plan import preview_request
+from app.features.form_builder.integration.preview_notice import preview_request
 from app.qt.QtWidgets import QApplication, QLineEdit, QWidget
 
 pytestmark = pytest.mark.unit

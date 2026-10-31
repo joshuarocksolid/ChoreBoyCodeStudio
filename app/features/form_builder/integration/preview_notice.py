@@ -23,7 +23,7 @@ import os
 import re
 import uuid
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, List, Optional, Set, Tuple
+from typing import Any, Callable, Dict, List, Optional, Sequence, Set, Tuple
 
 from app.features.form_builder.engine.codegen.api import generate_form_module
 from app.features.form_builder.engine.diagnostics import CODES, DiagnosticLocation, FormDiagnostic
@@ -33,6 +33,8 @@ from app.features.form_builder.engine.ipc.protocol import (
     LoadForm,
     PromotedClass,
     Response,
+    TryDataPlan,
+    TryStart,
 )
 from app.features.form_builder.engine.project.custom_widgets import module_for_header, module_parts
 from app.features.form_builder.engine.ui4.nodes import CustomWidgetNode, WidgetNode
@@ -107,6 +109,101 @@ def security_sentence(classes: Tuple[OwnClass, ...]) -> str:
     return (
         "Preview runs code from this project: %s (%s)%s. "
         "Code Studio runs it only in the preview window, never in the editor." % (first.class_name, first.file, more)
+    )
+
+
+def preview_request(
+    session: object,
+    path: str,
+    view_id: str,
+    *,
+    run_behavior: bool = True,
+    keep_values: bool = False,
+    window_values: Sequence[Tuple[str, str]] = (),
+    appearance: Optional[Appearance] = None,
+) -> object:
+    """``TryStart`` when behavior runs, otherwise today's ``LoadForm``."""
+    from app.features.form_builder.qtside.preview.try_plan import form_has_logic
+
+    document = session.document  # type: ignore[attr-defined]
+    if run_behavior and form_has_logic(document):
+        started = build_try_start(
+            session,
+            path,
+            view_id,
+            keep_values=keep_values,
+            window_values=window_values,
+            appearance=appearance,
+        )
+        if started is not None:
+            return started
+    message = build_load_form(session, path, view_id, appearance=appearance)
+    if keep_values and not message.keep_values:
+        from dataclasses import replace
+
+        return replace(message, keep_values=True)
+    return message
+
+
+def build_try_start(
+    session: object,
+    path: str,
+    view_id: str,
+    *,
+    keep_values: bool = False,
+    window_values: Sequence[Tuple[str, str]] = (),
+    appearance: Optional[Appearance] = None,
+    request_id: str = "",
+) -> Optional[TryStart]:
+    """The traced module and the window-value strip. ``None`` when there is no module yet."""
+    from app.features.form_builder.integration.preview_control import methods_for
+    from app.features.form_builder.qtside.preview.try_plan import (
+        window_class_name,
+        window_method_specs,
+        wire_to_value,
+    )
+
+    document = session.document  # type: ignore[attr-defined]
+    scope = session.scope  # type: ignore[attr-defined]
+    root = project_root_of(session)
+    if not root or not getattr(scope, "generates", False):
+        return None
+    made = generate_form_module(document, scope=scope, source_bytes=None, trace=True)
+    if not made.text:
+        return None
+    specs = window_method_specs(document, scope)
+    annotations = {name: annotation for name, annotation in specs}
+    values: List[Tuple[str, object]] = []
+    for name, text in window_values:
+        value = wire_to_value(text, annotations.get(name, ""))
+        if value is not None:
+            values.append((name, value))
+    methods = dict(methods_for(document))
+    for name, _annotation in specs:
+        methods.setdefault(name, 0)
+    class_name = window_class_name(scope)
+    root_widget = getattr(document, "root", None)
+    base = str(getattr(root_widget, "class_name", "") or "QWidget")
+    return TryStart(
+        request_id=request_id or uuid.uuid4().hex,
+        view_id=view_id,
+        module_name=getattr(scope, "module_name", None) or "ui_preview",
+        module_source=made.text,
+        window_class_name=class_name or "Window",
+        base_class=base,
+        window_values=tuple(values),
+        data=TryDataPlan(),
+        show_form=True,
+        run_behavior=True,
+        form_path=path,
+        project_root=root,
+        sys_path=(root,) if root else (),
+        appearance=appearance if appearance is not None else Appearance(),
+        keep_values=keep_values,
+        revision=int(getattr(document, "revision", 0) or 0),
+        promoted=promoted_for(document, root),
+        form_methods=tuple(sorted(methods.items())),
+        window_methods=specs,
     )
 
 
@@ -250,8 +347,6 @@ class PreviewNotices:
                 self._say(OUTSIDE_PROJECT)
         provider = self.appearance_provider
         appearance = provider(path) if provider is not None else None
-        from app.features.form_builder.qtside.preview.try_plan import preview_request
-
         message = preview_request(
             self._session,
             path,
