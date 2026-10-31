@@ -195,6 +195,22 @@ class TryStart:
     window_values: Tuple[Tuple[str, object], ...]
     data: TryDataPlan
     type: Literal["try_start"] = "try_start"
+    # ``show_form`` is the visible Preview. The fields below default so an
+    # older TryStart frame (data plan only) still decodes and does not open a window.
+    show_form: bool = False
+    run_behavior: bool = True
+    form_path: str = ""
+    ui_xml: Optional[str] = None
+    project_root: Optional[str] = None
+    sys_path: Tuple[str, ...] = ()
+    appearance: Optional[Appearance] = None
+    keep_values: bool = False
+    revision: int = 0
+    resource_modules: Tuple[ResourceModule, ...] = ()
+    promoted: Tuple[PromotedClass, ...] = ()
+    form_methods: Tuple[Tuple[str, int], ...] = ()
+    # ``(method, annotation)``. An empty annotation is a text box (ANY).
+    window_methods: Tuple[Tuple[str, str], ...] = ()
 
 
 @dataclass(frozen=True)

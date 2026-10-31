@@ -756,6 +756,37 @@ class FormSurface(QWidget):
         self._refresh_shell_status()
         return True
 
+    def open_logic(self, object_name: str, rule_path: Tuple[object, ...] = ()) -> bool:
+        """A What ran line: select that widget and open its Behavior tab.
+
+        The same detail the Problems panel uses (``fb_object``, ``fb_rule_path``).
+        A step index, when the line has one, makes that step current.
+        """
+        import json
+
+        prop = str(rule_path[0]) if rule_path else ""
+        detail = {
+            "fb_object": object_name or "",
+            "fb_property": prop,
+            "fb_rule_path": json.dumps(list(rule_path)),
+        }
+        selected = self.preview_problem(detail)
+        inspector = getattr(self._workbench, "inspector", None)
+        focus = getattr(inspector, "focus_tab", None)
+        if callable(focus):
+            from app.features.form_builder.qtside.inspector import TabId
+
+            focus(TabId.BEHAVIOR)
+        if len(rule_path) >= 2 and isinstance(rule_path[1], int):
+            from app.features.form_builder.engine.logic.storage import signal_of_property
+
+            body = self.findChild(QWidget, "formBuilder.events")
+            signal = signal_of_property(prop) if prop else None
+            focus_step = getattr(body, "focus_step", None)
+            if signal and callable(focus_step):
+                focus_step(signal, int(rule_path[1]))
+        return selected
+
     def restore_text(self, text: str, reason: RestoreReason) -> None:
         try:
             self._session.log.execute(ReplaceDocument(text, reason=_RESTORE_REASON[reason]))

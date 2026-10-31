@@ -569,6 +569,23 @@ class FormToolbar(QWidget):
         self.preview.setToolTip("Preview (Ctrl+Shift+R)")
         self.preview.setAccessibleName("Preview")
         self.preview.clicked.connect(lambda _checked=False: on_preview())
+        if getattr(self, "_run_behavior", None) is None:
+            box = QToolButton(self)
+            box.setObjectName("formBuilder.runBehavior")
+            box.setText("Run behavior")
+            box.setAccessibleName("Run behavior")
+            box.setToolTip("Run the form's behavior")
+            box.setCheckable(True)
+            box.setChecked(True)
+            box.setAutoRaise(True)
+            box.setFocusPolicy(_strong())
+            box.setToolButtonStyle(_button_style("ToolButtonTextOnly"))
+            parent = self.preview.parentWidget()
+            layout = parent.layout() if parent is not None else None
+            if layout is not None:
+                layout.insertWidget(layout.indexOf(self.preview) + 1, box)
+            self._run_behavior = box
+            box.toggled.connect(lambda on: control.set_run_behavior(bool(on)))
         menu.addSeparator()
         _add_heading(menu, "Preview")
         menu.addMenu("Style").setObjectName("formBuilder.previewStyleMenu")
@@ -691,6 +708,7 @@ def _toolbar_qss(tokens: ShellThemeTokens) -> str:
         "textSize",
         "twoWidths",
         "preview",
+        "runBehavior",
         "overflow",
     )
     selectors = ["QToolButton#formBuilder\\.%s" % name for name in names]

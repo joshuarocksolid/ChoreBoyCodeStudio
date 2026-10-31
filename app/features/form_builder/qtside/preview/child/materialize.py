@@ -37,10 +37,14 @@ class FormMaterializer:
 
     ``on_would_call`` is set by the preview child. A stand-in method sends the
     method name and never imports the window file.
+
+    ``host_factory`` replaces that stand-in when Try mode is showing the form.
+    It receives the ``Ui_`` class and the module source and returns the window.
     """
 
     def __init__(self) -> None:
         self.on_would_call = None  # type: Optional[object]
+        self.host_factory = None  # type: Optional[object]
 
     def build(
         self,
@@ -62,7 +66,11 @@ class FormMaterializer:
         exec(compile(source, module.__file__, "exec"), module.__dict__)
         ui_cls = _ui_class(module)
         if ui_cls is not None:
-            host = _host_for(ui_cls, source, methods, self.on_would_call)
+            factory = self.host_factory
+            if callable(factory):
+                host = factory(ui_cls, source)
+            else:
+                host = _host_for(ui_cls, source, methods, self.on_would_call)
             _ensure_size(host)
             host.show()
             return host
@@ -155,24 +163,27 @@ def _stand_in(kind: type, methods: Tuple[Tuple[str, int], ...], on_call: object)
     return type(kind.__name__, (kind,), namespace)
 
 
+def host_kinds(source: str) -> Tuple[type, ...]:
+    """Which Qt base ``setupUi`` is likely to need, most likely first.
+
+    The generated class does not name its root. A main window calls ``setCentralWidget``.
+    A dialog connects ``accept`` and ``reject``. The others are tried when the first fails.
+    """
+    if "setCentralWidget(" in source or ".setMenuBar(" in source or ".setStatusBar(" in source:
+        return (QMainWindow, QDialog, QWidget)
+    if ".accept)" in source or ".reject)" in source or ".setSizeGripEnabled(" in source or ".setModal(" in source:
+        return (QDialog, QWidget, QMainWindow)
+    return (QWidget, QDialog, QMainWindow)
+
+
 def _host_for(
     ui_cls: type,
     source: str,
     methods: Tuple[Tuple[str, int], ...] = (),
     on_call: object = None,
 ) -> QWidget:
-    """The window ``setupUi`` fills: a main window for ``setCentralWidget``, a dialog for ``accept``, else a widget.
-
-    The generated class does not name its root class, so the module's own calls say what it needs
-    (a QMainWindow form calls ``setCentralWidget`` and ``setMenuBar`` on the window; a dialog's
-    button box connects to its ``accept`` and ``reject``). The others are tried when the first fails.
-    """
-    if "setCentralWidget(" in source or ".setMenuBar(" in source or ".setStatusBar(" in source:
-        order: Tuple[type, ...] = (QMainWindow, QDialog, QWidget)
-    elif ".accept)" in source or ".reject)" in source or ".setSizeGripEnabled(" in source or ".setModal(" in source:
-        order = (QDialog, QWidget, QMainWindow)
-    else:
-        order = (QWidget, QDialog, QMainWindow)
+    """The window ``setupUi`` fills."""
+    order = host_kinds(source)
     error: Optional[AttributeError] = None
     for kind in order:
         host = _stand_in(kind, methods, on_call)()
