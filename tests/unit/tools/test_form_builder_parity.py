@@ -616,7 +616,7 @@ def test_seed_of_real_sources(tmp_path: Path) -> None:
     assert pains["P-23"].test == P23_TEST
     assert pains["P-23"].r3 == ("R3-177",)
     logic = {feature.entry.key: feature for feature in ledger.logic}
-    assert logic["L-line-total-live"].entry.wp == "M7.2"
+    assert logic["L-line-total-live"].entry.wp == "M7.2a"
     assert "M1.5" in ledger.wps_without_items
     assert "M3.1b" not in ledger.wps_without_items
     assert "M1.1a" not in ledger.wps_without_items
