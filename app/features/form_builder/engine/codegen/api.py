@@ -34,6 +34,7 @@ from app.features.form_builder.engine.diagnostics import (
     FormDiagnostic,
     Severity,
 )
+from app.features.form_builder.engine.project.formats import read_formats
 from app.features.form_builder.engine.project.forms import FormScope
 from app.features.form_builder.engine.project.window_facts import WindowFacts
 from app.features.form_builder.engine.project.window_file import read_window
@@ -129,7 +130,14 @@ def generate_form_module(
             uses_freecadgui=False,
             header=None,
         )
-    pieces = emit_module(doc, scope, options, trace=trace, window=_window_facts(scope))
+    pieces = emit_module(
+        doc,
+        scope,
+        options,
+        trace=trace,
+        window=_window_facts(scope),
+        formats=read_formats(scope.project_root),
+    )
     if pieces.refused:
         return CodegenResult(
             text=None,

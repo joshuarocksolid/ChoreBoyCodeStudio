@@ -210,9 +210,10 @@ def emit_module(
     options: CodegenOptions,
     trace: bool = False,
     window: Optional[WindowFacts] = None,
+    formats: Optional[FormatSettings] = None,
 ) -> ModulePieces:
     """Generate the module body, or refuse when a name cannot be emitted."""
-    emitter = _Emitter(doc, scope, options, trace=trace, window=window)
+    emitter = _Emitter(doc, scope, options, trace=trace, window=window, formats=formats)
     return emitter.build()
 
 
@@ -241,12 +242,14 @@ class _Emitter:
         options: CodegenOptions,
         trace: bool = False,
         window: Optional[WindowFacts] = None,
+        formats: Optional[FormatSettings] = None,
     ) -> None:
         self.doc = doc
         self.scope = scope
         self.options = options
         self.trace = trace
         self._window = window
+        self._formats = formats
         self._widgets: Dict[str, WidgetFacts] = {}
         self.lines: List[str] = []
         self.retranslate: List[str] = []
@@ -1786,7 +1789,7 @@ class _Emitter:
             form_param=self.form_param,
             attribute_names=tuple(self.attributes),
             window=self._window,
-            formats=FormatSettings(),
+            formats=self._formats or FormatSettings(),
             widgets=self._widgets,
             trace=self.trace,
             forms_dir=_forms_dir(self.scope),
