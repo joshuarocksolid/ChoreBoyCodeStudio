@@ -400,6 +400,8 @@ def _other_cases() -> list:
         ("window-add", "window.extra() + qty", "_cbcs_add(self._form.extra(), self.qty.value())"),
         ("self-name", "qty", "ui.qty.value()"),
         ("class-name", "alias", "self.alias.value()"),
+        ("not-and", "not (ok and radio)", "not (self.ok.isChecked() and self.radio.isChecked())"),
+        ("not-or", "not (ok or radio)", "not (self.ok.isChecked() or self.radio.isChecked())"),
     ]
 
 
@@ -418,8 +420,6 @@ ERRORS = (
     'nameEdit == ""',
     '"a" == ""',
     "qty / slider == None",
-    "not (ok and radio)",
-    "not (ok or radio)",
 )
 
 
@@ -456,8 +456,8 @@ def prepare(case: Case) -> tuple:
 def _hand_built():
     """Trees the grammar will not produce.
 
-    ``== None`` and ``== ""`` are FB107 (write ``is_blank``). ``not ( ... )`` is
-    FB107 because it matches Excel ``NOT(...)``.
+    ``== None`` and ``== ""`` are FB107 (write ``is_blank``). The ``not ( ... )``
+    trees duplicate golden text cases as a direct check of the compiler.
     """
     from app.features.form_builder.engine.logic.formula.nodes import (
         Analysis,

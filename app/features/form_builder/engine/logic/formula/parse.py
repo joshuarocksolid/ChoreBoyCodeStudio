@@ -448,7 +448,8 @@ def _excel_call(
         message = "Use `and`, `or`, `not`"
         fix_id = "excel_or"
     elif key == "not":
-        if len(stripped) != 1:
+        # Lowercase `not (x)` is a valid formula; only Excel's NOT(x) needs a fix.
+        if len(stripped) != 1 or word[2] == "not":
             return None
         replacement = "not %s" % stripped[0]
         message = "Use `and`, `or`, `not`"
