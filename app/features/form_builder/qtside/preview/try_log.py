@@ -125,6 +125,8 @@ def fold(
             ),
         )
     rules = [item for item in events if item.kind == "rule"]
+    # A burst can refresh several times; each rule is named once.
+    rule_refs = tuple(dict.fromkeys(item.ref for item in rules))
     lines: List[TryLine] = []
     rules_written = False
     steps: Dict[str, List[TryEvent]] = {}
@@ -134,11 +136,11 @@ def fold(
                 first = rules[0]
                 lines.append(
                     TryLine(
-                        sentence="Rules ran (%d)" % len(rules),
+                        sentence="Rules ran (%d)" % len(rule_refs),
                         ref=first.ref,
                         source=source_of(first.ref),
                         kind="rule",
-                        details=tuple(item.ref for item in rules),
+                        details=rule_refs,
                     )
                 )
                 rules_written = True

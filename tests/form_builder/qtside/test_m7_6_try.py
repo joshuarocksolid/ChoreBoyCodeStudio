@@ -331,3 +331,13 @@ def test_reload_keeps_field_values_within_500ms(child, qapp: QApplication, tmp_p
     assert again is not None
     assert again.text() == "kept@example.com"
     assert writer.sent
+
+
+def test_a_burst_names_each_rule_once() -> None:
+    from app.features.form_builder.qtside.preview.try_log import TryEvent, fold
+
+    refs = ("a:cbcsValue", "b:cbcsValue", "c:cbcsEnabledWhen")
+    events = [TryEvent(kind="rule", ref=ref, value=None) for ref in refs * 3]
+    lines = fold(events, {}, {})
+    assert lines[0].sentence == "Rules ran (3)"
+    assert lines[0].details == refs
