@@ -1787,3 +1787,18 @@ The M6 spec (UX_SPEC §13.3, version 4) and CONTRACTS §15–16 change this desi
 | §2.13, §3.3 stubs | Appended after the last method by offsets; `ast` of the whole file | Whole-line insertion after the class's last line, the file's own style, a `tokenize` pre-scan before `ast` (UX D10, D11; CONTRACTS §16.1–16.3); a window file the gesture created stays after Undo (UX D9) | `ast` columns are UTF-8 byte offsets; the M5.4 gate found a crafted line that crashes `ast.parse` on 3.9 |
 | §2.10, §3.5 Preview | — | Preview gives each method the form names a do-nothing stand-in and says what would run (UX D17) | A form-slot connection made `setupUi` raise in Preview |
 | §2.2 form events and pseudo-events | Phase 1 | M7.4 and M8 (UX D16) | They need the step vocabulary and generated setup |
+
+## Changes recorded by M7.0 (2026-10-31)
+
+The M7 spec (UX_SPEC §13.4, version 1) and CONTRACTS §17–18 change this design in the places below. Where this document and those disagree, they win.
+
+| Section | Was | Now | Why |
+| --- | --- | --- | --- |
+| §2.5, §9.1 builder | Builder for conditions; values in formula mode by default | Builder first for conditions and simple values (three value shapes), formula one switch away (UX E2, E3) | Owner decision 4: the users are a real mix |
+| §2.10, §2.12 Try mode | Its own mode on Ctrl+R | Preview is Try: the existing Preview (Ctrl+Shift+R) runs the behavior with a stand-in window and a "What ran" log; Ctrl+R stays Go to widget (UX E4, E14) | One preview concept, and the fixed key decisions |
+| §2.9 FB207 | FB207: your code sets a rule's property | FB116 (FB2xx is M6's window-file range) (CONTRACTS §17.13) | Code ranges |
+| §2.9 FB1xx | FB101–FB105 | FB101–FB119, with FB106 syntax, FB107 Excel habits, FB108 reserved names, FB109 missing window method and the rest (CONTRACTS §17.13) | Every problem has its own code and fix |
+| §4.2 literals | Exact decimals | Lowered from the source text, never from the `ast` float; guards of 2,000 characters, 400 tokens and depth 32 before `ast.parse` (CONTRACTS §17.2) | The parse must be safe on Python 3.9 |
+| §2.10 one compiler | "The compiler turns the formula into the same Python expression" | The evaluator `eval`s the compiled source with the helpers built from the same source strings the generator emits (CONTRACTS §17.11–17.12) | One definition of every helper |
+| §4.12 `when` errors | — | A `when` with a formula error skips only that step; the JSON-shape FB401 rule still covers whole lists (CONTRACTS §18.4) | A typo in one condition shouldn't stop Save |
+| §2.1 form events | Seven form events | M7: Opened and Closing; the record events with M8 (UX E10) | They need no data |

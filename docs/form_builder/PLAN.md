@@ -380,16 +380,98 @@ Merge order inside a wave follows readiness; a lane rebases on `feat/form-builde
 
 ### M7. Logic level 3 (formulas, rules, checks, Try mode)
 
+Spec: `UX_SPEC.md` §13.4 (version 1, M7.0) and `CONTRACTS.md` §17 (formulas) and §18 (rules, checks, formats and steps in generated code); the changes to `LOGIC_DESIGN.md` are listed at its end ("Changes recorded by M7.0"). Refined 2026-10-31: a seam lane goes first with the Qt-free language split in two (front end, back end); rules and checks each split into an engine lane (a) and a UI lane (b); Try is Preview with behavior (UX E4); a review closes the milestone.
+
 | WP | Work | Who | Done when |
 | --- | --- | --- | --- |
-| M7.1 | Expression language: an ast-allowlist parser, the type system (Text, Whole, Number, Money/Decimal, Date…), blank semantics, the function library, Excel-habit quick fixes, and error messages | G, O-logic | Spec conformance suite (hundreds of cases) and fuzzing. Generated Python matches the evaluator |
-| M7.2 | Rules: enabled, visible and read-only when; value and default; re-checked at startup and after each record load. Repair references and two-places merge for forms edited in Qt Designer (§6.5) | G, O-logic | Scenarios 1–2 from `LOGIC_DESIGN.md` pass end to end |
-| M7.3 | Checks and formats: required, ranges, length, patterns, presets, cross-field, inline error labels, and run-time timing; shipped-app error behavior and "Open rule" links on traceback frames (§2.11) | G, O-logic + O-UX | Scenario 3 passes |
-| M7.4 | Action vocabulary: message, confirm, open form, close/accept/reject, clear, set value, focus, enable/disable, switch page, run your method | G, O-logic | Scenario 4 passes |
-| M7.5 | Point-and-click condition and value builder (ships with typed formulas) | G, O-UX | Opus heuristic review approves it for non-programmers |
-| M7.6 | Try mode: run the real generated code in the preview process with a stand-in window class | G, O-UX + O-logic | **VM** |
-| M7.7 | Persona walkthroughs (instead of human tests): Opus plays a non-programmer shop owner and a Qt developer through the logic scenarios, recording step counts and confusion points | O-UX | Findings fixed or ledgered |
-| M7.8 | Logic panel and search: the form-wide Logic outline, Ctrl+Shift+F, a "Forms logic" group in project Find, and "Read as text" (§2.8) | G, O-UX | Search finds every rule and handler |
+| M7.0 | UX spec for M7 (§13.4 v1), CONTRACTS §17–18, lane split and first-wave briefs | O-spec | Spec branch merged |
+| M7.0s | Seams: the step-verb registry (`engine/logic/verbs/`) read everywhere M6 hard-codes `slot` and `call`; the step-picker group registry; badge kinds and the `ov.feeds` token; the codegen core changes of CONTRACTS §18.6 (context fields, `needs_form`, connects and `CHANGE_SIGNALS`, trace, the comment sanitizer, `HELPER_TABLE` from `formula.runtime`); Preview log kinds; the run-console link extension point | G, O-logic | A dummy verb, picker group, badge kind and run link each register from a new file without editing a shared one; M6's `slot` and `call` move into the verb registry with byte-identical generated code |
+| M7.1a | Formula front end: guards, parse, Excel recognisers and fixes, the typed tree, names, types, blanks, the function signatures, normalize, FB101–FB119 (CONTRACTS §17.1–17.9, 17.13) | G, O-logic | The front-end half of the conformance suite (§17.14), and the token fuzzer, pass on 3.11 and the 3.9 AppRun lane |
+| M7.1b | Formula back end: compile, runtime helpers (one source, two uses), evaluate, the function bodies (CONTRACTS §17.10–17.12) | G, O-logic | The whole conformance suite and the evaluate-equals-generated fuzzer pass |
+| M7.2a | Rules engine: the rule graph and FB104, the `FormulaEnv` builder from the document and the window reading, the rules and defaults expanders, `CHANGE_SIGNALS`, the value-table writes, repair-reference detection (CONTRACTS §18.1–18.3) | G, O-logic | Scenarios 1–2 generate, run under PySide6 and match LOGIC §7.2–7.3; a form with no M7 logic generates byte-identical to M6 |
+| M7.2b | State UI: the State section, the formula editor (FX), "now:" values and live canvas effect, Kind and Format rows, badges and feeds arrows, the Calculated lock, the rule steer intent, the Repair dialog | G, O-UX + O-logic | Walkthrough 1 in formula mode. K27 passes |
+| M7.3a | Checks engine: `cbcsValidate` typed, native-first mapping, the checks and formats expanders, the project Formats setting at generate time, `AddErrorLabel` (CONTRACTS §18.2–18.3) | G, O-logic | Scenario 3 generates and runs; the check timing table passes under PySide6 |
+| M7.3b | Checks UI: the Checks section, add-check pages and messages, the error-label offer, the outline style action, "Open rule" links in the run console (CONTRACTS §18.5) | G, O-UX | K28 passes |
+| M7.4 | Steps: every M7 verb typed and generated, `when` on every step, the form events Opened and Closing, the step picker's groups and verb pages, "only if", FB117 and FB120 | G, O-logic + O-UX | Scenario 4 passes. K29 passes |
+| M7.5 | The builder for conditions and values (BLD) | G, O-UX | Round trip proven. K30 passes. The persona gate UX-BLD-004 passes |
+| M7.6 | Try: Preview runs the behavior with the stand-in window, "What ran", Window values, reload on edit | G, O-UX + O-logic | **VM** (UX §13.4.10) |
+| M7.7 | Persona walkthroughs (UX §13.4.9) | O-UX | Findings fixed or ledgered |
+| M7.8 | The Logic panel, Ctrl+F logic search and project Find, Shift+F12, method rename, Read as text, In your code and FB116 | G, O-UX | Search finds every rule, check, step and handler |
+| M7.R | Review of M7 as a whole: heuristic, K27–K30 together, speed rows for UX-M7-003 on the Mac and the ChoreBoy VM, fix lanes | O-UX + G | APPROVE. Ledger: every M7 row done |
+
+#### M7 lanes
+
+Paths and the extension-folder rules are as in "M6 lanes". New extension folders for M7:
+- `engine/logic/verbs/` (one module per verb family);
+- `qtside/pickers/groups_ext/`;
+- `qtside/canvas/layers/badge_kinds/`;
+- `integration/run_links_ext/`.
+
+Each lane's tests are new files named `tests/form_builder/**/test_m7_<lane>_*.py`. The formula conformance suite lives in `tests/form_builder/engine/logic/formula/`, which M7.1a creates and M7.1b extends. The M7 fixture project is `tests/form_builder/fixtures/m7/`, the M6 fixture plus the invoice form of LOGIC §2.14–2.16. M7.0s creates it.
+
+| Lane | Owns | Must not touch | Closes |
+| --- | --- | --- | --- |
+| M7.0s | new `engine/logic/verbs/__init__.py` and `verbs/m6.py` (slot, call); `engine/logic/codec.py` (verb typing through the registry only); `engine/codegen/expanders/steps.py` (verb emit through the registry only); `qtside/pickers/flow.py` (groups from `groups_ext` only; M6's rows move into `groups_ext/m6.py`); new `qtside/pickers/groups_ext/__init__.py`; `qtside/canvas/layers/logic_badges.py` (badge kinds from `badge_kinds/` only); new `qtside/canvas/layers/badge_kinds/__init__.py`; `qtside/theme/overlay.py` (`ov.feeds`); `engine/ipc/protocol.py` (the log kinds `rule`, `check`, `step`, `would_call`, `needs_value`, and an optional `run_behavior` on `load_form`; `TryStart` already carries `window_values` and the stand-in class and is reused, not duplicated); `engine/codegen/logic_hooks.py`, `emit.py`, `api.py` and `api_types.py` (CONTRACTS §18.6: the new `CodegenContext` fields, `Contribution.needs_form` and `connects`, the trace option, the comment sanitizer, `HELPER_TABLE` from a provider hook, the expander order docstring); new `engine/codegen/change_signals.py`; the verb hooks in `engine/logic/events_codec.py`, `events_catalog.py` (`step_words`), `qtside/inspector/behavior_ext/_rows.py` (editability) and `expanders/steps.py` (`_generates`, `when`); the shell's run console (one link-contributor hook, smallest change, in the file the lane finds); new `integration/run_links_ext/__init__.py`; new `tests/form_builder/fixtures/m7/` | every other file | none (enables every M7 lane) |
+| M7.1a | new `engine/logic/formula/` (`nodes`, `types`, `env`, `parse`, `check`, `normalize`, `library` signatures, `__init__` with `analyze`), new `engine/diagnostic_codes/fb1xx_formula.py`, new `tests/form_builder/engine/logic/formula/` | `engine/logic/codec.py`, `refs.py`, any `qtside/` or `integration/` file, `engine/codegen/**` | L-formula-language (front end) |
+| M7.1b | new `engine/logic/formula/compile.py`, `runtime.py`, `evaluate.py`, and the function bodies in `library.py` (after M7.1a merges; until then a private table) | the M7.1a modules other than `library.py` bodies (report), `engine/codegen/**` (M7.0s and M7.2a own it) | L-formula-language (back end) |
+| M7.2a | new `engine/logic/rules.py`, new `engine/logic/formula_env.py` (env from the document, catalog and window reading), new `engine/codegen/expanders/rules.py` and `defaults.py`, new `engine/logic/repair.py`, the FB104 producer in `rules.py` (the code is declared by M7.1a) | `engine/logic/formula/**` (report), every UI file | L-state-rules (engine) |
+| M7.2b | new `qtside/inspector/behavior_ext/state.py`, new `qtside/formula/` (the FX editor, completion, status line), new `qtside/canvas/layers/badge_kinds/rules.py` and `layers/feeds.py`, `qtside/inspector/editors/` (the Calculated row, through a new `editors/calculated.py` and one registry hook), new `engine/logic/intents/m7_rules.py`, new `qtside/dialogs/repair_refs.py`, new `integration/keys_ext/formulas.py` | `qtside/pickers/**` (M7.4), `engine/logic/rules.py` (report) | L-state-rules (UI), L-live-values; K27 |
+| M7.3a | new `engine/logic/checks.py` (typed `cbcsValidate`, native-first), new `engine/codegen/expanders/checks.py` and `formats.py`, new `engine/commands/catalog_ext/checks.py` (`AddErrorLabel`, `SetChecks`), the Formats project setting (new `engine/project/formats.py`; the Settings row in a new `integration/settings_ext/` file if that folder exists, else report) | every UI file, `engine/logic/rules.py` | L-checks (engine), L-formats |
+| M7.3b | new `qtside/inspector/behavior_ext/checks.py`, new `qtside/checks/` (add-check pages), new `qtside/canvas/layers/badge_kinds/checks.py`, new `integration/run_links_ext/rules.py`, new `integration/problem_fixes/checks.py` | `qtside/formula/**` (use it), `engine/**` (report) | L-checks (UI); K28 |
+| M7.4 | new `engine/logic/verbs/m7.py`, new `engine/codegen/expanders/form_events.py`, new `qtside/pickers/groups_ext/m7.py` and `qtside/pickers/verb_pages/`, `qtside/inspector/behavior_ext/events.py` and `form_events.py` (only-if rows, the form events), the FB117 and FB120 producers in `verbs/m7.py` (declared by M7.1a) | `qtside/formula/**` (use it), `engine/logic/codec.py` | L-step-vocabulary, L-form-events; K29 |
+| M7.5 | new `qtside/formula/builder/`, the mode switch in `qtside/formula/` (after M7.2b) | `engine/**` | L-builder; K30 |
+| M7.6 | `qtside/preview/child/**` (runs the traced module through `TryStart`, the stand-in window's `_cbcs_trace` and log, window values), `integration/preview_control.py` (asks codegen for `trace=True`), `integration/preview_notice.py`, new `qtside/preview/what_ran.py` | `engine/codegen/**` (report) | L-try-mode |
+| M7.8 | new `qtside/logic_panel/`, new `integration/keys_ext/logic.py`, new `integration/find_ext/forms_logic.py` and `integration/rename_ext/` with their own discovery `__init__.py`, plus one hook each in the shell's project Find and rename-refactor files (the smallest change; name the files in the report), new `engine/logic/uses.py`, new `engine/project/code_connections.py` (FB116), `integration/rename_ext/methods.py`, new `engine/logic/read_as_text.py` | the M7 engine modules (report) | L-logic-panel, L-search, L-read-as-text |
+| M7.R | `tests/form_builder/perf/` (M7 rows), `tests/form_builder/qtside/test_m7_keyboard_scripts.py`, probe updates in `docs/form_builder/orch/` | product files only through fix lanes | ledger audit |
+
+**Order and dependencies.**
+
+1. **Wave 1** starts at once with three lanes:
+   - **M7.0s**, the only lane in shared product files;
+   - **M7.1a**, Qt-free and new files only;
+   - **M7.1b**, which codes against CONTRACTS §17.3 and §17.10–17.12 and rebases on M7.1a before its gate.
+2. **Wave 2**, when M7.0s, M7.1a and M7.1b have merged: **M7.2a**, **M7.3a** and **M7.4**, in parallel. M7.4's verb pages use a plain text field for formulas until M7.2b's FX editor merges, then switch with a one-line change.
+3. **Wave 3**: **M7.2b** after M7.2a; **M7.3b** after M7.3a and M7.2b, because it uses the FX editor; **M7.6** after M7.2a and M7.3a.
+4. **Wave 4**: **M7.5** after M7.2b; **M7.8** after M7.2b, M7.3b and M7.4.
+5. **M7.7**, then **M7.R**, after every lane has merged.
+
+Expected size in net lines:
+
+| Lane | Lines |
+| --- | --- |
+| M7.0s | ~700 |
+| M7.1a | ~1,800 |
+| M7.1b | ~1,400 |
+| M7.2a | ~1,300 |
+| M7.2b | ~2,000 (split into M7.2b1 State section and FX editor, and M7.2b2 live values, badges, Calculated and Repair, if the brief passes 1,500) |
+| M7.3a | ~1,200 |
+| M7.3b | ~1,100 |
+| M7.4 | ~1,800 |
+| M7.5 | ~1,200 |
+| M7.6 | ~1,000 |
+| M7.8 | ~1,800 |
+
+**Review gates.** Each lane's PR lists the clause ids it implements, runs its K script and reports its UX-M7-003 rows with machine load.
+
+**O-logic** gates:
+- M7.0s: registry discovery, and byte-identical M6 codegen.
+- M7.1a and M7.1b: the conformance suite, both fuzzers, the 3.9 lane, and no eval path outside `evaluate.py`.
+- M7.2a: the rule order and cycles; scenarios 1–2 at run time; M6 byte-identity.
+- M7.3a: check timing at run time; native-first; scenario 3.
+- M7.4: every verb at run time; `when`; scenario 4.
+- M7.6: Preview never imports the window file, and the log is true to what ran.
+
+**O-UX** gates:
+- M7.2b, M7.3b, M7.4, M7.5, M7.6 and M7.8: screenshots per §13.4.9, in four themes at 100% and 200%, and the K script with no mouse event.
+
+One Opus gate runs at a time. M7.0s goes first, then M7.1a, because M7.1b rebases on it.
+
+M7.6 and M7.R run the §13.4.10 facts on the ChoreBoy VM, using the M6.R probe method in `docs/form_builder/orch/`.
+
+**Done when, per lane:** the M6 per-lane rule applies, with these M7 changes:
+- every sentence the lane adds is a §13.4.8 row;
+- every FB code is declared in its own module;
+- each lane writes its manual page: `manual/formulas.md` by M7.2b, `manual/checks.md` by M7.3b, `manual/steps.md` by M7.4, and `manual/try.md` by M7.6.
 
 ### M8. Logic level 4 (data)
 

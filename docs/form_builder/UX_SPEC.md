@@ -2742,6 +2742,259 @@ D27. A sentence uses the clause: "When {clause}." Headers stay "When {words}" ("
 | The Logic panel and "Read as text" | M7.8 |
 | Dragging Designer's connection hint points (D7) | Not offered: hints round-trip unchanged |
 
+### 13.4 M7: formulas, rules, checks and Try (logic level 3)
+
+Version 1 (work package M7.0, 2026-10-31). Binding for M7. It is the on-screen half of LOGIC_DESIGN §2.1, §2.4, §2.5, §2.8–2.11, §2.13–2.16 and §4, and it builds on §13.3 (M6). The engine contracts are CONTRACTS §17 (formulas) and §18 (generated rules, checks and steps). The changes this version makes to LOGIC_DESIGN are listed at its end ("Changes recorded by M7.0").
+
+**Scope.** Level 3:
+- state rules (Enabled, Visible and Read-only when; Value; Default);
+- kinds and formats;
+- checks with error labels;
+- the no-code step vocabulary, with "only if" conditions;
+- the two form events "When the form opens" and "Before the form closes";
+- the point-and-click builder for conditions and values;
+- Try (Preview running the form's behavior);
+- the Logic panel, search, Read as text, Shift+F12, method rename and the "In your code" list.
+
+Data (record events, `form.*`, `record.*`, grids, lookups) is M8. Where M7 leaves room for M8, the clause names the registry M8 fills. M7 never shows a row it can't fill (UX-COPY-002). RECORD steps and data names don't appear until M8.
+
+**Words.** These add to §13.3's words.
+- A **rule** is a formula that keeps a property right all the time (Enabled when, Visible when, Read-only when, Value, Default).
+- A **check** tests one field's value before it's accepted.
+- A **formula** is the text in a rule, check or condition.
+- A **condition** is a formula that answers yes or no.
+- The **builder** is the point-and-click way to write a condition or value.
+- **Try** is Preview with the form's behavior running.
+
+#### 13.4.1 Decisions
+
+| # | Question | Decision | Why |
+| --- | --- | --- | --- |
+| E1 | Formula language | LOGIC §4's typed Python subset, exactly as CONTRACTS §17 specifies it. Excel habits are recognised and fixed with Ctrl+. (FB107). Only Python is saved | LOGIC Decision 3. One syntax, and it is the code |
+| E2 | Builder or formula first? | **Builder first for conditions and for simple values**, because the owner said the users are a real mix (LOGIC owner decision 4). A State row opens in the builder when its formula fits the builder, or when it is empty; otherwise it opens in formula mode. "Formula ›" and "‹ Builder" switch modes without loss. When a formula is too complex for the builder, "‹ Builder" is disabled with the sentence in §13.4.8 | Non-programmers never have to see `x if c else y` |
+| E3 | What the builder covers | Conditions: rows of "field, comparison, value" joined by *all of* or *any of* (LOGIC §2.5). Values: one field; or "field op field-or-number" with + − × ÷ and up to four terms; or "if ‹condition› then ‹value› otherwise ‹value›". Anything else is a formula | Covers walkthroughs 1 and 2, plus the common "if checked then 10 otherwise 0" |
+| E4 | Where Try lives | **Preview is Try.** The existing Preview (Ctrl+Shift+R, M2.5 and M5) runs the generated module with the form's behavior. A stand-in window takes the place of your window class (UX D17), and it now records what would have run in a log pane titled "What ran". There is no second window and no second key. "Run behavior" in the Preview toolbar is on by default and turns behavior off for layout checks. Ctrl+R stays Go to widget | One preview concept and one key. The fixed decision "Ctrl+Shift+R is preview" holds. Try mode is how Preview behaves once a form has logic |
+| E5 | Window values in Try | A "Window values" strip under the form lists each `window.m()` the form's formulas call, with a value box typed from its annotation. Unset values count as blank, and the log says "needs a window value" once per method | LOGIC §2.10 |
+| E6 | Steering `toggled → setEnabled` (M6 D4) | The M6 intent "Enable {target} only when…" now exists (M7.2b registers it). A drag or a step-picker choice of `toggled → setEnabled` or `setVisible` shows the steer from LOGIC §2.14: "Make it a rule" (the default) or "Connect anyway" | LOGIC Decision 2 |
+| E7 | "now:" values | Each State row and the formula editor show the live result against the canvas widgets' current values (CONTRACTS §17.12). The canvas widget itself shows the effect while the editor is open: a disabled field greys out and a calculated label shows its value. The effect stops when the editor closes, and the canvas goes back to design values | LOGIC P5. The design values in the file never change |
+| E8 | A calculated widget's own property | When a widget has a Value rule, its value property row in Properties reads "Calculated: {formula}" with "Edit rule" and can't be typed into. Enabled, Visible and Read-only rules leave their Qt property editable (it is the design-time default), with a small "rule" link beside it | LOGIC P3. No silent fight between a rule and a constant |
+| E9 | Error labels | When the first check is added to a field, Code Studio offers "Show messages under the field" (Add label, Not now). Add label inserts a `QLabel` named `{field}Error`, directly under the field in its layout, in one undo step with the check. "Not now" leaves FB119 (Info) | LOGIC §2.16 step 2 |
+| E10 | Form events in M7 | "When the form opens" (`cbcsOnOpened`) and "Before the form closes" (`cbcsOnClosing`, which can stop the close). They are listed first in the form's Behavior tab. Record events wait for M8 | They need no data |
+| E11 | The Logic panel | A tab in the left pane beside Outline and Insert, labelled "Logic". It doesn't replace the Behavior tab. Selecting a row selects the widget and opens its Behavior row. The M6 form-level "All events on this form" stays | LOGIC §2.8. One overview per form |
+| E12 | Formats and locale | `cbcsFormat` codes are LOGIC §4.11's. The project setting "Formats" (Settings › Form designer) defaults to US English: `$`, `1,234.50`, `MM/DD/YYYY`. Generated helpers read the project's choice at generate time and write it into the module as constants | LOGIC owner decision 3. No runtime lookup |
+| E13 | Repair references | When a form opens, a formula name that matches no widget, together with a widget of the same class that appeared since the last CBCS save (from the `ui_<stem>.py` name list), opens a non-blocking banner: "{n} rules point at widgets that were renamed outside Code Studio. Repair…" The Repair dialog pairs each old name with a candidate. Nothing changes until "Repair" is pressed, and the repair is one undo step | LOGIC §2.13 |
+| E14 | Keys | Enter on a State, Check or condition row: edit (F2 stays rename, UX-KEY-005). Ctrl+Enter: commit. Esc: cancel. Ctrl+Space: complete. Ctrl+.: fix. Alt+Up and Alt+Down: move a check or step. Shift+F12: find every use. Alt+L: the Logic panel with its filter focused, which is how you search this form's logic. Ctrl+F stays Find widget (UX-KEY-004); this replaces UX-KEY-005's "Ctrl+F searches logic", which would bind Ctrl+F twice. Ctrl+Shift+R: Preview, now Try | LOGIC §2.12, with Ctrl+R kept for Go to widget |
+| E15 | Unsaved formula on focus loss | A formula with no Error is committed when focus leaves the editor. A formula with an Error stays open, red, with the sentence "Fix or press Esc to undo this formula". Leaving the form tab keeps the draft and shows a dot on the row | Never lose typing, never save a broken rule silently |
+
+#### 13.4.2 State rules (STATE)
+
+**UX-STATE-001** `M7.2b` `[S A]` The Behavior tab's **State** section (registry order 10) lists five rows for a value widget, always, even when empty: Enabled when, Visible when, Read-only when (input widgets only), Value, Default. A non-value widget (a button or group box) lists only Enabled when and Visible when.
+- An empty row shows its default in muted text: "always", "never" (Read-only), "typed by the person" (Value), "as designed" (Default).
+- A filled row shows the rule in words from the builder, or its formula, and "now: {value}".
+
+**UX-STATE-002** `M7.2b` `[S T]` Editing a row opens the condition or value editor inline, below the row, at the inspector width (236 px minimum). It has:
+- the builder or the formula field (E2);
+- a status line with the type, "now:", and the formula read as words;
+- the problem sentence, if any;
+- Commit (Ctrl+Enter) and Cancel (Esc).
+
+Each commit is one undo step, named "Set Enabled when for {display}" (the name per row is in §13.4.8).
+
+**UX-STATE-003** `M7.2b` `[S]` Kind and Format.
+- A "Kind" row sits above State for QLineEdit, QLabel and QPlainTextEdit. It is a combo with Text, Whole number, Number (places), Money, Percent, Date and Time.
+- A "Format" row sits on the Value row's line when the widget shows text (E12).
+- Changing the kind re-checks every formula that reads the widget.
+
+**UX-STATE-004** `M7.2b` `[S A]` Canvas badges extend M6's logic badge:
+- `=` calculated;
+- `?` a conditional state;
+- `!` checks;
+- `>` events (M6).
+
+A widget with several kinds of logic shows the first in that order, plus a count. The tooltip lists all of them in one sentence each.
+
+**UX-STATE-005** `M7.2b` `[S]` With a widget selected and the Behavior tab current, dashed `ov.feeds` arrows run into it from the widgets its formulas read, and out to the widgets whose formulas read it (LOGIC §2.7). Show all connections (Ctrl+Shift+L) includes them. A new token: `ov.feeds` is `#6B7280`, 1 px dashed; in high contrast it is `#000000`, 1.5 px.
+
+**UX-STATE-006** `M7.2b` `[T]` E8's "Calculated" row, and its "Edit rule" link, which opens the Value row.
+
+#### 13.4.3 The formula editor (FX)
+
+**UX-FX-001** `M7.2b` `[S T]` Formula mode is one line. Shift+Enter adds a line, and the field grows up to six lines. It uses the code editor's syntax colors for the formula tokens (names, numbers, strings, operators, functions), with no gutter. Width follows the inspector.
+
+**UX-FX-002** `M7.2b` `[T]` Completion (Ctrl+Space, or automatically after 2 characters of a name). The order is:
+1. widgets, matched by object name or display name, each row showing "{name}  {display}  {Kind}";
+2. functions, with a one-line doc;
+3. `window.` methods once `window.` is typed.
+
+Tab or Enter accepts. Typing a display name and accepting inserts the object name.
+
+**UX-FX-003** `M7.2b` `[S T]` Problems are underlined under their span:
+- red for Error;
+- amber for Warning;
+- blue dotted for Info.
+
+The message shows in the status line. Ctrl+. applies the fix. A fix list opens when there is more than one fix.
+
+**UX-FX-004** `M7.2b` `[A]` Speed. A keystroke in the formula editor (analyze, then evaluate, then repaint the status line) costs ≤ 16 ms p95 for a 200-character formula on the 300-widget reference.
+
+#### 13.4.4 The builder (BLD)
+
+**UX-BLD-001** `M7.5` `[S T K]` The condition builder (LOGIC §2.5) has:
+- a first line "[all of ▾]" ("any of");
+- rows of [field ▾] [comparison ▾] [value];
+- "+ condition".
+
+The comparison list depends on the field's type (LOGIC §2.5). The value box takes the field's type: a number box, a date box, a text box, or a yes/no box that is hidden for "is checked". Every control can be reached with the keyboard (Tab moves through the row; Alt+Down opens a list).
+
+**UX-BLD-002** `M7.5` `[S T]` The value builder (E3) has three shapes:
+- "= [field or number]";
+- "= [a] [+ − × ÷] [b]", with "+ term" for up to four terms;
+- "if [condition…] then [value] otherwise [value]".
+
+The shape is chosen from a small "Shape ▾" menu.
+
+**UX-BLD-003** `M7.5` `[T]` Round trip. The builder writes a formula, the formula is what's stored, and reopening reads it back into the builder. The builder never stores anything else. A test proves `formula → builder → formula` is identical for every formula the builder can show.
+
+**UX-BLD-004** `M7.5` `[A]` Persona gate (M7.7). The shop owner completes walkthroughs 1 and 2 (LOGIC §2.14–2.15) with the builder, with no typing beyond field-name filtering, in at most 12 steps each.
+
+#### 13.4.5 Checks (CHK)
+
+**UX-CHK-001** `M7.3b` `[S A]` The Behavior tab's **Checks** section (order 20) shows the checks in run order. Each row shows the check in words and its message: "Required · Discount rate is required". Below the rows are "+ Add check ▾" and "Checked when: leaving the field" (a fixed sentence explaining LOGIC §4.9's timing, with a link to the manual).
+
+**UX-CHK-002** `M7.3b` `[T]` "+ Add check" offers, filtered by the field's type:
+- Required;
+- Between…;
+- Length…;
+- Email address;
+- Phone number;
+- US ZIP code;
+- Pattern…;
+- One of…;
+- Formula….
+
+**Native first** (LOGIC §4.9): a numeric field's Between, or a line edit's Length max, writes the Qt property (`minimum`, `maximum`, `maxLength`), and the row shows a "Qt" tag.
+
+**UX-CHK-003** `M7.3b` `[T]` Messages. The default message comes from the buddy label (LOGIC §4.9 table) and stays generated until edited. An edited message is stored. Pattern and Formula need a message, so Commit is disabled until there is one.
+
+**UX-CHK-004** `M7.3b` `[S]` E9's error-label offer, and the run-time look in Try: the message under the field; an outline from the project style rule `*[cbcsInvalid="true"]`, which Code Studio adds to the project theme once with "Add the red outline style" (one undo step); and the tooltip.
+
+#### 13.4.6 Steps and conditions (STEP)
+
+**UX-STEP-001** `M7.4` `[S T]` The step picker's groups become LOGIC §2.4's:
+- FIELDS: Check all fields, Set a field, Clear fields, Move focus to;
+- SHOW: Show or hide, Enable or disable, Show a message, Ask yes or no, Switch tab or page;
+- WINDOWS: Open another form, Close this form;
+- YOUR CODE: Call a method;
+- FLOW: Stop here if….
+
+The M6 "DO THIS" intent rows stay first. "Everything {target} can do" stays last. RECORD comes with M8.
+
+**UX-STEP-002** `M7.4` `[S T]` Each verb that needs details opens a small editor page in the picker, with one field per verb field (LOGIC §4.12), formulas using the FX editor. Then the step joins the list in one undo step.
+
+**UX-STEP-003** `M7.4` `[S]` "only if": any step can carry a condition, from its row menu ("Only if…"; Shift+F10 opens the menu from the keyboard; Ctrl+Shift+I stays the shell's Hover Info). It is shown as an indented line "only if {condition in words}". A step that can stop the list shows its note, always visible: "(stops here if a field fails)" or "(stops here on No)".
+
+**UX-STEP-004** `M7.4` `[T]` A one-off Enable, Disable, Show or Hide step on a property that a rule controls shows FB117 on the step. The fix is "Show the rule".
+
+**UX-STEP-005** `M7.4` `[S]` E10's form events, listed first in the form's Behavior tab: "When the form opens" and "Before the form closes". The second one's note reads "(the form stays open if a step stops)".
+
+#### 13.4.7 Try, the Logic panel and search (TRY, LOGP)
+
+**UX-TRY-001** `M7.6` `[S A]` The Preview window, when the form has logic and Run behavior is on:
+- runs the generated module with a stand-in window (E4);
+- has a "What ran" pane on the right: time, sentence, and source;
+- shows the "Window values" strip (E5).
+
+Every line in "What ran" names its source: "Rules ran (12)", "Check emailEdit: Enter an email address…", "Save is clicked: stopped at step 1 (Check all fields)", "Would call save_invoice()". Clicking a line selects that widget and rule in the editor. "Clear" and "Copy" buttons sit above the list.
+
+**UX-TRY-002** `M7.6` `[A]` Editing a rule while Preview is open regenerates the module and reloads Preview within 500 ms on the Mac and 1.5 s on the ChoreBoy VM. Field values are kept where object names still match. The VM row is a gate fact (§16.5).
+
+**UX-TRY-003** `M7.6` `[T]` Preview never imports the window file (E4, UX D17). A step that calls your method logs "Would call {method}()". A `window.m()` formula reads the Window values strip.
+
+**UX-LOGP-001** `M7.8` `[S A]` The Logic panel (E11) lists STATE, CHECKS and EVENTS, then IN YOUR CODE (read-only, best-effort, labelled), then the problems count. It has a filter field and toggle chips for Rules, Checks, Events and Problems. A row reads "{widget}  {Rule words}  {formula or summary}".
+
+**UX-LOGP-002** `M7.8` `[T]` Alt+L opens the Logic panel with its filter focused (E14). Project Find (Ctrl+Shift+F) gains a "Forms logic" group that matches formula text, method names and widget names inside every form's logic.
+
+**UX-LOGP-003** `M7.8` `[T]` Shift+F12 on a widget, a method or a Logic row opens "Uses of {name}". It lists every rule, check, step and line of window-file code that reads, sets or calls it. The code lines come from the M6 reading, plus the parsed `self.ui.{name}` uses.
+
+**UX-LOGP-004** `M7.8` `[T]` Renaming a method from Your methods or a Call step runs the shell's rename-refactor preview on the window file, and updates the form's steps in the same undo step on the form. The window file follows its own tab's undo.
+
+**UX-LOGP-005** `M7.8` `[T]` Read as text writes the whole form's behavior as numbered English sentences (LOGIC §2.8), in a read-only tab, with Copy and Print to PDF (the M5 print path).
+
+#### 13.4.8 Copy
+
+Every on-screen sentence a lane adds is written in its PR as a row in this table, in the M6 table format (Context | Exact text), and gated by O-UX. The rows below are fixed by this spec:
+
+| Context | Exact text |
+| --- | --- |
+| Builder disabled | "This is too complex for the builder. Edit it as a formula." |
+| Formula left with an error | "Fix or press Esc to undo this formula" |
+| Rule steer (E6) | "Keep {target} enabled only while {sender} is checked? A rule also gets this right when the form opens." [Make it a rule] [Connect anyway] |
+| Calculated property | "Calculated: {formula}" · "Edit rule" |
+| Error-label offer | "Show messages under the field?" [Add label] [Not now] |
+| Repair banner | "{n} rules point at widgets that were renamed outside Code Studio." [Repair…] |
+| Window value needed | "{method}() needs a window value" |
+| Divide by zero tooltip | "Can't divide by zero" |
+| Undo names | "Set {Rule words} for {display}", "Clear {Rule words} for {display}", "Add check to {display}", "Edit check on {display}", "Remove check from {display}", "Move check", "Add error label for {display}", "Repair references" |
+| FB101 | "{name} is not a field on this form. Did you mean {suggestion}?" |
+| FB102 | "Can't {verb} {type a} and {type b}. {name} holds {type a}." |
+| FB103 | "Not available in formulas. Use a method instead." |
+| FB104 | "These values depend on each other in a circle: {a}, then {b}, then {a}." |
+| FB108 | "This formula isn't finished: {python message, first line}" |
+| FB107 | LOGIC §4.10's message column, verbatim |
+| FB109 | "{method} is not in {Class} ({file})." |
+| FB111 | "This formula is too long. Split it, or move it into a method." |
+| FB115 | "Connect this form to a table first (coming with data forms)." |
+| FB119 | "{display}'s messages show only as a tooltip. Add a label under the field?" |
+
+Words for the rules: "Enabled when", "Visible when", "Read-only when", "Value", "Default".
+
+#### 13.4.9 Shared rules, speed and evidence
+
+**UX-M7-001** `all M7` `[C]` UX-M6-001's copy rules apply. In addition: "formula", "rule", "check" and "condition" are the on-screen words; "expression" and "validator" never are; "blank" is used, never "null" or "None".
+
+**UX-M7-002** `all M7` `[T]` Every M7 edit is one undo step with a §13.4.8 name. The rule editor's draft is not a step until it is committed.
+
+**UX-M7-003** `all M7` `[A]` Speed, CPU p95 on the M6 reference form plus 100 rules and 60 checks. The Mac and ChoreBoy VM columns use the M6.R measurement method (load recorded, `idle_reference`).
+
+| Path | Mac | VM |
+| --- | --- | --- |
+| Analyze plus compile one 200-character formula | ≤ 2 ms | ≤ 6 ms |
+| A formula-editor keystroke (analyze, evaluate "now:", repaint) | ≤ 16 ms | ≤ 40 ms |
+| Behavior tab fill with State, Checks and Events for a widget with 5 rules and 3 checks | ≤ 16 ms | ≤ 40 ms |
+| Commit a rule (command, rule-graph update, badges, inspector) | ≤ 17 ms added | ≤ 50 ms added |
+| Save with 100 rules and 60 checks (generate included) | ≤ 80 ms | ≤ 250 ms |
+| Generated `cbcs_refresh()` with 100 rules, run in the app | ≤ 5 ms | ≤ 16 ms |
+| Preview reload after a rule edit | ≤ 500 ms | ≤ 1.5 s |
+
+**UX-M7-004** `all M7` `[A K]` Keys are registered from lane files in `integration/keys_ext/`, as in UX-M6-004. Accessible names read as sentences: "Enabled when Discount is checked, now no"; "Check 1 of 2, Required, message Discount rate is required"; "Step 2 of 3, Show a message, only if Total is more than 0".
+
+**Keyboard scripts.**
+- **K27** (M7.2b): select Discount rate → Alt+B → State › Enabled when → formula mode → type "disc", Tab to complete → Ctrl+Enter. No mouse event. (Until M7.5 ships the builder, E2's "builder first" opens formula mode.)
+- **K28** (M7.3b): add Required and Email to emailEdit, accept the label offer, Ctrl+Shift+R, tab out of the empty field, and read the message.
+- **K29** (M7.4): Save's list gains "Check all fields", moved first with Alt+Up, then "Show a message" with an only-if condition.
+- **K30** (M7.5): walkthrough 1 in the condition builder, and walkthrough 2 entirely in the value builder.
+
+**Screenshots** (light, dark and both high contrast; 100% and 200%; inspector states also at 236 px):
+- State with three rules and "now:" values;
+- the formula editor with an FB102 underline and completion open;
+- the condition builder;
+- the value builder "if … then … otherwise";
+- Checks with an error label offer;
+- the step picker with the M7 groups;
+- a step with "only if";
+- Preview with "What ran" and Window values;
+- the Logic panel;
+- Uses of qtySpin (Shift+F12);
+- the Repair dialog.
+
+**Personas (M7.7).** The shop owner does walkthroughs 1 and 2 with the builder, then a required-email check and a Save that checks first. The Qt developer does walkthrough 3, writes `window.is_manager()` with `-> bool`, uses Shift+F12, and renames a method. Each walkthrough records step counts and confusion points. Findings are fixed or written into the ledger.
+
+#### 13.4.10 Facts M7 lanes check on the ChoreBoy VM
+
+- **M7.6**: Preview with behavior opens and reloads within UX-M7-003's VM rows.
+- **M7.2a and M7.3a**: a generated module with 100 rules and 60 checks runs under FreeCAD 1.1's PySide6 on the VM within the refresh row. The `Decimal` and `re` helpers behave the same as on the Mac (the conformance subset runs there).
+- **M7.1**: the conformance suite's Python 3.9 subset passes in the 3.9 AppRun lane.
+
 ---
 
 ## 14. Heuristic review of the spike build
