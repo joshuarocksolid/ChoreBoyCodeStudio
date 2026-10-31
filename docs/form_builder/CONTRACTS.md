@@ -1020,11 +1020,11 @@ The public entry points are `analyze(text, env, slot) -> Analysis` (parse plus c
 
 ### 17.2 Parsing
 
-1. **Guards.** These run before anything else. Text longer than 2,000 characters, or with more than 400 `tokenize` tokens, is FB111 and never parsed. Bracket depth over 32 is FB111. The `tokenize` pass is the M6 pre-scan idea (§16.1 step 2). It bounds the tree depth, so `ast.parse` can't overflow the C stack on Python 3.9.
+1. **Guards.** These run before anything else. Text longer than 2,000 characters, or with more than 400 `tokenize` tokens, is FB111 and never parsed. Bracket depth over 32 is FB111. The `tokenize` pass is the M6 pre-scan idea (§16.1 step 2). It bounds the parser's work, so `ast.parse` can't overflow the C stack on Python 3.9. After parsing, an **iterative** walk measures the `ast`'s own depth (bracket depth doesn't bound `not not … x` or a long `+` chain), and a depth over 64 is FB111. Only then do the recursive passes (lowering, checking, compiling) run.
 2. **Excel recognisers** run on the raw text (§17.7). Each produces an FB107 problem with a `Fix`. When the text does not parse as Python but one or more fixes apply, the analysis reports only the fixes, never a bare syntax error.
-3. **Parse.** `ast.parse(text, mode="eval")`. A `SyntaxError` becomes FB106, with the offset converted from UTF-8 bytes to characters. Shown text is always measured in characters.
+3. **Parse.** `ast.parse(text, mode="eval")`. A `SyntaxError` becomes FB108. `SyntaxError.offset` is already counted in characters, so it is used as it is. A node's `col_offset` is in UTF-8 bytes and is converted to characters. Shown text is always measured in characters.
 4. **Lowering.** The `ast` is lowered to the typed tree of §17.3, using LOGIC_DESIGN §4.2's allowlist. Any other node is FB103, with that clause's message. A subscript, a keyword argument, `**`, `//`, `%`, `is`, an f-string, a comprehension or `lambda` is FB103. An attribute chain longer than two is FB114.
-5. **Literals.** A number literal is lowered from its **source text**, never from the `ast` float: `1.1` becomes `Decimal("1.1")`, and an integer stays `int`. `1_000` is allowed. A `%` suffix is only an Excel recogniser (§17.7). Strings follow Python rules. Bytes are FB103.
+5. **Literals.** A number literal is lowered from its **source text**, never from the `ast` float: `1.1` becomes `Decimal("1.1")`, and an integer stays `int`. `1_000` is allowed, and so is an exponent (`1e3`). Every non-integer value is built with `Decimal(text.replace("_", ""))`. Hex, octal, binary and imaginary literals are FB103. A `%` suffix is only an Excel recogniser (§17.7). Strings follow Python rules, except that **a string with a raw line break in it (a triple-quoted string spanning lines) is FB103**, because generated comments and code must stay one line per formula line. Bytes are FB103.
 
 ### 17.3 The typed tree (`nodes.py`)
 
@@ -1074,7 +1074,7 @@ Building the environment is O(form). It is cached on `(doc.revision, window read
 
 - Name lookup goes in this order: reserved word, widget object name, page name. Then FB101 with the closest object name or display name, within an edit distance of 2 or as a case-insensitive match. A display name that matches exactly gives the FB107 "These are labels" fix (LOGIC §4.10, last row).
 - A widget named with a reserved word is FB108 on the widget (Error), with a rename offered. It is reported once per form, not per formula.
-- `window.m(...)`. The method must exist in the window class reading. If it doesn't, that's FB109, with "Create method" offered by M7.2b, which reuses the M6 method gesture. Its return annotation, read as a source string, sets the type: `bool`, `int`, `Decimal`, `float` (as Number), `str` or `date`. Anything else, or no annotation, is ANY. ANY in a CONDITION slot is wrapped in `bool()` with FB110 (Info). The argument count is checked against `required`/`params` (FB112).
+- `window.m(...)`. The method must exist in the window class reading. If it doesn't, that's FB109, with "Create method" offered by M7.2b, which reuses the M6 method gesture. Its return annotation, read as a source string, sets the type: `bool`, `int`, `Decimal`, `float` (as Number), `str` or `date`. Anything else, or no annotation, is ANY. ANY in a CONDITION slot is wrapped in `_cbcs_bool()` with FB110 (Info). The argument count is checked against `required`/`params` (FB112).
 - The blank rules are LOGIC §4.6, with one refinement: `x == None` and `x == ""` normalize to `is_blank(x)` only through the FB107 fix. The checker accepts them as written, with the same meaning.
 
 ### 17.7 Excel recognisers (`parse.py`)
@@ -1105,7 +1105,9 @@ Every function is **total**: it returns blank instead of raising. `round` rounds
 `compile_formula(analysis, env, *, self_name="self") -> Emitted(source, helpers, imports)`:
 
 - `source` is one Python expression. It reads widgets with exactly the `read` column of the value table, as `self.<name>.<accessor>`. It is 3.9-parseable, and it uses no f-strings, no walrus and no `match`. A line is at most 100 characters. When it is longer, the caller wraps it in brackets.
-- **Plain operators** are used where the types prove neither side can be blank (LOGIC §7.1 rule 1). Otherwise the `_cbcs_*` helpers are used: `_cbcs_add`, `_cbcs_sub`, `_cbcs_mul`, `_cbcs_div`, `_cbcs_lt`, and so on.
+- **Plain operators** are used for `+ - *` and comparisons where the types prove neither side can be blank (LOGIC §7.1 rule 1). Otherwise the `_cbcs_*` helpers are used: `_cbcs_add`, `_cbcs_sub`, `_cbcs_mul`, `_cbcs_lt`, and so on. **`/` always compiles to `_cbcs_div`**, because a plain `/` turns two ints into a float and raises on zero instead of giving blank (LOGIC §4.6).
+- A read whose Qt accessor can raise or needs parsing goes through a `_cbcs_read_*` helper (for example `_cbcs_read_list(self.itemsList)` for `currentItem()`, which is None when there is no current item, and the kind parsers). The plain `Read` column is used only where it can't raise.
+- String literals are re-emitted with `repr()`, never copied from the source.
 - Decimal literals are written `Decimal("1.1")`, and `imports` holds `("decimal", "Decimal")`.
 - `WindowCall` compiles to `self._form.<method>(...)`. `_form` is the window object `_cbcs_setup` stores (LOGIC §7.2).
 - Compiling an analysis with any Error problem raises `ValueError`. The callers (codegen expanders) never compile a broken formula: they emit the skip comment of §18.2.
@@ -1114,16 +1116,18 @@ Every function is **total**: it returns blank instead of raising. `round` rounds
 
 `HELPERS: Tuple[(helper_id, source), ...]` is the helper table, in fixed order. It fills `codegen/logic_hooks.HELPER_TABLE`.
 
-`live_helpers()` builds a namespace by `exec`-ing **the same source strings** once, into an empty module dict that holds only `Decimal`, `ROUND_HALF_UP`, `date`, `datetime`, `time` and `re`. That way the evaluator and the generated module share one definition of every helper (LOGIC §2.10: one compiler, one meaning). A test compares `inspect.getsource`-free behavior: each helper's live result equals the generated module's result on the conformance cases.
+`live_helpers()` builds a namespace by `exec`-ing **the same source strings** once, into a private module dict that holds `Decimal`, `ROUND_HALF_UP`, `date`, `datetime`, `time` and `re`. It returns **only the `_cbcs_*` names** from that dict, never the dict itself, because `exec` puts the real `__builtins__` into it. That way the evaluator and the generated module share one definition of every helper (LOGIC §2.10: one compiler, one meaning). A test compares `inspect.getsource`-free behavior: each helper's live result equals the generated module's result on the conformance cases.
 
 ### 17.12 Design-time evaluation (`evaluate.py`)
 
-`evaluate(emitted, reader, window_values) -> Value | EvalBlank(reason)` runs `eval(compile(source, "<formula>", "eval"), {"__builtins__": {}, **live_helpers(), "Decimal": Decimal}, {"self": reader})`.
+`evaluate(emitted, reader, window_values) -> Value | EvalBlank(reason)` runs `eval(compile(source, "<formula>", "eval"), {**live_helpers(), "Decimal": Decimal, "__builtins__": {}}, {"self": reader})`. `__builtins__` goes last so nothing overrides it.
+
+**The safety rule is in the compiler, not the sandbox.** Compiled source contains only: the name `self`; names starting with `_cbcs_`; `Decimal`; literals; `self.<widget>.<accessor>(...)` where the accessor is in the value table's read set; and `self._form.<method>(...)` for a method in the window reading. A test walks the `ast` of every compiled formula in the conformance suite and the fuzzer and fails on anything else. Generated code never uses a bare builtin (`bool`, `int`, `round`): it uses the `_cbcs_` helper.
 
 - `reader` is a Qt-side object whose attributes are the **canvas's real widgets**, plus `_form`, a stand-in whose methods return `window_values[name]`, or raise `_NeedsValue`.
 - The source can only contain allowlisted constructs, so evaluation calls only the value table's read accessors and the helpers.
 - `_NeedsValue` gives `EvalBlank("needs a window value")`. Any other exception gives `EvalBlank(str(e))` and is logged at debug level, because helpers are total, so an exception is a bug to report rather than a user error.
-- The evaluation runs on the GUI thread with no timeout. That is safe because the language has no loops, and each formula is bounded at 400 tokens.
+- The evaluation runs on the GUI thread with no timeout. That is safe because the language has no loops, and each formula is bounded at 400 tokens. `matches` is the one helper that could take long (regex backtracking). At design time, `evaluate` passes it at most the first 1,000 characters of the text, and the pattern is capped at 200 characters (§17.9).
 
 ### 17.13 FB101–FB119 (`diagnostic_codes/fb1xx_formula.py`)
 
@@ -1134,9 +1138,9 @@ Every function is **total**: it returns blank instead of raising. `round` rounds
 | FB103 | Error | Not available in formulas | "Move this into a method" (creates a stub) |
 | FB104 | Error | Circular values (the rule graph, §18.1) | Select the cycle |
 | FB105 | Error | Bad pattern | — |
-| FB106 | Error | Syntax error | — |
+| FB106 | Error | A widget uses a reserved name. This is **already declared** by `query/name_policy.py` (M3) with this meaning; M7 reuses it and doesn't declare it again | Rename |
 | FB107 | Error | Excel habit (§17.7) | The recogniser's fix |
-| FB108 | Error | A widget uses a reserved name | Rename |
+| FB108 | Error | Syntax error | — |
 | FB109 | Error | `window.m()` is not in the window class | Create method |
 | FB110 | Info | A window value has no type; `bool()` is used | Add `-> bool` (Go to code) |
 | FB111 | Error | Formula too long or nested too deep | — |
@@ -1144,12 +1148,12 @@ Every function is **total**: it returns blank instead of raising. `round` rounds
 | FB113 | Error | A column outside an aggregate (M8) | — |
 | FB114 | Error | That widget has no such value or attribute | — |
 | FB115 | Error | Needs a data form (until M8) | — |
-| FB116 | Warning | A rule targets a property that your code also sets (LOGIC FB207, renumbered) | Show the rule |
+| FB116 | — | Not used. LOGIC's "your code sets a rule's property" stays **FB207**, already declared by M6.2a (`fb2xx_code.py`); M7.8 produces it | — |
 | FB117 | Warning | A one-off step changes a property a rule controls | Show the rule |
 | FB118 | Warning | Unknown kind or format code; text is used | Pick a kind |
 | FB119 | Info | A check has no error label; the message shows only as a tooltip and an outline | Add label |
 
-LOGIC §2.9's FB207 (your code sets a rule's property) is **FB116**, because the FB2xx range is M6's window-file checks. M7.8's code-connection discovery produces it.
+**One declaration per code.** `fb1xx_formula.py` (M7.1a) declares every FB1xx code M7 uses, including FB104, FB117, FB119 and FB120 ("That form isn't in this project's forms folder", for `openForm`), even when a later lane produces them. Producer lanes import the codes; they never declare them again. FB106 and FB207 are reused, not redeclared. FB120 is a step problem kept in this range because it is about a formula-like reference, and the range table in `diagnostics.py` is updated to say "Formulas and step references".
 
 ### 17.14 Conformance (MUST)
 
@@ -1167,7 +1171,7 @@ Both lanes run the suite under the Python 3.9 AppRun lane as well as 3.11.
 
 `rule_graph(doc, env) -> RuleGraph`. The nodes are `(widget, key)` for `cbcsValue`, `cbcsDefault`, `cbcsEnabledWhen`, `cbcsVisibleWhen` and `cbcsReadOnlyWhen`.
 
-- An edge runs from each widget a formula reads to the `cbcsValue` node of that widget, when it has one.
+- **Edges.** For every rule node R and every widget W that R's formula reads: when W has a `cbcsValue` node V, there is an edge V → R (V must be computed before R). Reading a widget with no Value rule adds no edge. `cbcsDefault` nodes are not in the refresh order: defaults run once, before the first refresh, in tree order, and their formulas may read only widgets without a Value rule (FB104 otherwise, "A default can't read a calculated field").
 - `order()` is a topological order of the Value nodes, then the state nodes. Ties are broken by widget tree order (LOGIC §7.1 rule 3).
 - `cycles()` lists the strongly connected components. Every node in a cycle gets FB104, and the whole cycle generates nothing.
 - The graph is rebuilt incrementally: only the edited nodes, keyed on `doc.structure_revision` and the touched logic properties, as M6.R's event splice did. Building the whole graph of a 300-widget form with 100 rules costs at most 5 ms on the Mac.
@@ -1177,15 +1181,15 @@ Both lanes run the suite under the Python 3.9 AppRun lane as well as 3.11.
 | Order | Expander | Owner | Emits |
 | --- | --- | --- | --- |
 | 100 | `steps.py` (exists) | M7.4 extends | `_cbcs_<sender>_<signal>`, now with every verb of §18.4 and `when` |
-| 150 | `form_events.py` | M7.4 | `cbcsOnOpened` runs at the end of `_cbcs_setup` after the first refresh; `cbcsOnClosing` runs through `_CbcsCloseGuard` (LOGIC §7.7) |
-| 200 | `rules.py` | M7.2a | input connects in `_cbcs_setup`, `cbcs_refresh` (LOGIC §7.1 rule 6, §7.2–7.3), and the first `cbcs_refresh()` |
-| 250 | `defaults.py` | M7.2a | `_cbcs_apply_defaults()`, called once before the first refresh (M8 also calls it on New) |
+| 200 | `rules.py` | M7.2a | `cbcs_refresh` (LOGIC §7.1 rule 6, §7.2–7.3), `_cbcs_apply_defaults()`, and the setup lines `self._cbcs_apply_defaults()` then `self.cbcs_refresh()` (defaults first, in this one expander, so the order can't depend on expander numbers) |
+| 900 | `form_events.py` | M7.4 | `cbcsOnOpened`'s call as the **last** setup line, after every other expander's setup; `cbcsOnClosing` through `_CbcsCloseGuard` (LOGIC §7.7) |
 | 300 | `checks.py` | M7.3a | `_cbcs_check_<w>`, touch and recheck, `cbcs_validate` (LOGIC §7.4) |
 | 350 | `formats.py` | M7.3a | Formats applied on leaving a line edit, and in a Value write (`_cbcs_money`, and the rest) |
 
-- Each rule block starts with `# {widget}: {Rule words} = {formula text}`, the source reference that "Open rule" uses (§18.5).
+- Each rule block starts with `# {widget}: {Rule words} = {formula text}`, the source reference that "Open rule" uses (§18.5). **Every piece of text that goes into a generated comment is passed through one sanitizer** (M6's `steps._one_line`, moved to the core by M7.0s): line breaks become spaces and the result is one line. A formula with line breaks is shown on one line in the comment.
+- `_cbcs_setup` joins expanders' setup lines in expander order (`emit.py`). Expanders that need an order relative to each other put those lines in one expander (rules does defaults then refresh) or use order 900+ for "after everything".
 - A rule with an Error emits, at its place in `cbcs_refresh`, exactly `# {widget}: {Rule words} skipped ({FBcode}: see Problems)`. It emits nothing else.
-- The rule-input connects use each widget's change signal from one table, `CHANGE_SIGNALS`, in `rules.py`. Examples: `QLineEdit.textChanged`, `QSpinBox.valueChanged`, `QCheckBox.toggled`, `QComboBox.currentIndexChanged`, `QDateEdit.dateChanged`.
+- Connects go through the core, not each expander. A `Contribution` lists `connects: ((widget, handler_method), ...)`; the core looks up each widget's change signal in one table, `CHANGE_SIGNALS` (`engine/codegen/change_signals.py`, owned by M7.0s), and emits each `(widget, handler)` connect once, in a stable order. Rules connect to `cbcs_refresh`; checks to their touch and recheck methods. Examples of the table: `QLineEdit.textChanged`, `QSpinBox.valueChanged`, `QCheckBox.toggled`, `QComboBox.currentIndexChanged`, `QDateEdit.dateChanged`.
 - A widget is connected once, however many rules read it.
 - **Generated code for a form with no M7 logic is byte-identical to M6's.** Golden tests prove it on the whole M6 corpus.
 
@@ -1208,10 +1212,31 @@ M7.4 types these verbs in the codec (§15.3) and in a verb registry, `engine/log
 
 M8 adds `new`, `save`, `delete`, `revert`, `reload`, `first`, `previous`, `next`, `last`, `find`, `refreshLookups`, `addRow` and `deleteRow`. Until then they stay FB403 (read-only, kept).
 
-- `when` compiles as `if not (<formula>): pass-to-next`. A `when` with an Error makes **only that step** skip, with a comment. The rest of the list still runs. This differs from §15.3's whole-list FB401, which is about JSON shape, not formula meaning.
-- `call` with a following step that depends on it: `if self._form.<m>(...) is False: return` (LOGIC §7.5).
+- A step with `when` is wrapped in `if <compiled formula>:`, and the step's lines are indented under it. A `when` with an Error makes **only that step** skip: it is emitted as a one-line comment `# step {n} skipped ({code}: see Problems)`. The rest of the list still runs. This differs from §15.3's whole-list FB401, which is about JSON shape, not formula meaning.
+- `call`: the M6 rule stands unchanged: `if self._form.<m>(...) is False: return` when a later step is on, else a plain call (byte-identical to M6 for M6 lists).
 - `openForm` imports the target form's window module inside the step function, not at module top: `from forms.<stem>_window import <Class>`. In dialog mode it uses `exec()`. A target form that doesn't generate is FB120, "That form isn't in this project's forms folder", which M7.4 declares in its own module.
 - `close` runs the close guard (M8 adds the unsaved prompt). With no data, it is `self._form.accept()`, `reject()` or `close()`.
+
+### 18.6 Codegen core changes (M7.0s)
+
+M7.0s makes these changes in `engine/codegen/logic_hooks.py`, `emit.py`, `api.py` and `api_types.py`, so the M7 expanders get what they need without editing the core:
+
+- `CodegenContext` gains:
+  - `window: Optional[WindowFacts]` (the §16.1 reading of the window file at generate time; None when there is no window file);
+  - `formats: FormatSettings` (the project's Formats, UX E12, defaulting to US English);
+  - `widgets: Mapping[name, WidgetFacts]` (CONTRACTS §17.5's facts, built once per generate);
+  - `trace: bool` (below).
+- `Contribution` gains `needs_form: bool` and `connects` (§18.2). When any contribution sets `needs_form`, the core emits `self._form = {form_param}` once, at the place the steps expander emits it today. The steps expander sets `needs_form` instead of emitting it, so M6 output stays byte-identical.
+- **Trace (for Preview only).** `generate(..., trace=False)` by default. With `trace=True`, expanders emit one extra line per rule, check and step: `self._cbcs_trace("{kind}", "{source ref}", {value expr})`, where kind is `rule`, `check` or `step`. The core adds a `_cbcs_trace` method that calls `self._form._cbcs_trace(...)` when the form has one, and otherwise does nothing. Saved `ui_<stem>.py` files never have trace lines. Only Preview asks for `trace=True` (it sends the traced module in `TryStart.module_source`, §10, which already carries `window_values` and the stand-in class). The stand-in window class's `_cbcs_trace` turns each call into a `log` message of the matching kind (M7.6).
+- `steps._one_line` moves into the core as the single comment sanitizer (§18.2).
+- **Verb hooks.** The verb registry (§18.4) is read in every place M6 hard-codes `slot` and `call`:
+  - `codec.TYPED_VERBS` becomes a derived constant;
+  - `events_codec.PLAIN_VERBS` and `EventStep`;
+  - `events_catalog.step_words`;
+  - `behavior_ext/_rows.py`, which decides whether a step row is editable or read-only;
+  - `steps._generates`, which today requires `when is None`.
+
+  After M7.0s, a verb module can register words, editability, codec typing and emit without editing any of these files.
 
 ### 18.5 "Open rule" links
 

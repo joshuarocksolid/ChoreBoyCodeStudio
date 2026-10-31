@@ -2783,7 +2783,7 @@ Data (record events, `form.*`, `record.*`, grids, lookups) is M8. Where M7 leave
 | E11 | The Logic panel | A tab in the left pane beside Outline and Insert, labelled "Logic". It doesn't replace the Behavior tab. Selecting a row selects the widget and opens its Behavior row. The M6 form-level "All events on this form" stays | LOGIC §2.8. One overview per form |
 | E12 | Formats and locale | `cbcsFormat` codes are LOGIC §4.11's. The project setting "Formats" (Settings › Form designer) defaults to US English: `$`, `1,234.50`, `MM/DD/YYYY`. Generated helpers read the project's choice at generate time and write it into the module as constants | LOGIC owner decision 3. No runtime lookup |
 | E13 | Repair references | When a form opens, a formula name that matches no widget, together with a widget of the same class that appeared since the last CBCS save (from the `ui_<stem>.py` name list), opens a non-blocking banner: "{n} rules point at widgets that were renamed outside Code Studio. Repair…" The Repair dialog pairs each old name with a candidate. Nothing changes until "Repair" is pressed, and the repair is one undo step | LOGIC §2.13 |
-| E14 | Keys | Enter on a State, Check or condition row: edit (F2 stays rename, UX-KEY-005). Ctrl+Enter: commit. Esc: cancel. Ctrl+Space: complete. Ctrl+.: fix. Alt+Up and Alt+Down: move a check or step. Shift+F12: find every use. Ctrl+F in a form tab: search this form's logic (UX-KEY-005). Alt+L: the Logic panel. Ctrl+Shift+R: Preview, now Try | LOGIC §2.12, with Ctrl+R kept for Go to widget |
+| E14 | Keys | Enter on a State, Check or condition row: edit (F2 stays rename, UX-KEY-005). Ctrl+Enter: commit. Esc: cancel. Ctrl+Space: complete. Ctrl+.: fix. Alt+Up and Alt+Down: move a check or step. Shift+F12: find every use. Alt+L: the Logic panel with its filter focused, which is how you search this form's logic. Ctrl+F stays Find widget (UX-KEY-004); this replaces UX-KEY-005's "Ctrl+F searches logic", which would bind Ctrl+F twice. Ctrl+Shift+R: Preview, now Try | LOGIC §2.12, with Ctrl+R kept for Go to widget |
 | E15 | Unsaved formula on focus loss | A formula with no Error is committed when focus leaves the editor. A formula with an Error stays open, red, with the sentence "Fix or press Esc to undo this formula". Leaving the form tab keeps the draft and shows a dot on the row | Never lose typing, never save a broken rule silently |
 
 #### 13.4.2 State rules (STATE)
@@ -2912,7 +2912,7 @@ Every line in "What ran" names its source: "Rules ran (12)", "Check emailEdit: E
 
 **UX-LOGP-001** `M7.8` `[S A]` The Logic panel (E11) lists STATE, CHECKS and EVENTS, then IN YOUR CODE (read-only, best-effort, labelled), then the problems count. It has a filter field and toggle chips for Rules, Checks, Events and Problems. A row reads "{widget}  {Rule words}  {formula or summary}".
 
-**UX-LOGP-002** `M7.8` `[T]` Ctrl+F in a form tab opens the Logic panel with its filter focused (UX-KEY-005). Project Find (Ctrl+Shift+F) gains a "Forms logic" group that matches formula text, method names and widget names inside every form's logic.
+**UX-LOGP-002** `M7.8` `[T]` Alt+L opens the Logic panel with its filter focused (E14). Project Find (Ctrl+Shift+F) gains a "Forms logic" group that matches formula text, method names and widget names inside every form's logic.
 
 **UX-LOGP-003** `M7.8` `[T]` Shift+F12 on a widget, a method or a Logic row opens "Uses of {name}". It lists every rule, check, step and line of window-file code that reads, sets or calls it. The code lines come from the M6 reading, plus the parsed `self.ui.{name}` uses.
 
@@ -2939,7 +2939,7 @@ Every on-screen sentence a lane adds is written in its PR as a row in this table
 | FB102 | "Can't {verb} {type a} and {type b}. {name} holds {type a}." |
 | FB103 | "Not available in formulas. Use a method instead." |
 | FB104 | "These values depend on each other in a circle: {a}, then {b}, then {a}." |
-| FB106 | "This formula isn't finished: {python message, first line}" |
+| FB108 | "This formula isn't finished: {python message, first line}" |
 | FB107 | LOGIC §4.10's message column, verbatim |
 | FB109 | "{method} is not in {Class} ({file})." |
 | FB111 | "This formula is too long. Split it, or move it into a method." |
@@ -2969,10 +2969,10 @@ Words for the rules: "Enabled when", "Visible when", "Read-only when", "Value", 
 **UX-M7-004** `all M7` `[A K]` Keys are registered from lane files in `integration/keys_ext/`, as in UX-M6-004. Accessible names read as sentences: "Enabled when Discount is checked, now no"; "Check 1 of 2, Required, message Discount rate is required"; "Step 2 of 3, Show a message, only if Total is more than 0".
 
 **Keyboard scripts.**
-- **K27** (M7.2b): select Discount rate → Alt+B → State › Enabled when → builder → "disc" → Enter → Ctrl+Enter. No mouse event.
+- **K27** (M7.2b): select Discount rate → Alt+B → State › Enabled when → formula mode → type "disc", Tab to complete → Ctrl+Enter. No mouse event. (Until M7.5 ships the builder, E2's "builder first" opens formula mode.)
 - **K28** (M7.3b): add Required and Email to emailEdit, accept the label offer, Ctrl+Shift+R, tab out of the empty field, and read the message.
 - **K29** (M7.4): Save's list gains "Check all fields", moved first with Alt+Up, then "Show a message" with an only-if condition.
-- **K30** (M7.5): walkthrough 2 entirely in the value builder.
+- **K30** (M7.5): walkthrough 1 in the condition builder, and walkthrough 2 entirely in the value builder.
 
 **Screenshots** (light, dark and both high contrast; 100% and 200%; inspector states also at 236 px):
 - State with three rules and "now:" values;
