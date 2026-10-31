@@ -151,6 +151,7 @@ class LoadForm:
     resource_modules: Tuple[ResourceModule, ...] = ()
     promoted: Tuple[PromotedClass, ...] = ()
     form_methods: Tuple[Tuple[str, int], ...] = ()
+    run_behavior: bool = True
 
 
 @dataclass(frozen=True)
@@ -285,6 +286,10 @@ class Log:
     source: Optional[SourceRef] = None
     kind: str = ""
     method: str = ""
+
+
+#: Spellings later lanes share. Other kinds, including "" and stdout logs, still parse.
+LOG_KINDS = ("rule", "check", "step", "would_call", "needs_value")
 
 
 @dataclass(frozen=True)

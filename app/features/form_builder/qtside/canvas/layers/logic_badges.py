@@ -99,30 +99,56 @@ def _basis_for(document: UiDocument, static: object) -> _Basis:
 
 def forget_badge_memo() -> None:
     """Drop the kept seating. The next build seats every badge again."""
-    global _BASIS, _TIPS
+    global _BASIS
     _BASIS = None
-    _TIPS = weakref.WeakKeyDictionary()
 
 
-# document -> sender -> (events, widget chain, sentence)
-_TIPS: "weakref.WeakKeyDictionary[UiDocument, Dict[str, Tuple[Tuple[object, ...], Tuple[str, ...], str]]]" = (
-    weakref.WeakKeyDictionary()
-)
+def _badge_senders(document: UiDocument) -> Tuple[List[str], dict]:
+    """Event senders first, in document order, then any other widget a kind applies to."""
+    grouped: dict = {}
+    senders: List[str] = []
+    for event in read_events(document):
+        if event.sender not in grouped:
+            grouped[event.sender] = []
+            senders.append(event.sender)
+        grouped[event.sender].append(event)
+    seen = set(senders)
+    for node in document.iter_widgets():
+        name = node.object_name
+        if not name or name in seen:
+            continue
+        if _mark(document, name, ()) is None:
+            continue
+        senders.append(name)
+        grouped[name] = []
+        seen.add(name)
+    return senders, grouped
 
 
-def _tip_for(document: UiDocument, sender: str, states: Tuple[object, ...]) -> str:
-    """The sentence for one sender. Only a sender whose events or class chain moved is written again."""
-    kept = _TIPS.get(document)
-    if kept is None:
-        kept = {}
-        _TIPS[document] = kept
-    chain = _chain(document, sender)
-    held = kept.get(sender)
-    if held is not None and held[1] == chain and held[0] == states:
-        return held[2]
-    text = _tip(document, sender, states)
-    kept[sender] = (states, chain, text)
-    return text
+def _mark(document: UiDocument, sender: str, states: Tuple[object, ...]) -> Optional[Tuple[str, str, int]]:
+    from app.features.form_builder.qtside.canvas.layers.badge_kinds import BadgeFacts, default_registry
+
+    found = document.by_name(sender)
+    node = document.node(found[0]) if found else None
+    facts = BadgeFacts(document, sender, states)
+    applying = []
+    for kind in default_registry().ordered():
+        try:
+            if kind.applies(node, facts):
+                applying.append(kind)
+        except Exception:
+            continue
+    if not applying:
+        return None
+    parts = []
+    for kind in applying:
+        try:
+            text = kind.sentence(node, facts)
+        except Exception:
+            text = ""
+        if text:
+            parts.append(text)
+    return (" ".join(parts), applying[0].glyph, len(applying))
 
 
 def _view_key(page: CanvasRect, viewport: CanvasRect, inputs: object) -> Hashable:
@@ -137,13 +163,7 @@ def build(static: object, inputs: object, state: Hashable) -> LayerOutput:
     if factor < HIDE_BELOW:
         return LayerOutput()
     document = getattr(inputs, "document")
-    grouped: dict = {}
-    senders = []
-    for event in read_events(document):
-        if event.sender not in grouped:
-            grouped[event.sender] = []
-            senders.append(event.sender)
-        grouped[event.sender].append(event)
+    senders, grouped = _badge_senders(document)
     if not senders:
         return LayerOutput()
     page = _page(static)
@@ -167,8 +187,11 @@ def build(static: object, inputs: object, state: Hashable) -> LayerOutput:
         basis.seats[seat_key] = seated
     items: List[LayerItem] = []
     for sender, seat in seated:
-        tip = _tip_for(document, sender, tuple(grouped.get(sender, ())))
-        items.append(LayerItem(rect=seat, role="select", layer=NAME, data=("badge", sender, tip)))
+        mark = _mark(document, sender, tuple(grouped.get(sender, ())))
+        if mark is None:
+            continue
+        tip, glyph, count = mark
+        items.append(LayerItem(rect=seat, role="select", layer=NAME, data=("badge", sender, tip, glyph, count)))
     return LayerOutput(tuple(items))
 
 
@@ -235,7 +258,17 @@ def paint(painter: QPainter, item: LayerItem, palette: CanvasPalette) -> None:
         font.setPixelSize(10)
         font.setBold(True)
         painter.setFont(font)
-        painter.drawText(box, int(Qt.AlignmentFlag.AlignCenter), "›")
+        glyph = "\u203a"
+        count = 1
+        if len(data) > 3 and data[3]:
+            glyph = str(data[3])
+        if len(data) > 4:
+            try:
+                count = int(data[4])
+            except (TypeError, ValueError):
+                count = 1
+        label = glyph if count <= 1 else "%s%d" % (glyph, count)
+        painter.drawText(box, int(Qt.AlignmentFlag.AlignCenter), label)
     finally:
         painter.restore()
 

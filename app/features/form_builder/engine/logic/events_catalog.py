@@ -227,33 +227,6 @@ def value_words(type_name: str, signal_name: str = "", chain: Sequence[str] = ()
 
 # --- step words (UX-BEH-004) ------------------------------------------------------------
 
-_FORM_WORDS = {"close": "Close this form", "accept": "Accept (OK)", "reject": "Cancel"}
-
-_PLAIN_SLOT_WORDS = {
-    "clear": "Clear {w}",
-    "setFocus": "Move focus to {w}",
-    "setChecked": "Check or uncheck {w} the same way",
-    "toggle": "Toggle {w}",
-    "click": "Click {w}",
-    "setValue": "Set {w} to the same value",
-    "setEnabled": "Enable {w} to match",
-    "setDisabled": "Disable {w} to match",
-    "setVisible": "Show {w} to match",
-    "show": "Show {w}",
-    "hide": "Hide {w}",
-    "setText": "Copy the text into {w}",
-    "selectAll": "Select all in {w}",
-    "undo": "Undo in {w}",
-    "redo": "Redo in {w}",
-    "copy": "Copy in {w}",
-    "paste": "Paste in {w}",
-    "cut": "Cut in {w}",
-    "update": "Redraw {w}",
-    "repaint": "Redraw {w}",
-    "raise": "Bring {w} to the front",
-    "lower": "Send {w} to the back",
-}
-
 
 def step_words(
     step: EventStep,
@@ -263,18 +236,9 @@ def step_words(
     target_chain: Sequence[str] = (),
 ) -> str:
     """A step as a sentence. ``w`` is the target as the caller names it ("Name (nameEdit)")."""
-    if step.verb == "call":
-        return "Call %s()" % step.method
-    if step.verb != "slot":
+    from app.features.form_builder.engine.logic.verbs import default_registry
+
+    spec = default_registry().get(step.verb)
+    if spec is None:
         return "A step Code Studio can't edit (%s)" % step.verb
-    name = split_signature(step.slot)[0]
-    if is_form and name in _FORM_WORDS:
-        return _FORM_WORDS[name]
-    if name == "setCurrentIndex":
-        if "QComboBox" in target_chain:
-            return "Choose the matching item of %s" % w
-        return "Show the matching page of %s" % w
-    template = _PLAIN_SLOT_WORDS.get(name)
-    if template is not None:
-        return template.replace("{w}", w)
-    return "%s · %s" % (w, name)
+    return str(spec.words(step, w, is_form=is_form, target_chain=target_chain))

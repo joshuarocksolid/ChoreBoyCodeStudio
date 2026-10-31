@@ -11,27 +11,84 @@ from __future__ import annotations
 import importlib
 import logging
 import pkgutil
-from dataclasses import dataclass
-from typing import List, Protocol, Tuple
+import re
+from dataclasses import dataclass, field
+from typing import Callable, List, Mapping, Optional, Protocol, Sequence, Tuple
 
 from app.features.form_builder.engine.diagnostics import FormDiagnostic
+from app.features.form_builder.engine.project.window_facts import WindowFacts
 from app.features.form_builder.engine.ui4.document import UiDocument
 
 logger = logging.getLogger(__name__)
 
-#: Helper id -> source, emitted once, in this order, when an expander asks.
-HELPER_TABLE: Tuple[Tuple[str, str], ...] = ()
+#: Every character Python or ``str.splitlines`` treats as a line break, and other control characters.
+_BREAKS = re.compile("[\x00-\x1f\x7f-\x9f\u2028\u2029]")
+
+_HELPER_PROVIDER: Optional[Callable[[], Sequence[Tuple[str, str]]]] = None
+
+
+def one_line(text: str) -> str:
+    """Text for a ``#`` comment: one line, whatever the file held."""
+    return _BREAKS.sub(" ", text)
+
+
+def set_helper_provider(fn: Optional[Callable[[], Sequence[Tuple[str, str]]]]) -> None:
+    """Install the helper table a lane provides. ``None`` clears it."""
+    global _HELPER_PROVIDER
+    _HELPER_PROVIDER = fn
+
+
+def helper_table() -> Tuple[Tuple[str, str], ...]:
+    """Helper id -> source. A provider wins; otherwise the formula runtime, or nothing."""
+    provider = _HELPER_PROVIDER
+    if provider is not None:
+        return tuple(provider())
+    try:
+        loaded = importlib.import_module(
+            "app.features.form_builder.engine.logic.formula.runtime"
+        ).helper_table
+    except ImportError:
+        return ()
+    return tuple(loaded())
+
+
+@dataclass(frozen=True)
+class FormatSettings:
+    """US English formats. Not read from ``project.json``."""
+
+    currency: str = "$"
+    grouping: str = "1,234.50"
+    date: str = "MM/DD/YYYY"
+
+
+@dataclass(frozen=True)
+class WidgetFacts:
+    """Codegen's record of one widget. ``kind`` and ``allow_blank`` stay default until a later lane."""
+
+    class_name: str
+    kind: str = ""
+    decimals: int = 0
+    prefix: str = ""
+    tristate: bool = False
+    allow_blank: bool = False
+    has_items_data: bool = False
+    pages: Tuple[str, ...] = ()
+    also: Tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
 class CodegenContext:
     """Read-only facts the core computed: the Ui class name, the ``setupUi``
     parameter name (the form object, e.g. ``Invoice``), widget attribute names,
-    the widget kinds table (LOGIC_DESIGN 4.3), and the options."""
+    the window reading, formats, widget facts and whether Preview asked for trace."""
 
     ui_class_name: str
     form_param: str
     attribute_names: Tuple[str, ...]
+    window: Optional[WindowFacts] = None
+    formats: FormatSettings = FormatSettings()
+    widgets: Mapping[str, WidgetFacts] = field(default_factory=dict)
+    trace: bool = False
 
 
 @dataclass(frozen=True)
@@ -65,12 +122,14 @@ class Contribution:
     methods: Tuple[Method, ...] = ()
     helpers: Tuple[str, ...] = ()
     diagnostics: Tuple[FormDiagnostic, ...] = ()
+    needs_form: bool = False
+    connects: Tuple[Tuple[str, str], ...] = ()  # (widget, handler)
 
 
 class LogicExpander(Protocol):
     """``level``: 1-4 (documentation). ``order``: sort key; ties broken by
-    ``expander_id``. Built-ins: 100 step lists (L1/L3 events), 200 state rules
-    and values (L3), 300 checks (L3), 400 data (L4)."""
+    ``expander_id``. Built-ins: 100 steps, 200 rules (with defaults), 300 checks,
+    350 formats, 900+ "after everything" (form events)."""
 
     expander_id: str
     level: int

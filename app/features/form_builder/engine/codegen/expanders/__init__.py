@@ -3,8 +3,8 @@
 ``engine/codegen/logic_hooks.load_expanders`` imports every module in this
 package in sorted name order and collects its ``EXPANDER`` object (a module
 with no ``EXPANDER`` is skipped). Expanders then run ordered by
-``(order, expander_id)``: built-ins use 100 step lists (``steps.py``, M6.1a),
-200 state rules and values, 300 checks, 400 data.
+``(order, expander_id)``: 100 steps, 200 rules (with defaults), 300 checks,
+350 formats, 900+ "after everything" (form events).
 
 A lane adds an expander by adding a module here and edits no shared file. The
 package itself is empty on purpose; it exists since M6.0s so the first expander

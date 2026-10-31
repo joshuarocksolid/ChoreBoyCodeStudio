@@ -21,14 +21,14 @@ break of any kind, so no text in a ``.ui`` file can become a statement.
 
 from __future__ import annotations
 
-import re
 from typing import List, Optional, Sequence, Tuple
 
-from app.features.form_builder.engine.codegen.logic_hooks import CodegenContext, Contribution, Method
+from app.features.form_builder.engine.codegen.logic_hooks import CodegenContext, Contribution, Method, one_line
 from app.features.form_builder.engine.logic import compat
 from app.features.form_builder.engine.logic.events import signal_of_property
 from app.features.form_builder.engine.logic.events_catalog import class_chain, step_words
 from app.features.form_builder.engine.logic.events_codec import EventStep, StepList, read_list
+from app.features.form_builder.engine.logic.verbs import VerbSpec, default_registry
 from app.features.form_builder.engine.ui4.defaults import QtClassTable
 from app.features.form_builder.engine.ui4.document import UiDocument
 from app.features.form_builder.engine.ui4.nodes import Node
@@ -64,18 +64,18 @@ class StepsExpander:
                     continue
                 selector = _selector(doc, classes, node, signal_name, parsed)
                 connects.append("%s.%s%s.connect(self.%s)" % (expression, signal_name, selector, handler))
+                source_ref = one_line("%s: When %s" % (owner, signal_name))
                 methods.append(
                     Method(
                         name=handler,
-                        body=_body(doc, classes, ctx, root, parsed.steps),
-                        source_ref=_one_line("%s: When %s" % (owner, signal_name)),
+                        body=_body(doc, classes, ctx, root, parsed.steps, source_ref),
+                        source_ref=source_ref,
                         params="*args",
                     )
                 )
         if not methods:
             return Contribution()
-        setup = ["self._form = %s" % ctx.form_param] + connects
-        return Contribution(setup_lines=tuple(setup), methods=tuple(methods))
+        return Contribution(setup_lines=tuple(connects), methods=tuple(methods), needs_form=True)
 
     @staticmethod
     def _sender_expression(owner: Optional[str], root: str, ctx: CodegenContext) -> Optional[str]:
@@ -102,29 +102,32 @@ def _owner_name(node: Node) -> Optional[str]:
 def _generates(parsed: StepList) -> bool:
     if parsed.error is not None or not parsed.steps:
         return False
-    return all(
-        step.verb in ("slot", "call")
-        and step.when is None
-        and step.raw is None
-        and _names_ok(step)
-        for step in parsed.steps
-    )
+    registry = default_registry()
+    for step in parsed.steps:
+        spec = registry.get(step.verb)
+        if spec is None or spec.blocks_list(step):
+            return False
+    return True
 
 
-def _names_ok(step: EventStep) -> bool:
-    """Only plain names reach the generated code; anything else keeps the whole list out."""
-    if step.verb == "call":
-        return compat.is_name(step.method) and 0 <= step.args <= 99
-    return compat.is_name(step.target) and compat.is_signature(step.slot)
+def _target_of(spec: VerbSpec, step: EventStep, root: str) -> str:
+    if any(field.name == "target" for field in spec.fields):
+        return step.target
+    return root
 
 
-#: Every character Python or ``str.splitlines`` treats as a line break, and other control characters.
-_BREAKS = re.compile("[\x00-\x1f\x7f-\x9f\u2028\u2029]")
+class _EmitCtx:
+    """What a verb's ``emit`` reads. ``root`` is the form's object name."""
 
-
-def _one_line(text: str) -> str:
-    """Text for a ``#`` comment: one line, whatever the file held."""
-    return _BREAKS.sub(" ", text)
+    def __init__(self, ctx: CodegenContext, root: str, later_on: bool) -> None:
+        self.root = root
+        self.later_on = later_on
+        self.form_param = ctx.form_param
+        self.attribute_names = ctx.attribute_names
+        self.widgets = ctx.widgets
+        self.trace = ctx.trace
+        self.window = ctx.window
+        self.formats = ctx.formats
 
 
 def _selector(
@@ -157,39 +160,32 @@ def _body(
     ctx: CodegenContext,
     root: str,
     steps: Sequence[EventStep],
+    source_ref: str,
 ) -> str:
     lines: List[str] = []
+    registry = default_registry()
     for number, step in enumerate(steps, 1):
+        spec = registry.get(step.verb)
+        if spec is None:
+            continue
         later_on = any(item.enabled for item in steps[number:])
-        target = root if step.verb == "call" else step.target
+        has_target = any(field.name == "target" for field in spec.fields)
+        target = _target_of(spec, step, root)
         chain: Tuple[str, ...] = ()
         node = doc.node(doc.by_name(target)[0]) if doc.by_name(target) else None
         if node is not None:
             chain = class_chain(classes, compat.node_class(doc, classes, node)[0])
         words = step_words(step, target, is_form=(target == root), target_chain=chain)
         prefix = "#   %d. " % number
+        missing = node is None or (has_target and target != root and target not in ctx.attribute_names)
         if not step.enabled:
-            lines.append(_one_line("%s(off) %s" % (prefix, words)))
-            continue
-        if node is None or (step.verb == "slot" and target != root and target not in ctx.attribute_names):
-            lines.append(_one_line("%s(missing %s) %s" % (prefix, target, words)))
-            continue
-        lines.append(_one_line(prefix + words))
-        lines.append(_statement(step, root, later_on))
-        # The call/slot statement follows its comment.
+            lines.append(one_line("%s(off) %s" % (prefix, words)))
+        elif missing:
+            lines.append(one_line("%s(missing %s) %s" % (prefix, target, words)))
+        else:
+            lines.append(one_line(prefix + words))
+        if ctx.trace:
+            lines.append("self._cbcs_trace(\"step\", %r, %r)" % (one_line(source_ref), one_line(words)))
+        if step.enabled and not missing:
+            lines.extend(spec.emit(step, _EmitCtx(ctx, root, later_on)))
     return "\n".join(lines)
-
-
-def _statement(step: EventStep, root: str, later_on: bool) -> str:
-    if step.verb == "call":
-        call = "self._form.%s(%s)" % (step.method, _args(step.args))
-        if later_on:
-            return "if %s is False:\n    return" % call
-        return call
-    name, params = compat.split_signature(step.slot)
-    owner = "self._form" if step.target == root else "self.%s" % step.target
-    return "%s.%s(%s)" % (owner, name, _args(len(params)))
-
-
-def _args(count: int) -> str:
-    return "*args[:%d]" % count if count else ""

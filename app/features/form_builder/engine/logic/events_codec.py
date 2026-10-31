@@ -12,7 +12,40 @@ from typing import Any, Optional, Sequence, Tuple
 
 from app.features.form_builder.engine.logic import codec as _codec
 
-PLAIN_VERBS = ("slot", "call")
+
+def _verb_spec(name: str) -> object:
+    from app.features.form_builder.engine.logic.verbs import default_registry
+
+    return default_registry().get(name)
+
+
+class _PlainVerbs:
+    """Registered verbs with ``plain=True``, in registration order (slot, then call)."""
+
+    def _names(self) -> Tuple[str, ...]:
+        from app.features.form_builder.engine.logic.verbs import default_registry
+
+        return tuple(spec.name for spec in default_registry().all() if spec.plain)
+
+    def __contains__(self, item: object) -> bool:
+        return item in self._names()
+
+    def __iter__(self) -> object:
+        return iter(self._names())
+
+    def __len__(self) -> int:
+        return len(self._names())
+
+    def __getitem__(self, index: int) -> str:
+        return self._names()[index]
+
+    def __eq__(self, other: object) -> bool:
+        if isinstance(other, (tuple, list)):
+            return self._names() == tuple(other)
+        return NotImplemented
+
+
+PLAIN_VERBS = _PlainVerbs()
 
 
 @dataclass(frozen=True)
@@ -100,8 +133,9 @@ def _from_codec(step: Any) -> EventStep:
     verb = str(step.verb)
     when = step.when if isinstance(step.when, str) else None
     enabled = step.enabled is not False
-    if not step.unknown:
-        if verb == "slot":
+    spec = _verb_spec(verb)
+    if not step.unknown and spec is not None and getattr(spec, "plain", False):
+        if spec.name == "slot":
             target, slot = step.field("target"), step.field("slot")
             if isinstance(target, str) and isinstance(slot, str):
                 return EventStep(
@@ -112,7 +146,7 @@ def _from_codec(step: Any) -> EventStep:
                     enabled=enabled,
                     hints=_hints_of(step),
                 )
-        if verb == "call":
+        if spec.name == "call":
             method, args = step.field("method"), step.field("args", 0)
             if isinstance(method, str) and isinstance(args, int) and not isinstance(args, bool):
                 return EventStep("call", method=method, args=args, when=when, enabled=enabled)
@@ -122,8 +156,14 @@ def _from_codec(step: Any) -> EventStep:
 def _to_codec(step: EventStep) -> Any:
     if step.raw is not None:
         return step.raw
-    if step.verb == "slot":
+    spec = _verb_spec(step.verb)
+    if spec is not None and spec.name == "slot":
         return _codec.slot_step(
             step.target, step.slot, when=step.when, enabled=step.enabled, hints=step.hints
         )
-    return _codec.call_step(step.method, step.args or None, when=step.when, enabled=step.enabled)
+    if spec is not None and spec.name == "call":
+        return _codec.call_step(step.method, step.args or None, when=step.when, enabled=step.enabled)
+    if spec is None:
+        # A step this build does not register still writes the way M6 wrote a non-slot.
+        return _codec.call_step(step.method, step.args or None, when=step.when, enabled=step.enabled)
+    return _codec.Step(step.verb, step.when, step.enabled, (), ())
