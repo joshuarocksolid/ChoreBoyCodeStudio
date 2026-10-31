@@ -89,7 +89,7 @@ def prepare(record: RuleRecord, env: FormulaEnv, trace: bool) -> Prepared:
 def _slot(record: RuleRecord, facts: WidgetFacts, chain: Tuple[str, ...]) -> SlotKind:
     if record.key in _STATE:
         return SlotKind.condition()
-    target = _target(facts, chain)
+    target = value_target(facts, chain)
     fmt = record.fmt or ""
     if fmt == "money":
         target = MONEY
@@ -100,7 +100,8 @@ def _slot(record: RuleRecord, facts: WidgetFacts, chain: Tuple[str, ...]) -> Slo
     return SlotKind.value(target)
 
 
-def _target(facts: WidgetFacts, chain: Tuple[str, ...]):
+def value_target(facts: WidgetFacts, chain: Tuple[str, ...]):
+    """The formula type a widget's value holds (LOGIC 4.3), TEXT when unknown."""
     matched, spec = lookup_spec(facts.class_name, chain)
     if spec is None or matched is None:
         return TEXT

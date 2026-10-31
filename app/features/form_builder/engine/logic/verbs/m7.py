@@ -17,22 +17,6 @@ from app.features.form_builder.engine.logic.verbs import FieldSpec, VerbSpec, re
 _LEVELS = {"info": "information", "warning": "warning", "critical": "critical"}
 _CLOSE = {"accept": "accept", "reject": "reject", "close": "close"}
 _CLOSE_WORDS = {"accept": "Accept (OK)", "reject": "Cancel", "close": "Close this form"}
-_TEXT_WRITE = {
-    "QLineEdit": "setText",
-    "QLabel": "setText",
-    "QPlainTextEdit": "setPlainText",
-    "QTextEdit": "setPlainText",
-    "QComboBox": "setCurrentText",
-}
-_VALUE_WRITE = {
-    "QSpinBox": "setValue",
-    "QSlider": "setValue",
-    "QDial": "setValue",
-    "QProgressBar": "setValue",
-    "QDoubleSpinBox": "setValue",
-}
-_CHECK_WRITE = {"QCheckBox": "setChecked", "QRadioButton": "setChecked"}
-_DATE_WRITE = {"QDateEdit": "setDate", "QTimeEdit": "setTime", "QDateTimeEdit": "setDateTime"}
 _CLEAR = {
     "QLineEdit": 'setText(u"")',
     "QLabel": 'setText(u"")',
@@ -128,22 +112,19 @@ def _prop_text(ctx: Any, name: str, key: str) -> str:
 
 
 def _env(ctx: Any) -> Any:
+    """The form's real formula env (M7.2a): kinds, formats, window methods, class chain."""
     cached = getattr(ctx, "formula_env", None)
     if cached is not None:
         return cached
-    from app.features.form_builder.engine.logic.formula.env import FormulaEnv, WidgetFacts
+    from app.features.form_builder.engine.logic.formula.env import FormulaEnv
+    from app.features.form_builder.engine.logic.formula_env import env_for
+    from app.features.form_builder.engine.ui4.defaults import QtClassTable
 
     doc = getattr(ctx, "doc", None)
-    classes = getattr(ctx, "classes", None)
-    widgets: Dict[str, Any] = {}
-    if doc is not None and classes is not None:
-        for node in doc.iter_preorder():
-            name = getattr(node, "object_name", None) or getattr(node, "name", None)
-            if not isinstance(name, str) or not name:
-                continue
-            class_name = compat.node_class(doc, classes, node)[0]
-            widgets[name] = WidgetFacts(class_name or "QWidget", display=name)
-    env = FormulaEnv.for_test(widgets)
+    if doc is None:
+        env = FormulaEnv.for_test({})
+    else:
+        env = env_for(doc, getattr(ctx, "window", None), QtClassTable.shared())
     if ctx is not None:
         try:
             ctx.formula_env = env
@@ -430,39 +411,29 @@ def _emit_validate(step: Any, ctx: Any) -> Tuple[str, ...]:
     return ("if not self.cbcs_validate():", "    return")
 
 
-def _set_type(class_name: str) -> Any:
-    from app.features.form_builder.engine.logic.formula.types import DATE, NUMBER, TEXT, WHOLE, YESNO
-
-    if class_name in _VALUE_WRITE:
-        return NUMBER if class_name == "QDoubleSpinBox" else WHOLE
-    if class_name in _CHECK_WRITE:
-        return YESNO
-    if class_name in _DATE_WRITE:
-        return DATE
-    return TEXT
-
-
 def _emit_set(step: Any, ctx: Any) -> Tuple[str, ...]:
+    from app.features.form_builder.engine.codegen.expanders.defaults import value_target, write_value
     from app.features.form_builder.engine.logic.formula.env import SlotKind
 
     name = _text(step, "field")
     if not _present(ctx, name):
         return ("# (missing %s)" % name,)
+    env = _env(ctx)
+    facts = env.widgets.get(name)
+    if facts is None:
+        return ("# (missing %s)" % name,)
+    chain = env.class_chain(facts.class_name)
     ctx.step = step
-    source, code = compile_text(_text(step, "formula"), SlotKind.set(_set_type(_class_of(ctx, name))), ctx)
+    source, code = compile_text(_text(step, "formula"), SlotKind.set(value_target(facts, chain)), ctx)
     if code or not source:
         return _skip(ctx, code or "FB108")
-    owner = _owner(ctx, name)
-    class_name = _class_of(ctx, name)
-    if class_name in _TEXT_WRITE:
-        return ("%s.%s(str(%s))" % (owner, _TEXT_WRITE[class_name], source),)
-    if class_name in _VALUE_WRITE:
-        return ("%s.%s(%s)" % (owner, _VALUE_WRITE[class_name], source),)
-    if class_name in _CHECK_WRITE:
-        return ("%s.setChecked(bool(%s))" % (owner, source),)
-    if class_name in _DATE_WRITE:
-        return ("%s.%s(%s)" % (owner, _DATE_WRITE[class_name], source),)
-    return ("%s.setText(str(%s))" % (owner, source),)
+    # The same write a Value rule uses, so a blank lands as blank (or the minimum), never "None".
+    lines, helpers, imports = write_value(name, facts, chain, "", source)
+    for helper in helpers:
+        _add(ctx, "helpers", helper)
+    for item in imports:
+        _add(ctx, "imports", item)
+    return tuple(lines)
 
 
 def _emit_clear(step: Any, ctx: Any) -> Tuple[str, ...]:
@@ -520,7 +491,11 @@ def _emit_message(step: Any, ctx: Any) -> Tuple[str, ...]:
         source, code = compile_text(formula, SlotKind.message(), ctx)
         if code or not source:
             return _skip(ctx, code or "FB108")
-        expr = "str(%s)" % source
+        # A blank shows as an empty message, never "None"; numbers read like the form shows them.
+        expr = '(_cbcs_text(%s) or "")' % source
+        _add(ctx, "helpers", "_cbcs_text")
+        for item in (("decimal", "Decimal"), ("decimal", "ROUND_HALF_UP")):
+            _add(ctx, "imports", item)
     else:
         expr = _quote(_text(step, "text"))
     return (_message_call(level, expr),)

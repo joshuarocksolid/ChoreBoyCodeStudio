@@ -280,7 +280,8 @@ def test_each_verb_emits_and_runs(tmp_path: Path, qapp: Any) -> None:
     source = generate(_form(*steps), tmp_path)
     ast.parse(source, feature_version=(3, 9))
     for fragment in (
-        'self.nameEdit.setText(str(\'Hi\'))',
+        "_cbcs_value = 'Hi'",
+        'self.nameEdit.setText("" if _cbcs_value is None else _cbcs_value)',
         "self.phoneEdit.setFocus()",
         "self.giftCheck.setEnabled(True)",
         "self.nameEdit.show()",
@@ -419,3 +420,33 @@ def test_opened_is_the_last_setup_line_and_closing_uses_the_guard(tmp_path: Path
     QCoreApplication.sendEvent(win, event)
     assert win.isVisible()
     assert not event.isAccepted()
+
+
+def test_a_blank_set_or_message_never_shows_none(tmp_path: Path, qapp: Any) -> None:
+    del qapp
+
+    from PySide6.QtWidgets import QMessageBox
+
+    shown: List[str] = []
+
+    class _Box:
+        StandardButton = QMessageBox.StandardButton
+
+        @staticmethod
+        def information(_parent: Any, _title: str, text: str) -> None:
+            shown.append(text)
+
+    source = generate(
+        _form(
+            _step({"do": "set", "field": "qtySpin", "formula": "whole(1 / 0)"}),
+            _step({"do": "message", "formula": "nameEdit"}),
+        ),
+        tmp_path,
+    )
+    win = _load(source, [], boxes=_Box)
+    win.ui.qtySpin.setValue(win.ui.qtySpin.minimum() + 5)
+    win.ui.nameEdit.setText("")
+    win.ui.clearButton.click()
+    assert "# step" not in source.split("def _cbcs_clearButton_clicked", 1)[1].split("def ", 1)[0]
+    assert win.ui.qtySpin.value() == win.ui.qtySpin.minimum()
+    assert shown == [""]
