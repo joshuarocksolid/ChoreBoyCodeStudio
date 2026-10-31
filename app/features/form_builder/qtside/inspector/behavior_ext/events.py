@@ -19,7 +19,7 @@ from app.qt.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
-from app.qt.qt_compat import enum_value
+from app.qt.qt_compat import delete_now, enum_value
 
 from app.features.form_builder.engine.ui4.defaults import QtClassTable
 from app.features.form_builder.qtside.inspector._services import Dropped, Rejected
@@ -462,8 +462,27 @@ class EventsBody(QWidget):
             return
         if outcome.status == "METHOD_UNUSED":
             _narrate(self, unused_method_sentence(outcome.unused_method, _window_file(self)))
-        elif outcome.status:
+        if outcome.status:
             _narrate(self, outcome.status)
+
+    def _only_if(self, row: "_Row") -> None:
+        from app.qt.QtWidgets import QDialog, QLineEdit, QVBoxLayout
+        from app.qt.qt_compat import exec_qt
+
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Only if")
+        dialog.setObjectName("formBuilder.onlyIfDialog")
+        edit = QLineEdit(dialog)
+        edit.setObjectName("formBuilder.onlyIf")
+        edit.setAccessibleName("Only if")
+        edit.setText(getattr(row, "_only_if_text", "").replace("only if ", "", 1))
+        column = QVBoxLayout(dialog)
+        column.addWidget(edit)
+        edit.returnPressed.connect(dialog.accept)
+        edit.setFocus()
+        if exec_qt(dialog) != enum_value(QDialog.DialogCode.Accepted):
+            return
+        self._run(Gesture("set_when", row.signal_name, row.step_index, condition=edit.text()))
 
     def _fix(self, row: "_Row") -> None:
         event = getattr(row, "_event", None)
@@ -533,7 +552,7 @@ def _release_groups(layout: QVBoxLayout, groups: List["_Group"]) -> None:
             layout.takeAt(index)
             widget.hide()
             widget.setParent(None)
-            widget.deleteLater()
+            delete_now(widget)
         index -= 1
 
 
@@ -548,7 +567,7 @@ class _ThenButton(QPushButton):
 class _Group(QWidget):
     def __init__(self, body: EventsBody, event: EventView, editing: bool) -> None:
         super().__init__(body)
-        self.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Minimum)
+        self.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Minimum)
         self._body = body
         self._editable = editing and not event.locked
         column = QVBoxLayout(self)
@@ -696,14 +715,30 @@ class _Row(QWidget):
         self.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
         self.setAccessibleName(accessible)
         self.setToolTip(text)
+        head, _sep, condition = text.partition("\n")
+        if condition:
+            self.setFixedHeight(40)
         line = QHBoxLayout(self)
         line.setContentsMargins(2, 0, 2, 0)
-        self._label = QLabel(text, self)
+        text_col = QVBoxLayout()
+        text_col.setContentsMargins(0, 0, 0, 0)
+        text_col.setSpacing(0)
+        self._label = QLabel(head, self)
+        self._label.setWordWrap(True)
         self._label.setMinimumWidth(0)
-        self._label.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred)
+        self._label.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
         self._label.setToolTip(text)
         self._label.setAccessibleName(accessible)
-        line.addWidget(self._label, 1)
+        text_col.addWidget(self._label)
+        if condition:
+            only = QLabel(condition, self)
+            only.setObjectName("formBuilder.events.onlyIf")
+            only.setWordWrap(True)
+            only.setMinimumWidth(0)
+            only.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+            only.setStyleSheet("color: %s; background: transparent;" % body._chrome.faint)
+            text_col.addWidget(only)
+        line.addLayout(text_col, 1)
         # Step rows build the menu button on hover or focus. Header rows show it
         # immediately. A by-name row puts it last, after the place link.
         self._menu: Optional[QToolButton] = None
@@ -729,7 +764,8 @@ class _Row(QWidget):
         if problem:
             self._label.setStyleSheet("color: %s;" % body._chrome.error)
         self.installEventFilter(body)
-        self._full = text
+        self._full = head
+        self._only_if_text = condition
         if step is not None and step.unknown:
             self._label.setStyleSheet("color: %s;" % warning_color(body._chrome))
 
@@ -871,6 +907,8 @@ class _Row(QWidget):
             self._ensure_header_menu()
             return
         menu = QMenu(self)
+        if not self.readonly and self.step_index >= 0:
+            menu.addAction("Only if\u2026", lambda: self._body._only_if(self))
         if not self.readonly:
             word = "Turn on" if self._off else "Turn off"
             menu.addAction(word, lambda: self._body._run(Gesture("toggle", self.signal_name, self.step_index)))

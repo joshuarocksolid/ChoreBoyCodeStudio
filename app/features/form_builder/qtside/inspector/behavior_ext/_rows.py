@@ -7,6 +7,7 @@ sentence, or nothing). Nothing here touches the undo log.
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, replace
 from typing import Dict, List, Optional, Sequence, Tuple
 
@@ -149,6 +150,9 @@ class Gesture:
     method: str = ""
     args: int = 0
     new_signal: str = ""
+    verb: str = ""
+    verb_fields: str = ""
+    condition: str = ""
 
 
 @dataclass(frozen=True)
@@ -222,6 +226,8 @@ def project_sender(
         _event_view(doc, classes, state, chain, qt_names, read_only)
         for state in events_of_sender(doc, sender)
     )
+    if sender == doc.root.object_name:
+        events = _with_form_events(doc, classes, sender, chain, qt_names, read_only, events)
     empty = _empty_sentence(display, default, chain)
     caption = "" if read_only else (CODE_CAPTION if _goes_to_code(chain) and not events else "")
     view = SenderView(
@@ -294,6 +300,10 @@ def project_form(doc: UiDocument, classes: QtClassTable) -> Tuple[FormRow, ...]:
     for state in states:
         chain = _chain_of(doc, classes, state.sender)
         header = event_words(state.signal_name, chain).header
+        if state.sender == doc.root.object_name and state.signal_name == "opened":
+            header = "the form opens"
+        elif state.sender == doc.root.object_name and state.signal_name == "closing":
+            header = "the form closes"
         sender_display = display_name(doc, state.sender)
         missing_sender = state.sender not in names
         for index, step in enumerate(state.steps):
@@ -304,6 +314,8 @@ def project_form(doc: UiDocument, classes: QtClassTable) -> Tuple[FormRow, ...]:
             else:
                 lead = sender_display
             words = "%s \u00b7 When %s \u2192 %s" % (lead, header, _row_words(doc, classes, step))
+            if step.when:
+                words = "%s\nonly if %s" % (words, step.when)
             if step.verb == "slot" and _layout_named(doc, step.target):
                 words = "%s \u00b7 kept" % words
             found.append(FormRow(state.sender, state.signal_name, index, words, missing))
@@ -329,6 +341,10 @@ def finish(doc: UiDocument, classes: QtClassTable, key: str, gesture: Gesture) -
         return _add_slot(doc, classes, key, gesture)
     if gesture.kind == "add_call":
         return _add_call(doc, classes, key, gesture)
+    if gesture.kind == "add_verb":
+        return _add_verb(doc, classes, key, gesture)
+    if gesture.kind == "set_when":
+        return _set_when(doc, classes, key, gesture)
     if gesture.kind == "merge":
         return _merge(doc, classes, key, gesture)
     if gesture.kind == "change_event":
@@ -448,7 +464,7 @@ def _step_view(
     header: str,
     read_only: bool,
 ) -> StepView:
-    unknown = step.raw is not None or not _editable_verb(step.verb)
+    unknown = not _editable_verb(step.verb) or _plain_with_extra(step)
     missing = _missing(doc, step)
     if unknown:
         words = "A step Code Studio can't edit (%s)" % step.verb
@@ -459,6 +475,8 @@ def _step_view(
     spoken = words
     if not unknown and not missing and not step.enabled:
         words = "%s (off)" % words
+    if not unknown and step.when:
+        words = "%s\nonly if %s" % (words, step.when)
     problem = ""
     if missing:
         problem = "Step %d of %s %s acts on %s, which isn't on this form." % (
@@ -470,6 +488,8 @@ def _step_view(
     accessible = "When %s, step %d of %d: %s" % (header, index + 1, max(len(state.steps), 1), spoken)
     if not step.enabled and not unknown:
         accessible += ", turned off"
+    if not unknown and step.when:
+        accessible += ", only if %s" % step.when
     if problem:
         accessible += ", problem: %s" % problem
     return StepView(
@@ -566,7 +586,46 @@ def _aims_at(doc: UiDocument, step: EventStep, target: str) -> bool:
 
 
 def _missing(doc: UiDocument, step: EventStep) -> bool:
-    return step.verb == "slot" and bool(step.target) and step.target not in doc.names()
+    if step.verb == "slot":
+        return bool(step.target) and step.target not in doc.names()
+    name = ""
+    raw = step.raw
+    if raw is not None:
+        field = raw.field("field")
+        if isinstance(field, str):
+            name = field
+    return bool(name) and name not in doc.names()
+
+
+def _plain_with_extra(step: EventStep) -> bool:
+    from app.features.form_builder.engine.logic.verbs import default_registry
+
+    spec = default_registry().get(step.verb)
+    return spec is not None and spec.plain and step.raw is not None
+
+
+def _with_form_events(
+    doc: UiDocument,
+    classes: QtClassTable,
+    sender: str,
+    chain: Sequence[str],
+    qt_names: bool,
+    read_only: bool,
+    events: Tuple[EventView, ...],
+) -> Tuple[EventView, ...]:
+    titles = {
+        "opened": "When the form opens",
+        "closing": "Before the form closes (the form stays open if a step stops)",
+    }
+    by_signal = {event.signal: event for event in events}
+    front = []
+    for signal, title in titles.items():
+        current = by_signal.get(signal)
+        if current is None:
+            current = _event_view(doc, classes, read_event(doc, sender, signal), chain, qt_names, read_only)
+        front.append(replace(current, header=title, accessible=title))
+    rest = tuple(event for event in events if event.signal not in titles)
+    return tuple(front) + rest
 
 
 def _bad_name(state: EventState) -> bool:
@@ -620,7 +679,7 @@ def _editable_verb(verb: str) -> bool:
 
 
 def _readonly_step(step: EventStep) -> bool:
-    return step.raw is not None or not _editable_verb(step.verb)
+    return not _editable_verb(step.verb) or _plain_with_extra(step)
 
 
 # --- gestures ----------------------------------------------------------------------------
@@ -798,6 +857,66 @@ def _add_call(doc: UiDocument, classes: QtClassTable, sender: str, gesture: Gest
     command = steps_added(doc, sender, gesture.signal, (step,), caption)
     ask = MethodAsk(caption, (command,), gesture.method, "", sender, header)
     return Outcome(None, "", ask, gesture.signal, len(state.steps))
+
+
+def _add_verb(doc: UiDocument, classes: QtClassTable, sender: str, gesture: Gesture) -> Optional[Outcome]:
+    if not gesture.verb or not gesture.signal:
+        return None
+    state = read_event(doc, sender, gesture.signal)
+    if state.has_unreadable_list or _bad_name(state):
+        return None
+    try:
+        fields = json.loads(gesture.verb_fields) if gesture.verb_fields else {}
+    except ValueError:
+        return None
+    if not isinstance(fields, dict):
+        return None
+    payload = {"do": gesture.verb}
+    for key, value in fields.items():
+        if value is None or value == "":
+            continue
+        if key == "fields" and isinstance(value, str):
+            names = [part.strip() for part in value.split(",") if part.strip()]
+            if names:
+                payload[key] = names
+            continue
+        payload[key] = value
+    from app.features.form_builder.engine.logic.events_codec import read_list
+
+    parsed = read_list(json.dumps([payload]))
+    if parsed.error or not parsed.steps:
+        return None
+    step = parsed.steps[0]
+    chain = _chain_of(doc, classes, sender)
+    header = event_words(gesture.signal, chain).header
+    words = _short_words(doc, classes, step)
+    if gesture.index >= 0 and gesture.index < len(state.steps):
+        steps = list(state.steps)
+        steps[gesture.index] = step
+        return _written(sender, gesture.signal, tuple(steps), "Change to %s" % words, "", gesture.index)
+    caption = "Add %s to %s %s" % (words, display_name(doc, sender), header)
+    command = steps_added(doc, sender, gesture.signal, (step,), caption)
+    return Outcome(command, "", None, gesture.signal, len(state.steps))
+
+
+def _set_when(doc: UiDocument, classes: QtClassTable, sender: str, gesture: Gesture) -> Optional[Outcome]:
+    state = read_event(doc, sender, gesture.signal)
+    if state.has_unreadable_list or _bad_name(state) or not (0 <= gesture.index < len(state.steps)):
+        return None
+    old = state.steps[gesture.index]
+    if _readonly_step(old):
+        return None
+    condition = gesture.condition.strip()
+    when = condition or None
+    if old.raw is not None:
+        updated = replace(old, when=when, raw=replace(old.raw, when=when))
+    else:
+        updated = replace(old, when=when)
+    steps = list(state.steps)
+    steps[gesture.index] = updated
+    words = _short_words(doc, classes, updated)
+    caption = "Set only if for %s" % words
+    return _written(sender, gesture.signal, tuple(steps), caption, "", gesture.index)
 
 
 def _merge(doc: UiDocument, classes: QtClassTable, sender: str, gesture: Gesture) -> Optional[Outcome]:

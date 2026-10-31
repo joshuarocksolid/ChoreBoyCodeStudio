@@ -1785,17 +1785,23 @@ class _Emitter:
             widgets=self._widgets,
             trace=self.trace,
         )
+        from app.features.form_builder.engine.logic.verbs.m7 import bind_form_lookup, reset_form_lookup
+
+        token = bind_form_lookup(self.scope)
         found = []
-        for expander in load_expanders():
-            try:
-                found.append(expander.contribute(self.doc, ctx))
-            except Exception:
-                # A broken expander adds no lines. The rest of the form still generates.
-                name = getattr(expander, "expander_id", type(expander).__name__)
-                self.warn(
-                    "FB504",
-                    'Logic expander "%s" failed and added nothing.' % name,
-                )
+        try:
+            for expander in load_expanders():
+                try:
+                    found.append(expander.contribute(self.doc, ctx))
+                except Exception:
+                    # A broken expander adds no lines. The rest of the form still generates.
+                    name = getattr(expander, "expander_id", type(expander).__name__)
+                    self.warn(
+                        "FB504",
+                        'Logic expander "%s" failed and added nothing.' % name,
+                    )
+        finally:
+            reset_form_lookup(token)
         return found
 
     def _has_logic(self, contributions: Sequence[Contribution]) -> bool:
