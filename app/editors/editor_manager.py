@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
+from app.bootstrap.paths import cached_resolve
 from app.editors.editor_tab import EditorTabState
 from app.persistence.atomic_write import atomic_write_text
 
@@ -20,17 +21,13 @@ class OpenedTabResult:
     promoted_from_preview: bool = False
 
 
-_RESOLVED_PATHS: dict[str, str] = {}
+def normalized_path(file_path: str) -> str:
+    """The resolved path, remembered for the session so a later caller does not stat again."""
+    return cached_resolve(file_path)
 
 
 def _normalize(file_path: str) -> str:
-    cached = _RESOLVED_PATHS.get(file_path)
-    if cached is not None:
-        return cached
-    resolved = str(Path(file_path).expanduser().resolve())
-    _RESOLVED_PATHS[file_path] = resolved
-    _RESOLVED_PATHS[resolved] = resolved
-    return resolved
+    return normalized_path(file_path)
 
 
 class EditorManager:

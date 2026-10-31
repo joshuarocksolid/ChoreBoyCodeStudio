@@ -38,6 +38,9 @@ class MainWindowLifecycle:
             event.ignore()
             return
         window._is_shutting_down = True
+        from app.bootstrap.paths import clear_resolved_cache
+
+        clear_resolved_cache()
         if hasattr(window, "_run_debug_presenter"):
             window._run_debug_presenter.clear_pending_restart()
         MainWindowLifecycle.begin_shutdown_teardown(window)

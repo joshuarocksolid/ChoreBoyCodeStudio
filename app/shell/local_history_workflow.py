@@ -276,8 +276,10 @@ class LocalHistoryWorkflow:
             return (None, None)
         metadata = getattr(loaded_project, "metadata", None)
         project_id = None if metadata is None else getattr(metadata, "project_id", None)
-        normalized_file_path = Path(file_path).expanduser().resolve()
-        project_root = Path(loaded_project.project_root).expanduser().resolve()
+        from app.editors.editor_manager import normalized_path
+
+        normalized_file_path = Path(normalized_path(file_path))
+        project_root = Path(normalized_path(str(loaded_project.project_root)))
         try:
             normalized_file_path.relative_to(project_root)
         except ValueError:

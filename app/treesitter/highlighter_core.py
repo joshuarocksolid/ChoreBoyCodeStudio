@@ -119,9 +119,12 @@ class TreeSitterHighlighter(
         self._last_ts_ranges: list[tuple[int, int]] = []
         self._last_synced_revision: int = document.revision() if document is not None else -1
         self._local_timer: Any | None = None
+        self._initial_parse_timer: Any | None = None
+        self._initial_parse_armed = False
         if document is not None:
             document.contentsChange.connect(self._on_contents_change)
             document.contentsChanged.connect(self._on_contents_changed)
+            self._arm_initial_parse()
 
     def language_key(self) -> str:
         return self._language_key
@@ -135,6 +138,7 @@ class TreeSitterHighlighter(
     def setDocument(self, document) -> None:  # type: ignore[no-untyped-def]  # noqa: N802
         if document is None:
             self._is_disposed = True
+            self._stop_initial_parse()
         previous_document = self.document()
         if previous_document is not None:
             try:
@@ -160,6 +164,7 @@ class TreeSitterHighlighter(
             self._is_disposed = False
             document.contentsChange.connect(self._on_contents_change)
             document.contentsChanged.connect(self._on_contents_changed)
+            self._arm_initial_parse()
 
     def _compile_query(self, *, query_source: str, query_kind: str) -> Any | None:
         if not query_source.strip():
@@ -373,6 +378,44 @@ class TreeSitterHighlighter(
             fallback_line_ranges=[(start, end)],
         )
         self._rehighlight_line_window(start, end)
+
+    def _stop_initial_parse(self) -> None:
+        timer = getattr(self, "_initial_parse_timer", None)
+        if timer is not None:
+            timer.stop()
+        self._initial_parse_armed = False
+
+    def _arm_initial_parse(self) -> None:
+        """Parse after the tab switch returns, so the first edit already has a tree.
+
+        The timer is a child of this highlighter. A bare singleShot keeps the
+        callback alive after the document is gone and runs it inside whatever
+        later test pumps the event loop.
+        """
+        if self._initial_parse_armed or self._tree is not None or self._query is None:
+            return
+        self._initial_parse_armed = True
+        from app.qt.QtCore import QTimer
+
+        timer = self._initial_parse_timer
+        if timer is None:
+            timer = QTimer(self)
+            timer.setSingleShot(True)
+            timer.timeout.connect(self._run_initial_parse)
+            self._initial_parse_timer = timer
+        timer.start(0)
+
+    def _run_initial_parse(self) -> None:
+        self._initial_parse_armed = False
+        if self._is_disposed or self._tree is not None or self._query is None:
+            return
+        # The cache is what the first edit and the next paint both read.
+        # rehighlight() would apply formats without blocking the document,
+        # and those signals look like an edit that drops the tree.
+        try:
+            self._ensure_tree_and_cache()
+        except RuntimeError:
+            self._is_disposed = True
 
     def _ensure_tree_and_cache(self) -> None:
         if not self._dirty and not self._viewport_dirty and self._capture_cache:

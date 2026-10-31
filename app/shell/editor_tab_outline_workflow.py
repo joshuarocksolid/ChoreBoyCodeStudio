@@ -144,7 +144,9 @@ class EditorTabOutlineWorkflow:
         surface = surface_for_path(file_path)
         if surface is not None:
             return surface
-        resolved = str(Path(file_path).expanduser().resolve())
+        from app.editors.editor_manager import normalized_path
+
+        resolved = normalized_path(file_path)
         if resolved == file_path:
             return None
         return surface_for_path(resolved)

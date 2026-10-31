@@ -4,7 +4,7 @@ from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any
 
-from app.bootstrap.paths import PathInput, global_settings_path, project_settings_path
+from app.bootstrap.paths import PathInput, cached_resolve, global_settings_path, project_settings_path
 from app.core import constants
 from app.persistence.settings_store import (
     compute_effective_settings_payload,
@@ -52,7 +52,7 @@ class SettingsService:
         return updated_payload
 
     def load_project(self, project_root: PathInput, *, force_refresh: bool = False) -> dict[str, Any]:
-        cache_key = str(Path(project_root).expanduser().resolve())
+        cache_key = cached_resolve(str(project_root))
         if force_refresh or cache_key not in self._cached_project_payloads:
             self._cached_project_payloads[cache_key] = load_project_settings(project_root)
         return dict(self._cached_project_payloads[cache_key])

@@ -43,6 +43,10 @@ class EditorTabBufferWorkflow:
         self._markdown_workflow = markdown_workflow
         self._tab_workflow = tab_workflow
         self._text_revision_by_path: dict[str, int] = {}
+        self._reveal_pending: str | None = None
+        self._outline_idle_armed = False
+        self._outline_needs_flush = False
+        self._tab_change_depth = 0
 
     def set_editor_manager(self, editor_manager: EditorManager) -> None:
         self._editor_manager = editor_manager
@@ -159,6 +163,16 @@ class EditorTabBufferWorkflow:
         )
 
     def handle_editor_tab_changed(self, tab_index: int) -> None:
+        self._tab_change_depth += 1
+        try:
+            self._apply_editor_tab_changed(tab_index)
+        finally:
+            self._tab_change_depth -= 1
+            if self._tab_change_depth == 0 and self._outline_needs_flush:
+                self._outline_needs_flush = False
+                self._arm_outline_timer()
+
+    def _apply_editor_tab_changed(self, tab_index: int) -> None:
         editor_tabs_widget = self._host.editor_tabs_widget()
         if tab_index < 0 or editor_tabs_widget is None:
             return
@@ -174,13 +188,52 @@ class EditorTabBufferWorkflow:
         self._tab_workflow.update_indent_status_for_path(tab_path)
         self._tab_workflow.check_for_external_file_change(tab_path)
         self._host.render_lint_diagnostics_for_file(tab_path, trigger="tab_change")
-        self._outline_workflow.handle_active_tab_changed()
-        self._host.reveal_project_tree_path(tab_path)
+        self._schedule_outline_refresh()
+        self._schedule_tree_reveal(tab_path)
         tab_state = self._editor_manager.get_tab(tab_path)
         if tab_state is not None and not tab_state.is_preview:
             registry_getter = getattr(self._host, "tab_content_registry", None)
             registry = registry_getter() if callable(registry_getter) else None
             focus_primary_surface(registry, tab_state.file_path)
+
+    def _schedule_outline_refresh(self) -> None:
+        """The outline worker starts on the next idle turn, not inside the tab switch."""
+        if self._tab_change_depth:
+            self._outline_needs_flush = True
+            return
+        self._arm_outline_timer()
+
+    def _arm_outline_timer(self) -> None:
+        if self._outline_idle_armed:
+            return
+        self._outline_idle_armed = True
+        from app.qt.QtCore import QTimer
+
+        QTimer.singleShot(0, self._flush_outline)
+
+    def _flush_outline(self) -> None:
+        self._outline_idle_armed = False
+        if self._tab_change_depth:
+            self._outline_needs_flush = True
+            return
+        self._outline_workflow.handle_active_tab_changed()
+
+    def _schedule_tree_reveal(self, tab_path: str) -> None:
+        """One reveal for the two tab-changed signals, on the next idle turn."""
+        already = self._reveal_pending is not None
+        self._reveal_pending = tab_path
+        if already:
+            return
+        from app.qt.QtCore import QTimer
+
+        QTimer.singleShot(0, self._flush_tree_reveal)
+
+    def _flush_tree_reveal(self) -> None:
+        path = self._reveal_pending
+        self._reveal_pending = None
+        if not path:
+            return
+        self._host.reveal_project_tree_path(path)
 
     def _editor_status_sentence(self, file_path: str) -> str | None:
         """A tab surface may replace the line and column with its own sentence."""

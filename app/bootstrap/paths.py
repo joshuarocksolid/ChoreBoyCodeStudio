@@ -12,6 +12,75 @@ from app.core import constants
 
 PathInput = Union[str, Path]
 
+# One tab open resolves a handful of paths. 4096 covers a long session
+# without keeping a mapping from before a rename or a new symlink.
+RESOLVED_CACHE_LIMIT = 4096
+_RESOLVED_PATHS: dict[str, str] = {}
+
+
+def cached_resolve(file_path: str) -> str:
+    """Resolve an existing path, reusing a bounded session cache.
+
+    A path that does not exist yet is resolved every time, so a symlink
+    created at that location is seen on the next call.
+    """
+    cached = _RESOLVED_PATHS.get(file_path)
+    if cached is not None:
+        _touch_resolved(file_path, cached)
+        return cached
+    resolved_path = Path(file_path).expanduser().resolve()
+    resolved = str(resolved_path)
+    if not resolved_path.exists():
+        return resolved
+    _touch_resolved(file_path, resolved)
+    if resolved != file_path:
+        _touch_resolved(resolved, resolved)
+    return resolved
+
+
+def invalidate_resolved(prefix: str) -> None:
+    """Drop cached resolutions of ``prefix`` and everything under it."""
+    if not prefix:
+        return
+    expanded = str(Path(prefix).expanduser())
+    needles = {prefix, expanded}
+    for key in (prefix, expanded):
+        cached = _RESOLVED_PATHS.get(key)
+        if cached:
+            needles.add(cached)
+    drop = [
+        key
+        for key, value in _RESOLVED_PATHS.items()
+        if any(_path_covers(key, needle) or _path_covers(value, needle) for needle in needles)
+    ]
+    for key in drop:
+        _RESOLVED_PATHS.pop(key, None)
+
+
+def clear_resolved_cache() -> None:
+    """Drop every cached resolution. Called when a project opens or closes."""
+    _RESOLVED_PATHS.clear()
+
+
+def resolved_cache_size() -> int:
+    return len(_RESOLVED_PATHS)
+
+
+def _touch_resolved(key: str, value: str) -> None:
+    _RESOLVED_PATHS.pop(key, None)
+    _RESOLVED_PATHS[key] = value
+    while len(_RESOLVED_PATHS) > RESOLVED_CACHE_LIMIT:
+        _RESOLVED_PATHS.pop(next(iter(_RESOLVED_PATHS)))
+
+
+def _path_covers(path: str, prefix: str) -> bool:
+    if path == prefix:
+        return True
+    base = prefix.rstrip("/\\")
+    if not base:
+        return False
+    return path.startswith(base + "/") or path.startswith(base + "\\")
+
 
 @dataclass(frozen=True)
 class ProductStateLayout:
@@ -259,7 +328,10 @@ def resolve_project_path(project_root: PathInput, relative_path: PathInput) -> P
 
 
 def _normalize_project_root(project_root: PathInput) -> Path:
-    return _normalize_absolute_path(project_root, "project_root")
+    candidate = Path(project_root).expanduser()
+    if not candidate.is_absolute():
+        raise ValueError("project_root must be an absolute path")
+    return Path(cached_resolve(str(candidate)))
 
 
 def _global_state_child(name: str, state_root: Optional[PathInput]) -> Path:

@@ -201,40 +201,54 @@ class ProjectTreePresenter:
             item.setIcon(0, icon)
 
     def reveal_path(self, file_path: str) -> None:
-        """Select and scroll to the tree item matching ``file_path``."""
+        """Select and scroll to the tree item matching ``file_path``.
+
+        The match is a string. Resolving every row stats each path component,
+        and on ChoreBoy one lstat is about as expensive as the rest of the open.
+        """
         if self._reveal_suppressed:
             return
         window = self._window
         tree = window._project_tree_widget
         if tree is None or not file_path:
             return
-        try:
-            target = str(Path(file_path).expanduser().resolve())
-        except OSError:
+        relative = self._relative_path_for(file_path)
+        if not relative:
             return
-        for item in self.iter_items():
+        self._materialize_path(relative)
+        item = self._find_item_by_relative_path(relative)
+        if item is None:
+            return
+        parent = item.parent()
+        while parent is not None:
+            self.ensure_children_loaded(parent)
+            if not parent.isExpanded():
+                parent.setExpanded(True)
+                if bool(parent.data(0, TREE_ROLE_IS_DIRECTORY)):
+                    self.set_folder_icon(parent, expanded=True)
+            parent = parent.parent()
+        tree.clearSelection()
+        tree.setCurrentItem(item)
+        item.setSelected(True)
+        tree.scrollToItem(item, QAbstractItemView.PositionAtCenter)
+
+    def _relative_path_for(self, file_path: str) -> str:
+        from app.editors.editor_manager import normalized_path
+
+        target = normalized_path(file_path)
+        loaded = getattr(self._window, "_loaded_project", None)
+        root = ""
+        if loaded is not None:
+            root = normalized_path(str(getattr(loaded, "project_root", "") or ""))
+        if root:
+            prefix = root if root.endswith("/") else root + "/"
+            if target.startswith(prefix):
+                return target[len(prefix):]
+        for item in self._item_by_relative_path.values():
             raw = str(item.data(0, TREE_ROLE_ABSOLUTE_PATH) or "")
-            if not raw:
-                continue
-            try:
-                candidate = str(Path(raw).expanduser().resolve())
-            except OSError:
-                continue
-            if candidate != target:
-                continue
-            parent = item.parent()
-            while parent is not None:
-                self.ensure_children_loaded(parent)
-                if not parent.isExpanded():
-                    parent.setExpanded(True)
-                    if bool(parent.data(0, TREE_ROLE_IS_DIRECTORY)):
-                        self.set_folder_icon(parent, expanded=True)
-                parent = parent.parent()
-            tree.clearSelection()
-            tree.setCurrentItem(item)
-            item.setSelected(True)
-            tree.scrollToItem(item, QAbstractItemView.PositionAtCenter)
-            return
+            if raw == target:
+                return str(item.data(0, TREE_ROLE_RELATIVE_PATH) or "")
+        return ""
 
     def iter_items(self) -> list[QTreeWidgetItem]:
         window = self._window
