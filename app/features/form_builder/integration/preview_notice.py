@@ -225,6 +225,10 @@ class PreviewNotices:
         self.last_response: Optional[Response] = None
         #: M5.5a: the user's preview style and screen for a form path (``preview_control``).
         self.appearance_provider: Optional[Callable[[str], Appearance]] = None
+        #: M7.6. On, and the form has logic: send ``TryStart``. Off: today's ``LoadForm``.
+        self.run_behavior = True
+        self.keep_values = False
+        self.window_values: Tuple[Tuple[str, str], ...] = ()
 
     @property
     def view_id(self) -> str:
@@ -245,8 +249,17 @@ class PreviewNotices:
             else:
                 self._say(OUTSIDE_PROJECT)
         provider = self.appearance_provider
-        message = build_load_form(
-            self._session, path, self._view_id, appearance=provider(path) if provider is not None else None
+        appearance = provider(path) if provider is not None else None
+        from app.features.form_builder.qtside.preview.try_plan import preview_request
+
+        message = preview_request(
+            self._session,
+            path,
+            self._view_id,
+            run_behavior=self.run_behavior,
+            keep_values=self.keep_values,
+            window_values=self.window_values,
+            appearance=appearance,
         )
         return pool.request(message, self._on_response)
 

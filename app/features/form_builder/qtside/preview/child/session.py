@@ -14,6 +14,7 @@ from typing import Dict, Optional
 from app.features.form_builder.engine.ipc.protocol import (
     PROTOCOL_NAME,
     PROTOCOL_VERSION,
+    Appearance,
     ChildMessage,
     CloseView,
     ErrorReport,
@@ -41,6 +42,11 @@ from app.qt.QtCore import QBuffer, QEvent, QIODevice, QObject, Qt
 from app.qt.QtGui import QFont, QPixmap
 from app.qt.QtWidgets import QApplication, QStyleFactory, QWidget
 
+from app.features.form_builder.qtside.preview.child.behavior import (
+    make_host_factory,
+    restore_form,
+    snapshot_form,
+)
 from app.features.form_builder.qtside.preview.child.materialize import FormMaterializer
 from app.features.form_builder.qtside.preview.child.modules import (
     describe,
@@ -234,12 +240,15 @@ class ChildSession:
             )
         )
 
-    def _load(self, message: LoadForm) -> None:
+    def _load(self, message: LoadForm, try_message: Optional[TryStart] = None) -> None:
         self._current_view = message.view_id
-        saved = {}
+        saved: object = {}
         existing = self._views.get(message.view_id)
         if existing is not None and message.keep_values:
-            saved = snapshot_texts(existing.widget)
+            if try_message is not None and try_message.show_form:
+                saved = snapshot_form(existing.widget)
+            else:
+                saved = snapshot_texts(existing.widget)
         try:
             purge_project_modules(self._previous_root)
             self._previous_root = message.project_root
@@ -269,9 +278,23 @@ class ChildSession:
                 )
 
             self._materializer.on_would_call = announce
-            built = self._materializer.build(message, classes, extends)
+            sink = None
+            if try_message is not None and try_message.show_form:
+                from app.features.form_builder.qtside.preview.child.behavior import TrySink
+
+                sink = TrySink(self._writer, message.view_id, message.module_source or "")
+                self._materializer.host_factory = make_host_factory(sink, try_message)
+            else:
+                self._materializer.host_factory = None
+            try:
+                built = self._materializer.build(message, classes, extends)
+            finally:
+                self._materializer.host_factory = None
             if message.keep_values and saved:
-                restore_texts(built.widget, saved)
+                if try_message is not None and try_message.show_form and isinstance(saved, dict):
+                    restore_form(built.widget, saved)
+                elif isinstance(saved, dict):
+                    restore_texts(built.widget, saved)  # type: ignore[arg-type]
             self._apply_appearance(message.appearance)
             scale = float(message.appearance.scale)
             self._replace_view(message.view_id, built.widget, message.revision, scale)
@@ -349,7 +372,14 @@ class ChildSession:
         self._writer.send(Response(request_id=message.request_id, ok=True, result=result))
 
     def _try_start(self, message: TryStart) -> None:
-        """Run the module. Database plans are stored and not executed here."""
+        """Run the module. Database plans are stored and not executed here.
+
+        ``show_form`` is Preview with behavior: the same load as a form, on the
+        stand-in, with the What ran pane. The window file is not imported.
+        """
+        if message.show_form:
+            self._load(_load_from_try(message), message)
+            return
         self._current_view = message.view_id
         try:
             standin = _window_standin(message.window_class_name, message.base_class, message.window_values)
@@ -531,6 +561,27 @@ class ChildSession:
         if hard:
             os._exit(code)
         self._app.quit()
+
+
+def _load_from_try(message: TryStart) -> LoadForm:
+    """The visible fields of a TryStart, as the load the child already knows."""
+    return LoadForm(
+        request_id=message.request_id,
+        view_id=message.view_id,
+        form_path=message.form_path or "form.ui",
+        module_name=message.module_name,
+        module_source=message.module_source,
+        ui_xml=message.ui_xml,
+        project_root=message.project_root,
+        sys_path=message.sys_path,
+        appearance=message.appearance or Appearance(),
+        keep_values=message.keep_values,
+        revision=message.revision,
+        resource_modules=message.resource_modules,
+        promoted=message.promoted,
+        form_methods=message.form_methods,
+        run_behavior=True,
+    )
 
 
 def _window_standin(class_name: str, base_name: str, values: tuple) -> type:

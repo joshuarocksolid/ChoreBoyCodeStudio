@@ -23,6 +23,7 @@ import os
 import uuid
 from typing import Any, Callable, List, Optional, Tuple
 
+from app.features.form_builder.engine.events import PRIORITY_SHELL
 from app.features.form_builder.engine.ipc.protocol import (
     Appearance,
     ChildMessage,
@@ -134,6 +135,11 @@ class PreviewControl:
         self._child_styles: Tuple[str, ...] = ()
         self.last_look: dict = {}
         self.would_call = ""
+        self._run_behavior = True
+        self._keep_values = False
+        self._window_values: dict = {}
+        self._watch: Optional[object] = None
+        self._reload_timer: Optional[object] = None
         notices.appearance_provider = self.appearance
         self._listeners: List[Callable[[], None]] = []
 
@@ -247,18 +253,61 @@ class PreviewControl:
         pool = self._notices.pool()
         if self._unsubscribe is None:
             self._unsubscribe = pool.subscribe(self._notices.view_id, self._on_child)
+        self._ensure_watch()
+        document = getattr(getattr(self._surface, "session", None), "document", None)
+        behavior = False
+        if self._run_behavior and document is not None:
+            from app.features.form_builder.qtside.preview.try_plan import form_has_logic
+
+            behavior = form_has_logic(document)
+        self._notices.run_behavior = self._run_behavior
+        # A plain layout preview stays a fresh load. Values carry over only after
+        # a behavior preview, which is the reload-on-edit path.
+        self._notices.keep_values = self._keep_values
+        self._notices.window_values = tuple(self._window_values.items())
         self._notices.preview(target)
         self._open = True
+        if behavior:
+            self._keep_values = True
+
+    def set_run_behavior(self, on: bool) -> None:
+        """The Preview toolbar's Run behavior box. Off sends today's untraced module."""
+        on = bool(on)
+        self._sync_run_box(on)
+        if self._run_behavior == on:
+            return
+        self._run_behavior = on
+        self._notices.run_behavior = on
+        if self._open:
+            self.preview()
 
     def close(self) -> None:
         if self._unsubscribe is not None:
             self._unsubscribe()
             self._unsubscribe = None
+        watch = self._watch
+        if watch is not None and hasattr(watch, "close"):
+            watch.close()
+            self._watch = None
         self._open = False
 
     def _on_child(self, message: ChildMessage) -> None:
         if isinstance(message, ViewClosed):
             self._open = False
+            return
+        if isinstance(message, Log) and message.kind == "run_behavior":
+            self.set_run_behavior(message.text != "off")
+            return
+        if isinstance(message, Log) and message.kind == "window_value" and message.method:
+            if message.text:
+                self._window_values[message.method] = message.text
+            else:
+                self._window_values.pop(message.method, None)
+            return
+        if isinstance(message, Log) and message.kind == "open" and message.source is not None:
+            opener = getattr(self._surface, "open_logic", None)
+            if callable(opener):
+                opener(message.source.object_name or "", message.source.rule_path)
             return
         if isinstance(message, Log) and message.kind == "would_call" and message.method:
             scope = self._surface.session.scope
@@ -269,6 +318,50 @@ class PreviewControl:
             narrate = getattr(self._surface, "narrate", None)
             if callable(narrate):
                 narrate(sentence)
+
+    def _ensure_watch(self) -> None:
+        if self._watch is not None:
+            return
+        session = getattr(self._surface, "session", None)
+        log = getattr(session, "log", None)
+        subscribe = getattr(log, "subscribe", None)
+        if not callable(subscribe):
+            return
+        self._watch = subscribe(self._on_document, priority=PRIORITY_SHELL)
+
+    def _on_document(self, _change: object) -> None:
+        if not self._open or not self._run_behavior:
+            return
+        from app.features.form_builder.qtside.preview.try_plan import form_has_logic
+
+        document = getattr(getattr(self._surface, "session", None), "document", None)
+        if document is None or not form_has_logic(document):
+            return
+        self._arm_reload()
+
+    def _arm_reload(self) -> None:
+        from app.qt.QtCore import QTimer
+
+        timer = self._reload_timer
+        if timer is None:
+            timer = QTimer()
+            timer.setSingleShot(True)
+            timer.timeout.connect(self._reload_open)
+            self._reload_timer = timer
+        timer.start(0)  # type: ignore[attr-defined]
+
+    def _reload_open(self) -> None:
+        if self._open and self._run_behavior:
+            self.preview()
+
+    def _sync_run_box(self, on: bool) -> None:
+        toolbar = getattr(self._surface, "_toolbar", None)
+        box = getattr(toolbar, "_run_behavior", None)
+        if box is None:
+            return
+        box.blockSignals(True)
+        box.setChecked(on)
+        box.blockSignals(False)
 
     def _push(self) -> None:
         """A style or screen change reaches an open window with ``set_appearance``."""
