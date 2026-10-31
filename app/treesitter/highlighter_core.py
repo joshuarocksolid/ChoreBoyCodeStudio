@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 import threading
 from typing import Any
@@ -29,6 +30,19 @@ _LOGGER = get_subsystem_logger("treesitter")
 # entry keeps the language object so a reloaded grammar misses.
 _QUERY_LOCK = threading.Lock()
 _COMPILED_QUERIES: dict[tuple[str, str], tuple[object, Any]] = {}
+
+
+def capture_order(query_source: str) -> dict[str, int]:
+    """Capture names in the order the query source first names them.
+
+    A ranged query returns a dict whose key order follows the first match in
+    that range, so a tie between two captures on one node would change with
+    the lines queried. This order is the same for every range.
+    """
+    order: dict[str, int] = {}
+    for match in re.finditer(r"@([A-Za-z_][\w.\-]*)", query_source):
+        order.setdefault(match.group(1), len(order))
+    return order
 
 
 def shared_compiled_query(language_key: str, language: object, query_source: str) -> Any:
@@ -128,6 +142,7 @@ class TreeSitterHighlighter(
             query_source=resolved_language.highlights_query_source,
             query_kind="highlights",
         )
+        self._capture_order = capture_order(resolved_language.highlights_query_source)
         self._locals_query = self._compile_query(
             query_source=resolved_language.locals_query_source,
             query_kind="locals",

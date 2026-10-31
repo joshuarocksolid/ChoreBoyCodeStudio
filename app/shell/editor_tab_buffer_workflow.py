@@ -181,6 +181,8 @@ class EditorTabBufferWorkflow:
 
     def update_editor_status_for_path(self, file_path: str) -> None:
         if self._status_hold_depth:
+            # Move a repeated path to the end, so the bar ends on the last file asked for.
+            self._status_held.pop(file_path, None)
             self._status_held[file_path] = None
             return
         self._refresh_editor_status(file_path)

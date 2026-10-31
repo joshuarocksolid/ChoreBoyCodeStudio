@@ -763,6 +763,24 @@ def test_a_renamed_local_takes_its_color_after_idle(qapp: QApplication) -> None:
     assert _color_at(document, 1, renamed.index("total")) == DEFAULT_LIGHT_PALETTE["semantic_parameter"].lower()
 
 
+def test_a_tied_capture_keeps_its_color_when_only_its_line_is_requeried(qapp: QApplication) -> None:
+    # fh.read() matches two captures with the same priority. A ranged requery
+    # must pick the same one a whole-file query picked.
+    from app.qt.QtTest import QTest
+
+    source = "import os\nx = os.path\n" + "\n" * 20 + "with open('x') as fh:\n    data = fh.read()\n"
+    document, _highlighter = _render("/tmp/tied_capture.py", source)
+    line = document.findBlockByNumber(23).text()
+    before = _color_at(document, 23, line.index("read"))
+    block = document.findBlockByNumber(23)
+    cursor = QTextCursor(document)
+    cursor.setPosition(block.position() + len(block.text()))
+    cursor.insertText(" ")
+    QTest.qWait(200)
+    qapp.processEvents()
+    assert _color_at(document, 23, line.index("read")) == before
+
+
 def _replace_in_line(document: QTextDocument, row: int, old: str, new: str) -> None:
     block = document.findBlockByNumber(row)
     column = block.text().index(old)

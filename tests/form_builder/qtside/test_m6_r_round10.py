@@ -189,6 +189,26 @@ def test_opening_a_tab_reads_the_status_bar_once_per_path_and_lints_once_when_id
     assert linted == ["/a.py:tab_change", "/b.py:tab_change"]
 
 
+def test_a_held_status_refresh_ends_on_the_last_file_asked_for(qapp: Any) -> None:
+    from app.shell.editor_tab_buffer_workflow import EditorTabBufferWorkflow
+
+    workflow = EditorTabBufferWorkflow(
+        host=SimpleNamespace(),  # type: ignore[arg-type]
+        editor_manager=SimpleNamespace(),  # type: ignore[arg-type]
+        editor_tabs_coordinator=SimpleNamespace(),
+        outline_workflow=SimpleNamespace(),
+        markdown_workflow=SimpleNamespace(),
+        tab_workflow=SimpleNamespace(),
+    )
+    refreshed: List[str] = []
+    workflow._refresh_editor_status = refreshed.append  # type: ignore[method-assign]
+    with workflow.hold_status_updates():
+        workflow.update_editor_status_for_path("/a.py")
+        workflow.update_editor_status_for_path("/b.py")
+        workflow.update_editor_status_for_path("/a.py")
+    assert refreshed == ["/b.py", "/a.py"]
+
+
 def test_an_idle_followup_that_fails_does_not_drop_the_ones_behind_it(qapp: Any) -> None:
     from app.shell.idle_turn import run_when_idle
     from tests.form_builder.idle import pump_until_idle

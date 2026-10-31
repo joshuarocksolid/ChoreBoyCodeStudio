@@ -405,6 +405,7 @@ class TreeSitterCapturePipelineMixin:
             raw_captures,
             start_line=start_line,
             end_line=end_line,
+            order=getattr(host, "_capture_order", None),
         )
 
     @staticmethod
@@ -413,10 +414,17 @@ class TreeSitterCapturePipelineMixin:
         *,
         start_line: int,
         end_line: int,
+        order: dict[str, int] | None = None,
     ) -> list[tuple[Any, str]]:
         normalized: list[tuple[Any, str]] = []
         if isinstance(raw_captures, dict):
-            for capture_name, nodes in raw_captures.items():
+            items = list(raw_captures.items())
+            if order:
+                # Ties between captures on one node go to the earlier name, so
+                # the winner must not depend on which lines were queried.
+                last = len(order)
+                items.sort(key=lambda item: order.get(item[0], last))
+            for capture_name, nodes in items:
                 for node in nodes:
                     if TreeSitterCapturePipelineMixin._node_intersects_line_range(node, start_line, end_line):
                         normalized.append((node, capture_name))
