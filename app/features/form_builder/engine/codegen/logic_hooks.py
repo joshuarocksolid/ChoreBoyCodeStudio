@@ -43,11 +43,13 @@ def helper_table() -> Tuple[Tuple[str, str], ...]:
     provider = _HELPER_PROVIDER
     if provider is not None:
         return tuple(provider())
+    name = "app.features.form_builder.engine.logic.formula.runtime"
     try:
-        loaded = importlib.import_module(
-            "app.features.form_builder.engine.logic.formula.runtime"
-        ).helper_table
-    except ImportError:
+        loaded = importlib.import_module(name).helper_table
+    except ModuleNotFoundError as exc:
+        # Only "the runtime isn't there yet" means no helpers; a broken runtime must fail loudly.
+        if exc.name not in (name, name.rpartition(".")[0]):
+            raise
         return ()
     return tuple(loaded())
 

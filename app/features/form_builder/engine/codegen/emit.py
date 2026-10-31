@@ -1827,16 +1827,16 @@ class _Emitter:
         if _wants_setup(contributions):
             methods.append(self._method("_cbcs_setup", setup_lines))
         chunks.append("class %s(object):\n%s" % (self.ui_class, "\n\n".join(methods)))
-        helper_ids = []
-        for item in contributions:
-            for helper_id in item.helpers:
-                if helper_id not in helper_ids:
-                    helper_ids.append(helper_id)
-        known = {helper_id: source for helper_id, source in helper_table()}
-        for helper_id in helper_ids:
-            source = known.get(helper_id)
-            if source:
-                chunks.append(source.rstrip())
+        wanted = {helper_id for item in contributions for helper_id in item.helpers}
+        if wanted:
+            # Table order, not contribution order, so the output never depends on expander order.
+            table = helper_table()
+            missing = wanted - {helper_id for helper_id, _source in table}
+            if missing:
+                raise ValueError("unknown formula helpers: %s" % ", ".join(sorted(missing)))
+            for helper_id, source in table:
+                if helper_id in wanted:
+                    chunks.append(source.rstrip())
         return "\n\n".join(chunks) + "\n"
 
     def _connect_slots(self) -> bool:
