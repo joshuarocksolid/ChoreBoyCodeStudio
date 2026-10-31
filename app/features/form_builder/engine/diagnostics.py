@@ -6,7 +6,7 @@ Codes are ``FB`` + three digits. Ranges:
 Range      Area                                                   Owner WP
 =========  ====================================================  ==========
 FB001-099  File, reader, model structure, names, layout sanity   M1.1, M1.2
-FB101-199  Formulas / expressions (LOGIC_DESIGN 2.9)             M7.1
+FB101-199  Formulas and step references (LOGIC_DESIGN 2.9)       M7.1
 FB201-299  Your code: handlers, signatures, auto-connect          M6.1, M6.2
 FB301-399  Data and schema                                        M8.x
 FB401-499  Logic storage and versioning                           M6.0b
