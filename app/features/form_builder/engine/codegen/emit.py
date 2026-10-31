@@ -14,6 +14,7 @@ from dataclasses import dataclass, replace
 from typing import Dict, List, Optional, Sequence, Set, Tuple
 
 from app.features.form_builder.engine.codegen.api_types import CodegenOptions
+from app.features.form_builder.engine.project.window_facts import WindowFacts
 from app.features.form_builder.engine.codegen.literals import py_float, py_string
 from app.features.form_builder.engine.codegen.logic_hooks import (
     CodegenContext,
@@ -204,10 +205,14 @@ class ModulePieces:
 
 
 def emit_module(
-    doc: UiDocument, scope: FormScope, options: CodegenOptions, trace: bool = False
+    doc: UiDocument,
+    scope: FormScope,
+    options: CodegenOptions,
+    trace: bool = False,
+    window: Optional[WindowFacts] = None,
 ) -> ModulePieces:
     """Generate the module body, or refuse when a name cannot be emitted."""
-    emitter = _Emitter(doc, scope, options, trace=trace)
+    emitter = _Emitter(doc, scope, options, trace=trace, window=window)
     return emitter.build()
 
 
@@ -224,11 +229,19 @@ def _function_name(written: Optional[str]) -> Optional[str]:
 
 
 class _Emitter:
-    def __init__(self, doc: UiDocument, scope: FormScope, options: CodegenOptions, trace: bool = False) -> None:
+    def __init__(
+        self,
+        doc: UiDocument,
+        scope: FormScope,
+        options: CodegenOptions,
+        trace: bool = False,
+        window: Optional[WindowFacts] = None,
+    ) -> None:
         self.doc = doc
         self.scope = scope
         self.options = options
         self.trace = trace
+        self._window = window
         self._widgets: Dict[str, WidgetFacts] = {}
         self.lines: List[str] = []
         self.retranslate: List[str] = []
@@ -1767,7 +1780,7 @@ class _Emitter:
             ui_class_name=self.ui_class,
             form_param=self.form_param,
             attribute_names=tuple(self.attributes),
-            window=None,
+            window=self._window,
             formats=FormatSettings(),
             widgets=self._widgets,
             trace=self.trace,

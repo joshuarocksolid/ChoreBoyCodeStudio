@@ -35,6 +35,8 @@ from app.features.form_builder.engine.diagnostics import (
     Severity,
 )
 from app.features.form_builder.engine.project.forms import FormScope
+from app.features.form_builder.engine.project.window_facts import WindowFacts
+from app.features.form_builder.engine.project.window_file import read_window
 from app.features.form_builder.engine.ui4.document import UiDocument
 
 del _fb5xx
@@ -62,6 +64,24 @@ def _form_diagnostic(code: str, message: str) -> FormDiagnostic:
         location=DiagnosticLocation(),
         source="codegen",
     )
+
+
+def _window_facts(scope: FormScope) -> Optional[WindowFacts]:
+    """The window class, or None when the file is missing or cannot be read.
+
+    Codegen never imports the window. ``read_window`` only scans it.
+    """
+    root = scope.project_root
+    path = scope.window_path
+    if not root or not path or not os.path.isfile(path):
+        return None
+    relative = os.path.relpath(path, root).replace(os.sep, "/")
+    if relative.startswith("../") or relative == "..":
+        return None
+    read = read_window(root, relative)
+    if read.status != "ok" or not read.facts.class_name:
+        return None
+    return read.facts
 
 
 def generate_form_module(
@@ -109,7 +129,7 @@ def generate_form_module(
             uses_freecadgui=False,
             header=None,
         )
-    pieces = emit_module(doc, scope, options, trace=trace)
+    pieces = emit_module(doc, scope, options, trace=trace, window=_window_facts(scope))
     if pieces.refused:
         return CodegenResult(
             text=None,
