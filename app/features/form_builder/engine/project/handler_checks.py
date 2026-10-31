@@ -51,6 +51,45 @@ _TYPE_ALIAS = {
 }
 
 
+_CLEAR_COUNT: Dict[str, int] = {}
+_PENDING_INSERTS: Dict[str, List[str]] = {}
+
+
+def note_inserted_method(relative: str, name: str) -> None:
+    """The bridge inserted ``name`` without parsing. The next check can skip the name scan."""
+    _PENDING_INSERTS.setdefault(relative, []).append(name)
+
+
+def skip_full_on_scan(relative: str, method_count: int) -> bool:
+    """True when every method already checked, plus this insert, is not an ``on_`` name.
+
+    The by-name rules only look at ``on_{object}_{signal}``. A new ``print_receipt``
+    does not change those rows, so the check does not walk the class again.
+    """
+    pending = _PENDING_INSERTS.get(relative) or ()
+    known = _CLEAR_COUNT.get(relative)
+    if known is None or not pending:
+        return False
+    if method_count != known + len(pending):
+        _PENDING_INSERTS.pop(relative, None)
+        return False
+    if any(name.startswith("on_") for name in pending):
+        _PENDING_INSERTS.pop(relative, None)
+        _CLEAR_COUNT.pop(relative, None)
+        return False
+    _PENDING_INSERTS.pop(relative, None)
+    _CLEAR_COUNT[relative] = method_count
+    return True
+
+
+def remember_clear_of_on_methods(relative: str, methods: Dict[str, MethodFacts]) -> None:
+    """Remember a class whose methods are all ordinary names, so the next insert can skip."""
+    if any(name.startswith("on_") for name in methods):
+        _CLEAR_COUNT.pop(relative, None)
+        return
+    _CLEAR_COUNT[relative] = len(methods)
+
+
 def check_handlers(
     doc: UiDocument,
     read: WindowRead,
@@ -89,14 +128,14 @@ def check_handlers(
     called = {call.method for call in calls}
     rows: List[FormDiagnostic] = []
     shadowed = set()
-    for method in methods.values():
-        # Only methods the form calls: overriding closeEvent or keyPressEvent
-        # in the window class is ordinary Qt code, not a naming mistake.
-        if method.name not in called:
+    # Only methods the form calls. Overriding closeEvent in the window class
+    # is ordinary Qt code, not a naming mistake, and it is not in ``called``.
+    for name in called:
+        method = methods.get(name)
+        if method is None or name not in stock or name in shadowed:
             continue
-        if method.name in stock and method.name not in shadowed:
-            shadowed.add(method.name)
-            rows.append(_shadow(method.name, qt_base, None, method.line))
+        shadowed.add(name)
+        rows.append(_shadow(name, qt_base, None, method.line))
     for call in calls:
         rows.extend(
             _call_rows(
@@ -110,11 +149,14 @@ def check_handlers(
             )
         )
     rows.extend(_declared_shadows(doc, stock, qt_base, shadowed))
-    rows.extend(
-        _by_name_rows(
+    if skip_full_on_scan(read.relative, len(methods)):
+        by_name: List[FormDiagnostic] = []
+    else:
+        by_name = _by_name_rows(
             methods, objects, classes, registry, doc, connect_by_name, called,
         )
-    )
+        remember_clear_of_on_methods(read.relative, methods)
+    rows.extend(by_name)
     return tuple(_with_code(item, read.relative) for item in rows)
 
 

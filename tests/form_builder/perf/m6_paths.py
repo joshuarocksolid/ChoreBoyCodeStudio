@@ -59,8 +59,15 @@ def _window_text(methods: int, pad_to: int) -> str:
         lines.append("    def method_%d(self):" % index)
         lines.append("        return %d" % index)
         lines.append("")
+    # Real method bodies. A long run of indented comments makes tree-sitter
+    # parse the file quadratically, which no real window file does.
+    helper = 0
     while len(lines) < pad_to:
-        lines.append("    # pad")
+        lines.append("    def helper_%d(self, value):" % helper)
+        lines.append("        total = value + %d" % helper)
+        lines.append("        return total")
+        lines.append("")
+        helper += 1
     return "\n".join(lines[:pad_to]) + "\n"
 
 

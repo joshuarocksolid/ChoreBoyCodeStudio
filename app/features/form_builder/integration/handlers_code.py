@@ -217,10 +217,12 @@ class CodeHandlers:
             if not applied.ok:
                 return _fail(surface, applied.reason)
             if read.status == "ok":
+                from app.features.form_builder.engine.project.handler_checks import note_inserted_method
                 from app.features.form_builder.engine.project.window_file import install_inserted_method
 
                 token_now = bridge.buffer_token(path) if callable(getattr(bridge, "buffer_token", None)) else None
                 install_inserted_method(root, relative, read, plan, None if token_now is None else str(token_now))
+                note_inserted_method(relative, method)
             replay = True
             before = len(surface.session.log.entries())
             try:

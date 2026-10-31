@@ -2,7 +2,8 @@
 """UX-M6-003 for the method page, the gesture, and a window-file save.
 
 Process CPU time, 40 runs, on the 300-widget reference form and a 2,000-line
-window file of 150 methods. p95 is the high sample (index ``int(n * 0.95)``).
+window file. One hundred fifty ``method_N`` bodies, then real helpers out to
+2,000 lines (about 470 methods). p95 is the high sample (index ``int(n * 0.95)``).
 The clean-tab path saves the window file. The dirty-tab path does not.
 """
 
@@ -46,8 +47,15 @@ def _window_source() -> str:
         lines.append('        """Method %d."""' % index)
         lines.append("        return %d" % index)
         lines.append("")
+    # Real method bodies. A long run of indented comments makes tree-sitter
+    # parse the file quadratically, which no real window file does.
+    helper = 0
     while len(lines) < 2000:
-        lines.append("    # padding so the file is 2,000 lines")
+        lines.append("    def helper_%d(self, value):" % helper)
+        lines.append("        total = value + %d" % helper)
+        lines.append("        return total")
+        lines.append("")
+        helper += 1
     return "\n".join(lines[:2000]) + "\n"
 
 
