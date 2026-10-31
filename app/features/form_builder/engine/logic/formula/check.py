@@ -5,6 +5,7 @@ The tree is trusted once it exists. This pass only fills types and problems.
 
 from __future__ import annotations
 
+import logging
 import re
 from dataclasses import dataclass, replace
 from typing import List, Optional, Sequence, Set, Tuple
@@ -134,8 +135,10 @@ def analyze(text: str, env: FormulaEnv, slot: SlotKind) -> Analysis:
     """Parse and check. Any string returns an analysis. Nothing is raised."""
     try:
         return _analyze(text, env, slot)
-    except Exception as exc:
-        message = "This formula isn't finished: %s" % exc.__class__.__name__
+    except Exception:
+        # A checker bug must not reach the person as a Python class name.
+        logging.getLogger(__name__).exception("formula analysis failed")
+        message = "This formula isn't finished."
         span = Span(0, len(text) if isinstance(text, str) else 0)
         return Analysis(
             text if isinstance(text, str) else "",
@@ -894,6 +897,9 @@ def _source(state: _State, node: Node) -> str:
 
 
 def _mismatch(verb: str, left: FType, right: FType, name: str) -> str:
+    if name == "this":
+        # A literal has no name to point at; the first sentence says it all.
+        return "Can't %s %s and %s." % (verb, type_phrase(unwrap(left)), type_phrase(unwrap(right)))
     return "Can't %s %s and %s. %s holds %s." % (
         verb,
         type_phrase(unwrap(left)),
