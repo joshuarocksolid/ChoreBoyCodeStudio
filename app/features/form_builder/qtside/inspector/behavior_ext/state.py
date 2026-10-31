@@ -73,12 +73,18 @@ _ORDER = (
     StateRowSpec("cbcsFormat", "Format", "", "format"),
     StateRowSpec("cbcsDefault", "Default", "as designed", "default"),
 )
+# The five rule words. Kind and Format share this width so every row lines up.
+_RULE_WORDS = ("Enabled when", "Visible when", "Read-only when", "Value", "Default")
+_ELIDE = getattr(getattr(Qt, "TextElideMode", Qt), "ElideRight")
+_RIGHT = getattr(getattr(Qt, "AlignmentFlag", Qt), "AlignRight")
+_VCENTER = getattr(getattr(Qt, "AlignmentFlag", Qt), "AlignVCenter")
 
 
 class _Row(QWidget):
     def __init__(self, body: "StateBody", spec: StateRowSpec) -> None:
         super().__init__(body)
         self.spec = spec
+        self._full = ""
         self.setObjectName("formBuilder.state.row.%s" % spec.key)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self.setMinimumWidth(0)
@@ -86,23 +92,55 @@ class _Row(QWidget):
         self.words.setMinimumWidth(0)
         self.value = QLabel(self)
         self.value.setObjectName("formBuilder.state.value.%s" % spec.key)
-        self.value.setWordWrap(True)
+        self.value.setWordWrap(False)
         self.value.setMinimumWidth(0)
+        self.value.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
         self.now = QLabel(self)
         self.now.setObjectName("formBuilder.state.now.%s" % spec.key)
         self.now.setMinimumWidth(0)
+        self.now.setAlignment(_RIGHT | _VCENTER)
         self.combo: Optional[QComboBox] = None
         self.places: Optional[QSpinBox] = None
         self.column = QVBoxLayout(self)
         self.column.setContentsMargins(0, 0, 0, 0)
         self.column.setSpacing(2)
-        line = QHBoxLayout()
-        line.setContentsMargins(0, 0, 0, 0)
-        line.addWidget(self.words)
-        line.addWidget(self.value, 1)
-        line.addWidget(self.now)
-        self.column.addLayout(line)
+        self.line_host = QWidget(self)
+        self.line_host.setFixedHeight(24)
+        self.line = QHBoxLayout(self.line_host)
+        self.line.setContentsMargins(0, 0, 0, 0)
+        self.line.setSpacing(8)
+        self.line.addWidget(self.words)
+        self.line.addWidget(self.value, 1)
+        self.line.addWidget(self.now)
+        self.column.addWidget(self.line_host)
         self._body = body
+
+    def resizeEvent(self, event: object) -> None:  # noqa: N802
+        super().resizeEvent(event)  # type: ignore[arg-type]
+        self._elide()
+
+    def show_value(self, text: str) -> None:
+        self._full = text
+        self._elide()
+
+    def _elide(self) -> None:
+        if self.spec.slot in ("kind", "format"):
+            return
+        full = self._full
+        if self.width() <= 0:
+            if self.value.text() != full:
+                self.value.setText(full)
+            return
+        metrics = self.value.fontMetrics()
+        room = self.value.width()
+        if room < 8:
+            room = max(8, self.width() - self.words.width() - self.now.sizeHint().width() - 16)
+        shown = metrics.elidedText(full, _ELIDE, max(1, room))
+        if self.value.text() != shown:
+            self.value.setText(shown)
+        tip = full if shown != full else ""
+        if self.value.toolTip() != tip:
+            self.value.setToolTip(tip)
 
     def keyPressEvent(self, event: object) -> None:  # noqa: N802
         key = enum_value(event.key())  # type: ignore[attr-defined]
@@ -137,19 +175,35 @@ class StateBody(QWidget):
         self._filling = False
         self._rows: Dict[str, _Row] = {}
         self._by_key = {spec.key: spec for spec in _ORDER}
-        title = QLabel("STATE", self)
+        self._label_width = 0
+        overline = QWidget(self)
+        overline.setObjectName("formBuilder.state.overline")
+        heading = QHBoxLayout(overline)
+        heading.setContentsMargins(0, 0, 0, 0)
+        heading.setSpacing(0)
+        title = QLabel("STATE", overline)
         title.setObjectName("formBuilder.state.title")
+        heading.addWidget(title)
+        heading.addStretch(1)
         self._column = QVBoxLayout(self)
         self._column.setContentsMargins(0, 4, 0, 4)
-        self._column.setSpacing(2)
-        self._column.addWidget(title)
-        self._editor = FormulaEditor(self)
+        self._column.setSpacing(4)
+        self._column.addWidget(overline)
+        self._pad = QWidget(self)
+        self._pad.setObjectName("formBuilder.state.edit")
+        pad_layout = QVBoxLayout(self._pad)
+        pad_layout.setContentsMargins(0, 2, 0, 0)
+        pad_layout.setSpacing(2)
+        self._editor = FormulaEditor(self._pad)
         self._editor.hide()
-        self._status = QLabel(self)
+        self._status = QLabel(self._pad)
         self._status.setObjectName("formBuilder.state.status")
         self._status.setWordWrap(True)
         self._status.setMinimumWidth(0)
         self._status.hide()
+        pad_layout.addWidget(self._editor)
+        pad_layout.addWidget(self._status)
+        self._pad.hide()
         self._editor.set_status_label(self._status)
         self._editor.set_handlers(self._commit_open, self._cancel)
         complete, fixes = self._editor.lists()
@@ -168,6 +222,7 @@ class StateBody(QWidget):
             % (panel, text, text, text, chrome.input)
         )
         self._editor.set_chrome(chrome)
+        self._sync_columns()
 
     def paint(self, inputs: SectionInputs) -> None:
         self._inputs = inputs
@@ -224,6 +279,7 @@ class StateBody(QWidget):
             return
         self._open_key = key
         self._attach(row)
+        self._pad.show()
         self._editor.set_chrome(self._services.chrome)
         self._editor.set_context(self._env, _slot(spec, self._env, self._node), self._reader())
         self._editor.show_text(_stored(self._node, key))
@@ -318,10 +374,9 @@ class StateBody(QWidget):
         spin.hide()
         row.combo = combo
         row.places = spin
-        line = row.column.itemAt(0)
-        if line is not None and line.layout() is not None:
-            line.layout().addWidget(combo)
-            line.layout().addWidget(spin)
+        row.line.addWidget(combo, 1)
+        row.line.addWidget(spin)
+        row.line_host.setFixedHeight(max(24, combo.sizeHint().height()))
         combo.currentIndexChanged.connect(lambda _index, key=spec.key: self._plain_changed(key))
         spin.valueChanged.connect(lambda _value, key=spec.key: self._plain_changed(key))
         return row
@@ -363,19 +418,22 @@ class StateBody(QWidget):
                     self._fill_combo(row, _stored(node, spec.key))
                     continue
                 stored = _stored(node, spec.key)
+                muted = "color: %s; background: transparent;" % chrome.muted
+                row.now.setStyleSheet(muted)
                 if stored:
-                    row.value.setText(stored)
-                    row.value.setStyleSheet("color: %s;" % chrome.text)
+                    row.show_value(stored)
+                    row.value.setStyleSheet("color: %s; background: transparent;" % chrome.text)
                     now = _now_of(stored, spec, env, node, self._reader())
                     row.now.setText("now: %s" % now)
                     row.now.show()
                     line = "%s  %s   now: %s" % (spec.words, stored, now)
                 else:
-                    row.value.setText(spec.empty)
-                    row.value.setStyleSheet("color: %s;" % chrome.muted)
+                    row.show_value(spec.empty)
+                    row.value.setStyleSheet(muted)
                     row.now.hide()
                     line = "%s  %s" % (spec.words, spec.empty) if spec.empty else spec.words
                 row.setAccessibleName(line)
+            self._sync_columns()
         finally:
             self._filling = False
 
@@ -402,17 +460,33 @@ class StateBody(QWidget):
         places.blockSignals(False)
         places.setVisible(show)
 
+    def _sync_columns(self) -> None:
+        if not self._rows:
+            return
+        sample = next(iter(self._rows.values()))
+        width = _label_width(sample)
+        self._label_width = width
+        for row in self._rows.values():
+            row.words.setFixedWidth(width)
+            row._elide()
+        layout = self._pad.layout()
+        if layout is not None:
+            layout.setContentsMargins(width, 2, 0, 0)
+
     def _attach(self, row: _Row) -> None:
-        for widget in (self._editor, self._complete, self._fixes, self._status):
-            widget.setParent(row)
-            if row.column.indexOf(widget) < 0:
-                row.column.addWidget(widget)
+        self._sync_columns()
+        pad = self._pad
+        pad.setParent(row)
+        if row.column.indexOf(pad) < 0:
+            row.column.addWidget(pad)
 
     def _close_editor(self) -> None:
         self._open_key = None
-        for widget in (self._editor, self._complete, self._fixes, self._status):
-            widget.hide()
-            widget.setParent(self)
+        self._editor.hide_lists()
+        self._editor.hide()
+        self._status.hide()
+        self._pad.hide()
+        self._pad.setParent(self)
 
     def _reader(self) -> SimpleNamespace:
         env = self._env
@@ -424,6 +498,14 @@ class StateBody(QWidget):
                 if widget is not None:
                     values[name] = widget
         return SimpleNamespace(**values)
+
+
+def _label_width(widget: QWidget) -> int:
+    metrics = widget.fontMetrics()
+    widest = 0
+    for word in _RULE_WORDS:
+        widest = max(widest, int(metrics.horizontalAdvance(word)))
+    return widest + 12
 
 
 def open_state_row(inspector: object, key: str) -> None:

@@ -14,7 +14,7 @@ The field is one line. Shift+Enter adds a line, up to six. Further Shift+Enter d
 
 Ctrl+Enter saves. Esc puts the stored formula back. A formula with no error is also saved when you leave the field. A formula with an error stays open, and the line under the field says "Fix or press Esc to undo this formula".
 
-That line reads "{type}    now: {value}    as words: {words}". Words use each widget's display name.
+That line reads the type and "now: {value}". A second line reads the formula with display names when that differs from the typed text. A formula with an error shows the problem, not a type. "A window value" is only the type of a window.m() read.
 
 Each save is one undo step, "Set Enabled when for Discount rate". Clearing the field is "Clear Enabled when for Discount rate".
 

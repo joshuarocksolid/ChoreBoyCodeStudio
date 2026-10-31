@@ -87,6 +87,8 @@ def test_an_error_stays_open_and_esc_restores() -> None:
         assert editor.isVisible()
         status = pane.findChild(QLabel, "formBuilder.state.status")
         assert status is not None and "Fix or press Esc to undo this formula" in status.text()
+        assert "a window value" not in status.text()
+        assert "now:" not in status.text()
         assert session.log.undo_label() is None
         _click(editor, "Key_Escape")
         assert not editor.isVisible()
@@ -162,6 +164,24 @@ def test_shift_enter_stops_at_six_lines(qapp: QApplication) -> None:
     window.close()
 
 
+@pytest.mark.parametrize("mode", ["light", "dark", "high_contrast_light", "high_contrast_dark"])
+def test_an_error_underline_uses_the_theme_error_token(qapp: QApplication, mode: str) -> None:
+    chrome = chrome_for(tokens_from_palette(qapp.palette(), force_mode=mode))
+    assert chrome.error
+    window = QWidget()
+    editor = FormulaEditor(window)
+    layout = QVBoxLayout(window)
+    layout.addWidget(editor)
+    window.resize(480, 160)
+    window.show()
+    editor.set_chrome(chrome)
+    editor.set_context(FormulaEnv.for_test(), SlotKind.condition(), SimpleNamespace())
+    editor.setPlainText("missingField")
+    pump()
+    _assert_underline(editor, chrome.error, "SingleUnderline")
+    window.close()
+
+
 def test_underlines_use_the_chrome_token_for_each_severity(qapp: QApplication) -> None:
     chrome = chrome_for(tokens_from_palette(qapp.palette(), force_mode="light"))
     assert chrome.error and chrome.warning and chrome.info
@@ -175,12 +195,12 @@ def test_underlines_use_the_chrome_token_for_each_severity(qapp: QApplication) -
     editor.set_context(FormulaEnv.for_test(), SlotKind.condition(), SimpleNamespace())
     editor.setPlainText("missingField")
     pump()
-    _assert_underline(editor, chrome.error, False)
+    _assert_underline(editor, chrome.error, "SingleUnderline")
     warning = FormulaEnv.for_test(widgets={"oddEdit": WidgetFacts("QLineEdit", "Odd", kind="nope")})
     editor.set_context(warning, SlotKind.value(TEXT), SimpleNamespace())
     editor.setPlainText("oddEdit")
     pump()
-    _assert_underline(editor, chrome.warning, False)
+    _assert_underline(editor, chrome.warning, "SingleUnderline")
     info = FormulaEnv.for_test(
         methods={"is_manager": MethodFacts("is_manager", 1, 2)},
         returns={},
@@ -188,22 +208,19 @@ def test_underlines_use_the_chrome_token_for_each_severity(qapp: QApplication) -
     editor.set_context(info, SlotKind.condition(), SimpleNamespace())
     editor.setPlainText("window.is_manager()")
     pump()
-    _assert_underline(editor, chrome.info, True)
+    _assert_underline(editor, chrome.info, "DotLine")
     window.close()
 
 
-def _assert_underline(editor: FormulaEditor, color: str, dotted: bool) -> None:
+def _assert_underline(editor: FormulaEditor, color: str, style_name: str) -> None:
     wanted = QColor(color).name().lower()
     styles = getattr(QTextCharFormat, "UnderlineStyle", QTextCharFormat)
-    dot = getattr(styles, "DotLine")
+    expected = getattr(styles, style_name)
     found = False
     for extra in editor.extraSelections():
         paint = extra.format.underlineColor().name().lower()
         if paint != wanted:
             continue
         found = True
-        if dotted:
-            assert extra.format.underlineStyle() == dot
-        else:
-            assert extra.format.underlineStyle() != dot
+        assert extra.format.underlineStyle() == expected
     assert found, color

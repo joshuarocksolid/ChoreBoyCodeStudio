@@ -6,7 +6,7 @@ import io
 import tokenize
 from typing import Optional, Sequence, Tuple
 
-from app.qt.QtCore import QEvent, Qt
+from app.qt.QtCore import QEvent, QPoint, QTimer, Qt
 from app.qt.QtGui import QColor, QSyntaxHighlighter, QTextCharFormat, QTextCursor
 from app.qt.QtWidgets import QListWidget, QListWidgetItem, QPlainTextEdit, QTextEdit, QWidget
 from app.qt.qt_compat import enum_value
@@ -16,7 +16,7 @@ from app.features.form_builder.engine.logic.formula import analyze, apply_fix, n
 from app.features.form_builder.engine.logic.formula.env import FormulaEnv, SlotKind
 from app.features.form_builder.engine.logic.formula.library import FUNCTIONS
 from app.features.form_builder.engine.logic.formula.nodes import Analysis, Fix
-from app.features.form_builder.engine.logic.formula.types import type_phrase
+from app.features.form_builder.engine.logic.formula.types import FKind, type_phrase
 from app.features.form_builder.qtside.formula.complete import Completion, completions
 from app.features.form_builder.qtside.formula.now import as_words, now_text
 from app.features.form_builder.qtside.theme.chrome import FormChrome, default_chrome
@@ -36,6 +36,11 @@ _KEY_PRESS = enum_value(getattr(getattr(QEvent, "Type", QEvent), "KeyPress"))
 _KEEP = getattr(getattr(QTextCursor, "MoveMode", QTextCursor), "KeepAnchor")
 _END = getattr(getattr(QTextCursor, "MoveOperation", QTextCursor), "End")
 _UNDERLINE = getattr(QTextCharFormat, "UnderlineStyle", QTextCharFormat)
+# WaveUnderline and SpellCheckUnderline keep the color on the format but this
+# Qt build does not paint them. SingleUnderline does paint underlineColor.
+_SOLID = getattr(_UNDERLINE, "SingleUnderline")
+_DOT = getattr(_UNDERLINE, "DotLine")
+_ELIDE = getattr(getattr(Qt, "TextElideMode", Qt), "ElideRight")
 _ESC_SENTENCE = "Fix or press Esc to undo this formula"
 
 
@@ -120,6 +125,7 @@ class FormulaEditor(QPlainTextEdit):
         self._words = ""
         self._rows: Tuple[Completion, ...] = ()
         self._fixes: Tuple[Fix, ...] = ()
+        self._floating: Optional[QListWidget] = None
         self._suppress = False
         self._status: Optional[QWidget] = None
         self._complete = QListWidget(self)
@@ -136,6 +142,10 @@ class FormulaEditor(QPlainTextEdit):
     def lists(self) -> Tuple[QListWidget, QListWidget]:
         return (self._complete, self._fix_list)
 
+    def hide_lists(self) -> None:
+        self._dismiss(self._complete)
+        self._dismiss(self._fix_list)
+
     def set_status_label(self, label: QWidget) -> None:
         self._status = label
 
@@ -147,6 +157,8 @@ class FormulaEditor(QPlainTextEdit):
                 "QPlainTextEdit#formBuilder\\.formula { color: %s; background: %s; border: 1px solid %s; }"
                 % (chrome.text, chrome.input, chrome.border)
             )
+        self._paint_list(self._complete)
+        self._paint_list(self._fix_list)
         self._underlines()
 
     def set_context(self, env: FormulaEnv, slot: SlotKind, reader: object) -> None:
@@ -160,8 +172,8 @@ class FormulaEditor(QPlainTextEdit):
         self.setPlainText(text)
         self._place_cursor(len(text))
         self._suppress = False
-        self._complete.hide()
-        self._fix_list.hide()
+        self._dismiss(self._complete)
+        self._dismiss(self._fix_list)
         self._fit()
 
     def analysis(self) -> Optional[Analysis]:
@@ -180,16 +192,20 @@ class FormulaEditor(QPlainTextEdit):
         found = self._analysis
         if found is None:
             return ""
-        if normalize(self.toPlainText()) == "":
-            return "    now: blank    as words:"
-        phrase = type_phrase(found.type) if found.type is not None else ""
-        line = "%s    now: %s    as words: %s" % (phrase, self._now, self._words)
+        text = self.toPlainText()
+        if normalize(text) == "":
+            return ""
         problem = _lead_problem(found)
-        if problem is None:
-            return line
-        line = "%s\n%s" % (line, problem.message)
-        if _severity(problem.code) is Severity.ERROR:
-            line = "%s\n%s" % (line, _ESC_SENTENCE)
+        if problem is not None and _severity(problem.code) is Severity.ERROR:
+            return "%s\n%s" % (problem.message, _ESC_SENTENCE)
+        phrase = _type_words(found)
+        line = "%s    now: %s" % (phrase, self._now) if phrase else "now: %s" % self._now
+        words = self._words.strip()
+        raw = text.strip()
+        if words and words != raw:
+            line = "%s\n%s" % (line, words)
+        if problem is not None:
+            line = "%s\n%s" % (line, problem.message)
         return line
 
     def event(self, event: object) -> bool:  # noqa: N802
@@ -219,9 +235,9 @@ class FormulaEditor(QPlainTextEdit):
         shift = bool(mods & _SHIFT)
         if key == _ESC:
             if self._fix_list.isVisible():
-                self._fix_list.hide()
+                self._dismiss(self._fix_list)
             elif self._complete.isVisible():
-                self._complete.hide()
+                self._dismiss(self._complete)
             else:
                 self.cancel_requested()
             event.accept()  # type: ignore[attr-defined]
@@ -287,7 +303,7 @@ class FormulaEditor(QPlainTextEdit):
         self._fit()
         self._reanalyze()
         if self._suppress:
-            self._complete.hide()
+            self._dismiss(self._complete)
             return
         self._offer(False)
 
@@ -302,23 +318,21 @@ class FormulaEditor(QPlainTextEdit):
             self._now = now_text(self._analysis, env, self._reader)
             self._words = as_words(self.toPlainText(), env)
         self._underlines()
-        label = self._status
-        if label is not None and hasattr(label, "setText"):
-            label.setText(self.status_text())
+        self._publish_status()
 
     def _offer(self, forced: bool) -> None:
         env = self._env
         if env is None:
-            self._complete.hide()
+            self._dismiss(self._complete)
             return
         cursor = self.textCursor().position()
         self._rows = completions(self.toPlainText(), cursor, env, forced=forced)
         if not self._rows:
-            self._complete.hide()
+            self._dismiss(self._complete)
             return
         self._fill(self._complete, [row.label for row in self._rows])
-        self._fix_list.hide()
-        self._complete.show()
+        self._dismiss(self._fix_list)
+        self._popup(self._complete)
 
     def _accept(self) -> None:
         index = self._complete.currentRow()
@@ -335,7 +349,7 @@ class FormulaEditor(QPlainTextEdit):
         self.setPlainText(merged)
         self._place_cursor(start + len(row.insert))
         self._suppress = False
-        self._complete.hide()
+        self._dismiss(self._complete)
         self._rows = ()
 
     def _fix_key(self) -> None:
@@ -347,8 +361,8 @@ class FormulaEditor(QPlainTextEdit):
         if len(fixes) > 1:
             self._fixes = fixes
             self._fill(self._fix_list, [fix.message for fix in fixes])
-            self._complete.hide()
-            self._fix_list.show()
+            self._dismiss(self._complete)
+            self._popup(self._fix_list)
 
     def _accept_fix(self) -> None:
         index = self._fix_list.currentRow()
@@ -362,7 +376,7 @@ class FormulaEditor(QPlainTextEdit):
         self.setPlainText(text)
         self._place_cursor(len(text))
         self._suppress = False
-        self._fix_list.hide()
+        self._dismiss(self._fix_list)
         self._fixes = ()
         self._reanalyze()
 
@@ -378,13 +392,13 @@ class FormulaEditor(QPlainTextEdit):
             severity = _severity(problem.code)
             if severity is Severity.WARNING:
                 color = self._chrome.warning
-                style = _UNDERLINE.SingleUnderline
+                style = _SOLID
             elif severity is Severity.INFO:
                 color = self._chrome.info
-                style = _UNDERLINE.DotLine
+                style = _DOT
             else:
                 color = self._chrome.error
-                style = _UNDERLINE.SingleUnderline
+                style = _SOLID
             if not color:
                 continue
             cursor = self.textCursor()
@@ -415,6 +429,82 @@ class FormulaEditor(QPlainTextEdit):
         cursor.setPosition(max(0, min(position, len(self.toPlainText()))))
         self.setTextCursor(cursor)
 
+    def _publish_status(self) -> None:
+        label = self._status
+        if label is None or not hasattr(label, "setText"):
+            return
+        text = self.status_text()
+        label.setToolTip(text)  # type: ignore[attr-defined]
+        width = label.width() if label.width() > 20 else self.width()  # type: ignore[attr-defined]
+        if width > 20 and not self.has_error():
+            metrics = label.fontMetrics()  # type: ignore[attr-defined]
+            lines = text.split("\n")
+            if lines and int(metrics.horizontalAdvance(lines[0])) > width:
+                lines[0] = metrics.elidedText(lines[0], _ELIDE, width)
+                text = "\n".join(lines)
+        label.setText(text)  # type: ignore[attr-defined]
+        lines = text.count("\n") + 1 if text else 0
+        spacing = label.fontMetrics().lineSpacing()  # type: ignore[attr-defined]
+        label.setMinimumHeight(spacing * lines + 2 if lines else 0)  # type: ignore[attr-defined]
+
+    def _dismiss(self, widget: QListWidget) -> None:
+        if self._floating is widget:
+            self._floating = None
+        widget.hide()
+
+    def _popup(self, widget: QListWidget) -> None:
+        self._floating = widget
+        self._place_popup()
+        QTimer.singleShot(0, self._place_popup)
+
+    def _place_popup(self) -> None:
+        widget = self._floating
+        if widget is None:
+            return
+        host = self._popup_host()
+        if widget.parentWidget() is not host:
+            widget.setParent(host)
+        self._paint_list(widget)
+        pad = self.parentWidget()
+        if pad is not None and pad.objectName() == "formBuilder.state.edit" and host is not self:
+            point = pad.mapTo(host, QPoint(self.x(), self._below_status(pad)))
+        elif host is self:
+            point = QPoint(0, self.height())
+        else:
+            point = self.mapTo(host, QPoint(0, self.height() + 1))
+        widget.setFixedWidth(max(self.width(), 160))
+        widget.move(point)
+        widget.raise_()
+        widget.show()
+
+    def _below_status(self, pad: QWidget) -> int:
+        status = self._status
+        if status is None or not status.isVisible():
+            return pad.height() + 1
+        width = status.width() if status.width() > 20 else self.width()
+        needed = status.heightForWidth(max(1, width)) if width else status.sizeHint().height()
+        bottom = status.mapTo(pad, QPoint(0, max(status.height(), needed)))
+        return bottom.y() + status.fontMetrics().lineSpacing() + 4
+
+    def _popup_host(self) -> QWidget:
+        current: Optional[QWidget] = self.parentWidget()
+        while current is not None:
+            if current.objectName() == "formBuilder.state":
+                return current
+            current = current.parentWidget()
+        return self
+
+    def _paint_list(self, widget: QListWidget) -> None:
+        chrome = self._chrome
+        panel = chrome.popup or chrome.panel
+        border = chrome.popup_border or chrome.border
+        if not panel or not chrome.text:
+            return
+        widget.setStyleSheet(
+            "QListWidget { background: %s; color: %s; border: 1px solid %s; }"
+            % (panel, chrome.text, border)
+        )
+
     def _fit(self) -> None:
         lines = min(_MAX_LINES, max(1, self.document().blockCount()))
         self.setFixedHeight(self.fontMetrics().lineSpacing() * lines + 12)
@@ -429,6 +519,15 @@ def _severity(code: str) -> Severity:
 
 def _errored(analysis: Analysis) -> bool:
     return any(_severity(problem.code) is Severity.ERROR for problem in analysis.problems)
+
+
+def _type_words(analysis: Analysis) -> str:
+    typed = analysis.type
+    if typed is None:
+        return ""
+    if typed.kind == FKind.ANY and not analysis.window_calls:
+        return ""
+    return type_phrase(typed)
 
 
 def _lead_problem(analysis: Analysis) -> Optional[object]:
