@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import importlib
 from pathlib import Path
 from typing import List
 
@@ -91,7 +92,7 @@ def test_a_traceback_line_is_an_anchor_and_activation_calls_the_contributor(
 ) -> None:
     package = make_package(tmp_path, monkeypatch, "m70s_link_probe", _PROBE)
     try:
-        from m70s_link_probe import probe as probe_module
+        probe_module = importlib.import_module("m70s_link_probe.probe")
 
         registry = load_run_links(package)
         monkeypatch.setattr(
