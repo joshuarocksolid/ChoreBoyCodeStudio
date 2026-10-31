@@ -168,7 +168,7 @@ def test_native_steps_run_before_the_list_when_an_event_is_in_two_places(tmp_pat
 
 
 def test_a_list_this_build_cannot_run_generates_nothing(tmp_path: Path) -> None:
-    message = read_list('[{"do": "message", "text": "hi"}]').steps[0]
+    message = read_list('[{"do": "save"}]').steps[0]
     source = generate(with_list(CLEAR, message), tmp_path)  # one unknown verb: the event does nothing
     assert "_cbcs" not in source
     broken = with_list(CLEAR, slot_step("phoneEdit", "setFocus()", enabled=False)).replace("&quot;do&quot;", "&quot;doo")

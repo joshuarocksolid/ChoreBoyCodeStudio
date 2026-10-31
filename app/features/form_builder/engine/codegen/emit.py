@@ -11,7 +11,7 @@ import keyword
 import os
 import re
 from dataclasses import dataclass, replace
-from typing import Dict, List, Optional, Sequence, Set, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Set, Tuple
 
 from app.features.form_builder.engine.codegen.api_types import CodegenOptions
 from app.features.form_builder.engine.project.window_facts import WindowFacts
@@ -226,6 +226,11 @@ def _function_name(written: Optional[str]) -> Optional[str]:
     if not text or any(not part.isidentifier() or not part.isascii() or keyword.iskeyword(part) for part in parts):
         return None
     return text
+
+
+def _forms_dir(scope: Any) -> Optional[str]:
+    path = getattr(scope, "ui_path", "") or ""
+    return os.path.dirname(os.path.abspath(path)) if path else None
 
 
 class _Emitter:
@@ -1784,6 +1789,7 @@ class _Emitter:
             formats=FormatSettings(),
             widgets=self._widgets,
             trace=self.trace,
+            forms_dir=_forms_dir(self.scope),
         )
         found = []
         for expander in load_expanders():

@@ -146,6 +146,25 @@ def _edit_page(ctx: PickContext) -> Page:
     page = _step_page(ctx, source.signal, wide=False, replace_index=source.replace_index, back="")
     if step.verb == "call" and step.method:
         return _select(page, step.method)
+    from app.features.form_builder.qtside.pickers.verb_pages import page_for
+
+    if step.verb in (
+        "validate",
+        "set",
+        "clear",
+        "focus",
+        "enable",
+        "disable",
+        "show",
+        "hide",
+        "message",
+        "ask",
+        "stop",
+        "page",
+        "openForm",
+        "close",
+    ):
+        return page_for(page, step.verb)
     return page
 
 
@@ -179,6 +198,8 @@ def reduce(ctx: PickContext, page: Page, press: Press) -> object:
             for item in page.rows
         )
         return replace(page, field=press.text, rows=rows, notice=method_notice(ctx, page, press.text))
+    if key == "vfield":
+        return _vfield(page, press.text)
     if key == "enter" or key == "right":
         return _enter(ctx, page)
     if key == "filter":
@@ -206,6 +227,20 @@ def _enter(ctx: PickContext, page: Page) -> object:
         return method_page(ctx, page)
     if item.kind == "method":
         return Commit(Gesture("add_call", signal=page.signal, method=item.payload, args=0))
+    if item.kind == "verb":
+        from app.features.form_builder.qtside.pickers.verb_pages import page_for
+
+        return page_for(page, item.payload)
+    if item.kind == "add-verb":
+        return Commit(
+            Gesture(
+                "add_verb",
+                signal=page.signal,
+                index=page.replace_index,
+                verb=page.intent_id or item.payload,
+                verb_fields=page.field,
+            )
+        )
     if item.kind == "widget-action":
         return _target_page(ctx, page, "", "Which widget?", "slots")
     if item.kind == "target":
@@ -578,6 +613,22 @@ def _method_token(text: str) -> str:
     if not raw or not raw[0].isalpha():
         raw = ("method_" + raw) if raw else "method"
     return raw
+
+
+def _vfield(page: Page, text: str) -> Page:
+    import json
+
+    name, _, value = text.partition("\n")
+    rows = tuple(
+        replace(item, faint=value) if item.kind == "vfield" and item.payload == name else item
+        for item in page.rows
+    )
+    data = {item.payload: item.faint for item in rows if item.kind == "vfield" and item.faint}
+    if page.intent_id == "stop" and "when" in {item.payload for item in rows}:
+        when = next(item.faint for item in rows if item.payload == "when")
+        if when:
+            data["when"] = when
+    return replace(page, rows=rows, field=json.dumps(data))
 
 
 def _current(page: Page) -> Optional[Item]:

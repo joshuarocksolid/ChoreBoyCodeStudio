@@ -46,11 +46,14 @@ class StepsExpander:
         classes = QtClassTable.shared()
         connects: List[str] = []
         methods: List[Method] = []
+        self._bag = {"helpers": [], "imports": [], "diagnostics": []}
         root = doc.root.object_name
         for node in doc.iter_preorder():
             for entry in node.properties():
                 signal_name = signal_of_property(entry.name)
                 if signal_name is None or not isinstance(entry.value, StringValue):
+                    continue
+                if signal_name in ("opened", "closing"):
                     continue
                 owner = _owner_name(node)
                 expression = self._sender_expression(owner, root, ctx)
@@ -68,14 +71,22 @@ class StepsExpander:
                 methods.append(
                     Method(
                         name=handler,
-                        body=_body(doc, classes, ctx, root, parsed.steps, source_ref),
+                        body=_body(doc, classes, ctx, root, parsed.steps, source_ref, self._bag, owner),
                         source_ref=source_ref,
                         params="*args",
                     )
                 )
         if not methods:
             return Contribution()
-        return Contribution(setup_lines=tuple(connects), methods=tuple(methods), needs_form=True)
+        bag = getattr(self, "_bag", None) or {}
+        return Contribution(
+            imports=tuple(bag.get("imports") or ()),
+            setup_lines=tuple(connects),
+            methods=tuple(methods),
+            helpers=tuple(bag.get("helpers") or ()),
+            diagnostics=tuple(bag.get("diagnostics") or ()),
+            needs_form=True,
+        )
 
     @staticmethod
     def _sender_expression(owner: Optional[str], root: str, ctx: CodegenContext) -> Optional[str]:
@@ -113,13 +124,27 @@ def _generates(parsed: StepList) -> bool:
 def _target_of(spec: VerbSpec, step: EventStep, root: str) -> str:
     if any(field.name == "target" for field in spec.fields):
         return step.target
+    raw = step.raw
+    if raw is not None:
+        field = raw.field("field")
+        if isinstance(field, str) and field:
+            return field
     return root
 
 
 class _EmitCtx:
     """What a verb's ``emit`` reads. ``root`` is the form's object name."""
 
-    def __init__(self, ctx: CodegenContext, root: str, later_on: bool) -> None:
+    def __init__(
+        self,
+        ctx: CodegenContext,
+        root: str,
+        later_on: bool,
+        doc: UiDocument,
+        classes: QtClassTable,
+        bag: dict,
+        owner: str,
+    ) -> None:
         self.root = root
         self.later_on = later_on
         self.form_param = ctx.form_param
@@ -128,6 +153,13 @@ class _EmitCtx:
         self.trace = ctx.trace
         self.window = ctx.window
         self.formats = ctx.formats
+        self.forms_dir = ctx.forms_dir
+        self.doc = doc
+        self.classes = classes
+        self.bag = bag
+        self.owner = owner
+        self.step_number = 0
+        self.formula_env = None
 
 
 def _selector(
@@ -161,15 +193,18 @@ def _body(
     root: str,
     steps: Sequence[EventStep],
     source_ref: str,
+    bag: Optional[dict] = None,
+    owner: str = "",
 ) -> str:
     lines: List[str] = []
     registry = default_registry()
+    held = bag if bag is not None else {"helpers": [], "imports": [], "diagnostics": []}
     for number, step in enumerate(steps, 1):
         spec = registry.get(step.verb)
         if spec is None:
             continue
         later_on = any(item.enabled for item in steps[number:])
-        has_target = any(field.name == "target" for field in spec.fields)
+        has_named = any(field.name in ("target", "field") for field in spec.fields)
         target = _target_of(spec, step, root)
         chain: Tuple[str, ...] = ()
         node = doc.node(doc.by_name(target)[0]) if doc.by_name(target) else None
@@ -177,7 +212,20 @@ def _body(
             chain = class_chain(classes, compat.node_class(doc, classes, node)[0])
         words = step_words(step, target, is_form=(target == root), target_chain=chain)
         prefix = "#   %d. " % number
-        missing = node is None or (has_target and target != root and target not in ctx.attribute_names)
+        missing = node is None or (has_named and target != root and target not in ctx.attribute_names)
+        emit_ctx = _EmitCtx(ctx, root, later_on, doc, classes, held, owner or root)
+        emit_ctx.step_number = number
+        body: List[str] = []
+        if step.enabled and not missing:
+            if step.when:
+                guarded, code = _when_lines(step.when, emit_ctx)
+                if code:
+                    lines.append("# step %d skipped (%s: see Problems)" % (number, code))
+                    continue
+                body = ["    %s" % line if line else "" for line in spec.emit(step, emit_ctx)]
+                body.insert(0, "if %s:" % guarded)
+            else:
+                body = list(spec.emit(step, emit_ctx))
         if not step.enabled:
             lines.append(one_line("%s(off) %s" % (prefix, words)))
         elif missing:
@@ -185,7 +233,19 @@ def _body(
         else:
             lines.append(one_line(prefix + words))
         if ctx.trace:
-            lines.append("self._cbcs_trace(\"step\", %r, %r)" % (one_line(source_ref), one_line(words)))
+            lines.append('self._cbcs_trace("step", %r, %r)' % (one_line(source_ref), one_line(words)))
         if step.enabled and not missing:
-            lines.extend(spec.emit(step, _EmitCtx(ctx, root, later_on)))
+            lines.extend(body)
+    if lines and all(not line.strip() or line.lstrip().startswith("#") for line in lines):
+        lines.append("pass")
     return "\n".join(lines)
+
+
+def _when_lines(text: str, emit_ctx: _EmitCtx) -> Tuple[str, str]:
+    from app.features.form_builder.engine.logic.formula.env import SlotKind
+    from app.features.form_builder.engine.logic.verbs.m7 import compile_text
+
+    source, code = compile_text(text, SlotKind.when(), emit_ctx)
+    if code or not source:
+        return "", code or "FB108"
+    return source, ""

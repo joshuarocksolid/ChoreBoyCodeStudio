@@ -98,6 +98,13 @@ class EventPicker(QFrame):
         self.field.textChanged.connect(self._method_typed)
         self.field.hide()
         column.addWidget(self.field)
+        self.verb_box = QWidget(self)
+        self.verb_box.setObjectName("formBuilder.eventPickerVerb")
+        self.verb_fields = QVBoxLayout(self.verb_box)
+        self.verb_fields.setContentsMargins(0, 0, 0, 0)
+        self.verb_box.hide()
+        self._verb_names: tuple = ()
+        column.addWidget(self.verb_box)
         self.notice = QLabel(self)
         self.notice.setObjectName("formBuilder.eventPickerNotice")
         self.notice.setWordWrap(True)
@@ -190,16 +197,28 @@ class EventPicker(QFrame):
 
     def eventFilter(self, watched: QObject, event: QEvent) -> bool:  # noqa: N802
         check = getattr(self, "check", None)
-        watched_line = watched in (self.search, self.field) or watched is check
+        verb_box = getattr(self, "verb_box", None)
+        on_verb = bool(verb_box is not None and isinstance(watched, QWidget) and verb_box.isAncestorOf(watched))
+        watched_line = watched in (self.search, self.field) or watched is check or on_verb
         if event.type() == QEvent.Type.ShortcutOverride and watched_line:
             event.accept()
             return True
         if event.type() == QEvent.Type.KeyPress and watched_line:
-            return self._key(event)  # type: ignore[arg-type]
+            return self._key(event, on_verb)  # type: ignore[arg-type]
         return super().eventFilter(watched, event)
 
-    def _key(self, event: QKeyEvent) -> bool:
+    def _key(self, event: QKeyEvent, on_verb: bool = False) -> bool:
         key = enum_value(event.key())
+        if on_verb and key == _BACK:
+            return False
+        if on_verb and key == _DOWN:
+            self._focus_verb(1)
+            return True
+        if on_verb and key == _UP:
+            self._focus_verb(-1)
+            return True
+        if on_verb and key not in _ENTER and key != _ESCAPE:
+            return False
         if key == _UP:
             return self._press("up")
         if key == _DOWN:
@@ -264,6 +283,9 @@ class EventPicker(QFrame):
         if not (0 <= row_index < len(page.rows)):
             return
         row = page.rows[row_index]
+        if page.kind == "verb":
+            self._press("enter")
+            return
         if row.header or not row.enabled:
             return
         self._page = replace(page, current=row_index)
@@ -274,7 +296,7 @@ class EventPicker(QFrame):
         self._filling = True
         self._title.setText(page.title)
         method = page.kind == "method"
-        self.search.setVisible(not method)
+        self.search.setVisible(page.kind not in ("method", "verb"))
         self.field.setVisible(method)
         if page.kind == "event":
             self.search.setPlaceholderText("Type to find an event")
@@ -296,9 +318,67 @@ class EventPicker(QFrame):
         if self.check.isChecked() != page.checked:
             self.check.setChecked(page.checked)
         self._fill(page)
+        self._show_verb(page)
         self._filling = False
         if not self.isVisible():
             self.adjustSize()
+
+    def _show_verb(self, page: Page) -> None:
+        names = tuple(item.payload for item in page.rows if item.kind == "vfield")
+        if page.kind != "verb":
+            self._verb_names = ()
+            self._clear_verb()
+            return
+        if self._verb_names == names and self.verb_box.isVisible():
+            return
+        self._clear_verb()
+        self._verb_names = names
+        from app.features.form_builder.qtside.pickers.verb_pages import formula_line
+
+        first = None
+        for item in page.rows:
+            if item.kind != "vfield":
+                continue
+            label = QLabel(item.text, self.verb_box)
+            edit = formula_line(self.verb_box) if item.note == "formula" else QLineEdit(self.verb_box)
+            edit.setObjectName("formBuilder.verbField.%s" % item.payload)
+            edit.setAccessibleName(item.text)
+            edit.setPlaceholderText(item.text)
+            edit.setText(item.faint)
+            edit.installEventFilter(self)
+            edit.textChanged.connect(lambda text, name=item.payload: self._verb_typed(name, text))
+            self.verb_fields.addWidget(label)
+            self.verb_fields.addWidget(edit)
+            if first is None:
+                first = edit
+        self.verb_box.show()
+        if first is not None:
+            first.setFocus()
+
+    def _clear_verb(self) -> None:
+        while self.verb_fields.count():
+            item = self.verb_fields.takeAt(0)
+            widget = item.widget()
+            if widget is not None:
+                widget.hide()
+                widget.deleteLater()
+        self.verb_box.hide()
+
+    def _verb_typed(self, name: str, text: str) -> None:
+        if self._filling:
+            return
+        self._press("vfield", "%s\n%s" % (name, text))
+
+    def _focus_verb(self, direction: int) -> None:
+        edits = self.verb_box.findChildren(QLineEdit)
+        if not edits:
+            return
+        focus = QApplication.focusWidget()
+        try:
+            index = edits.index(focus)
+        except ValueError:
+            index = 0
+        edits[(index + direction) % len(edits)].setFocus()
 
     def _fill(self, page: Page) -> None:
         # Every match is in the model. The view paints only the rows in view.
@@ -306,17 +386,22 @@ class EventPicker(QFrame):
         flags = []
         enabled = Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable
         notes = False
-        for item in page.rows:
+        shown_rows = page.rows
+        if page.kind == "verb":
+            shown_rows = tuple(item for item in page.rows if item.kind != "vfield")
+        for item in shown_rows:
             rows.append((item.text, item.faint, item.note, item.header, item.enabled))
             flags.append(Qt.ItemFlag.NoItemFlags if item.header or not item.enabled else enabled)
             notes = notes or bool(item.note)
         self.rows.setUniformItemSizes(not notes)
         self._model.set_rows(rows, flags)
-        if page.rows:
-            current = self._model.index(min(page.current, len(page.rows) - 1), 0)
+        visible = shown_rows if page.kind == "verb" else page.rows
+        if visible:
+            index = 0 if page.kind == "verb" else min(page.current, len(visible) - 1)
+            current = self._model.index(index, 0)
             self.rows.setCurrentIndex(current)
             self.rows.scrollTo(current)
-        shown = min(max(len(page.rows), 1), 8)
+        shown = min(max(len(visible), 1), 8)
         height = shown * (_ROW + (16 if notes else 0)) + 8
         if self.rows.height() != height:
             self.rows.setFixedHeight(height)

@@ -170,7 +170,7 @@ def test_error_lines_point_into_the_text() -> None:
 
 
 def test_a_verb_this_build_does_not_type_keeps_every_key_in_order() -> None:
-    text = '[{"do": "set", "formula": "a + b", "field": "totalEdit", "when": "x", "future": {"k": [1]}}]'
+    text = '[{"do": "later", "formula": "a + b", "field": "totalEdit", "when": "x", "future": {"k": [1]}}]'
     read = parse_steps(text)
     assert read.error is None
     step = read.steps[0]
@@ -178,7 +178,7 @@ def test_a_verb_this_build_does_not_type_keeps_every_key_in_order() -> None:
     assert step.when == "x"
     assert [key for key, _ in step.fields] == ["formula", "field", "future"]
     assert write_steps(read.steps) == (
-        '[\n  {"do": "set", "when": "x", "formula": "a + b", "field": "totalEdit", "future": {"k": [1]}}\n]'
+        '[\n  {"do": "later", "when": "x", "formula": "a + b", "field": "totalEdit", "future": {"k": [1]}}\n]'
     )
 
 
@@ -238,7 +238,7 @@ def _step(rng: random.Random) -> Step:
     if roll == 1:
         return call_step("m%d" % rng.randrange(5), rng.choice([None, 0, 1, 2]), when=when, enabled=enabled, unknown=unknown)
     fields = tuple(("f%d" % index, _value(rng, 2)) for index in range(rng.randrange(4)))
-    return Step(rng.choice(["message", "set", "future"]), when, enabled, fields, ())
+    return Step(rng.choice(["save", "later", "future"]), when, enabled, fields, ())
 
 
 def test_json_round_trip_over_random_models() -> None:

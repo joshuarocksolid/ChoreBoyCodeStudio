@@ -41,7 +41,8 @@ _PLAIN_SLOT_WORDS = {
 
 
 def _blocked(step: Any) -> bool:
-    return step.when is not None or step.raw is not None
+    # ``when`` wraps this step (M7.4). Unknown keys still keep the list from generating.
+    return step.raw is not None
 
 
 def _slot_blocks(step: Any) -> bool:
