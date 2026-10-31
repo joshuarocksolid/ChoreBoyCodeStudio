@@ -159,8 +159,10 @@ def test_one_line_replaces_line_breaks() -> None:
     assert one_line("a\nb\u2028c\u2029d") == "a b c d"
 
 
-def test_helper_table_uses_a_provider_and_is_empty_without_one(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    assert helper_table() == ()
+def test_helper_table_uses_a_provider_or_the_formula_runtime(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from app.features.form_builder.engine.logic.formula.runtime import helper_table as formula_table
+
+    assert helper_table() == formula_table()
     source = "def demo():\n    return 1\n"
     set_helper_provider(lambda: (("demo", source),))
     try:
@@ -180,7 +182,7 @@ def test_helper_table_uses_a_provider_and_is_empty_without_one(tmp_path: Path, m
         assert source in generated
     finally:
         set_helper_provider(None)
-    assert helper_table() == ()
+    assert helper_table() == formula_table()
 
 
 def test_a_change_connect_uses_the_widget_class_and_skips_an_unknown_one(
