@@ -310,3 +310,48 @@ def _run_divide(source: str) -> None:
     assert ui.result.text() == "$5.00"
     assert ui.result.toolTip() != "Can't divide by zero"
     host.close()
+
+
+def _block(text: str, start: str) -> str:
+    lines = text.splitlines()
+    first = next(i for i, line in enumerate(lines) if line.strip().startswith(start))
+    end = first + 1
+    while end < len(lines) and (not lines[end].strip() or lines[end].startswith("        ")):
+        end += 1
+    return "\n".join(lines[first:end]).rstrip()
+
+
+# Reviewed against LOGIC 7.2 and 7.3 by the lead. Connects follow the first refresh
+# (CONTRACTS 18.2); the temporary is ``_cbcs_value`` rather than the listing's ``line_total``.
+_SCENARIO1_REFRESH = """    def cbcs_refresh(self, *args):
+        # rules
+        \"\"\"Run every rule on this form again. Safe to call from your own code.\"\"\"
+        if self._cbcs_refreshing:
+            return
+        self._cbcs_refreshing = True
+        try:
+            # discountEdit: Enabled when  discountCheck
+            self.discountEdit.setEnabled(self.discountCheck.isChecked())
+        finally:
+            self._cbcs_refreshing = False"""
+
+_SCENARIO2_BODY = """            # lineTotalLabel: Value =  qtySpin * priceSpin   (format: money)
+            _cbcs_value = self.qtySpin.value() * _cbcs_dec(self.priceSpin.value(), 2)
+            self.lineTotalLabel.setText(_cbcs_money(_cbcs_value))"""
+
+_SCENARIO2_SETUP = """    def _cbcs_setup(self, Invoice):
+        self._form = Invoice
+        self._cbcs_refreshing = False
+        self.cbcs_refresh()
+        self.qtySpin.valueChanged.connect(self.cbcs_refresh)
+        self.priceSpin.valueChanged.connect(self.cbcs_refresh)"""
+
+
+def test_scenario_blocks_are_exact(tmp_path: Path) -> None:
+    (tmp_path / "one").mkdir()
+    (tmp_path / "two").mkdir()
+    _doc, one = _load(_scenario1(), "invoice", tmp_path / "one")
+    assert _block(one.text or "", "def cbcs_refresh") == _SCENARIO1_REFRESH
+    _doc, two = _load(_scenario2(), "invoice", tmp_path / "two")
+    assert _SCENARIO2_BODY in (two.text or "")
+    assert _block(two.text or "", "def _cbcs_setup") == _SCENARIO2_SETUP

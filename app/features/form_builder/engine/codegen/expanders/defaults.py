@@ -150,7 +150,7 @@ def _body(
             lines.append(_trace(record, expr))
         return lines, (), ()
     denoms = _denominators(analysis, env)
-    write, write_helpers, write_imports = _write(widget, facts, chain, record.fmt, expr)
+    write, write_helpers, write_imports = write_value(widget, facts, chain, record.fmt, expr)
     lines.extend(write)
     helpers.extend(write_helpers)
     imports.extend(write_imports)
@@ -185,13 +185,17 @@ def _trace(record: RuleRecord, expr: str) -> str:
     return "self._cbcs_trace(%s, %s, %s)" % (repr("rule"), repr(ref), expr)
 
 
-def _write(
+def write_value(
     widget: str,
     facts: WidgetFacts,
     chain: Tuple[str, ...],
     fmt: str,
     expr: str,
 ) -> Tuple[List[str], Tuple[str, ...], Tuple[Tuple[str, str], ...]]:
+    """The lines that write ``expr`` into ``widget`` per LOGIC 4.3's Write column.
+
+    Shared by rules, defaults and the ``set`` step, so a blank or a number
+    lands the same way wherever it is written. Returns lines, helpers, imports."""
     _matched, spec = lookup_spec(facts.class_name, chain)
     kind = spec.write if spec is not None else ""
     assign = "_cbcs_value = %s" % expr
