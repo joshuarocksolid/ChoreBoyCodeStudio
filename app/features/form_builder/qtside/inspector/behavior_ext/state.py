@@ -189,26 +189,13 @@ class StateBody(QWidget):
         self._column.setContentsMargins(0, 4, 0, 4)
         self._column.setSpacing(4)
         self._column.addWidget(overline)
-        self._pad = QWidget(self)
-        self._pad.setObjectName("formBuilder.state.edit")
-        pad_layout = QVBoxLayout(self._pad)
-        pad_layout.setContentsMargins(0, 2, 0, 0)
-        pad_layout.setSpacing(2)
-        self._editor = FormulaEditor(self._pad)
-        self._editor.hide()
-        self._status = QLabel(self._pad)
-        self._status.setObjectName("formBuilder.state.status")
-        self._status.setWordWrap(True)
-        self._status.setMinimumWidth(0)
-        self._status.hide()
-        pad_layout.addWidget(self._editor)
-        pad_layout.addWidget(self._status)
-        self._pad.hide()
-        self._editor.set_status_label(self._status)
-        self._editor.set_handlers(self._commit_open, self._cancel)
-        complete, fixes = self._editor.lists()
-        self._complete = complete
-        self._fixes = fixes
+        # The formula field is built the first time a row opens. Painting the
+        # closed section only creates the label rows.
+        self._pad: Optional[QWidget] = None
+        self._editor: Optional[FormulaEditor] = None
+        self._status: Optional[QLabel] = None
+        self._complete = None
+        self._fixes = None
 
     def set_refresh(self, refresh: object) -> None:
         self._refresh = refresh
@@ -221,7 +208,8 @@ class StateBody(QWidget):
             "QComboBox, QSpinBox { color: %s; background: %s; }"
             % (panel, text, text, text, chrome.input)
         )
-        self._editor.set_chrome(chrome)
+        if self._editor is not None:
+            self._editor.set_chrome(chrome)
         self._sync_columns()
 
     def paint(self, inputs: SectionInputs) -> None:
@@ -240,16 +228,18 @@ class StateBody(QWidget):
             self._cancel()
         elif self._open_key and not self._closing:
             spec = self._by_key.get(self._open_key)
-            if spec is not None:
-                self._editor.set_chrome(self._services.chrome)
-                self._editor.set_context(self._env, _slot(spec, self._env, self._node), self._reader())
+            editor = self._editor
+            if spec is not None and editor is not None and self._node is not None and self._env is not None:
+                editor.set_chrome(self._services.chrome)
+                editor.set_context(self._env, _slot(spec, self._env, self._node), self._reader())
 
     def note_focus(self, focus: object) -> None:
         if self._open_key is None or self._closing:
             return
         if _holds(self, focus):
             return
-        if self._editor.has_error():
+        editor = self._editor
+        if editor is not None and editor.has_error():
             return
         self._commit_open()
 
@@ -272,32 +262,39 @@ class StateBody(QWidget):
                 row.combo.setFocus()
             return
         if self._open_key and self._open_key != key:
-            if self._editor.has_error():
+            if self._editor is not None and self._editor.has_error():
                 return
             self._commit_open()
         if self._node is None or self._env is None:
             return
+        self._ensure_editor()
+        editor = self._editor
+        pad = self._pad
+        status = self._status
+        if editor is None or pad is None or status is None or self._env is None or self._node is None:
+            return
         self._open_key = key
         self._attach(row)
-        self._pad.show()
-        self._editor.set_chrome(self._services.chrome)
-        self._editor.set_context(self._env, _slot(spec, self._env, self._node), self._reader())
-        self._editor.show_text(_stored(self._node, key))
-        self._editor.show()
-        self._status.show()
-        self._editor.setFocus()
+        pad.show()
+        editor.set_chrome(self._services.chrome)
+        editor.set_context(self._env, _slot(spec, self._env, self._node), self._reader())
+        editor.show_text(_stored(self._node, key))
+        editor.show()
+        status.show()
+        editor.setFocus()
 
     def _commit_open(self) -> None:
         if self._open_key is None or self._closing:
             return
         spec = self._by_key.get(self._open_key)
-        if spec is None:
+        editor = self._editor
+        if spec is None or editor is None:
             return
-        if self._editor.has_error():
+        if editor.has_error():
             return
         self._closing = True
         try:
-            if self._write(spec.key, spec.words, self._editor.toPlainText(), formula=True):
+            if self._write(spec.key, spec.words, editor.toPlainText(), formula=True):
                 self._close_editor()
         finally:
             self._closing = False
@@ -469,24 +466,61 @@ class StateBody(QWidget):
         for row in self._rows.values():
             row.words.setFixedWidth(width)
             row._elide()
-        layout = self._pad.layout()
-        if layout is not None:
-            layout.setContentsMargins(width, 2, 0, 0)
+
+    def _ensure_editor(self) -> None:
+        if self._editor is not None:
+            return
+        pad = QWidget(self)
+        pad.setObjectName("formBuilder.state.edit")
+        layout = QVBoxLayout(pad)
+        layout.setContentsMargins(12, 2, 8, 0)
+        layout.setSpacing(2)
+        editor = FormulaEditor(pad)
+        status = QLabel(pad)
+        status.setObjectName("formBuilder.state.status")
+        status.setWordWrap(True)
+        status.setMinimumWidth(0)
+        # The unwrapped sentence must not force the section wider than the inspector.
+        policy = getattr(QSizePolicy, "Policy", QSizePolicy)
+        status.setSizePolicy(getattr(policy, "Ignored"), getattr(policy, "Minimum"))
+        status.hide()
+        editor.hide()
+        layout.addWidget(editor)
+        layout.addWidget(status)
+        editor.set_status_label(status)
+        editor.set_handlers(self._commit_open, self._cancel)
+        editor.set_chrome(self._services.chrome)
+        complete, fixes = editor.lists()
+        self._pad = pad
+        self._editor = editor
+        self._status = status
+        self._complete = complete
+        self._fixes = fixes
+        pad.hide()
 
     def _attach(self, row: _Row) -> None:
         self._sync_columns()
         pad = self._pad
-        pad.setParent(row)
-        if row.column.indexOf(pad) < 0:
-            row.column.addWidget(pad)
+        if pad is None:
+            return
+        index = self._column.indexOf(row)
+        if self._column.indexOf(pad) >= 0:
+            self._column.removeWidget(pad)
+        pad.setParent(self)
+        self._column.insertWidget(index + 1, pad)
 
     def _close_editor(self) -> None:
         self._open_key = None
-        self._editor.hide_lists()
-        self._editor.hide()
+        editor = self._editor
+        pad = self._pad
+        if editor is None or pad is None or self._status is None:
+            return
+        editor.hide_lists()
+        editor.hide()
         self._status.hide()
-        self._pad.hide()
-        self._pad.setParent(self)
+        pad.hide()
+        self._column.removeWidget(pad)
+        pad.setParent(self)
 
     def _reader(self) -> SimpleNamespace:
         env = self._env
@@ -613,9 +647,13 @@ def _holds(body: StateBody, focus: object) -> bool:
     if focus is None:
         return True
     editor = body._editor
+    if editor is None:
+        return False
     if focus is editor or editor.isAncestorOf(focus):  # type: ignore[arg-type]
         return True
     for widget in (body._complete, body._fixes, body._status):
+        if widget is None:
+            continue
         if focus is widget or widget.isAncestorOf(focus):  # type: ignore[arg-type]
             return True
     return False

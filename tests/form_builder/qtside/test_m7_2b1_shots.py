@@ -97,18 +97,28 @@ def _shoot(qapp: QApplication, folder: Path, scale: str) -> None:
             inspector.flush()
             _pump(qapp)
             state = _child(inspector, "formBuilder.state")
-            _save(state, window, folder, "state-empty", mode, scale, qapp)
             from app.features.form_builder.qtside.inspector.behavior_ext.state import open_state_row
+            from app.qt.QtCore import Qt
 
+            node = surface.session.document.node(edit)
+            stored = getattr(node.value("cbcsEnabledWhen"), "text", "") if node is not None else ""
+            if stored:
+                open_state_row(inspector, "cbcsEnabledWhen")
+                _pump(qapp)
+                editor = _child(inspector, "formBuilder.formula")
+                editor.setPlainText("")  # type: ignore[attr-defined]
+                QTest.keyClick(editor, _key("Key_Return"), Qt.KeyboardModifier.ControlModifier)  # type: ignore[arg-type]
+                _pump(qapp)
+                assert not editor.isVisible()
+            _save(state, window, folder, "state-empty", mode, scale, qapp)
             open_state_row(inspector, "cbcsEnabledWhen")
             _pump(qapp)
             editor = _child(inspector, "formBuilder.formula")
             QTest.keyClicks(editor, "discountCheck")
             _pump(qapp)
-            from app.qt.QtCore import Qt
-
             QTest.keyClick(editor, _key("Key_Return"), Qt.KeyboardModifier.ControlModifier)  # type: ignore[arg-type]
             _pump(qapp)
+            assert not editor.isVisible()
             _save(state, window, folder, "state-filled", mode, scale, qapp)
             open_state_row(inspector, "cbcsVisibleWhen")
             _pump(qapp)

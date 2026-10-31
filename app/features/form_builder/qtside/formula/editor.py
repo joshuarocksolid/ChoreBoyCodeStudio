@@ -6,7 +6,7 @@ import io
 import tokenize
 from typing import Optional, Sequence, Tuple
 
-from app.qt.QtCore import QEvent, QPoint, QTimer, Qt
+from app.qt.QtCore import QEvent, QPoint, QRect, QTimer, Qt
 from app.qt.QtGui import QColor, QSyntaxHighlighter, QTextCharFormat, QTextCursor
 from app.qt.QtWidgets import QListWidget, QListWidgetItem, QPlainTextEdit, QTextEdit, QWidget
 from app.qt.qt_compat import enum_value
@@ -113,8 +113,13 @@ class FormulaEditor(QPlainTextEdit):
         super().__init__(parent)
         self.setObjectName("formBuilder.formula")
         self.setTabChangesFocus(True)
-        self.setLineWrapMode(getattr(getattr(QPlainTextEdit, "LineWrapMode", QPlainTextEdit), "NoWrap"))
+        wrap = getattr(getattr(QPlainTextEdit, "LineWrapMode", QPlainTextEdit), "WidgetWidth")
+        self.setLineWrapMode(wrap)
+        hidden = getattr(getattr(Qt, "ScrollBarPolicy", Qt), "ScrollBarAlwaysOff")
+        self.setHorizontalScrollBarPolicy(hidden)
         self.setMinimumWidth(0)
+        self._fitting = False
+        self._placing = False
         self._highlighter = _Highlighter(self.document())
         self._chrome = default_chrome()
         self._env: Optional[FormulaEnv] = None
@@ -435,22 +440,23 @@ class FormulaEditor(QPlainTextEdit):
             return
         text = self.status_text()
         label.setToolTip(text)  # type: ignore[attr-defined]
-        width = label.width() if label.width() > 20 else self.width()  # type: ignore[attr-defined]
-        if width > 20 and not self.has_error():
-            metrics = label.fontMetrics()  # type: ignore[attr-defined]
-            lines = text.split("\n")
-            if lines and int(metrics.horizontalAdvance(lines[0])) > width:
-                lines[0] = metrics.elidedText(lines[0], _ELIDE, width)
-                text = "\n".join(lines)
+        label.setWordWrap(True)  # type: ignore[attr-defined]
         label.setText(text)  # type: ignore[attr-defined]
-        lines = text.count("\n") + 1 if text else 0
-        spacing = label.fontMetrics().lineSpacing()  # type: ignore[attr-defined]
-        label.setMinimumHeight(spacing * lines + 2 if lines else 0)  # type: ignore[attr-defined]
+        # The label's own width can still be the unwrapped size hint. Measure
+        # against the field, which is the width the line will actually wrap in.
+        width = self.width() if self.width() > 20 else 160
+        wrap = int(getattr(getattr(Qt, "TextFlag", Qt), "TextWordWrap"))
+        rect = label.fontMetrics().boundingRect(QRect(0, 0, max(1, width), 2000), wrap, text)  # type: ignore[attr-defined]
+        label.setMinimumHeight(max(rect.height(), label.fontMetrics().lineSpacing()) + 4)  # type: ignore[attr-defined]
 
     def _dismiss(self, widget: QListWidget) -> None:
         if self._floating is widget:
             self._floating = None
         widget.hide()
+        widget.setMinimumWidth(0)
+        widget.setMaximumWidth(16777215)
+        if self._floating is None:
+            self._release_block()
 
     def _popup(self, widget: QListWidget) -> None:
         self._floating = widget
@@ -459,32 +465,86 @@ class FormulaEditor(QPlainTextEdit):
 
     def _place_popup(self) -> None:
         widget = self._floating
-        if widget is None:
+        if widget is None or self._placing:
             return
+        self._placing = True
+        try:
+            self._place_popup_now(widget)
+        finally:
+            self._placing = False
+
+    def _place_popup_now(self, widget: QListWidget) -> None:
         host = self._popup_host()
         if widget.parentWidget() is not host:
             widget.setParent(host)
         self._paint_list(widget)
+        self._publish_status()
         pad = self.parentWidget()
+        self._size_block(pad)
+        self._grow_block(host, pad)
+        if pad is not None and pad.layout() is not None:
+            pad.layout().activate()
+        if host.layout() is not None:
+            host.layout().activate()
+        width = host.width() if host is not self and host.width() > 20 else max(self.width(), 160)
+        widget.setFixedWidth(max(160, width))
+        if widget is self._complete and self._rows:
+            self._fill(
+                widget,
+                [_fit_completion(row.label, widget.fontMetrics(), widget.viewport().width()) for row in self._rows],
+            )
+        list_h = widget.height()
         if pad is not None and pad.objectName() == "formBuilder.state.edit" and host is not self:
-            point = pad.mapTo(host, QPoint(self.x(), self._below_status(pad)))
+            below = pad.mapTo(host, QPoint(0, pad.height() + 2))
+            if below.y() + list_h > host.height():
+                above = self.mapTo(host, QPoint(0, -(list_h + 2)))
+                point = above if above.y() >= 0 else below
+            else:
+                point = below
         elif host is self:
             point = QPoint(0, self.height())
         else:
             point = self.mapTo(host, QPoint(0, self.height() + 1))
-        widget.setFixedWidth(max(self.width(), 160))
         widget.move(point)
         widget.raise_()
         widget.show()
 
-    def _below_status(self, pad: QWidget) -> int:
-        status = self._status
-        if status is None or not status.isVisible():
-            return pad.height() + 1
-        width = status.width() if status.width() > 20 else self.width()
-        needed = status.heightForWidth(max(1, width)) if width else status.sizeHint().height()
-        bottom = status.mapTo(pad, QPoint(0, max(status.height(), needed)))
-        return bottom.y() + status.fontMetrics().lineSpacing() + 4
+    def _size_block(self, pad: Optional[QWidget]) -> None:
+        label = self._status
+        if pad is None or label is None or pad.objectName() != "formBuilder.state.edit":
+            return
+        lay = pad.layout()
+        top = bottom = spacing = 2
+        if lay is not None:
+            margins = lay.contentsMargins()
+            top = margins.top()
+            bottom = margins.bottom()
+            spacing = max(0, lay.spacing())
+        pad.setFixedHeight(top + self.height() + spacing + label.minimumHeight() + bottom)
+
+    def _release_block(self) -> None:
+        pad = self.parentWidget()
+        if pad is None or pad.objectName() != "formBuilder.state.edit":
+            return
+        pad.setMinimumHeight(0)
+        pad.setMaximumHeight(16777215)
+
+    def _grow_block(self, host: QWidget, pad: Optional[QWidget]) -> None:
+        label = self._status
+        if pad is None or label is None:
+            return
+        pad.setMinimumHeight(self.height() + label.minimumHeight() + 8)
+        widget: Optional[QWidget] = host
+        while widget is not None:
+            lay = widget.layout()
+            if lay is not None:
+                lay.invalidate()
+            widget.updateGeometry()
+            if widget.objectName() == "formBuilder.behaviorBody":
+                if lay is not None:
+                    lay.activate()
+                break
+            widget = widget.parentWidget()
 
     def _popup_host(self) -> QWidget:
         current: Optional[QWidget] = self.parentWidget()
@@ -505,9 +565,47 @@ class FormulaEditor(QPlainTextEdit):
             % (panel, chrome.text, border)
         )
 
+    def resizeEvent(self, event: object) -> None:  # noqa: N802
+        super().resizeEvent(event)  # type: ignore[arg-type]
+        self._fit()
+        if self._floating is not None:
+            self._place_popup()
+
     def _fit(self) -> None:
-        lines = min(_MAX_LINES, max(1, self.document().blockCount()))
-        self.setFixedHeight(self.fontMetrics().lineSpacing() * lines + 12)
+        if self._fitting:
+            return
+        self._fitting = True
+        try:
+            doc = self.document()
+            line = max(1, self.fontMetrics().lineSpacing())
+            doc.setTextWidth(max(1, self.viewport().width()))
+            wrapped = max(1, int((doc.size().height() + line - 1) // line))
+            lines = min(_MAX_LINES, max(wrapped, doc.blockCount()))
+            target = line * lines + 12
+            if self.height() != target:
+                self.setFixedHeight(target)
+        finally:
+            self._fitting = False
+
+
+def _fit_completion(label: str, metrics: object, width: int) -> str:
+    """Keep the object name. Elide the display (or the function note) to the row width."""
+    parts = label.split("  ")
+    room = max(8, width)
+    elide = getattr(metrics, "elidedText")
+    advance = getattr(metrics, "horizontalAdvance")
+    if len(parts) < 2:
+        return str(elide(label, _ELIDE, room))
+    name = parts[0]
+    if len(parts) == 2:
+        name_w = int(advance(name + "  "))
+        shown = str(elide(parts[1], _ELIDE, max(8, room - name_w)))
+        return "%s  %s" % (name, shown)
+    kind = parts[-1]
+    display = "  ".join(parts[1:-1])
+    fixed = int(advance("%s    %s" % (name, kind)))
+    shown = str(elide(display, _ELIDE, max(8, room - fixed)))
+    return "%s  %s  %s" % (name, shown, kind)
 
 
 def _severity(code: str) -> Severity:

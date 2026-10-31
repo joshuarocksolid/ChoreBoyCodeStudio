@@ -15,7 +15,7 @@ from app.features.form_builder.engine.ui4.writer import write_ui
 from app.features.form_builder.integration.chrome import chrome_for
 from app.features.form_builder.qtside.formula.editor import FormulaEditor
 from app.features.form_builder.qtside.inspector.behavior_ext.state import open_state_row
-from app.qt.QtCore import Qt
+from app.qt.QtCore import QPoint, Qt
 from app.qt.QtGui import QColor, QTextCharFormat
 from app.qt.QtTest import QTest
 from app.qt.QtWidgets import QApplication, QLabel, QListWidget, QPlainTextEdit, QVBoxLayout, QWidget
@@ -60,6 +60,19 @@ def test_tab_inserts_the_object_name_and_ctrl_enter_is_one_undo(qapp: QApplicati
         listed = pane.findChild(QListWidget, "formBuilder.formula.complete")
         assert listed is not None and listed.isVisible() and listed.count() >= 1
         assert listed.item(0).text().startswith("discountCheck  Discount  Yes or no")
+        status = pane.findChild(QLabel, "formBuilder.state.status")
+        state = pane.findChild(QWidget, "formBuilder.state")
+        assert status is not None and state is not None and status.isVisible() and status.height() > 8
+        list_top = listed.mapTo(state, QPoint(0, 0)).y()
+        status_bottom = status.mapTo(state, QPoint(0, status.height())).y()
+        assert list_top >= status_bottom - 2
+        pane.window().resize(280, 720)
+        pump()
+        assert status.height() > status.fontMetrics().lineSpacing()
+        list_top = listed.mapTo(state, QPoint(0, 0)).y()
+        status_bottom = status.mapTo(state, QPoint(0, status.height())).y()
+        assert list_top >= status_bottom - 2
+        assert listed.item(0).text().startswith("discountCheck")
         _click(editor, "Key_Tab")
         assert editor.toPlainText() == "discountCheck"
         assert not listed.isVisible()
@@ -81,8 +94,14 @@ def test_an_error_stays_open_and_esc_restores() -> None:
         _select(session, pane, "discountEdit")
         open_state_row(pane, "cbcsEnabledWhen")
         editor = _editor(pane)
+        assert not editor.horizontalScrollBar().isVisible()
+        pad = pane.findChild(QWidget, "formBuilder.state.edit")
+        state = pane.findChild(QWidget, "formBuilder.state")
+        assert pad is not None and pad.layout() is not None and pad.layout().contentsMargins().left() == 12
+        assert state is not None and editor.width() >= state.width() - 40
         QTest.keyClicks(editor, "missingField")
         pump()
+        assert not editor.horizontalScrollBar().isVisible()
         _click(editor, "Key_Return", "ControlModifier")
         assert editor.isVisible()
         status = pane.findChild(QLabel, "formBuilder.state.status")

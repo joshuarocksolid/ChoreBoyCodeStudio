@@ -44,9 +44,8 @@ TEST_PATHS = (
     "tests/unit/shell/test_form_tab_shell_keys.py",
     "tests/unit/tools/test_form_builder_parity.py",
 )
-# The unit lane is ~2650 tests after M5 (~300 s on a quiet Mac, ~700 s at load 30
-# with several lanes running); keep headroom so a loaded machine is not a failure.
-PYTEST_TIMEOUT_SECONDS = 900
+# The unit lane takes about 940 s when the machine load is near 40.
+PYTEST_TIMEOUT_SECONDS = 1500
 FAST_SHARD_TIMEOUT_SECONDS = 400
 COMMAND_TIMEOUT_SECONDS = 180
 
