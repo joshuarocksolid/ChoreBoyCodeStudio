@@ -2945,6 +2945,19 @@ Every on-screen sentence a lane adds is written in its PR as a row in this table
 | FB111 | "This formula is too long. Split it, or move it into a method." |
 | FB115 | "Connect this form to a table first (coming with data forms)." |
 | FB119 | "{display}'s messages show only as a tooltip. Add a label under the field?" |
+| FB101, no close match | "{name} is not a field on this form." |
+| FB102 on a literal | "Can't {verb} {type a} and {type b}." |
+| FB102 hints (appended) | " Use not is_blank({name})." · " Use {name} != 0." |
+| FB103 assignment | "Formulas can't change things. Use a Set a field step." |
+| FB105 | "The pattern has to be written in quotes." · "That pattern is too long." · "That pattern isn't one this formula can use." |
+| FB106 in a formula | "That name is reserved." |
+| FB108, checker fault | "This formula isn't finished." (the fault is logged) |
+| FB110 | "{method} has no type, so this formula treats it as yes or no." · "This value has no type, so this formula treats it as yes or no." |
+| FB112 | "{name} takes {n} values, not {m}." · "{name} takes {a} or {b} values, not {m}." · "{name} takes at least {n} values, not {m}." |
+| FB113 | "{name} is a whole column, so it only belongs inside sum, count, avg, min, or max." |
+| FB114 | "{display} has no value a formula can read." · "{display} has no {name}." |
+| FB118 | "{display} has an unknown kind, so this formula reads it as text." · "{format} is an unknown format, so this formula shows the value as text." |
+| FB107, cells LOGIC §4.10 leaves blank | "Use `True`." · "Use `False`." · "Use `is_blank`." · "Write a decimal, like `0.10`." · "Use `and`." · "Use `or`." · "Use `not`." · semicolon: "Separate the values with a comma." |
 
 Words for the rules: "Enabled when", "Visible when", "Read-only when", "Value", "Default".
 
