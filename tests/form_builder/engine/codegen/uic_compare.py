@@ -1422,6 +1422,26 @@ class _QuiLoaderRules:
         return False
 
 
+def _logic_state_ignored(item: str, xml: Optional[bytes]) -> bool:
+    """uic does not run cbcs rules. setupUi does, so the ruled state may differ.
+
+    Only the property that rule writes is skipped. Geometry, text, and every
+    other property on the same form still have to match uic.
+    """
+    if not xml:
+        return False
+    path = item.split(" ", 1)[0]
+    pairs = (
+        (b'name="cbcsEnabledWhen"', ".props.enabled"),
+        (b'name="cbcsVisibleWhen"', ".props.visible"),
+        (b'name="cbcsReadOnlyWhen"', ".props.readOnly"),
+    )
+    for marker, suffix in pairs:
+        if marker in xml and path.endswith(suffix):
+            return True
+    return False
+
+
 def _tree_result(
     left,
     right,
@@ -1429,6 +1449,7 @@ def _tree_result(
     other_source: Optional[str],
     *,
     quiloader_xml: Optional[bytes] = None,
+    logic_xml: Optional[bytes] = None,
 ):
     left_tree = _widget(left)
     if quiloader_xml is not None:
@@ -1443,7 +1464,11 @@ def _tree_result(
     else:
         fired = source
     diffs.extend(_diff(_fire(left, fired), _fire(right, fired), "$.fired"))
-    interesting = [item for item in diffs if not _ignored_diff(item)]
+    interesting = [
+        item
+        for item in diffs
+        if not _ignored_diff(item) and not _logic_state_ignored(item, logic_xml)
+    ]
     return ("ok" if not interesting else "diff", interesting[:12], len(interesting), len(diffs))
 
 
@@ -1557,20 +1582,20 @@ def _compare_loaded(path, read, source: str, uic_text: Optional[str], uic_stderr
             loaded = _track(_qui_widget(path, id_based=_id_based(read.document)))
             if loaded is None:
                 return "loader", _exc_text(exc)
-            result = _tree_result(left, loaded, source, None, quiloader_xml=data)
+            result = _tree_result(left, loaded, source, None, quiloader_xml=data, logic_xml=data)
             if b"cbcsSplitterSizes" in data:
                 _assert_splitter_sizes(left, source or "")
             return result
         if b"cbcsSplitterSizes" in data:
             _assert_splitter_sizes(left, source or "")
-        return _tree_result(left, right, source, uic_text)
+        return _tree_result(left, right, source, uic_text, logic_xml=data)
     loaded = _track(_qui_widget(path, id_based=_id_based(read.document)))
     if loaded is None:
         detail = (uic_stderr or "uic produced no Python")[:400]
         return "loader", detail
     if b"cbcsSplitterSizes" in data:
         _assert_splitter_sizes(left, source or "")
-    return _tree_result(left, loaded, source, None, quiloader_xml=data)
+    return _tree_result(left, loaded, source, None, quiloader_xml=data, logic_xml=data)
 
 
 def _id_based(document) -> bool:
