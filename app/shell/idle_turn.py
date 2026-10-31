@@ -8,10 +8,11 @@ from __future__ import annotations
 
 from typing import Callable, List
 
-from app.qt.QtCore import QAbstractEventDispatcher
+from app.qt.QtCore import QAbstractEventDispatcher, QCoreApplication, QTimer
 
 _pending: List[Callable[[], None]] = []
 _armed = False
+_quit_hooked = False
 
 
 def run_when_idle(callback: Callable[[], None]) -> None:
@@ -22,6 +23,7 @@ def run_when_idle(callback: Callable[[], None]) -> None:
     """
     global _armed
     _pending.append(callback)
+    _hook_quit()
     if _armed:
         return
     dispatcher = QAbstractEventDispatcher.instance()
@@ -36,10 +38,24 @@ def run_when_idle(callback: Callable[[], None]) -> None:
             dispatcher.aboutToBlock.disconnect(flush)
         except (RuntimeError, TypeError):
             pass
-        _drain()
+        # Leave the dispatcher's signal before running the work. The queued
+        # call wakes the loop, so it runs before the loop waits for input.
+        QTimer.singleShot(0, _drain)
 
     _armed = True
     dispatcher.aboutToBlock.connect(flush)
+
+
+def _hook_quit() -> None:
+    # A save just before quit still writes its history checkpoint.
+    global _quit_hooked
+    if _quit_hooked:
+        return
+    app = QCoreApplication.instance()
+    if app is None:
+        return
+    _quit_hooked = True
+    app.aboutToQuit.connect(_drain)
 
 
 def _drain() -> None:
