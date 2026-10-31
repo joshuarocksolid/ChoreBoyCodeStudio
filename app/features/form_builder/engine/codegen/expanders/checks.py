@@ -114,7 +114,7 @@ class ChecksExpander:
     order = 300
 
     def contribute(self, doc: UiDocument, ctx: CodegenContext) -> Contribution:
-        env = formula_env(doc)
+        env = formula_env(doc, ctx.window)
         classes = QtClassTable.shared()
         methods: List[Method] = []
         setup: List[str] = []

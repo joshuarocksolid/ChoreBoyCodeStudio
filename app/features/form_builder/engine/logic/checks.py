@@ -19,7 +19,8 @@ from app.features.form_builder.engine.logic.codec import JsonObject, JsonValue, 
 from app.features.form_builder.engine.logic.compat import is_name
 from app.features.form_builder.engine.logic.formula.check import analyze
 from app.features.form_builder.engine.logic.formula.compile import Emitted, compile_formula
-from app.features.form_builder.engine.logic.formula.env import FormulaEnv, WidgetFacts, reserved_names
+from app.features.form_builder.engine.project.window_facts import WindowFacts
+from app.features.form_builder.engine.logic.formula.env import FormulaEnv
 from app.features.form_builder.engine.logic.formula.runtime import HELPERS
 from app.features.form_builder.engine.logic.formula.types import DATE, FType, NUMBER, TEXT
 from app.features.form_builder.engine.query.tab_stops import display_name
@@ -302,34 +303,11 @@ def validator_pattern(kind: str, currency: str = "$") -> str:
     return ""
 
 
-def formula_env(doc: UiDocument) -> FormulaEnv:
-    """Widgets from the document. ``kind`` is ``cbcsKind``. Methods stay empty."""
-    classes = QtClassTable.shared()
-    widgets = {}
-    for node in doc.iter_widgets():
-        name = node.object_name
-        if not name:
-            continue
-        kind = kind_text(node)
-        widgets[name] = WidgetFacts(
-            class_name=node.class_name or "",
-            display=_caption(doc, name),
-            kind=kind,
-            decimals=_decimals(node, kind),
-            allow_blank=_allow_blank(node),
-        )
+def formula_env(doc: UiDocument, window: Optional[WindowFacts] = None) -> FormulaEnv:
+    """The form's one formula env (M7.2a), so checks see the same kinds and methods as rules."""
+    from app.features.form_builder.engine.logic.formula_env import env_for
 
-    def chain(class_name: str) -> Tuple[str, ...]:
-        found = tuple(info.name for info in classes.chain(class_name))
-        return found or (class_name,)
-
-    return FormulaEnv(
-        widgets=widgets,
-        methods={},
-        reserved=reserved_names(),
-        class_chain=chain,
-        class_name=doc.form_class_name() or "Window",
-    )
+    return env_for(doc, window, QtClassTable.shared())
 
 
 def kind_text(node: WidgetNode) -> str:
@@ -959,27 +937,6 @@ def _one_of_values(value: object) -> Optional[Tuple[Union[str, int, float], ...]
         else:
             return None
     return tuple(found)
-
-
-def _caption(doc: UiDocument, object_name: str) -> str:
-    text = display_name(doc, object_name)
-    if text.endswith(":"):
-        return text[:-1]
-    return text
-
-
-def _decimals(node: WidgetNode, kind: str) -> int:
-    if _suffix_number(kind, "number:"):
-        return int(kind.split(":", 1)[1])
-    value = node.value("decimals")
-    if isinstance(value, NumberValue):
-        return value.value
-    return 2
-
-
-def _allow_blank(node: WidgetNode) -> bool:
-    value = node.value("specialValueText")
-    return isinstance(value, StringValue) and bool(value.text)
 
 
 def _load_names(source: str) -> set:
