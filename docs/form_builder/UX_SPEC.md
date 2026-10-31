@@ -2958,6 +2958,16 @@ Every on-screen sentence a lane adds is written in its PR as a row in this table
 | FB114 | "{display} has no value a formula can read." · "{display} has no {name}." |
 | FB118 | "{display} has an unknown kind, so this formula reads it as text." · "{format} is an unknown format, so this formula shows the value as text." |
 | FB107, cells LOGIC §4.10 leaves blank | "Use `True`." · "Use `False`." · "Use `is_blank`." · "Write a decimal, like `0.10`." · "Use `and`." · "Use `or`." · "Use `not`." · semicolon: "Separate the values with a comma." |
+| Step picker groups (M7.4) | "FIELDS", "SHOW", "WINDOWS", "FLOW" |
+| Step picker rows (M7.4) | "Check all fields", "Set a field", "Clear fields", "Move focus to", "Show or hide", "Enable or disable", "Show a message", "Ask yes or no", "Switch tab or page", "Open another form", "Close this form", "Stop here if…" |
+| Verb page button (M7.4) | "Add this step" |
+| Only if (M7.4) | row menu "Only if…"; the indented line "only if {condition}"; undo "Set only if for {words}" |
+| Step notes (M7.4) | "(stops here if a field fails)" · "(stops here on No)" · "(the form stays open if a step stops)" |
+| Form events (M7.4) | "When the form opens" · "Before the form closes" |
+| FB117 fix title (M7.4) | "Show the rule" |
+| FB120 | "That form isn't in this project's forms folder" |
+| Skipped step comment (generated) | "# step {n} skipped ({code}: see Problems)" |
+| Check messages (M7.3a defaults) | "{Label} is required" · "Enter a number" · "Enter an email address like name@example.com" · "Enter a phone number" · "Enter a ZIP code like 12345" · "{Label} is not in the right format" · "{Label} must be {min} to {max} characters" (and "at least {min}" / "at most {max} characters") · "{Label} must be between {min} and {max}" (and "at least {min}" / "at most {max}") · "{Label} must be one of {values}" |
 
 Words for the rules: "Enabled when", "Visible when", "Read-only when", "Value", "Default".
 
