@@ -82,7 +82,8 @@ class WidgetFacts:
 class CodegenContext:
     """Read-only facts the core computed: the Ui class name, the ``setupUi``
     parameter name (the form object, e.g. ``Invoice``), widget attribute names,
-    the window reading, formats, widget facts and whether Preview asked for trace."""
+    the window reading, formats, widget facts, whether Preview asked for trace,
+    and the folder holding the .ui being generated (None when unsaved)."""
 
     ui_class_name: str
     form_param: str
@@ -91,6 +92,7 @@ class CodegenContext:
     formats: FormatSettings = FormatSettings()
     widgets: Mapping[str, WidgetFacts] = field(default_factory=dict)
     trace: bool = False
+    forms_dir: Optional[str] = None
 
 
 @dataclass(frozen=True)

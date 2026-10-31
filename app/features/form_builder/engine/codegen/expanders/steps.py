@@ -153,6 +153,7 @@ class _EmitCtx:
         self.trace = ctx.trace
         self.window = ctx.window
         self.formats = ctx.formats
+        self.forms_dir = ctx.forms_dir
         self.doc = doc
         self.classes = classes
         self.bag = bag

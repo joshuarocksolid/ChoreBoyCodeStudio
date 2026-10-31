@@ -11,7 +11,7 @@ import keyword
 import os
 import re
 from dataclasses import dataclass, replace
-from typing import Dict, List, Optional, Sequence, Set, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Set, Tuple
 
 from app.features.form_builder.engine.codegen.api_types import CodegenOptions
 from app.features.form_builder.engine.project.window_facts import WindowFacts
@@ -226,6 +226,11 @@ def _function_name(written: Optional[str]) -> Optional[str]:
     if not text or any(not part.isidentifier() or not part.isascii() or keyword.iskeyword(part) for part in parts):
         return None
     return text
+
+
+def _forms_dir(scope: Any) -> Optional[str]:
+    path = getattr(scope, "ui_path", "") or ""
+    return os.path.dirname(os.path.abspath(path)) if path else None
 
 
 class _Emitter:
@@ -1784,24 +1789,19 @@ class _Emitter:
             formats=FormatSettings(),
             widgets=self._widgets,
             trace=self.trace,
+            forms_dir=_forms_dir(self.scope),
         )
-        from app.features.form_builder.engine.logic.verbs.m7 import bind_form_lookup, reset_form_lookup
-
-        token = bind_form_lookup(self.scope)
         found = []
-        try:
-            for expander in load_expanders():
-                try:
-                    found.append(expander.contribute(self.doc, ctx))
-                except Exception:
-                    # A broken expander adds no lines. The rest of the form still generates.
-                    name = getattr(expander, "expander_id", type(expander).__name__)
-                    self.warn(
-                        "FB504",
-                        'Logic expander "%s" failed and added nothing.' % name,
-                    )
-        finally:
-            reset_form_lookup(token)
+        for expander in load_expanders():
+            try:
+                found.append(expander.contribute(self.doc, ctx))
+            except Exception:
+                # A broken expander adds no lines. The rest of the form still generates.
+                name = getattr(expander, "expander_id", type(expander).__name__)
+                self.warn(
+                    "FB504",
+                    'Logic expander "%s" failed and added nothing.' % name,
+                )
         return found
 
     def _has_logic(self, contributions: Sequence[Contribution]) -> bool:

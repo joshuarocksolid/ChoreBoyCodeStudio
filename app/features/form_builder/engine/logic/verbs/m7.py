@@ -8,13 +8,11 @@ declared by M7.1a; this module only produces them.
 from __future__ import annotations
 
 import os
-from contextvars import ContextVar, Token
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from app.features.form_builder.engine.logic import compat
 from app.features.form_builder.engine.logic.verbs import FieldSpec, VerbSpec, require_text
 
-_FORM_LOOKUP: ContextVar[Optional[str]] = ContextVar("cbcs_m7_forms_dir", default=None)
 
 _LEVELS = {"info": "information", "warning": "warning", "critical": "critical"}
 _CLOSE = {"accept": "accept", "reject": "reject", "close": "close"}
@@ -48,17 +46,6 @@ _CLEAR = {
     "QSlider": "setValue({owner}.minimum())",
     "QDial": "setValue({owner}.minimum())",
 }
-
-
-def bind_form_lookup(scope: Any) -> Token:
-    """Remember the forms folder for this generate, so ``openForm`` can raise FB120."""
-    path = getattr(scope, "ui_path", "") or ""
-    folder = os.path.dirname(os.path.abspath(path)) if path else ""
-    return _FORM_LOOKUP.set(folder or None)
-
-
-def reset_form_lookup(token: Token) -> None:
-    _FORM_LOOKUP.reset(token)
 
 
 def _refused(message: str) -> None:
@@ -571,11 +558,10 @@ def _window_class(stem: str) -> str:
     return "".join(part[:1].upper() + part[1:] for part in parts) + "Window"
 
 
-def form_is_generated(stem: str) -> bool:
+def form_is_generated(stem: str, folder: Optional[str]) -> bool:
     """False when this generate can see the forms folder and the form is not in it."""
     if not compat.is_name(stem):
         return False
-    folder = _FORM_LOOKUP.get()
     if not folder or not os.path.isdir(folder):
         return True
     return os.path.isfile(os.path.join(folder, "%s.ui" % stem))
@@ -583,7 +569,7 @@ def form_is_generated(stem: str) -> bool:
 
 def _emit_open(step: Any, ctx: Any) -> Tuple[str, ...]:
     stem = _text(step, "form")
-    if not form_is_generated(stem):
+    if not form_is_generated(stem, getattr(ctx, "forms_dir", None)):
         ctx.step = step
         _diagnose(ctx, "FB120", "That form isn't in this project's forms folder", stem)
         return _skip(ctx, "FB120")
