@@ -11,6 +11,7 @@ from app.features.form_builder.engine.commands.catalog_ext.events import SetEven
 from app.features.form_builder.engine.logic.events_codec import call_step
 from app.features.form_builder.integration.handler_checks_bridge import arm
 from app.features.form_builder.integration.handlers_code import SERVICE
+from tests.form_builder.idle import pump_until_idle
 from tests.form_builder.test_m6_2b_gesture import FIXTURE, _codes, _open, _request
 
 pytestmark = [pytest.mark.unit]
@@ -55,6 +56,9 @@ def test_fb201_follows_a_form_change_and_a_text_edit(tmp_path: Path, qapp) -> No
         )
     )
     qapp.processEvents()
+    # The checks wait for the idle turn, not the repaint pump after the commit.
+    assert "FB201" not in _codes(surface)
+    pump_until_idle()
     assert "FB201" in _codes(surface)
     port.tabs[str(window)] = port.tabs[str(window)].replace(
         "    def show_total(self):",

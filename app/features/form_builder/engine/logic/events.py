@@ -169,12 +169,18 @@ _ANCHORS: weakref.WeakKeyDictionary = weakref.WeakKeyDictionary()
 
 @contextmanager
 def event_edits(doc: UiDocument, pairs: Tuple[Tuple[str, str], ...]) -> Iterator[None]:
-    """The bumps inside this block rewrite only these events. Anything else rereads the form."""
+    """The bumps inside this block rewrite only these events. Anything else rereads the form.
+
+    They also leave ``doc.structure_revision`` alone. An event edit sets ``cbcs*``
+    properties and adds or removes connections and declared slots. It adds, removes
+    and moves no widget, layout or action, and it touches no picture.
+    """
     _bind_revision(doc)
     previous = _SCOPE.get(id(doc))
     _SCOPE[id(doc)] = set(pairs)
     try:
-        yield
+        with doc.event_only_edits():
+            yield
     finally:
         if previous is None:
             _SCOPE.pop(id(doc), None)

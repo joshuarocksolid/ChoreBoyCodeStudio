@@ -11,6 +11,7 @@ from app.features.form_builder.engine.logic.events import read_events
 from app.features.form_builder.engine.codegen.window_template import plan_stub
 from app.features.form_builder.engine.project import window_file
 from tests.form_builder.engine.commands._support import open_log
+from tests.form_builder.idle import pump_until_idle
 
 _WINDOW = """from PySide6.QtWidgets import QDialog
 
@@ -153,6 +154,9 @@ def test_a_step_commit_checks_handlers_on_the_next_turn_and_skips_a_hidden_toast
         assert views["n"] == 0
         for _ in range(4):
             qapp.processEvents()
+        # Not inside the pumps that follow the commit. The idle turn runs them.
+        assert checks["n"] == 0
+        pump_until_idle()
     finally:
         handler_checks_bridge.check_handlers = real_check  # type: ignore[assignment]
         canvas.viewport_rect = real_view  # type: ignore[method-assign]

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from contextlib import AbstractContextManager
 from typing import Any
 
 from app.qt.QtCore import QPoint
@@ -91,6 +92,9 @@ class EditorTabBufferDelegates:
 
     def update_editor_status_for_path(self, file_path: str) -> None:
         self._buffer_workflow.update_editor_status_for_path(file_path)
+
+    def hold_status_updates(self) -> AbstractContextManager[None]:
+        return self._buffer_workflow.hold_status_updates()
 
     def active_editor_widget(self) -> CodeEditorWidget | None:
         return self._editor_tabs_coordinator.active_editor_widget()  # type: ignore[return-value]

@@ -242,7 +242,14 @@ def grid_is_default(doc: UiDocument, part: str) -> bool:
 
 
 def has_free_container(doc: UiDocument) -> bool:
-    """True when some widget sits in a container that has no layout (UX-FSET-006)."""
+    """True when some widget sits in a container that has no layout (UX-FSET-006).
+
+    Kept until the structure moves: a step commit asks again after every edit.
+    """
+    return doc.structure_memo("has_free_container", lambda: _has_free_container(doc))
+
+
+def _has_free_container(doc: UiDocument) -> bool:
     for node in doc.iter_preorder():
         if isinstance(node, WidgetNode) and node.id != doc.root.id and placed_freely(doc, node.id):
             return True

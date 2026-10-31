@@ -116,7 +116,7 @@ def place_chips(
     ``dock`` is the chrome strip for a required chip with no other seat. None
     uses a strip along the top of ``viewport``.
     """
-    buckets = _Buckets(content)
+    buckets = _buckets_for(content)
     taken: List[CanvasRect] = list(fixed)
     seats: List[ChipSeat] = []
     for request in requests:
@@ -484,6 +484,25 @@ def corner_rect(target: CanvasRect, size: CanvasSize, corner: Corner) -> CanvasR
         size.width,
         size.height,
     )
+
+
+#: The last few obstacle tuples and their grids. A frame, the selection chip and the
+#: logic badges all seat chips among the same static content, so one grid serves them.
+_GRIDS: List[Tuple[Sequence[Obstacle], "_Buckets"]] = []
+_GRID_KEEP = 4
+
+
+def _buckets_for(content: Sequence[Obstacle]) -> "_Buckets":
+    """The grid for ``content``. A tuple cannot change, so the same tuple has the same grid."""
+    if type(content) is not tuple:
+        return _Buckets(content)
+    for held, grid in _GRIDS:
+        if held is content:
+            return grid
+    grid = _Buckets(content)
+    _GRIDS.insert(0, (content, grid))
+    del _GRIDS[_GRID_KEEP:]
+    return grid
 
 
 class _Buckets:

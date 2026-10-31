@@ -17,7 +17,7 @@ from app.treesitter.capture_pipeline import (
 from app.treesitter.injection_highlights import TreeSitterInjectionMixin
 from app.treesitter.jsonc_lexical import TreeSitterJsoncLexicalMixin
 from app.treesitter.language_registry import TreeSitterResolvedLanguage, default_tree_sitter_language_registry
-from app.treesitter.local_semantics import _LocalDefinition, _LocalReference, TreeSitterLocalSemanticsMixin
+from app.treesitter.local_semantics import TreeSitterLocalSemanticsMixin
 from app.treesitter.ts_api import compile_query, make_parser
 from app.treesitter.markdown_lexical import TreeSitterMarkdownLexicalMixin
 
@@ -143,8 +143,7 @@ class TreeSitterHighlighter(
         self._pending_edits: list[_PendingEdit] = []
         self._queued_contents_changes: list[tuple[int, int, int, str]] = []
         self._capture_cache: dict[int, list[_CaptureSpan]] = {}
-        self._local_tokens: list[_LocalDefinition | _LocalReference] = []
-        self._resolved_local_tokens: list[tuple[_LocalDefinition | _LocalReference, str]] = []
+        self._reset_local_state()
         self._highlighting_adaptive_mode = constants.HIGHLIGHTING_MODE_NORMAL
         self._highlighting_reduced_threshold_chars = constants.UI_INTELLIGENCE_HIGHLIGHTING_REDUCED_THRESHOLD_CHARS_DEFAULT
         self._highlighting_lexical_only_threshold_chars = constants.UI_INTELLIGENCE_HIGHLIGHTING_LEXICAL_ONLY_THRESHOLD_CHARS_DEFAULT
@@ -191,8 +190,7 @@ class TreeSitterHighlighter(
         self._pending_edits.clear()
         self._queued_contents_changes.clear()
         self._capture_cache.clear()
-        self._local_tokens = []
-        self._resolved_local_tokens = []
+        self._reset_local_state()
         self._source_text = document.toPlainText() if document is not None else ""
         self._dirty = True
         self._viewport_dirty = True
@@ -380,8 +378,7 @@ class TreeSitterHighlighter(
             self._dirty = True
             self._tree = None
             self._pending_edits.clear()
-            self._local_tokens = []
-            self._resolved_local_tokens = []
+            self._reset_local_state()
         self._last_synced_revision = rev
 
     def _cancel_local_rebuild(self) -> None:
@@ -404,17 +401,19 @@ class TreeSitterHighlighter(
     def _apply_deferred_locals(self) -> None:
         if self._is_disposed or self._tree is None:
             return
-        self._rebuild_local_tokens()
-        lines = [int(entry.start_point[0]) for entry, _name in self._resolved_local_tokens]
-        if not lines:
+        # Only the statements the edits touched are rebuilt, and only the lines
+        # whose local colors changed are requeried and repainted.
+        changed_rows = self._refresh_local_tokens()
+        if not changed_rows:
             return
-        start, end = min(lines), max(lines)
+        line_ranges = self._merge_line_ranges([(row, row) for row in sorted(changed_rows)])
         self._update_capture_cache(
             changed_ranges=[],
             full_rebuild=False,
-            fallback_line_ranges=[(start, end)],
+            fallback_line_ranges=line_ranges,
         )
-        self._rehighlight_line_window(start, end)
+        for start, end in line_ranges:
+            self._rehighlight_line_window(start, end)
 
     def _stop_initial_parse(self) -> None:
         timer = getattr(self, "_initial_parse_timer", None)
@@ -470,6 +469,7 @@ class TreeSitterHighlighter(
         if self._dirty:
             if self._pending_edits:
                 for edit in self._pending_edits:
+                    self._locals_note_edit(edit)
                     line_delta = int(edit.new_end_point[0]) - int(edit.old_end_point[0])
                     pending_line_ranges.append(
                         self._rehighlight_window_for_edit(
@@ -494,13 +494,20 @@ class TreeSitterHighlighter(
                 return
             self._tree = new_tree
             full_rebuild = not used_old_tree
-            if full_rebuild or not self._resolved_local_tokens:
+            rebuilt_locals = full_rebuild or not self._locals_by_row
+            if rebuilt_locals:
                 self._cancel_local_rebuild()
                 self._rebuild_local_tokens()
+                if self._locals_by_row:
+                    # Local colors may have changed on any line, not only the edited ones.
+                    full_rebuild = True
             else:
                 self._schedule_local_rebuild()
             if used_old_tree and old_tree is not None:
                 changed_ranges = old_tree.changed_ranges(new_tree)
+                if not rebuilt_locals:
+                    for change_range in changed_ranges:
+                        self._locals_add_dirty(int(change_range.start_point[0]), int(change_range.end_point[0]))
             line_count = max(1, self._source_text.count("\n") + 1)
             self._last_ts_ranges = self._line_ranges_from_changed_ranges(changed_ranges, line_count)
         elif self._tree is None:

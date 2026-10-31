@@ -9,8 +9,9 @@ from __future__ import annotations
 
 import os
 import weakref
+from contextlib import nullcontext
 from dataclasses import dataclass
-from typing import Any, List, Optional, Tuple
+from typing import Any, ContextManager, List, Optional, Tuple, cast
 
 from app.features.form_builder.engine.codegen.window_template import (
     TextEdit,
@@ -150,6 +151,12 @@ class CodeHandlers:
         return book
 
     def make_method(self, surface: Any, request: Any) -> HandlerOutcome:
+        # The form step, the window file, and the jump to the new method each
+        # ask the status bar for the same text. It is read once at the end.
+        with _status_held(surface):
+            return self._make_method(surface, request)
+
+    def _make_method(self, surface: Any, request: Any) -> HandlerOutcome:
         book = self._book(surface)
         book.arm(surface)
         waiting = pending_toast(surface)
@@ -549,6 +556,18 @@ def _hold_save_notify(bridge: Any) -> Tuple[Any, List[str]]:
 
     bridge.notify_saved = hold  # type: ignore[method-assign]
     return notify, pending
+
+
+def _status_held(surface: Any) -> "ContextManager[None]":
+    """Hold the shell's status-bar refreshes for the length of a gesture."""
+    try:
+        workflow = getattr(surface.window(), "_editor_tab_workflow", None)
+    except (AttributeError, RuntimeError):
+        return nullcontext()
+    hold = getattr(workflow, "hold_status_updates", None)
+    if not callable(hold):
+        return nullcontext()
+    return cast("ContextManager[None]", hold())
 
 
 def _notify_when_idle(notify: Any, saved: List[str]) -> None:

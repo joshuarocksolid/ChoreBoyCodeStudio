@@ -1246,9 +1246,9 @@ class CanvasController:
         return shown
 
     def _mdi_areas(self) -> Tuple[NodeId, ...]:
-        """MDI areas in the form. O(form) once per document revision, O(1) per frame."""
+        """MDI areas in the form. O(form) once per structure revision, O(1) per frame."""
         document = self._session.document
-        revision = document.revision
+        revision = document.structure_revision
         cached = self._mdi_cache
         if cached is not None and cached[0] is document and cached[1] == revision:
             return cached[2]

@@ -8,7 +8,10 @@ from __future__ import annotations
 
 from typing import Callable, List
 
+from app.bootstrap.logging_setup import get_subsystem_logger
 from app.qt.QtCore import QAbstractEventDispatcher, QCoreApplication, QTimer
+
+_LOGGER = get_subsystem_logger("shell")
 
 _pending: List[Callable[[], None]] = []
 _armed = False
@@ -62,4 +65,9 @@ def _drain() -> None:
     batch = list(_pending)
     del _pending[:]
     for callback in batch:
-        callback()
+        # One follow-up that fails, such as work for a window that has closed,
+        # must not drop the ones queued behind it.
+        try:
+            callback()
+        except Exception:
+            _LOGGER.warning("An idle follow-up failed.", exc_info=True)

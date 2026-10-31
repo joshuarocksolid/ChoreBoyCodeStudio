@@ -169,9 +169,20 @@ def refs_of(doc: UiDocument, host: NodeId) -> Tuple[ActionRefNode, ...]:
     return tuple(ref for ref in node.children("add_actions") if isinstance(ref, ActionRefNode))
 
 
+def _nodes_of(doc: UiDocument, ids: Tuple[NodeId, ...]) -> Tuple[Node, ...]:
+    return tuple(node for node in (doc.get(item) for item in ids) if node is not None)
+
+
 def all_actions(doc: UiDocument) -> Tuple[ActionNode, ...]:
-    """Every action in document order: root actions first, then those inside groups."""
-    return tuple(node for node in doc.iter_preorder() if isinstance(node, ActionNode))
+    """Every action in document order: root actions first, then those inside groups.
+
+    The walk is kept until the structure moves. Its answer is ids, read back as nodes.
+    """
+    ids = doc.structure_memo(
+        "actions.all_actions",
+        lambda: tuple(node.id for node in doc.iter_preorder() if isinstance(node, ActionNode)),
+    )
+    return tuple(node for node in _nodes_of(doc, ids) if isinstance(node, ActionNode))
 
 
 def group_of(doc: UiDocument, action: ActionNode) -> Optional[str]:
@@ -183,10 +194,19 @@ def group_of(doc: UiDocument, action: ActionNode) -> Optional[str]:
 
 
 def action_groups(doc: UiDocument) -> Tuple[Node, ...]:
-    return tuple(node for node in doc.iter_preorder() if node.kind == "actiongroup")
+    ids = doc.structure_memo(
+        "actions.action_groups",
+        lambda: tuple(node.id for node in doc.iter_preorder() if node.kind == "actiongroup"),
+    )
+    return _nodes_of(doc, ids)
 
 
 def _places_by_name(doc: UiDocument) -> Dict[str, List[Place]]:
+    """Kept until the structure moves. Callers copy what they keep."""
+    return doc.structure_memo("actions.places_by_name", lambda: _walk_places(doc))
+
+
+def _walk_places(doc: UiDocument) -> Dict[str, List[Place]]:
     found: Dict[str, List[Place]] = {}
     for node in doc.iter_preorder():
         if not isinstance(node, ActionRefNode):
@@ -267,7 +287,11 @@ def entries(doc: UiDocument, host: NodeId) -> Tuple[Entry, ...]:
 
 
 def menu_widgets(doc: UiDocument) -> Tuple[WidgetNode, ...]:
-    return tuple(node for node in doc.iter_widgets() if node.class_name == "QMenu")
+    ids = doc.structure_memo(
+        "actions.menu_widgets",
+        lambda: tuple(node.id for node in doc.iter_widgets() if node.class_name == "QMenu"),
+    )
+    return tuple(node for node in _nodes_of(doc, ids) if isinstance(node, WidgetNode))
 
 
 def menus_below(doc: UiDocument, menu: NodeId) -> Tuple[NodeId, ...]:
@@ -296,12 +320,23 @@ def button_groups(doc: UiDocument) -> Tuple[Tuple[str, NodeId, Tuple[NodeId, ...
 
 def action_wrong_hosts(doc: UiDocument) -> Tuple[Tuple[WidgetNode, WidgetNode], ...]:
     """``(widget, holder)`` for each real widget inside a toolbar or status bar (FB037)."""
+    pairs = doc.structure_memo("actions.wrong_hosts", lambda: _wrong_host_ids(doc))
     found: List[Tuple[WidgetNode, WidgetNode]] = []
+    for child_id, holder_id in pairs:
+        child = doc.get(child_id)
+        holder = doc.get(holder_id)
+        if isinstance(child, WidgetNode) and isinstance(holder, WidgetNode):
+            found.append((child, holder))
+    return tuple(found)
+
+
+def _wrong_host_ids(doc: UiDocument) -> Tuple[Tuple[NodeId, NodeId], ...]:
+    found: List[Tuple[NodeId, NodeId]] = []
     for holder in doc.iter_widgets():
         if holder.class_name not in ("QToolBar", "QStatusBar"):
             continue
         for child in holder.child_widgets:
-            found.append((child, holder))
+            found.append((child.id, holder.id))
     return tuple(found)
 
 

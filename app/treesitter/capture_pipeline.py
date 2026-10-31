@@ -206,22 +206,30 @@ class TreeSitterCapturePipelineMixin:
         return (old_line, new_line)
 
     def _shift_capture_cache_for_line_delta(self, *, pending_edit: _PendingEdit) -> None:
-        if not self._capture_cache:
-            return
+        self._capture_cache = self._shifted_rows(self._capture_cache, pending_edit)
+        self._locals_by_row = self._shifted_rows(self._locals_by_row, pending_edit)
+
+    def _shifted_rows(
+        self,
+        rows: dict[int, list[_CaptureSpan]],
+        pending_edit: _PendingEdit,
+    ) -> dict[int, list[_CaptureSpan]]:
+        if not rows:
+            return rows
         start_line = int(pending_edit.start_point[0])
         reusable_old_line, reusable_new_line = self._first_reusable_line_after_edit(pending_edit=pending_edit)
-        shifted_cache: dict[int, list[_CaptureSpan]] = {}
-        for line_number, spans in self._capture_cache.items():
+        shifted: dict[int, list[_CaptureSpan]] = {}
+        for line_number, spans in rows.items():
             if line_number < start_line:
-                shifted_cache[line_number] = spans
+                shifted[line_number] = spans
                 continue
             if line_number < reusable_old_line:
                 continue
             shifted_line = reusable_new_line + (line_number - reusable_old_line)
             if shifted_line < 0:
                 continue
-            shifted_cache[shifted_line] = spans
-        self._capture_cache = shifted_cache
+            shifted[shifted_line] = spans
+        return shifted
 
     def _rehighlight_window_for_edit(self, *, pending_edit: _PendingEdit, line_delta: int) -> tuple[int, int]:
         """The edited lines, plus a few lines of context. A line-count change used to

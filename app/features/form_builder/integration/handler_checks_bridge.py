@@ -75,8 +75,10 @@ def _flush_checks(surface: Any) -> None:
 def arm(surface: Any) -> None:
     """Publish now, after a form edit, and when the window file's tab is saved.
 
-    A later edit coalesces onto the next idle turn. The Problems rows can
-    arrive one frame after the commit.
+    A later edit coalesces onto the next idle turn, the one the editor's own
+    after-save work waits for. A zero-timer would run inside the repaint pump
+    that follows the commit, and the checks read the whole window file. The
+    Problems rows arrive after the gesture.
     """
     if getattr(surface, "_cbcs_handler_checks", False):
         return
@@ -86,9 +88,9 @@ def arm(surface: Any) -> None:
         if getattr(surface, "_cbcs_checks_waiting", False):
             return
         surface._cbcs_checks_waiting = True
-        from app.qt.QtCore import QTimer
+        from app.shell.idle_turn import run_when_idle
 
-        QTimer.singleShot(0, lambda: _flush_checks(surface))
+        run_when_idle(lambda: _flush_checks(surface))
 
     surface.session.log.subscribe(refresh, priority=PRIORITY_DIAGNOSTICS)
     bridge = getattr(surface, "code_bridge", None)

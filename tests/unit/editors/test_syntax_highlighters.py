@@ -720,13 +720,13 @@ def test_typing_ten_characters_rebuilds_locals_at_most_once(qapp: QApplication) 
     source = "def build(value):\n    return value\n"
     document, highlighter = _render("/tmp/locals_type.py", source)
     rebuilds = {"n": 0}
-    real = highlighter._rebuild_local_tokens
+    real = highlighter._refresh_local_tokens
 
-    def _count() -> None:
+    def _count() -> set[int]:
         rebuilds["n"] += 1
-        real()
+        return real()
 
-    highlighter._rebuild_local_tokens = _count  # type: ignore[method-assign]
+    highlighter._refresh_local_tokens = _count  # type: ignore[method-assign]
     cursor = QTextCursor(document)
     cursor.movePosition(QTextCursor.End)
     for character in "abcdefghij":
@@ -761,6 +761,167 @@ def test_a_renamed_local_takes_its_color_after_idle(qapp: QApplication) -> None:
     qapp.processEvents()
     renamed = document.findBlockByNumber(1).text()
     assert _color_at(document, 1, renamed.index("total")) == DEFAULT_LIGHT_PALETTE["semantic_parameter"].lower()
+
+
+def _replace_in_line(document: QTextDocument, row: int, old: str, new: str) -> None:
+    block = document.findBlockByNumber(row)
+    column = block.text().index(old)
+    cursor = QTextCursor(document)
+    cursor.setPosition(block.position() + column)
+    cursor.setPosition(block.position() + column + len(old), QTextCursor.KeepAnchor)
+    cursor.insertText(new)
+
+
+def test_one_edit_in_a_big_file_rebuilds_the_locals_of_one_statement(qapp: QApplication) -> None:
+    from tests.form_builder.qtside.test_m6_2b_perf import _window_source
+
+    source = _window_source()
+    document, highlighter = _render("/tmp/locals_big.py", source)
+    qapp.processEvents()
+    lines = source.split("\n")
+    def_row = lines.index("    def helper_40(self, value):")
+    other_row = lines.index("    def helper_41(self, value):")
+    variable = DEFAULT_LIGHT_PALETTE["semantic_variable"].lower()
+    assert _color_at(document, def_row + 2, lines[def_row + 2].index("total")) == variable
+
+    _replace_in_line(document, def_row + 1, "total", "result")
+    qapp.processEvents()
+    highlighter._cancel_local_rebuild()
+
+    regions: list[tuple[int, int]] = []
+    fulls = {"n": 0}
+    queried: list[tuple[int, int]] = []
+    repainted: list[tuple[int, int]] = []
+    real_region = highlighter._rebuild_local_region
+    real_full = highlighter._rebuild_local_tokens
+    real_query = highlighter._query_capture_ranges
+    real_window = highlighter._rehighlight_line_window
+
+    def _region(**kwargs: Any) -> Any:
+        regions.append((kwargs["region"].first, kwargs["region"].last))
+        return real_region(**kwargs)
+
+    def _full() -> None:
+        fulls["n"] += 1
+        real_full()
+
+    def _query(line_ranges: list[tuple[int, int]]) -> Any:
+        queried.extend(line_ranges)
+        return real_query(line_ranges)
+
+    def _window(start: int, end: int) -> None:
+        repainted.append((start, end))
+        real_window(start, end)
+
+    highlighter._rebuild_local_region = _region  # type: ignore[method-assign]
+    highlighter._rebuild_local_tokens = _full  # type: ignore[method-assign]
+    highlighter._query_capture_ranges = _query  # type: ignore[method-assign]
+    highlighter._rehighlight_line_window = _window  # type: ignore[method-assign]
+    highlighter._apply_deferred_locals()
+
+    scope = (def_row, def_row + 2)
+    assert fulls["n"] == 0
+    assert regions == [scope], regions
+    assert queried and all(scope[0] <= a <= b <= scope[1] for a, b in queried), queried
+    assert repainted and all(scope[0] <= a <= b <= scope[1] for a, b in repainted), repainted
+    assert _color_at(document, def_row + 1, lines[def_row + 1].index("total")) == variable
+    # The return line still says total. Nothing defines it now.
+    assert _color_at(document, def_row + 2, lines[def_row + 2].index("total")) != variable
+    assert _color_at(document, other_row + 2, lines[other_row + 2].index("total")) == variable
+
+
+def test_a_renamed_local_in_one_method_leaves_the_other_methods_alone(qapp: QApplication) -> None:
+    from app.qt.QtTest import QTest
+    from tests.form_builder.qtside.test_m6_2b_perf import _window_source
+
+    source = _window_source()
+    document, _highlighter = _render("/tmp/locals_big_rename.py", source)
+    qapp.processEvents()
+    lines = source.split("\n")
+    def_row = lines.index("    def helper_60(self, value):")
+    other_row = lines.index("    def helper_61(self, value):")
+    variable = DEFAULT_LIGHT_PALETTE["semantic_variable"].lower()
+    parameter = DEFAULT_LIGHT_PALETTE["semantic_parameter"].lower()
+    _replace_in_line(document, def_row + 1, "total", "result")
+    _replace_in_line(document, def_row + 2, "total", "result")
+    QTest.qWait(300)
+    qapp.processEvents()
+    assert _color_at(document, def_row + 1, document.findBlockByNumber(def_row + 1).text().index("result")) == variable
+    assert _color_at(document, def_row + 2, document.findBlockByNumber(def_row + 2).text().index("result")) == variable
+    assert _color_at(document, def_row + 1, document.findBlockByNumber(def_row + 1).text().index("value")) == parameter
+    assert _color_at(document, other_row + 1, lines[other_row + 1].index("total")) == variable
+    assert _color_at(document, other_row + 2, lines[other_row + 2].index("total")) == variable
+
+
+def test_renaming_a_module_function_recolors_its_callers_elsewhere(qapp: QApplication) -> None:
+    filler = "".join("def filler_%d(a):\n    return a\n\n\n" % index for index in range(60))
+    source = "def helper():\n    return 1\n\n\n" + filler + "def use():\n    return helper\n"
+    document, highlighter = _render("/tmp/locals_ripple.py", source)
+    qapp.processEvents()
+    lines = source.split("\n")
+    call_row = lines.index("    return helper")
+    function = DEFAULT_LIGHT_PALETTE["semantic_function"].lower()
+    column = lines[call_row].index("helper")
+    assert _color_at(document, call_row, column) == function
+    _replace_in_line(document, 0, "helper", "helper2")
+    qapp.processEvents()
+    highlighter._cancel_local_rebuild()
+    highlighter._apply_deferred_locals()
+    assert _color_at(document, call_row, column) != function
+    _replace_in_line(document, call_row, "helper", "helper2")
+    highlighter._cancel_local_rebuild()
+    highlighter._apply_deferred_locals()
+    assert _color_at(document, call_row, column) == function
+
+
+def test_incremental_locals_match_a_fresh_build_after_random_edits(qapp: QApplication) -> None:
+    import random
+
+    filler = "".join("def filler_%d(a):\n    return a\n\n\n" % index for index in range(50))
+    source = (
+        "import os\n\nLIMIT = 10\n\n\n"
+        "class Base:\n    kind = 'base'\n\n    def describe(self, extra):\n        label = self.kind + extra\n"
+        "        return [label for _ in range(LIMIT)]\n\n\n"
+        "def top(value, *rest):\n    total = value + len(rest)\n    fn = lambda x: x + total\n    return fn(LIMIT)\n\n\n"
+        + filler
+    )
+
+    def locals_of(highlighter: Any) -> dict[int, tuple[Any, ...]]:
+        return {
+            row: tuple(sorted((s.start_col, s.end_col, s.token_name) for s in spans))
+            for row, spans in highlighter._locals_by_row.items()
+            if spans
+        }
+
+    words = ["total", "value", "label", "x", "LIMIT", "self", "(", ")", "\n", "    ", "def ", "= 1"]
+    compared = 0
+    for seed in range(3):
+        rnd = random.Random(seed)
+        document, highlighter = _render("/tmp/locals_fuzz_%d.py" % seed, source)
+        qapp.processEvents()
+        for _step in range(18):
+            for _edit in range(rnd.choice((1, 2))):
+                text = document.toPlainText()
+                cursor = QTextCursor(document)
+                position = rnd.randrange(0, len(text) + 1)
+                kind = rnd.choice(("insert", "delete", "newline"))
+                cursor.setPosition(position)
+                if kind == "insert":
+                    cursor.insertText(rnd.choice(words))
+                elif kind == "delete":
+                    cursor.setPosition(min(len(text), position + rnd.randint(1, 5)), QTextCursor.KeepAnchor)
+                    cursor.removeSelectedText()
+                else:
+                    cursor.insertText("\n")
+                qapp.processEvents()
+            highlighter._cancel_local_rebuild()
+            highlighter._apply_deferred_locals()
+            _fresh_document, fresh = _render("/tmp/locals_fuzz_fresh.py", document.toPlainText())
+            if str(highlighter._tree.root_node) != str(fresh._tree.root_node):
+                continue  # An incremental parse may recover from an error differently.
+            compared += 1
+            assert locals_of(highlighter) == locals_of(fresh), (seed, _step)
+    assert compared >= 20
 
 
 def test_registry_returns_none_for_unknown_extensions_without_sniff_match() -> None:

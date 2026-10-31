@@ -11,6 +11,7 @@ import pytest
 pytest.importorskip("app.qt.QtWidgets", exc_type=ImportError)
 
 from app.qt.QtWidgets import QApplication, QMenu, QWidget  # noqa: E402
+from tests.form_builder.idle import pump_until_idle  # noqa: E402
 from tests.form_builder.qtside.test_m3_keyboard_scripts import (  # noqa: E402
     Kb,
     _close,
@@ -246,6 +247,8 @@ def script_k26(window: object, kb: Kb, qapp: QApplication, path: Path) -> None:
     kb.press("Key_Period", "Control")
     kb.pump(8)
     kb.check("print_reciept" in kb.text(), "Ctrl+. uses print_reciept, form is %s" % kb.text()[-200:])
+    # The window checks run on the idle turn, after the commit's repaint.
+    pump_until_idle()
     kb.check("FB201" not in _codes(kb), "FB201 is gone, saw %s" % _codes(kb))
 
     kb.press("Key_3", "Alt")
@@ -301,6 +304,7 @@ def script_k26(window: object, kb: Kb, qapp: QApplication, path: Path) -> None:
     kb.press("Key_Space")
     kb.pump()
     kb.check('connectslotsbyname="false"' in kb.text(), "connect by name is off")
+    pump_until_idle()
     kb.check("FB211" in _codes(kb), "FB211 is reported, saw %s" % _codes(kb))
     messages = [item.message for item in kb.surface.session.diagnostics.all() if item.code == "FB211"]
     kb.check(any("on_saveButton_clicked" in item for item in messages), "FB211 names the spelled method, saw %s" % messages)
