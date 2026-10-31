@@ -80,6 +80,7 @@ def test_canonical_step_text_is_a_fixed_point(text: str) -> None:
     assert write_steps(read.steps, read.signal, read.extra) == text
 
 
+@pytest.mark.logic("L-logic-storage")
 def test_canonical_json_text_is_a_fixed_point() -> None:
     got = parse_json(CANONICAL_ROWS)
     assert got.error is None

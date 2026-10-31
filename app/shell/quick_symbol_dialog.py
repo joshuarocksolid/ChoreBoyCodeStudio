@@ -241,7 +241,7 @@ class QuickSymbolDelegate(QStyledItemDelegate):
         rect = option.rect
         cursor_x = rect.left() + row.depth * _DEPTH_INDENT + _ICON_LEFT_MARGIN
 
-        kind_color = kind_color_for(symbol.kind, is_dark=self._is_dark)
+        kind_color = kind_color_for(symbol.kind, self._tokens)
         icon = kind_icon(symbol.kind, kind_color)
         icon_y = rect.top() + (rect.height() - _ICON_SIZE) // 2
         icon.paint(painter, QRect(cursor_x, icon_y, _ICON_SIZE, _ICON_SIZE))

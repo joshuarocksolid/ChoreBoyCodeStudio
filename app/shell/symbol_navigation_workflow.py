@@ -33,12 +33,23 @@ class SymbolNavigationWorkflow:
             go()
             return
         loaded_project = self._host.loaded_project()
-        if loaded_project is None:
-            QMessageBox.warning(parent, "Go To Definition", "Open a project first.")
-            return
         editor_manager = self._host.editor_manager()
         active_tab = editor_manager.active_tab()
         editor_widget = self._host.active_editor_widget()
+        owner = window if window is not None else getattr(self._host, "_window", None)
+        back = getattr(owner, "_form_return_from_code", None) if owner is not None else None
+        if active_tab is not None and editor_widget is not None and callable(back):
+            if back(
+                owner,
+                str(active_tab.file_path),
+                editor_widget.toPlainText(),
+                editor_widget.word_under_cursor(),
+                editor_widget.textCursor().position(),
+            ):
+                return
+        if loaded_project is None:
+            QMessageBox.warning(parent, "Go To Definition", "Open a project first.")
+            return
         if active_tab is None or editor_widget is None:
             QMessageBox.warning(parent, "Go To Definition", "Open a file tab first.")
             return

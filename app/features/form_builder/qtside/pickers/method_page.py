@@ -37,7 +37,7 @@ def method_page(ctx: object, page: object) -> object:
     )
     sends = _sends(ctx, page.signal)  # type: ignore[attr-defined]
     receive = ""
-    if sends:
+    if _show_receive(ctx, sends, chain, page.signal):  # type: ignore[attr-defined]
         receive = "My method receives %s" % value_words(sends[0], page.signal, chain)  # type: ignore[attr-defined]
     notice = method_line(ctx, suggested, page.signal)  # type: ignore[attr-defined]
     read_line = str(getattr(ctx, "read_line", "") or "")
@@ -51,8 +51,12 @@ def method_page(ctx: object, page: object) -> object:
     rows = [Item("make", suggested, "Add %s()" % suggested)]
     rows.append(Item("notice", "", "METHODS IN %s" % ctx.window_file, header=True))  # type: ignore[attr-defined]
     used = _used_here(ctx, page.signal)  # type: ignore[attr-defined]
+    from app.features.form_builder.qtside.pickers.flow import _other_event_method
+
     for info in _fitting(ctx, len(sends)):
         name = str(getattr(info, "name", info))
+        if _other_event_method(ctx, name, str(page.signal)):  # type: ignore[attr-defined]
+            continue
         note = "already here" if name in used else ""
         rows.append(Item("method", name, "%s()" % name, note=note, search=("%s already here" % name) if note else name))
     return Page(
@@ -165,6 +169,27 @@ def _used_here(ctx: object, signal: str) -> Tuple[str, ...]:
 
 def _attr(obj: object, name: str) -> Any:
     return getattr(obj, name, None)
+
+
+def _show_receive(ctx: object, sends: tuple, chain: tuple, signal: str) -> bool:
+    """The receive line follows the value the chosen signal actually passes.
+
+    A push button that is not checkable does not pass whether it is checked,
+    even though ``clicked`` has a bool overload.
+    """
+    if not sends:
+        return False
+    if sends[0] != "bool":
+        return True
+    if signal == "clicked" and any(name in chain for name in ("QPushButton", "QToolButton")):
+        from app.features.form_builder.engine.logic.events import sender_node
+
+        node = sender_node(ctx.doc, ctx.source.sender)  # type: ignore[attr-defined]
+        if node is None:
+            return False
+        value = node.value("checkable")
+        return bool(getattr(value, "value", False))
+    return True
 
 
 def _fitting(ctx: object, sends: int) -> tuple:

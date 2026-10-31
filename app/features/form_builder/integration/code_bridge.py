@@ -144,6 +144,16 @@ class CodeBridge:
             return None
         return self._port.open_text(path)
 
+    def buffer_token(self, path: str) -> Optional[str]:
+        """A value that changes when the open tab's text changes, or None."""
+        if not self._allowed(path):
+            return None
+        ask = getattr(self._port, "buffer_token", None)
+        if not callable(ask):
+            return None
+        token = ask(path)
+        return None if token is None else str(token)
+
     # ------------------------------------------------------------------ writing
 
     def apply(self, path: str, edit: TextEditLike, *, base_text: Optional[str] = None) -> BridgeResult:
@@ -447,6 +457,14 @@ class ShellPort:
         widget = self._widget(path)
         return None if widget is None else str(widget.toPlainText())
 
+    def buffer_token(self, path: str) -> Optional[str]:
+        widget = self._widget(path)
+        document = None if widget is None else widget.document()
+        revision = getattr(document, "revision", None)
+        if not callable(revision):
+            return None
+        return str(int(revision()))
+
     def replace_range(self, path: str, start: int, end: int, text: str) -> bool:
         from app.qt.QtGui import QTextCursor
 
@@ -486,7 +504,9 @@ class ShellPort:
             self.last_save_error = "the copy on disk changed"
             return False
         try:
-            ok = bool(save(path, show_style_warnings=False, apply_transforms=False))
+            ok = bool(
+                save(path, show_style_warnings=False, apply_transforms=False, defer_history=True)
+            )
         except OSError as exc:
             self.last_save_error = str(exc)
             return False

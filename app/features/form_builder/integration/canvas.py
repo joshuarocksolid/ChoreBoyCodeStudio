@@ -58,7 +58,6 @@ from app.features.form_builder.qtside.canvas.core.palette import (
     fragment_for,
     tile_for,
 )
-from app.features.form_builder.qtside.canvas.banner import HEIGHT as BANNER_HEIGHT
 from app.features.form_builder.qtside.canvas.banner import ModeBanner
 from app.features.form_builder.qtside.canvas.core.place import payload_for
 from app.features.form_builder.qtside.canvas.geometry import HitIndexInvalidator, LiveGeometrySource
@@ -281,12 +280,23 @@ class FormCanvas(QGraphicsView):
         on_extra: Optional[Callable[[], None]],
         on_done: Callable[[], None],
     ) -> None:
-        """The overlay banner in the canvas's top margin; the page is pushed down by its height (UX-WB-006)."""
-        self.setViewportMargins(0, BANNER_HEIGHT, 0, 0)
-        self._banner.setGeometry(0, 0, self.width(), BANNER_HEIGHT)
+        """The overlay banner over the top gutter. Only a wrap past that gutter moves the page."""
         self._banner.show_mode(glyph, name, sentence, extra, on_extra, on_done)
+        self._fit_banner()
         self._banner.raise_()
         self._position_chrome()
+
+    def _fit_banner(self) -> None:
+        banner = self._banner
+        if not banner.isVisible():
+            return
+        height = banner.fitted_height(max(self.width(), 1))
+        banner.setGeometry(0, 0, self.width(), height)
+        from app.features.form_builder.qtside.canvas.core.space import GUTTERS
+
+        excess = max(0, height - GUTTERS.top)
+        if self.viewportMargins().top() != excess:
+            self.setViewportMargins(0, excess, 0, 0)
 
     def hide_banner(self) -> None:
         self._banner.hide()
@@ -628,8 +638,8 @@ class FormCanvas(QGraphicsView):
     def resizeEvent(self, event: object) -> None:  # noqa: N802
         super().resizeEvent(event)  # type: ignore[arg-type]
         banner = getattr(self, "_banner", None)
-        if banner is not None:
-            banner.setGeometry(0, 0, self.width(), BANNER_HEIGHT)
+        if banner is not None and banner.isVisible():
+            self._fit_banner()
         preview = getattr(self, "_preview", None)
         if preview is not None:
             preview.arrange()

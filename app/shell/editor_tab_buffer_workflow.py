@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+from contextlib import contextmanager
 from typing import Any
 
 from app.editors.code_editor_widget import CodeEditorWidget
@@ -42,11 +44,25 @@ class EditorTabBufferWorkflow:
         self._outline_workflow = outline_workflow
         self._markdown_workflow = markdown_workflow
         self._tab_workflow = tab_workflow
+        self._text_revision_by_path: dict[str, int] = {}
+        self._reveal_pending: str | None = None
+        self._outline_idle_armed = False
+        self._outline_needs_flush = False
+        self._tab_change_depth = 0
+        self._status_hold_depth = 0
+        self._status_held: dict[str, None] = {}
+        self._lint_held: dict[str, None] = {}
 
     def set_editor_manager(self, editor_manager: EditorManager) -> None:
         self._editor_manager = editor_manager
 
     def handle_editor_text_changed(self, file_path: str, editor_widget: CodeEditorWidget) -> None:
+        document = editor_widget.document()
+        revision = int(document.revision()) if document is not None else None
+        if revision is not None and self._text_revision_by_path.get(file_path) == revision:
+            return
+        if revision is not None:
+            self._text_revision_by_path[file_path] = revision
         if self._editor_manager.get_tab(file_path) is None:
             return
         self._editor_tabs_coordinator.advance_buffer_revision(file_path)
@@ -122,7 +138,56 @@ class EditorTabBufferWorkflow:
         )
         self._outline_workflow.highlight_symbol_at_line(line_number)
 
+    @contextmanager
+    def hold_status_updates(self) -> Iterator[None]:
+        """Refresh each path's status once, when the outermost hold ends.
+
+        Opening a tab and writing a handler into it ask for the same status
+        nine times. Every ask reads the editor's cursor and rebuilds the same
+        text, and the last one wins, so the asks inside the hold become one.
+        The tab-change lint is asked for twice as well. It starts once, on the
+        idle turn, so the worker does not compete with the open for the
+        interpreter.
+        """
+        self._status_hold_depth += 1
+        try:
+            yield
+        finally:
+            self._status_hold_depth -= 1
+            if self._status_hold_depth == 0:
+                held = list(self._status_held)
+                self._status_held.clear()
+                for file_path in held:
+                    self._refresh_editor_status(file_path)
+                lint = list(self._lint_held)
+                self._lint_held.clear()
+                if lint:
+                    from app.shell.idle_turn import run_when_idle
+
+                    run_when_idle(lambda: self._lint_tabs(lint))
+
+    def _lint_tabs(self, paths: list[str]) -> None:
+        if self._host.is_shutting_down():
+            return
+        for file_path in paths:
+            if self._editor_manager.get_tab(file_path) is not None:
+                self._host.render_lint_diagnostics_for_file(file_path, trigger="tab_change")
+
+    def _lint_for_tab_change(self, tab_path: str) -> None:
+        if self._status_hold_depth:
+            self._lint_held[tab_path] = None
+            return
+        self._host.render_lint_diagnostics_for_file(tab_path, trigger="tab_change")
+
     def update_editor_status_for_path(self, file_path: str) -> None:
+        if self._status_hold_depth:
+            # Move a repeated path to the end, so the bar ends on the last file asked for.
+            self._status_held.pop(file_path, None)
+            self._status_held[file_path] = None
+            return
+        self._refresh_editor_status(file_path)
+
+    def _refresh_editor_status(self, file_path: str) -> None:
         status_controller = self._host.status_controller()
         if status_controller is None:
             return
@@ -152,6 +217,16 @@ class EditorTabBufferWorkflow:
         )
 
     def handle_editor_tab_changed(self, tab_index: int) -> None:
+        self._tab_change_depth += 1
+        try:
+            self._apply_editor_tab_changed(tab_index)
+        finally:
+            self._tab_change_depth -= 1
+            if self._tab_change_depth == 0 and self._outline_needs_flush:
+                self._outline_needs_flush = False
+                self._arm_outline_timer()
+
+    def _apply_editor_tab_changed(self, tab_index: int) -> None:
         editor_tabs_widget = self._host.editor_tabs_widget()
         if tab_index < 0 or editor_tabs_widget is None:
             return
@@ -166,14 +241,53 @@ class EditorTabBufferWorkflow:
         self.update_editor_status_for_path(tab_path)
         self._tab_workflow.update_indent_status_for_path(tab_path)
         self._tab_workflow.check_for_external_file_change(tab_path)
-        self._host.render_lint_diagnostics_for_file(tab_path, trigger="tab_change")
-        self._outline_workflow.handle_active_tab_changed()
-        self._host.reveal_project_tree_path(tab_path)
+        self._lint_for_tab_change(tab_path)
+        self._schedule_outline_refresh()
+        self._schedule_tree_reveal(tab_path)
         tab_state = self._editor_manager.get_tab(tab_path)
         if tab_state is not None and not tab_state.is_preview:
             registry_getter = getattr(self._host, "tab_content_registry", None)
             registry = registry_getter() if callable(registry_getter) else None
             focus_primary_surface(registry, tab_state.file_path)
+
+    def _schedule_outline_refresh(self) -> None:
+        """The outline worker starts on the next idle turn, not inside the tab switch."""
+        if self._tab_change_depth:
+            self._outline_needs_flush = True
+            return
+        self._arm_outline_timer()
+
+    def _arm_outline_timer(self) -> None:
+        if self._outline_idle_armed:
+            return
+        self._outline_idle_armed = True
+        from app.qt.QtCore import QTimer
+
+        QTimer.singleShot(0, self._flush_outline)
+
+    def _flush_outline(self) -> None:
+        self._outline_idle_armed = False
+        if self._tab_change_depth:
+            self._outline_needs_flush = True
+            return
+        self._outline_workflow.handle_active_tab_changed()
+
+    def _schedule_tree_reveal(self, tab_path: str) -> None:
+        """One reveal for the two tab-changed signals, on the next idle turn."""
+        already = self._reveal_pending is not None
+        self._reveal_pending = tab_path
+        if already:
+            return
+        from app.qt.QtCore import QTimer
+
+        QTimer.singleShot(0, self._flush_tree_reveal)
+
+    def _flush_tree_reveal(self) -> None:
+        path = self._reveal_pending
+        self._reveal_pending = None
+        if not path:
+            return
+        self._host.reveal_project_tree_path(path)
 
     def _editor_status_sentence(self, file_path: str) -> str | None:
         """A tab surface may replace the line and column with its own sentence."""

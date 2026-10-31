@@ -28,6 +28,9 @@ class MainWindowProjectLoadHost:
         return self._window._file_project_commands_workflow.load_effective_exclude_patterns(project_root)
 
     def prepare_project_switch(self) -> None:
+        from app.bootstrap.paths import clear_resolved_cache
+
+        clear_resolved_cache()
         window = self._window
         window.statusBar().showMessage("Opening project…", 0)
         window._project_tree_ui_workflow.cancel_pending_project_tree_preview()

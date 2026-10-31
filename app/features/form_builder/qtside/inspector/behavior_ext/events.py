@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from typing import Any, Callable, List, Optional, Tuple
+from dataclasses import replace
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from app.qt.QtCore import QEvent, QObject, Qt
 from app.qt.QtGui import QKeyEvent, QResizeEvent
@@ -59,6 +60,7 @@ class EventsBody(QWidget):
         self._chrome = host.services.chrome
         self._refresh: Optional[Callable[[], None]] = None
         self._view: Optional[SenderView] = None
+        self._built: Dict[str, Tuple[SenderView, List["_Group"]]] = {}
         self._sender = ""
         self._chain: List[QWidget] = []
         self._focus: Optional[Tuple[str, int]] = None
@@ -107,6 +109,12 @@ class EventsBody(QWidget):
         self._refresh = refresh
 
     def apply_colors(self, panel: str, text: str) -> None:
+        # Inline row colors were captured from the previous chrome. Drop the
+        # kept groups so the next paint builds them again.
+        for _name, (_shown, groups) in list(self._built.items()):
+            _release_groups(self._events, groups)
+        self._built = {}
+        self._view = None
         chrome = self._chrome
         self.setStyleSheet(
             "QWidget#formBuilder\\.events, QWidget#formBuilder\\.events QWidget { background: %s; color: %s; }"
@@ -146,9 +154,14 @@ class EventsBody(QWidget):
         if not self._picker_open():
             return False
         picker = self._picker
+        self._picker = None
         if picker is None:
             return False
-        picker.hide()
+        release = getattr(picker, "release", None)
+        if callable(release):
+            release()
+        else:
+            picker.hide()
         return True
 
     def note_added(self, signal: str, index: int) -> None:
@@ -169,6 +182,7 @@ class EventsBody(QWidget):
             shown = project_sender(
                 doc, QtClassTable.shared(), view.sender_name, qt_names=_qt_names(self)
             )
+        shown = _with_by_name(self, shown)
         if shown == self._view:
             return
         self._view = shown
@@ -194,31 +208,62 @@ class EventsBody(QWidget):
         self._one_read = _window_read(_surface(self)) if shown.kind == "one" else None
         self._one_read_ready = shown.kind == "one"
         try:
-            while self._events.count():
-                item = self._events.takeAt(0)
-                widget = item.widget()
-                if widget is not None:
-                    widget.hide()
-                    widget.setObjectName("")
-                    widget.setParent(None)
-                    widget.deleteLater()
-            self._chain = []
-            if shown.kind != "one":
-                return
-            first = True
-            for event in shown.events:
-                group = _Group(self, event, editing)
-                self._events.addWidget(group)
-                if first and (event.steps or event.unreadable or event.banner):
-                    group.mark_first()
-                    first = False
-                self._chain.extend(group.chain())
-            if editing and not shown.events:
-                self._chain.append(self._when)
+            cached = self._built.get(shown.object_name) if shown.kind == "one" else None
+            if cached is not None and cached[0] == shown:
+                self._show_built(shown.object_name)
+                if editing and not shown.events:
+                    self._chain.append(self._when)
+            else:
+                self._fill_groups(shown, editing)
         finally:
             self._one_read_ready = False
             self.setUpdatesEnabled(True)
         self._place_focus()
+
+    def _fill_groups(self, shown: SenderView, editing: bool) -> None:
+        previous = self._built.pop(shown.object_name, None) if shown.kind == "one" else None
+        if previous is not None:
+            _release_groups(self._events, previous[1])
+        if shown.kind != "one":
+            self._show_built("")
+            return
+        self._show_built("")
+        groups: List[_Group] = []
+        first = True
+        self._chain = []
+        for event in shown.events:
+            group = _Group(self, event, editing)
+            groups.append(group)
+            self._events.addWidget(group)
+            if first and (event.steps or event.unreadable or event.banner):
+                group.mark_first()
+                first = False
+            self._chain.extend(group.chain())
+        if editing and not shown.events:
+            self._chain.append(self._when)
+        if shown.object_name:
+            self._built[shown.object_name] = (shown, groups)
+            while len(self._built) > 4:
+                oldest = next(iter(self._built))
+                if oldest == shown.object_name:
+                    break
+                _release_groups(self._events, self._built.pop(oldest)[1])
+
+    def _show_built(self, name: str) -> None:
+        self._chain = []
+        for sender, (_shown, groups) in self._built.items():
+            visible = sender == name
+            for group in groups:
+                group.setVisible(visible)
+                header = group.header
+                if visible and getattr(group, "_marked_first", False):
+                    header.setObjectName("formBuilder.events.first")
+                    self._chain.extend(group.chain())
+                elif visible:
+                    header.setObjectName("")
+                    self._chain.extend(group.chain())
+                else:
+                    header.setObjectName("")
 
     def first_focus(self) -> Optional[QWidget]:
         """The live row Alt+B should focus. Empty events land on + When…."""
@@ -390,7 +435,15 @@ class EventsBody(QWidget):
         if self._view is not None and self._view.read_only:
             self._run(Gesture("toggle"))
             return
+        previous = self._picker
         self._picker = open_event_picker(host, source, "")
+        if previous is not None and previous is not self._picker:
+            release = getattr(previous, "release", None)
+            if callable(release):
+                try:
+                    release()
+                except RuntimeError:
+                    pass
 
     def _run(self, gesture: Gesture) -> None:
         doc = self._services.session.document
@@ -468,6 +521,20 @@ class EventsBody(QWidget):
 
     def _merge(self, signal: str) -> None:
         self._run(Gesture("merge", signal=signal))
+
+
+def _release_groups(layout: QVBoxLayout, groups: List["_Group"]) -> None:
+    wanted = {id(group) for group in groups}
+    index = layout.count() - 1
+    while index >= 0:
+        item = layout.itemAt(index)
+        widget = item.widget() if item is not None else None
+        if widget is not None and id(widget) in wanted:
+            layout.takeAt(index)
+            widget.hide()
+            widget.setParent(None)
+            widget.deleteLater()
+        index -= 1
 
 
 class _ThenButton(QPushButton):
@@ -550,6 +617,7 @@ class _Group(QWidget):
         column.addWidget(self.then)
 
     def mark_first(self) -> None:
+        self._marked_first = True
         self.header.setObjectName("formBuilder.events.first")
 
     def chain(self) -> List[QWidget]:
@@ -611,6 +679,7 @@ class _Row(QWidget):
         step: Optional[StepView] = None,
     ) -> None:
         super().__init__(body)
+        self._fitted = False
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self.signal_name = signal
         self.step_index = index
@@ -670,7 +739,10 @@ class _Row(QWidget):
 
     def showEvent(self, event: QEvent) -> None:  # noqa: N802
         super().showEvent(event)
+        if self._fitted and self.width() > 0:
+            return
         self._fit_texts()
+        self._fitted = True
 
     def _fit_texts(self) -> None:
         """Elide the call first, down to about eight characters, then the place.
@@ -696,22 +768,21 @@ class _Row(QWidget):
         place_natural = _text_width(place_metrics, place_full) + pad if place_full else 0
         call_full = self._full
         call_natural = _text_width(call_metrics, call_full) + 4
-        floor_sample = (call_full[:8] + "\u2026") if len(call_full) > 8 else call_full
-        call_floor = _text_width(call_metrics, floor_sample) + 4
+        place_floor_sample = "\u2026:NN"
+        place_floor = _text_width(place_metrics, place_floor_sample) + pad if place_full else 0
         if call_natural + place_natural <= available:
             call_shown = call_full
             place_shown = place_full
             place_budget = place_natural
-        elif call_floor + place_natural <= available:
-            call_shown = _elide_call(call_full, call_metrics, max(8, available - place_natural))
-            place_shown = place_full
-            place_budget = place_natural
-        else:
-            call_room = min(call_floor, max(8, available))
-            call_shown = _elide_call(call_full, call_metrics, call_room)
-            used = _text_width(call_metrics, call_shown) + 4
-            place_budget = max(8, available - used)
+        elif call_natural + place_floor <= available:
+            call_shown = call_full
+            place_budget = max(place_floor, available - call_natural)
             place_shown = _elide_place(place_full, place_metrics, max(8, place_budget - pad)) if place_full else ""
+        else:
+            place_budget = place_floor if place_full else 0
+            place_shown = _elide_place(place_full, place_metrics, max(8, place_budget - pad)) if place_full else ""
+            call_room = max(8, available - place_budget)
+            call_shown = _elide_call(call_full, call_metrics, call_room)
         if self._label.text() != call_shown:
             self._label.setText(call_shown)
         if place is None:
@@ -766,18 +837,22 @@ class _Row(QWidget):
         if self.step_index < 0:
             return
         button = self._menu
-        if shown and button is None:
-            button = self._make_menu()
-            button.setFixedWidth(int(self._menu_reserve))
-            layout = self.layout()
-            if layout is not None and layout.count():
-                # The last item is the reserved spacer. The button takes its place.
-                layout.takeAt(layout.count() - 1)
-            if layout is not None:
+        layout = self.layout()
+        reserve = int(getattr(self, "_menu_reserve", 0) or 0)
+        if shown:
+            if button is None:
+                button = self._make_menu()
+                button.setFixedWidth(reserve or button.sizeHint().width())
+            if layout is not None and layout.indexOf(button) < 0:
+                if layout.count():
+                    layout.takeAt(layout.count() - 1)
                 layout.addWidget(button)
-        if button is None:
-            return
-        button.setText("\u22ef" if shown else "")
+            button.show()
+            button.setText("\u22ef")
+        elif button is not None and layout is not None and layout.indexOf(button) >= 0:
+            layout.removeWidget(button)
+            button.hide()
+            layout.addSpacing(reserve or button.width() or 16)
         self._fit_texts()
 
     def set_faint(self, text: str) -> None:
@@ -912,6 +987,61 @@ def _apply_listed_fix(body: "EventsBody", row: "_Row") -> bool:
         if offered and missing == row.method_name:
             return bool(run("use-method", {"fb_key": item.key}))
     return False
+
+
+def _with_by_name(body: "EventsBody", shown: SenderView) -> SenderView:
+    """A by-name method is its own event group when that event has no steps."""
+    body.by_name_count = 0
+    if shown.kind != "one" or not shown.object_name:
+        return shown
+    document = body._services.session.document
+    if str(document.ui.field("connectslotsbyname") or "") == "false":
+        return shown
+    read = _window_read(_surface(body), body)
+    if read is None or getattr(read, "status", "") != "ok":
+        return shown
+    sender = shown.object_name
+    prefix = "on_%s_" % sender
+    have = {event.signal for event in shown.events}
+    signatures = _sender_signatures(body) if body._sender else ()
+    extra = []
+    for item in read.facts.methods:
+        name = item.name
+        if not name.startswith(prefix):
+            continue
+        signal = name[len(prefix):]
+        if not signal or signal in have:
+            continue
+        if not slot_types_match(item.slot_types, signal, signatures):
+            continue
+        from app.features.form_builder.engine.logic.events_catalog import event_words
+
+        words = event_words(signal)
+        extra.append(
+            EventView(
+                signal,
+                "When %s" % words.header,
+                "",
+                "Event, %s" % words.header,
+                (),
+                False,
+                False,
+                "",
+                False,
+                "",
+            )
+        )
+        have.add(signal)
+    body.by_name_count = len(extra)
+    if not extra:
+        return shown
+    return replace(
+        shown,
+        events=shown.events + tuple(extra),
+        empty="",
+        caption="",
+        event_count=shown.event_count + len(extra),
+    )
 
 
 def _by_name(body: "EventsBody", signal: str) -> Tuple[str, ...]:

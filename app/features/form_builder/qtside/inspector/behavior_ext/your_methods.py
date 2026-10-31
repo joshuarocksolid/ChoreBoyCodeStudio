@@ -13,6 +13,7 @@ from app.features.form_builder.engine.commands.catalog_ext.methods import Remove
 from app.features.form_builder.engine.logic.compat import node_class, split_signature
 from app.features.form_builder.engine.logic.events import declared_methods, read_events, sender_node
 from app.features.form_builder.engine.logic.events_catalog import class_chain, event_words
+from app.features.form_builder.engine.logic.phrases import used_by_steps
 from app.features.form_builder.engine.query.tab_stops import display_name
 from app.features.form_builder.engine.ui4.defaults import QtClassTable
 from app.features.form_builder.engine.ui4.schema import SlotsDecl
@@ -46,6 +47,12 @@ class YourMethods(QWidget):
 
     def paint(self, inputs: SectionInputs) -> None:
         del inputs
+        doc = self._services.session.document
+        token = _window_token(self)
+        key = (doc.revision, token)
+        if token is not None and key == getattr(self, "_fill_key", None):
+            return
+        self._fill_key = key
         self._refill()
 
     def apply_colors(self, panel: str, text: str) -> None:
@@ -119,7 +126,7 @@ class YourMethods(QWidget):
         doc = self._services.session.document
         used = _use_count(doc, method)
         if used:
-            _narrate(self, "%s is used by %d steps. Delete those steps first." % (method, used))
+            _narrate(self, used_by_steps(method, used))
             return
         result = self._services.execute(RemoveMethodDeclaration(method, "Remove method declaration %s" % method))
         if isinstance(result, Rejected):
@@ -182,7 +189,7 @@ class _MethodRow(QWidget):
             else:
                 used = _use_count(self._body._services.session.document, self.method_name)
                 if used:
-                    _narrate(self._body, "%s is used by %d steps. Delete those steps first." % (self.method_name, used))
+                    _narrate(self._body, used_by_steps(self.method_name, used))
             event.accept()
             return
         super().keyPressEvent(event)
@@ -268,6 +275,19 @@ def _phrase(doc: object, state: object, classes: QtClassTable) -> str:
 
 def _use_count(doc: object, method: str) -> int:
     return int(_named(doc).get(method, ([], 0))[1])
+
+
+def _window_token(widget: QWidget) -> object:
+    """Editor revision of the open window file, so a paint can skip hashing it."""
+    surface = _surface(widget)
+    if surface is None:
+        return None
+    scope = getattr(getattr(surface, "session", None), "scope", None)
+    path = str(getattr(scope, "window_path", "") or "")
+    ask = getattr(getattr(surface, "code_bridge", None), "buffer_token", None)
+    if not path or not callable(ask):
+        return None
+    return ask(path)
 
 
 def _surface(widget: QWidget) -> object:

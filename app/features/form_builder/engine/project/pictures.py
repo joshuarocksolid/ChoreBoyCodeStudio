@@ -390,7 +390,17 @@ RawPicture = PictureUse
 
 
 def picture_uses(document: object) -> Tuple[PictureUse, ...]:
-    """Every pixmap and icon state of ``document`` with a path, resource or file."""
+    """Every pixmap and icon state of ``document`` with a path, resource or file.
+
+    Kept until the structure moves, when the document can say so.
+    """
+    memo = getattr(document, "structure_memo", None)
+    if callable(memo):
+        return memo("picture_uses", lambda: _picture_uses(document))  # type: ignore[no-any-return]
+    return _picture_uses(document)
+
+
+def _picture_uses(document: object) -> Tuple[PictureUse, ...]:
     from app.features.form_builder.engine.ui4.values import ICON_STATES, IconSetValue, ResourcePixmap
 
     found: List[PictureUse] = []

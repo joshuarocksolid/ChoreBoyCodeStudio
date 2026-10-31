@@ -9,7 +9,8 @@ import hashlib
 import json
 import os
 import sys
-from typing import Dict, FrozenSet, Iterable, Iterator, List, Literal, Optional, Tuple
+from contextlib import contextmanager
+from typing import Any, Callable, Dict, FrozenSet, Iterable, Iterator, List, Literal, Optional, Tuple, TypeVar
 
 from app.features.form_builder.engine.ids import DOCUMENT_ID, NodeId
 from app.features.form_builder.engine.logic.codec import read_marker
@@ -27,6 +28,8 @@ from app.features.form_builder.engine.ui4.spec import NodeSpec
 from app.features.form_builder.engine.ui4.values import EnumValue, SetValue, StringValue
 
 EnumStyle = Literal["short", "qualified"]
+
+_T = TypeVar("_T")
 
 
 def next_object_name(base: str, taken: Iterable[str]) -> str:
@@ -89,6 +92,10 @@ class UiDocument:
             raise InvariantError("the document root must be the ui node")
         self._revision = revision
         self._peak = revision
+        # ``revision`` without the bumps of event-only edits. See ``structure_memo``.
+        self._structure_revision = revision
+        self._event_only_depth = 0
+        self._structure_memos: Dict[str, Tuple[int, Any]] = {}
         self._nodes: Dict[NodeId, Node] = {}
         self._by_name: Dict[str, List[NodeId]] = {}
         self._name_set: set[str] = set()
@@ -98,6 +105,8 @@ class UiDocument:
         self._custom: Dict[str, NodeId] = {}
         self._enum_cache: Optional[Tuple[int, EnumStyle]] = None
         self._logic_count = 0
+        # events.py installs this so one step commit can reuse untouched events.
+        self._revision_listener: Optional[Any] = None
         # Expat folds every line ending to LF. Designer writes a CRLF source
         # back with CRLF on every line, so the choice has to live beside the tree.
         self.newline = "\n"
@@ -115,6 +124,39 @@ class UiDocument:
     @property
     def revision(self) -> int:
         return self._revision
+
+    @property
+    def structure_revision(self) -> int:
+        """``revision``, except that edits which rewrite only events do not move it.
+
+        A step commit changes a ``cbcs*`` property and the connection list. It adds,
+        removes, moves and renames no node, and it touches no picture, action or
+        layout. A walk of the form whose answer reads only those can be kept until
+        this number moves.
+        """
+        return self._structure_revision
+
+    @contextmanager
+    def event_only_edits(self) -> Iterator[None]:
+        """Bumps inside this block move ``revision`` and leave ``structure_revision`` alone."""
+        self._event_only_depth += 1
+        try:
+            yield
+        finally:
+            self._event_only_depth -= 1
+
+    def structure_memo(self, key: str, build: Callable[[], _T]) -> _T:
+        """``build()``, kept until the structure moves.
+
+        The value must be built from ids and plain values, never from node objects,
+        which an event edit can replace without moving the structure.
+        """
+        held = self._structure_memos.get(key)
+        if held is not None and held[0] == self._structure_revision:
+            return held[1]
+        value = build()
+        self._structure_memos[key] = (self._structure_revision, value)
+        return value
 
     def logic_property_count(self) -> int:
         """How many ``cbcs*`` logic properties are set, not counting ``cbcsLogic`` itself.
@@ -353,7 +395,12 @@ class UiDocument:
         if self._revision < self._peak:
             raise InvariantError("revision went backwards")
         self._peak = self._revision
+        if not self._event_only_depth:
+            self._structure_revision += 1
         self._enum_cache = None
+        listener = self._revision_listener
+        if listener is not None:
+            listener(self)
 
     def _bind_name(self, node: Node) -> None:
         name = _node_name(node)

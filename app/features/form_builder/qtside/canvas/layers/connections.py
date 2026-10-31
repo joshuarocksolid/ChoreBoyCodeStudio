@@ -373,13 +373,23 @@ def _chip_seats(
         return {}, {}
     width_of = measure if callable(measure) else (lambda text: max(12, len(text) * 7))
     content = tuple(getattr(static, "content", ()))
-    fixed = tuple(getattr(inputs, "chrome", ()))
+    from app.features.form_builder.qtside.canvas.layers.logic_badges import _selection_chip
+
+    fixed = tuple(getattr(inputs, "chrome", ())) + _selection_chip(static, inputs, page, viewport)
     blocked = _centers(document, steps, placed)
     label_content = _label_obstacles(document, content)
     requests = []
     curves = {}
-    parked_steps = []
-    for step in steps:
+    selected_id = getattr(getattr(inputs, "selection", None), "current", None)
+    ordered = sorted(
+        steps,
+        key=lambda step: (
+            0 if _id_of(document, step.sender) == selected_id else 1,
+            0 if step.kind != "widget" else 1,
+            step.index,
+        ),
+    )
+    for step in ordered:
         key = (step.sender, step.signal, step.index)
         lit = hover == key or aimed == key
         if step.kind == "widget" and not lit:
@@ -397,12 +407,18 @@ def _chip_seats(
             spot = _bezier(start, c1, c2, end, 0.5)
             requests.append(ChipRequest(key, CanvasRect(int(spot[0]), int(spot[1]), 1, 1), size, LABEL_CORNERS, frozenset()))
         else:
-            parked_steps.append((step, ChipRequest(key, origin, size, LABEL_CORNERS, frozenset())))
+            # Beside the sender. An empty corner list skips the corner above the
+            # widget, which is the selection chip's seat, and takes the next free side.
+            requests.append(ChipRequest(key, origin, size, LABEL_CORNERS, frozenset(), beside_first=True))
     found: dict = {}
     leaders: dict = {}
     if requests:
         seats = place_chips(requests, label_content, fixed, page, viewport)
-        found = {seat.key: seat.rect for seat in seats}
+        for seat in seats:
+            found[seat.key] = seat.rect
+            leader = getattr(seat, "leader", None)
+            if leader is not None:
+                leaders[seat.key] = (leader.start, leader.end)
         for request in requests:
             if request.key in found or request.key not in curves:
                 continue
@@ -421,20 +437,13 @@ def _chip_seats(
                 continue
             start, c1, c2, end, size = curves[request.key]
             spot = _bezier(start, c1, c2, end, 0.5)
-            found[request.key] = CanvasRect(
+            rect = CanvasRect(
                 int(spot[0] - size.width / 2), int(spot[1] - size.height / 2), size.width, size.height
             )
-    blockers = _solid_rects(document, static) + tuple(found.values())
-    parked_steps.sort(key=lambda pair: 0 if pair[0].kind == "code" else 1)
-    for _step, request in parked_steps:
-        parked = _on_sender_row(request, page, blockers)
-        if parked is None:
-            continue
-        rect, leader = parked
-        found[request.key] = rect
-        blockers = blockers + (rect,)
-        if leader is not None:
-            leaders[request.key] = leader
+            taken = tuple(found.values()) + fixed
+            if any(rect.intersects(other) for other in taken):
+                continue
+            found[request.key] = rect
     return found, leaders
 
 
@@ -487,7 +496,7 @@ def _solid_rects(document: UiDocument, static: object) -> Tuple[CanvasRect, ...]
 
 
 def _on_sender_row(
-    request: ChipRequest, page: CanvasRect, taken: Sequence[CanvasRect]
+    request: ChipRequest, page: CanvasRect, taken: Sequence[CanvasRect], viewport: Optional[CanvasRect] = None
 ) -> Optional[Tuple[CanvasRect, Optional[Tuple[Point, Point]]]]:
     """The nearer gutter on the sender's row, then empty space above or below.
 
@@ -506,16 +515,23 @@ def _on_sender_row(
     )
     taken = tuple(taken) + badge_row
     spots = [CanvasRect(gutter_x, y, size.width, size.height)]
-    # Designer's place: the gutter just outside the page edge, beside the sender (UX-ARR-004).
-    outside_x = int(page.x - size.width - 8 if nearer_left else page.x + page.width + 8)
-    if _clear_spot(spots[0], page, taken):
+    # Beside the sender, inside the visible canvas. A spot past the viewport is not a seat.
+    limit = viewport or page
+    beside = int(origin.x + origin.width + 8)
+    if beside + size.width > limit.x + limit.width:
+        beside = int(origin.x - size.width - 8)
+    beside = max(limit.x, min(beside, limit.x + limit.width - size.width))
+    spots.insert(0, CanvasRect(beside, y, size.width, size.height))
+    if _in_view(spots[0], limit) and not any(spots[0].intersects(other) for other in taken):
         return spots[0], None
+    if _clear_spot(spots[1], page, taken) and _in_view(spots[1], limit):
+        return spots[1], None
     for stack in range(0, 4):
         for spot in (
-            CanvasRect(outside_x, y + stack * (size.height + 4), size.width, size.height),
-            CanvasRect(outside_x, y - stack * (size.height + 4), size.width, size.height),
+            CanvasRect(beside, y + stack * (size.height + 4), size.width, size.height),
+            CanvasRect(beside, y - stack * (size.height + 4), size.width, size.height),
         ):
-            if not any(spot.intersects(other) for other in taken):
+            if _in_view(spot, limit) and not any(spot.intersects(other) for other in taken):
                 return spot, None
     # Past the badge on the sender's corner, in the empty space above or below it.
     inset = origin.x + 16
@@ -526,14 +542,14 @@ def _on_sender_row(
         spots.append(CanvasRect(gutter_x, y - stack * (size.height + 4), size.width, size.height))
     spots.append(CanvasRect(other_x, y, size.width, size.height))
     for spot in spots:
-        if _clear_spot(spot, page, taken):
+        if _in_view(spot, limit) and _clear_spot(spot, page, taken):
             return spot, None
     best: Optional[CanvasRect] = None
     best_distance: Optional[int] = None
     for gx in (gutter_x, other_x):
         for step in range(-16, 17):
             spot = CanvasRect(gx, y + step * 8, size.width, size.height)
-            if not _clear_spot(spot, page, taken):
+            if not _in_view(spot, limit) or not _clear_spot(spot, page, taken):
                 continue
             distance = abs(spot.y - y)
             if best_distance is None or distance < best_distance:
@@ -542,6 +558,15 @@ def _on_sender_row(
     if best is None:
         return None
     return best, _leader_line(best, origin)
+
+
+def _in_view(spot: CanvasRect, view: CanvasRect) -> bool:
+    return (
+        spot.x >= view.x
+        and spot.y >= view.y
+        and spot.x + spot.width <= view.x + view.width
+        and spot.y + spot.height <= view.y + view.height
+    )
 
 
 def _clear_spot(spot: CanvasRect, page: CanvasRect, taken: Sequence[CanvasRect]) -> bool:

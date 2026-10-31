@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import weakref
-from typing import Dict, List, Mapping, Optional, Sequence, Set, Tuple
+from typing import Dict, FrozenSet, List, Mapping, Optional, Sequence, Set, Tuple
 
 from app.qt.QtCore import QEvent, QObject, QRect, Qt
 from app.qt.QtWidgets import (
@@ -684,29 +684,51 @@ class HitIndexInvalidator:
         if changeset.replaced:
             self._index.invalidate("changeset")
             return
-        dirty = set(changeset.structure_dirty)
-        dirty.update(changeset.added)
+        # A step commit swaps <connection> nodes. They own no geometry, and a
+        # scope that names them sends the refresh to the full walk.
+        silent = _connection_only_ids(changeset)
+        structure = changeset.structure_dirty - silent
+        added = changeset.added - silent
+        removed = changeset.removed - silent
+        dirty = set(structure)
+        dirty.update(added)
         rewalk = set()
         for owner, _kind, name in changeset.property_dirty:
             dirty.add(owner)
             if name in ("currentIndex", "visible"):
                 rewalk.add(owner)
         for change in changeset.changes:
+            if change.category == "connection":
+                continue
             for name in ("node", "owner", "parent", "old_parent", "new_parent"):
                 node_id = getattr(change, name, None)
                 if node_id is not None:
                     dirty.add(node_id)
-        kept = changeset.removed
+        kept = removed
         self._index.invalidate(
             "changeset",
             RefreshScope(
                 dirty=frozenset(node_id for node_id in dirty if node_id not in kept),
-                removed=changeset.removed,
-                added=changeset.added,
-                structure=frozenset(node_id for node_id in changeset.structure_dirty if node_id not in kept),
+                removed=removed,
+                added=added,
+                structure=frozenset(node_id for node_id in structure if node_id not in kept),
                 rewalk=frozenset(node_id for node_id in rewalk if node_id not in kept),
             ),
         )
+
+
+def _connection_only_ids(changeset: ChangeSet) -> FrozenSet[NodeId]:
+    """Ids that only ``<connections>`` edits touched in this change set. O(changes)."""
+    touched: Set[NodeId] = set()
+    shared: Set[NodeId] = set()
+    for change in changeset.changes:
+        ids: Set[NodeId] = set(getattr(change, "subtree", ()) or ())
+        for name in ("node", "owner", "parent", "old_parent", "new_parent"):
+            node_id = getattr(change, name, None)
+            if node_id is not None:
+                ids.add(node_id)
+        (touched if change.category == "connection" else shared).update(ids)
+    return frozenset(touched - shared)
 
 
 def survey_live(

@@ -466,6 +466,12 @@ def project(
         _behavior(facts, owners),
     )
 
+
+def behavior_of(session: FormSession, owners: Tuple[NodeId, ...]) -> BehaviorView:
+    """The Behavior tab's view, without the property-page walk."""
+    facts = Facts(session.document, {}, QtClassTable.shared(), frozenset())
+    return _behavior(facts, owners)
+
 def bind(facts: Facts, spec: RowSpec, owners: Tuple[NodeId, ...], *, curated: bool = True) -> Optional[Row]:
     source = spec.source
     if isinstance(source, Note):

@@ -34,6 +34,9 @@ class GeneralTaskScheduler:
             max_workers=max(1, max_workers),
             thread_name_prefix="shell-task",
         )
+        # The first worker start is expensive. Pay it when the shell is built,
+        # so a later tab switch only queues work on a thread that already exists.
+        self._executor.submit(lambda: None)
 
     def run(
         self,

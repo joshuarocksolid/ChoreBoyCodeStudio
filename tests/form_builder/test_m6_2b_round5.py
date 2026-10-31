@@ -11,6 +11,7 @@ from app.features.form_builder.engine.commands.catalog_ext.events import SetEven
 from app.features.form_builder.engine.logic.events_codec import call_step
 from app.features.form_builder.integration.handler_checks_bridge import arm
 from app.features.form_builder.integration.handlers_code import SERVICE
+from tests.form_builder.idle import pump_until_idle
 from tests.form_builder.test_m6_2b_gesture import FIXTURE, _codes, _open, _request
 
 pytestmark = [pytest.mark.unit]
@@ -33,12 +34,14 @@ def test_a_clean_tab_gesture_parses_the_window_file_once(tmp_path: Path, monkeyp
     monkeypatch.setattr(window_file, "_read_text", _count)
     outcome = SERVICE.make_method(surface, _request())
     assert outcome.ok, outcome.reason
-    assert parses == ["forms/sale_window.py"]
+    # Opening the tab already read the file. The gesture reuses that reading
+    # and patches the inserted method, so it does not parse again.
+    assert parses == []
     surface.code_bridge.notify_saved(str(window))
-    assert parses == ["forms/sale_window.py"]
+    assert parses == []
 
 
-def test_fb201_follows_a_form_change_and_a_text_edit(tmp_path: Path) -> None:
+def test_fb201_follows_a_form_change_and_a_text_edit(tmp_path: Path, qapp) -> None:  # type: ignore[no-untyped-def]
     text = (FIXTURE / "sale_window.py").read_text(encoding="utf-8")
     surface, window, port = _open(tmp_path, text)
     arm(surface)
@@ -52,6 +55,10 @@ def test_fb201_follows_a_form_change_and_a_text_edit(tmp_path: Path) -> None:
             caption="Call not_a_method()",
         )
     )
+    qapp.processEvents()
+    # The checks wait for the idle turn, not the repaint pump after the commit.
+    assert "FB201" not in _codes(surface)
+    pump_until_idle()
     assert "FB201" in _codes(surface)
     port.tabs[str(window)] = port.tabs[str(window)].replace(
         "    def show_total(self):",

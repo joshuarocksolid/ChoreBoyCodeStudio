@@ -10,7 +10,7 @@ form without logic, and it never blocks saving (CONTRACTS 7.3).
 from __future__ import annotations
 
 import re
-from typing import List, Optional, Tuple
+from typing import Any, List, Optional, Tuple
 
 from app.features.form_builder.engine.commands.refs import identity_name
 from app.features.form_builder.engine.diagnostics import (
@@ -65,7 +65,7 @@ def unknown_step_message(object_name: str, event: str, verb: str) -> str:
     )
 
 
-def logic_diagnostics(doc: UiDocument) -> Tuple[FormDiagnostic, ...]:
+def logic_diagnostics(doc: UiDocument, nodes: Optional[Tuple[Any, ...]] = None) -> Tuple[FormDiagnostic, ...]:
     """FB402 for the form, FB401 for each property that can't be read, FB403 for each step list
     that holds a verb this build doesn't type. A read-only form gets FB402 (and FB401 for a
     marker that can't be read) only."""
@@ -93,7 +93,8 @@ def logic_diagnostics(doc: UiDocument) -> Tuple[FormDiagnostic, ...]:
         # Newer logic is never interpreted (CONTRACTS 15.7): its texts may use shapes and verbs
         # this build doesn't know, so FB402 alone speaks for them.
         return tuple(found)
-    for node in doc.iter_preorder():
+    scan = doc.iter_preorder() if nodes is None else nodes
+    for node in scan:
         owner_name = identity_name(node) or "the form"
         for entry in node.properties():
             if not is_user_logic_key(entry.name) or not isinstance(entry.value, StringValue):

@@ -438,7 +438,7 @@ Clicking a card, or pressing Enter on a focused card, creates the files with the
 
 **UX-WB-005** `M3.1b` `[S]` The inspector: header (UX-INSP-001), tab bar Properties · Behavior · Data (UX-INSP-002), a sticky property search field (Properties tab), then scrolling content. It is never empty: with nothing selected it shows the form (UX-INSP-010).
 
-**UX-WB-006** `M2.2` `[S]` Toasts appear bottom-centre of the canvas viewport, 16 px above its bottom edge, over the backdrop. Banners (overlay instructions, info bars) appear at the top of the canvas viewport, also over the backdrop; the page is pushed down by the banner height rather than covered.
+**UX-WB-006** `M2.2` `[S]` Toasts appear bottom-centre of the canvas viewport, 16 px above its bottom edge, over the backdrop. Banners (overlay instructions, info bars) appear at the top of the canvas viewport, also over the backdrop; the page is never covered; it moves down only by the part of the banner that does not fit in the top gutter (D31).
 
 ### 4.4 Empty states
 
@@ -2325,6 +2325,7 @@ The lane split, owned files and parity rows are in `PLAN.md` ("M6 lanes"). Claus
 | D28 | Where does Go to code put the def? | Code Studio never changes the document to place a line. Go to code scrolls the def toward the top third as far as the scroll range allows. In a file too short to scroll, the def is wherever it falls. (orchestrator, 2026-10-30) | A trailing pad of newlines is a change to the person's file |
 | D29 | Which methods get FB211? | FB211 reports only methods whose name matches a real `on_{object}_{signal}` for this form. A near miss is FB208, not FB211. (orchestrator, 2026-10-30) | The FB table row is the rule |
 | D30 | Which budget covers the method gesture? | The whole double-click-to-caret gesture is held to its own row, "tab already open ≤ 80 ms" (p95), clean and dirty tabs both. The 50 ms added row covers the step commit inside it. On a clean tab the gesture also saves the file, which a dirty tab doesn't, and that save is part of the 80 ms. The Mac measured 74–80 ms p95 at load 5, so M6.R must measure the clean-tab gesture on the ChoreBoy VM. If it is over 80 ms there, cut the save checkpoint or the second paint. (orchestrator, 2026-10-30) | Measured on the Mac at p95 over 40 runs |
+| D31 | Does an overlay banner push the page down or cover it? | Neither, at normal widths: the canvas keeps a top gutter at least as tall as the one-line banner, so opening F4, F7 or F8 does not move the page and the banner covers no widget. When the banner wraps taller than the gutter (narrow canvas, 200%), the page moves down by the excess only, never by the full banner height. This refines UX-WB-006's push-down rule, whose full-height push made the page jump about 40 px on every overlay toggle. | orchestrator ruling, 2026-10-30, M6.R |
 
 **UX-M6-001** `all M6` `[C]` Copy for M6 follows section 9.5, UX-M4-005 and UX-M5-007. In addition, on-screen text says "event" (never "signal" outside tooltips, the Qt-names line and the "MORE EVENTS" list's Qt column), "step", "method" for your code, "window file" only in captions ("Code Studio adds methods to the window file, shop_window.py."), and never "slot" for a method (the word appears only in the Qt column and the tooltip "Qt calls these slots."). Behavior is spelled the US way (UX-COPY-001); LOGIC_DESIGN's "behaviour" is not on screen. Every sentence a lane may show is in the 13.3.8 tables; a new one needs a spec change.
 
@@ -2663,7 +2664,8 @@ D27. A sentence uses the clause: "When {clause}." Headers stay "When {words}" ("
 | Where | Sentence | Colour |
 | --- | --- | --- |
 | Empty Events | "Nothing happens yet when {display name} is {event words}." / "Nothing happens yet for {display name}." | `fb.muted` |
-| Empty Events, D8 widget | "Double-click it on the form to write code for it." | Caption |
+| Empty Events, D8 widget | "Use + When… to pick what happens, or double-click it on the form to write code." | Caption |
+| After Go to code or Write code, once | "Ctrl+Z in {file} takes this back. F12 on the method goes back to the form." | status |
 | Several selected | "Select one widget to see what it does." | `fb.muted` |
 | Layout or spacer selected | "Layouts and spacers don't have events. Select a widget." | `fb.muted` |
 | Move past the ends | "That is the first step." / "That is the last step." | status |

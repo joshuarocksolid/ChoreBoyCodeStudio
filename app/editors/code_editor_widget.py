@@ -293,6 +293,10 @@ class CodeEditorWidget(
         previous_highlighter = self._highlighter
         if hasattr(previous_highlighter, "setDocument"):
             previous_highlighter.setDocument(None)  # type: ignore[union-attr]
+            # setDocument(None) clears the document but leaves the highlighter
+            # parented to it, so a second view would see two highlighters.
+            if hasattr(previous_highlighter, "setParent"):
+                previous_highlighter.setParent(None)  # type: ignore[union-attr]
 
         sample_lines: list[str] = []
         block = document.firstBlock()

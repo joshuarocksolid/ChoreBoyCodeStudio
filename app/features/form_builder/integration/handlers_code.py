@@ -9,8 +9,9 @@ from __future__ import annotations
 
 import os
 import weakref
+from contextlib import nullcontext
 from dataclasses import dataclass
-from typing import Any, List, Optional, Tuple
+from typing import Any, ContextManager, List, Optional, Tuple, cast
 
 from app.features.form_builder.engine.codegen.window_template import (
     TextEdit,
@@ -150,6 +151,12 @@ class CodeHandlers:
         return book
 
     def make_method(self, surface: Any, request: Any) -> HandlerOutcome:
+        # The form step, the window file, and the jump to the new method each
+        # ask the status bar for the same text. It is read once at the end.
+        with _status_held(surface):
+            return self._make_method(surface, request)
+
+    def _make_method(self, surface: Any, request: Any) -> HandlerOutcome:
         book = self._book(surface)
         book.arm(surface)
         waiting = pending_toast(surface)
@@ -169,8 +176,8 @@ class CodeHandlers:
             return _fail(surface, _ungenerated(scope))
         relative = os.path.relpath(path, root).replace("\\", "/")
         bridge = surface.code_bridge
-        text = bridge.text_of(path)
-        read = read_window(root, relative, text=text)
+        read = _read(surface, path, relative)
+        text = read.source if isinstance(read.source, str) else bridge.text_of(path)
         created = False
         if read.status == "missing":
             try:
@@ -185,7 +192,8 @@ class CodeHandlers:
             read = read_window(root, relative, text=text)
         existing = read.facts.method(method) if read.status == "ok" else None
         if existing is not None:
-            outcome = _commit(surface, label or _write_label(request), commands)
+            add_name = _add_label(surface, request, method)
+            outcome = _commit(surface, add_name, _relabel(commands, add_name))
             if outcome.ok:
                 self.go_to(surface, method)
             return outcome
@@ -215,6 +223,13 @@ class CodeHandlers:
                 bridge.notify_saved = notify  # type: ignore[method-assign]
             if not applied.ok:
                 return _fail(surface, applied.reason)
+            if read.status == "ok":
+                from app.features.form_builder.engine.project.handler_checks import note_inserted_method
+                from app.features.form_builder.engine.project.window_file import install_inserted_method
+
+                token_now = bridge.buffer_token(path) if callable(getattr(bridge, "buffer_token", None)) else None
+                install_inserted_method(root, relative, read, plan, None if token_now is None else str(token_now))
+                note_inserted_method(relative, method)
             replay = True
             before = len(surface.session.log.entries())
             try:
@@ -231,8 +246,7 @@ class CodeHandlers:
                 return _fail(surface, outcome.reason)
         finally:
             if replay:
-                for saved in pending:
-                    notify(saved)
+                _notify_when_idle(notify, pending)
         entries = surface.session.log.entries()
         if len(entries) > before:
             book.note(
@@ -271,7 +285,10 @@ class CodeHandlers:
         if found is None:
             return False
         line, select = _caret(read, found.line)
-        return bool(surface.code_bridge.open_at(path, line, select))
+        opened = bool(surface.code_bridge.open_at(path, line, select))
+        if opened:
+            _back_hint(surface)
+        return opened
 
     def inherited_names(self, class_name: str) -> Tuple[str, ...]:
         from app.features.form_builder.integration.handler_checks_bridge import inherited_names
@@ -321,11 +338,92 @@ def _commit(surface: Any, label: str, commands: Tuple[Any, ...]) -> HandlerOutco
     return HandlerOutcome(True)
 
 
+def prewarm_window_read(surface: Any) -> None:
+    """Parse the window file on an idle turn so the first double-click does not.
+
+    Does not open a tab. A missing file stays missing until the gesture that
+    creates it.
+    """
+    if getattr(surface, "_cbcs_window_prewarmed", False):
+        return
+    located = SERVICE._located(surface)
+    if located is None:
+        return
+    path, root, relative = located
+    bridge = getattr(surface, "code_bridge", None)
+    token = None
+    text = None
+    if bridge is not None:
+        ask = getattr(bridge, "buffer_token", None)
+        if callable(ask):
+            token = ask(path)
+        if token:
+            reader = getattr(bridge, "text_of", None)
+            if callable(reader):
+                got = reader(path)
+                if isinstance(got, str):
+                    text = got
+    if isinstance(text, str):
+        read_window(root, relative, text=text, token=str(token) if token else None)
+        _warm_first_commit(surface)
+        surface._cbcs_window_prewarmed = True
+        return
+    read = read_window(root, relative)
+    if read.status == "ok":
+        _warm_first_commit(surface)
+        surface._cbcs_window_prewarmed = True
+
+
+def _warm_first_commit(surface: Any) -> None:
+    """Import the first command's helpers and remember the form's events.
+
+    Both are paid once. On the idle turn they stay off the first double-click.
+    """
+    from app.features.form_builder.engine import diagnostic_codes
+    from app.features.form_builder.engine.commands.participants import default_registry
+    from app.features.form_builder.engine.logic.events import read_events
+
+    diagnostic_codes.discover()
+    default_registry()
+    session = getattr(surface, "session", None)
+    document = getattr(session, "document", None)
+    if document is not None:
+        read_events(document)
+    # The first double-click opens the code tab. Loading the grammar there is
+    # the same work on every form, so the idle turn does it once.
+    try:
+        from app.treesitter.loader import initialize_tree_sitter_runtime
+    except ImportError:
+        return
+    initialize_tree_sitter_runtime()
+    # The tab's highlighter compiles the highlight and locals queries. That is
+    # the largest one-time cost in the tab open, and the same for every form.
+    located = SERVICE._located(surface)
+    if located is None:
+        return
+    from app.treesitter.highlighter_core import prewarm_queries
+    from app.treesitter.language_registry import default_tree_sitter_language_registry
+
+    resolved = default_tree_sitter_language_registry().resolve_for_path(file_path=located[0])
+    if resolved is not None:
+        prewarm_queries(resolved)
+
+
 def _read(surface: Any, path: str, relative: str) -> WindowRead:
     scope = surface.session.scope
     root = str(getattr(scope, "project_root", "") or "")
+    token = None
+    ask = getattr(surface.code_bridge, "buffer_token", None)
+    if callable(ask):
+        token = ask(path)
+    if token:
+        from app.features.form_builder.engine.project.window_file import peek_window
+
+        peeked = peek_window(root, relative, str(token))
+        if peeked is not None:
+            return peeked
     text = surface.code_bridge.text_of(path)
-    return read_window(root, relative, text=text)
+    return read_window(root, relative, text=text, token=token)
 
 
 def _params_of(request: Any, method: str) -> Tuple[str, ...]:
@@ -339,6 +437,49 @@ def _params_of(request: Any, method: str) -> Tuple[str, ...]:
                     signal = str(getattr(command, "signal_name", "") or "")
                     return (value_param(signal + "()"),)
     return ()
+
+
+_BACK_HINT_SHOWN = False
+
+
+def _back_hint(surface: Any) -> None:
+    """One sentence the first time code is opened from the form (UX 13.3.8)."""
+    global _BACK_HINT_SHOWN
+    if _BACK_HINT_SHOWN:
+        return
+    narrate = getattr(surface, "narrate", None)
+    if not callable(narrate):
+        return
+    scope = getattr(getattr(surface, "session", None), "scope", None)
+    ui = os.path.basename(str(getattr(scope, "ui_path", "") or "")) or "the form"
+    _BACK_HINT_SHOWN = True
+    narrate("Ctrl+Z in %s takes this back. F12 on the method goes back to the form." % ui)
+
+
+def _add_label(surface: Any, request: Any, method: str) -> str:
+    from app.features.form_builder.engine.query.tab_stops import display_name
+
+    sender = str(getattr(request, "sender", "") or "")
+    words = str(getattr(request, "event_words", "") or "")
+    shown = sender
+    document = getattr(getattr(surface, "session", None), "document", None)
+    if document is not None and sender:
+        shown = display_name(document, sender)
+    if shown and words:
+        return "Add Call %s() to %s %s" % (method, shown, words)
+    return "Add Call %s()" % method
+
+
+def _relabel(commands: Tuple[Any, ...], label: str) -> Tuple[Any, ...]:
+    from dataclasses import replace
+
+    changed = []
+    for command in commands:
+        if hasattr(command, "caption"):
+            changed.append(replace(command, caption=label))
+        else:
+            changed.append(command)
+    return tuple(changed)
 
 
 def _write_label(request: Any) -> str:
@@ -415,6 +556,36 @@ def _hold_save_notify(bridge: Any) -> Tuple[Any, List[str]]:
 
     bridge.notify_saved = hold  # type: ignore[method-assign]
     return notify, pending
+
+
+def _status_held(surface: Any) -> "ContextManager[None]":
+    """Hold the shell's status-bar refreshes for the length of a gesture."""
+    try:
+        workflow = getattr(surface.window(), "_editor_tab_workflow", None)
+    except (AttributeError, RuntimeError):
+        return nullcontext()
+    hold = getattr(workflow, "hold_status_updates", None)
+    if not callable(hold):
+        return nullcontext()
+    return cast("ContextManager[None]", hold())
+
+
+def _notify_when_idle(notify: Any, saved: List[str]) -> None:
+    """Tell the save listeners once the loop is about to block.
+
+    The form step is stored. The checks that follow read the whole window file
+    and the form, so they wait for the idle turn the way the editor's own
+    after-save work does.
+    """
+    from app.shell.idle_turn import run_when_idle
+
+    paths = tuple(saved)
+
+    def tell() -> None:
+        for path in paths:
+            notify(path)
+
+    run_when_idle(tell)
 
 
 def _publish(surface: Any) -> None:

@@ -629,6 +629,15 @@ class FormToolbar(QWidget):
     def apply_theme(self, tokens: ShellThemeTokens) -> None:
         self._tokens = tokens
         self.setStyleSheet(_toolbar_qss(tokens))
+        fill = QColor(tokens.panel_bg)
+        ink = QColor(tokens.text_primary)
+        palette = self.palette()
+        palette.setColor(QPalette.ColorRole.Window, fill)
+        palette.setColor(QPalette.ColorRole.WindowText, ink)
+        palette.setColor(QPalette.ColorRole.Button, fill)
+        palette.setColor(QPalette.ColorRole.ButtonText, ink)
+        self.setPalette(palette)
+        self.setAutoFillBackground(True)
         self._paint_glyphs()
         self._paint_label_ink(tokens)
 

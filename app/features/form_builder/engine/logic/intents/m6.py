@@ -10,8 +10,9 @@ registry's ``Intent``.
 
 from __future__ import annotations
 
+import weakref
 from dataclasses import dataclass
-from typing import Any, Callable, Mapping, Optional, Tuple
+from typing import Any, Callable, Dict, Mapping, Optional, Tuple
 
 from app.features.form_builder.engine.commands.catalog_ext.events import EventEdit, SetEventSteps, steps_added
 from app.features.form_builder.engine.logic import compat
@@ -175,10 +176,25 @@ def intents_for(
     return tuple(found)
 
 
+_CANDIDATES: "weakref.WeakKeyDictionary[UiDocument, Tuple[int, Dict[Tuple[str, str], Tuple[str, ...]]]]" = (
+    weakref.WeakKeyDictionary()
+)
+
+
 def target_candidates(doc: UiDocument, classes: QtClassTable, intent: IntentSpec, sender: str) -> Tuple[str, ...]:
     """Object names that fit the intent's target page (UX-PICK-005): reading order, the form first when it fits."""
     if not intent.needs_target:
         return ()
+    cache_key = (sender, intent.intent_id)
+    stored = _CANDIDATES.get(doc)
+    table: Dict[Tuple[str, str], Tuple[str, ...]]
+    if stored is not None and stored[0] == doc.revision:
+        found = stored[1].get(cache_key)
+        if found is not None:
+            return found
+        table = stored[1]
+    else:
+        table = {}
     names = []
     root = doc.root.object_name
     ordered = [root] + [name for name in _all_widget_names(doc) if name != root]
@@ -199,8 +215,18 @@ def target_candidates(doc: UiDocument, classes: QtClassTable, intent: IntentSpec
         if intent.target_slot == "setFocus()":
             if not isinstance(node, WidgetNode) or name == root or not takes_tab_focus(node):
                 continue
+        if intent.target_slot == "clear()" and not any(
+            item in chain for item in (
+                "QLineEdit", "QTextEdit", "QPlainTextEdit", "QComboBox",
+                "QAbstractSpinBox", "QSpinBox", "QDoubleSpinBox",
+            )
+        ):
+            continue
         names.append(name)
-    return tuple(names)
+    result = tuple(names)
+    table[cache_key] = result
+    _CANDIDATES[doc] = (doc.revision, table)
+    return result
 
 
 def default_target(doc: UiDocument, intent: IntentSpec, sender: str) -> Optional[str]:

@@ -21,6 +21,7 @@ from app.features.form_builder.engine.logic.events_catalog import (
 )
 from app.features.form_builder.engine.logic.events_codec import slot_step
 from app.features.form_builder.engine.logic.intents.m6 import IntentSpec, default_target, intents_for, target_candidates
+from app.features.form_builder.engine.logic.phrases import steps_removed
 from app.features.form_builder.engine.project.handler_names import value_param
 from app.features.form_builder.engine.ui4.defaults import QtClassTable
 from app.features.form_builder.engine.query.tab_stops import display_name
@@ -171,7 +172,12 @@ def reduce(ctx: PickContext, page: Page, press: Press) -> object:
     if key == "down":
         return replace(page, current=_move(page, 1))
     if key == "field":
-        return replace(page, field=press.text, notice=method_notice(ctx, page, press.text))
+        typed = press.text.strip() or page.field
+        rows = tuple(
+            replace(item, payload=typed, text="Add %s()" % typed) if item.kind == "make" else item
+            for item in page.rows
+        )
+        return replace(page, field=press.text, rows=rows, notice=method_notice(ctx, page, press.text))
     if key == "enter" or key == "right":
         return _enter(ctx, page)
     if key == "filter":
@@ -248,7 +254,7 @@ def _picked_event(ctx: PickContext, page: Page, signal: str) -> object:
         if dropped:
             chain = _sender_chain(ctx)
             words = event_words(signal, chain).header
-            sentence = "%d steps can't run on %s and will be removed." % (dropped, words)
+            sentence = steps_removed(dropped, words)
             rows = (
                 Item("notice", "", sentence, header=True),
                 Item("confirm-yes", signal, "Change event"),
@@ -352,7 +358,7 @@ def _event_page(ctx: PickContext, text: str, show_base: Optional[bool] = None) -
 def _step_page(
     ctx: PickContext, signal: str, wide: bool, replace_index: int, back: str, text: str = ""
 ) -> Page:
-    rows = _intent_rows(ctx, signal if not wide else None)
+    rows = _intent_rows(ctx, signal)
     rows.extend(_code_rows(ctx, signal))
     rows.append(Item("header", "", "EVERYTHING ELSE", header=True))
     rows.append(Item("widget-action", "", "A widget's own action\u2026"))
@@ -371,6 +377,9 @@ def _pair_page(
     checked = ctx.show_base if show_base is None else show_base
     rows = [item for item in _intent_rows(ctx, signal) if item.header or _intent_fits_target(ctx, item.payload)]
     rows.extend(_slot_items(ctx, signal, ctx.target, checked))
+    if ctx.target == ctx.doc.root.object_name:
+        rows.extend(_code_rows(ctx, signal))
+    rows = _drop_empty(rows)
     chain = _sender_chain(ctx)
     title = "Then\u2026 (When %s)" % event_clause(signal, chain, display_name(ctx.doc, ctx.source.sender))
     page = Page(
@@ -445,22 +454,75 @@ def _intent_rows(ctx: PickContext, event: Optional[str]) -> list:
 
 
 def _code_rows(ctx: PickContext, signal: str) -> list:
+    from app.features.form_builder.qtside.pickers.method_page import _fitting
+
     rows = [Item("header", "", "YOUR CODE", header=True), Item("new-method", "", "Call a new method\u2026")]
-    if not ctx.window_file and not ctx.methods:
+    if not ctx.window_file and not ctx.methods and not ctx.method_infos:
         rows.append(Item("header", "", "This form isn't in a project, so it has no window file.", header=True))
         return rows
     rows.append(Item("header", "", ctx.window_file, header=True))
-    if not ctx.methods:
-        return rows
     used = _used_methods(ctx, signal)
     sends = len(_sends(ctx, signal))
-    for name in ctx.methods:
-        if not compat.is_name(name):
+    for info in _fitting(ctx, sends):
+        name = str(getattr(info, "name", info) or "")
+        if not name or not compat.is_name(name) or _other_event_method(ctx, name, signal):
             continue
         mark = " already here" if name in used else ""
         rows.append(Item("method", name, "Call %s()%s" % (name, mark)))
-    del sends
     return rows
+
+
+_BOUND: weakref.WeakKeyDictionary = weakref.WeakKeyDictionary()
+
+
+def _bound_by_name(ctx: PickContext) -> frozenset:
+    """``on_{object}_{signal}`` names Qt would run for this form (D29)."""
+    cached = _BOUND.get(ctx.doc)
+    if cached is not None and cached[0] == ctx.doc.revision:
+        return cached[1]
+    from app.features.form_builder.engine.project.handler_names import signal_name
+
+    found = []
+    for node in ctx.doc.iter_widgets():
+        obj = node.object_name
+        if not obj:
+            continue
+        class_name, declared = compat.node_class(ctx.doc, ctx.classes, node)
+        if not class_name:
+            continue
+        for signature in compat.signals_of(ctx.classes, class_name, declared):
+            signal = signal_name(signature)
+            if signal:
+                found.append("on_%s_%s" % (obj, signal))
+    names = frozenset(found)
+    _BOUND[ctx.doc] = (ctx.doc.revision, names)
+    return names
+
+
+def _other_event_method(ctx: PickContext, name: str, signal: str) -> bool:
+    """A method Qt already runs by name for this form. A step that calls it runs twice.
+
+    A helper such as ``on_refresh`` does not match a real object and signal, so it stays.
+    """
+    del signal
+    if not name.startswith("on_"):
+        return False
+    return name in _bound_by_name(ctx)
+
+
+def _drop_empty(rows: list) -> list:
+    """A section header with no rows under it is not shown (UX-COPY-002)."""
+    kept: list = []
+    pending = None
+    for item in rows:
+        if item.header:
+            pending = item
+            continue
+        if pending is not None:
+            kept.append(pending)
+            pending = None
+        kept.append(item)
+    return kept
 
 
 def _slot_items(ctx: PickContext, signal: str, target: str, show_base: bool) -> list:
@@ -526,8 +588,20 @@ def _filter(rows: Tuple[Item, ...], text: str) -> Tuple[Item, ...]:
     if not any(not item.header for item in found):
         sentence = "Nothing matches \u201c%s\u201d." % text
         kept = tuple(item for item in rows if item.kind == "widget-action")
-        return (Item("header", "", sentence, header=True),) + kept
+        escape: Tuple[Item, ...] = ()
+        if not kept:
+            name = _method_token(text)
+            escape = (Item("new-method", name, "Call a new method named %s\u2026" % name),)
+        return (Item("header", "", sentence, header=True),) + kept + escape
     return tuple(found)
+
+
+def _method_token(text: str) -> str:
+    raw = "".join(ch if ch.isalnum() or ch == "_" else "_" for ch in text.strip())
+    raw = raw.strip("_")
+    if not raw or not raw[0].isalpha():
+        raw = ("method_" + raw) if raw else "method"
+    return raw
 
 
 def _current(page: Page) -> Optional[Item]:

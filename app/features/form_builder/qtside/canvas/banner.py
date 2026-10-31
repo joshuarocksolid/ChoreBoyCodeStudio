@@ -1,8 +1,8 @@
 """The overlay banner (UX-OVL-002): glyph, name, one sentence, an extra action and Done · Esc.
 
-It sits in the top margin of the canvas, above the viewport, so the page is
-pushed down by its height and is never covered (UX-WB-006). The host tells it
-colours as plain strings; this module imports nothing from the shell.
+It is drawn over the top of the canvas. It does not take layout height, so the
+page stays where it is. The height follows the wrapped sentence. The host tells
+it colours as plain strings; this module imports nothing from the shell.
 """
 
 from __future__ import annotations
@@ -35,7 +35,7 @@ class ModeBanner(QFrame):
         self._done_slot: Optional[Callable[[], None]] = None
         self.setObjectName("formBuilder.overlayBanner")
         self.setAccessibleName("Overlay")
-        self.setFixedHeight(HEIGHT)
+        self.setMinimumHeight(HEIGHT)
         row = QHBoxLayout(self)
         row.setContentsMargins(10, 0, 6, 0)
         row.setSpacing(8)
@@ -93,6 +93,23 @@ class ModeBanner(QFrame):
 
     def sentence(self) -> str:
         return self._sentence.text()
+
+    def fitted_height(self, width: int) -> int:
+        """Height that shows the whole sentence at this width, including a large font."""
+        margins = self.layout().contentsMargins()
+        spacing = self.layout().spacing()
+        taken = margins.left() + margins.right() + self._glyph.width()
+        for widget in (self._name, self._extra, self._done):
+            if widget.isHidden():
+                continue
+            taken += spacing + max(widget.sizeHint().width(), widget.width())
+        taken += spacing
+        text_width = max(48, int(width) - taken)
+        self._sentence.setFixedWidth(text_width)
+        text_height = max(self._sentence.heightForWidth(text_width), self._sentence.sizeHint().height())
+        self._sentence.setMinimumHeight(text_height)
+        self._sentence.setMaximumHeight(text_height)
+        return max(HEIGHT, text_height + margins.top() + margins.bottom())
 
     def name(self) -> str:
         return self._name.text()

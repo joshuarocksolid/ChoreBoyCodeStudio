@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import Any, Callable, Mapping, Protocol, Sequence, cast
 
+from app.qt.QtCore import QTimer
 from app.qt.QtWidgets import QFileDialog, QMessageBox, QWidget
 
 from app.core import constants
@@ -29,12 +31,16 @@ from app.shell.document_safety import (
     DocumentScope,
     dirty_buffer_snapshots,
 )
+from app.shell.idle_turn import run_when_idle
 from app.shell.shell_composition_context import MainWindowCompositionSurface
 from app.shell.tab_close_blockers import confirm_tab_close_blockers
 from app.shell.unsaved_changes_dialog import prompt_for_unsaved_changes
 
 
 PYTHON_STYLE_SAVE_GUARDRAIL_CHAR_LIMIT = 250_000
+
+
+logger = logging.getLogger(__name__)
 
 
 class SaveWorkflowPort(Protocol):
@@ -536,6 +542,58 @@ class SaveWorkflow:
             return "proceed"
         return resolver(file_path)
 
+    def _notify_form(self, path: str) -> None:
+        host = self._host
+        bridge = getattr(host, "_form_builder_code_bridge", None)
+        if bridge is None:
+            bridge = getattr(getattr(host, "_window", None), "_form_builder_code_bridge", None)
+        notify = getattr(bridge, "notify_saved", None)
+        if callable(notify):
+            notify(path)
+
+    def _lint_and_notify(self, path: str) -> None:
+        host = self._host
+        if path.lower().endswith(".py"):
+            host.render_lint_for_file(path, trigger="save")
+            host.refresh_test_discovery()
+        self._notify_form(path)
+
+    def _defer_followups(
+        self,
+        path: str,
+        content: str,
+        source: str,
+        *,
+        index_root: str | None,
+        inventory: object,
+    ) -> None:
+        history = self._local_history
+        intelligence = self._intelligence_cache
+
+        def write() -> None:
+            try:
+                history.record_checkpoint(path, content, source=source)
+            except Exception:
+                logger.exception("deferred local-history checkpoint failed for %s", path)
+            try:
+                if path.lower().endswith(".py"):
+                    self._host.render_lint_for_file(path, trigger="save")
+                    self._host.refresh_test_discovery()
+            except Exception:
+                logger.exception("deferred save follow-up failed for %s", path)
+            if index_root is None:
+                return
+            try:
+                intelligence.start_symbol_indexing(index_root, inventory_snapshot=inventory)
+            except Exception:
+                logger.exception("deferred symbol index failed for %s", path)
+
+        # The form hears about the save on the next pump. That call is a
+        # check, not a parse. Lint, history, and the symbol index wait until
+        # the loop is about to block, so this pump does not run them.
+        QTimer.singleShot(0, lambda: self._notify_form(path))
+        run_when_idle(write)
+
     def save_tab(
         self,
         file_path: str,
@@ -544,6 +602,7 @@ class SaveWorkflow:
         checkpoint_source: str = "save",
         apply_transforms: bool = True,
         check_stale_disk: bool = True,
+        defer_history: bool = False,
     ) -> bool:
         host = self._host
         stale_decision = (
@@ -575,35 +634,47 @@ class SaveWorkflow:
             host.refresh_tab_presentation(saved_tab.file_path)
 
         self._local_history.discard_pending_autosave(saved_tab.file_path)
-        self._local_history.record_checkpoint(
-            saved_tab.file_path,
-            saved_tab.current_content,
-            source=checkpoint_source,
-        )
         self._local_history.delete_draft(saved_tab.file_path)
         project_id, _project_root = self._local_history.local_history_context_for_path(saved_tab.file_path)
         loaded_project = host.loaded_project()
+        index_root = None
+        inventory = None
         if not path_existed_before_save and project_id is not None:
             host.rescan_project_from_disk(reload_plugins=False, reindex=True)
         elif should_refresh_index_after_save(
             host.intelligence_runtime_settings(),
             has_loaded_project=loaded_project is not None,
         ) and loaded_project is not None:
-            self._intelligence_cache.start_symbol_indexing(
-                getattr(loaded_project, "project_root"),
-                inventory_snapshot=host.project_inventory_snapshot(),
+            index_root = getattr(loaded_project, "project_root")
+            inventory = host.project_inventory_snapshot()
+        if defer_history:
+            # The file is already on disk and the tab is already clean. The
+            # checkpoint, lint, symbol index, and test refresh run when the
+            # event loop next waits. A crash before that loses a history row
+            # of text that is already the file, and a Problems refresh, not
+            # the save.
+            self._defer_followups(
+                saved_tab.file_path,
+                saved_tab.current_content,
+                checkpoint_source,
+                index_root=index_root,
+                inventory=inventory,
             )
+        else:
+            self._local_history.record_checkpoint(
+                saved_tab.file_path,
+                saved_tab.current_content,
+                source=checkpoint_source,
+            )
+            if index_root is not None:
+                self._intelligence_cache.start_symbol_indexing(
+                    index_root,
+                    inventory_snapshot=inventory,
+                )
         host.refresh_save_action_states()
         host.update_editor_status_for_path(saved_tab.file_path)
-        if saved_tab.file_path.lower().endswith(".py"):
-            host.render_lint_for_file(saved_tab.file_path, trigger="save")
-            host.refresh_test_discovery()
-        bridge = getattr(host, "_form_builder_code_bridge", None)
-        if bridge is None:
-            bridge = getattr(getattr(host, "_window", None), "_form_builder_code_bridge", None)
-        notify = getattr(bridge, "notify_saved", None)
-        if callable(notify):
-            notify(saved_tab.file_path)
+        if not defer_history:
+            self._lint_and_notify(saved_tab.file_path)
         getattr(host.logger(), "info")("Saved file: %s", saved_tab.file_path)
         return True
 

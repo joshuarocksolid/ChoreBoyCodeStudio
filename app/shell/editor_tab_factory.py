@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import time
+from contextlib import nullcontext
 from typing import Any, Callable, Optional
 
 from app.qt.QtCore import Qt, QTimer
@@ -136,6 +137,18 @@ class EditorTabFactory:
         return self._materialize_opened_editor_tab(opened_result, started_at=None, restore_draft=False)
 
     def _materialize_opened_editor_tab(
+        self,
+        opened_result: OpenedTabResult,
+        *,
+        started_at: Optional[float],
+        restore_draft: bool,
+    ) -> bool:
+        # The status bar is read once, after the tab is in place.
+        hold = getattr(self._window._editor_tab_workflow, "hold_status_updates", None)
+        with hold() if callable(hold) else nullcontext():
+            return self._materialize_held(opened_result, started_at=started_at, restore_draft=restore_draft)
+
+    def _materialize_held(
         self,
         opened_result: OpenedTabResult,
         *,

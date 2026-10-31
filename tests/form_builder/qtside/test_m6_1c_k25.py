@@ -59,6 +59,8 @@ def _chord(widget: QWidget, sequence: str) -> None:
 
 
 @pytest.mark.timeout(180)
+@pytest.mark.parity("R3-2")
+@pytest.mark.logic("L-canvas-overlay")
 def test_k25_connections_overlay_from_the_keyboard(qapp: QApplication, tmp_path: Path) -> None:
     host = QWidget()
     surface = _open(host, _SALE.read_text(encoding="utf-8"), tmp_path / "sale.ui")

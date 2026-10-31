@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 import sqlite3
+import threading
 from typing import Optional
 
 from app.bootstrap.paths import PathInput, ensure_directory, global_history_dir, global_history_index_path
@@ -25,6 +26,7 @@ class LocalHistorySchema:
     def __init__(self, state_root: Optional[PathInput] = None) -> None:
         self._history_root = ensure_directory(global_history_dir(state_root))
         self._db_path = global_history_index_path(state_root)
+        self._local = threading.local()
         self.initialize()
 
     @property
@@ -36,12 +38,30 @@ class LocalHistorySchema:
         return self._db_path
 
     def connect(self) -> sqlite3.Connection:
-        connection = sqlite3.connect(str(self._db_path))
-        connection.row_factory = sqlite3.Row
-        connection.execute("PRAGMA foreign_keys = ON")
-        connection.execute("PRAGMA journal_mode = WAL")
-        connection.execute("PRAGMA synchronous = FULL")
+        """This thread's connection, opened on first use.
+
+        Opening one costs several milliseconds, more on a slow disk, and a tab
+        open asks for it more than once. Callers use ``with connection:``, which
+        commits or rolls back and leaves the connection open for the next call.
+        A connection only works on the thread that opened it, so each thread
+        keeps its own.
+        """
+        connection = getattr(self._local, "connection", None)
+        if connection is None:
+            connection = sqlite3.connect(str(self._db_path))
+            connection.row_factory = sqlite3.Row
+            connection.execute("PRAGMA foreign_keys = ON")
+            connection.execute("PRAGMA journal_mode = WAL")
+            connection.execute("PRAGMA synchronous = FULL")
+            self._local.connection = connection
         return connection
+
+    def close(self) -> None:
+        """Close this thread's connection. The next ``connect`` opens another."""
+        connection = getattr(self._local, "connection", None)
+        self._local.connection = None
+        if connection is not None:
+            connection.close()
 
     def initialize(self) -> None:
         ensure_directory(self._db_path.parent)

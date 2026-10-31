@@ -178,7 +178,9 @@ class MainWindowEditorTabHost:
         self._window._problems_controller.render_merged_problems_panel()
 
     def reveal_project_tree_path(self, file_path: str) -> None:
-        self._window._project_tree_presenter.reveal_path(file_path)
+        from app.editors.editor_manager import normalized_path
+
+        self._window._project_tree_presenter.reveal_path(normalized_path(file_path))
 
     def reload_current_project(self) -> None:
         self._window._project_tree_ui_workflow.reload_current_project()

@@ -347,16 +347,20 @@ class ProblemsPanel(QWidget):
             DiagnosticSeverity.WARNING: "#D97706",
             DiagnosticSeverity.INFO: "#3366FF",
         }
+        self._code_color = ""
 
     # -- public API --
 
     def apply_theme(self, tokens: ShellThemeTokens) -> None:
         """Update severity icon/row colors from theme tokens."""
+        self._code_color = tokens.text_primary
         self.set_severity_colors(
             tokens.diag_error_color or tokens.accent,
             tokens.diag_warning_color or tokens.text_muted,
             tokens.diag_info_color or tokens.accent,
         )
+        if self._diagnostics or self._runtime_problems:
+            self._rebuild_diagnostics_tree()
 
     def set_severity_colors(
         self,
@@ -482,7 +486,10 @@ class ProblemsPanel(QWidget):
                     tip += "".join("\nFix: %s" % title for _fix, title in row_fixes(detail))
                     child.setToolTip(1, tip)
                     if source_label:
-                        child.setForeground(3, self._tree.palette().color(QPalette.PlaceholderText))
+                        code_color = getattr(self, "_code_color", "") or ""
+                        if not code_color:
+                            code_color = self._tree.palette().color(QPalette.Text).name()
+                        child.setForeground(3, QColor(code_color))
                     child.setData(0, ROLE_FILE_PATH, entry.file_path)
                     child.setData(0, ROLE_LINE_NUMBER, entry.line_number)
                     child.setData(0, ROLE_DIAGNOSTIC_CODE, entry.code)

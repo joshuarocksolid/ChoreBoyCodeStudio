@@ -124,6 +124,7 @@ def test_fb202_counts_the_first_parameter_whatever_its_name() -> None:
     assert "FB202" not in _codes(window)
 
 
+@pytest.mark.parity("R3-7")
 @pytest.mark.logic("L-connect-slots-by-name")
 def test_fb205_a_name_that_also_auto_connects_and_its_clean_twin() -> None:
     window = (

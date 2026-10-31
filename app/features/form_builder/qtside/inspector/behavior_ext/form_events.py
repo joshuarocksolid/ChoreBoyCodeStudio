@@ -51,7 +51,12 @@ class FormEventsBody(QWidget):
 
     def paint(self, inputs: SectionInputs) -> None:
         self._chrome = self._services.chrome
-        self._rows = project_form(inputs.session.document, QtClassTable.shared())
+        doc = inputs.session.document
+        revision = doc.revision
+        if revision == getattr(self, "_rows_rev", None):
+            return
+        self._rows_rev = revision
+        self._rows = project_form(doc, QtClassTable.shared())
         self._title.setText("ALL EVENTS ON THIS FORM %d" % len(self._rows))
         self._refill()
 
@@ -97,7 +102,8 @@ class FormEventsBody(QWidget):
 class _FormRow(QLabel):
     def __init__(self, row: FormRow, body: FormEventsBody) -> None:
         super().__init__(row.words, body)
-        self.setWordWrap(True)
+        self._full = row.words
+        self.setWordWrap(False)
         self.setMinimumWidth(0)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         chrome = body._services.chrome
@@ -105,10 +111,17 @@ class _FormRow(QLabel):
             "QLabel:focus { border: %dpx solid %s; }" % (chrome.focus_width, chrome.accent)
         )
         self.setAccessibleName(row.words)
+        self.setToolTip(row.words)
         self._row = row
         self._body = body
         if row.missing:
             self.setStyleSheet("color: %s;" % body._chrome.error)
+
+    def resizeEvent(self, event: object) -> None:  # noqa: N802
+        super().resizeEvent(event)  # type: ignore[arg-defined]
+        shown = self.fontMetrics().elidedText(self._full, Qt.TextElideMode.ElideMiddle, max(8, self.width() - 4))
+        if self.text() != shown:
+            self.setText(shown)
 
     def keyPressEvent(self, event: object) -> None:  # noqa: N802
         key = enum_value(event.key())  # type: ignore[attr-defined]

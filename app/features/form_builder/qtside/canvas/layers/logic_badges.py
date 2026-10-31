@@ -6,7 +6,8 @@ The workbench shows this layer in Design. ``build`` returns nothing below
 
 from __future__ import annotations
 
-from typing import Hashable, List, Optional, Sequence, Tuple
+import weakref
+from typing import Dict, Hashable, List, Optional, Sequence, Tuple
 
 from app.features.form_builder.engine.logic.events import events_of_sender, read_events
 from app.features.form_builder.engine.logic.events_catalog import event_words
@@ -47,6 +48,88 @@ def _tip(doc: UiDocument, sender: str, states: Sequence[object]) -> str:
     return text
 
 
+class _Basis:
+    """What the badges' seating reads from the static layer, and nothing an event changes.
+
+    A step commit rebuilds the frame. The static layer it paints from keeps its
+    ``placed`` and ``content`` tuples, so this survives the commit and the
+    badges are seated again only when their senders or the geometry move.
+    """
+
+    def __init__(self, document: UiDocument, static: object) -> None:
+        self.document = weakref.ref(document)
+        self.names = document.names()
+        self.placed_ref = getattr(static, "placed", ())
+        self.content_ref = getattr(static, "content", ())
+        self.placed = {item.node: item.rect for item in self.placed_ref}
+        self.others_all = _other_widgets(document, static)
+        self.other_index, self.other_span = _y_index(self.others_all)
+        self.content = _badge_content(document, static)
+        self.bands = tuple(obstacle.rect for obstacle in self.content_ref if getattr(obstacle, "band", False))
+        occupied = [item.rect for item in self.placed_ref]
+        self.occupied_index, _span = _y_index(occupied)
+        self.blocker_index, _span = _y_index(list(self.others_all) + list(self.bands))
+        self.chip_obstacles = _chip_obstacles(document, static)
+        #: selection chip rects, by the chip's size and the view it was seated in
+        self.chips: Dict[Hashable, Tuple[CanvasRect, ...]] = {}
+        #: seats, by the view and the senders (with their rects) they were seated for
+        self.seats: Dict[Hashable, Tuple[Tuple[str, CanvasRect], ...]] = {}
+
+    def serves(self, document: UiDocument, static: object) -> bool:
+        return (
+            self.document() is document
+            and self.names is document.names()
+            and self.placed_ref is getattr(static, "placed", None)
+            and self.content_ref is getattr(static, "content", None)
+        )
+
+
+_BASIS: Optional[_Basis] = None
+_MEMO_KEEP = 8
+
+
+def _basis_for(document: UiDocument, static: object) -> _Basis:
+    global _BASIS
+    held = _BASIS
+    if held is not None and held.serves(document, static):
+        return held
+    _BASIS = _Basis(document, static)
+    return _BASIS
+
+
+def forget_badge_memo() -> None:
+    """Drop the kept seating. The next build seats every badge again."""
+    global _BASIS, _TIPS
+    _BASIS = None
+    _TIPS = weakref.WeakKeyDictionary()
+
+
+# document -> sender -> (events, widget chain, sentence)
+_TIPS: "weakref.WeakKeyDictionary[UiDocument, Dict[str, Tuple[Tuple[object, ...], Tuple[str, ...], str]]]" = (
+    weakref.WeakKeyDictionary()
+)
+
+
+def _tip_for(document: UiDocument, sender: str, states: Tuple[object, ...]) -> str:
+    """The sentence for one sender. Only a sender whose events or class chain moved is written again."""
+    kept = _TIPS.get(document)
+    if kept is None:
+        kept = {}
+        _TIPS[document] = kept
+    chain = _chain(document, sender)
+    held = kept.get(sender)
+    if held is not None and held[1] == chain and held[0] == states:
+        return held[2]
+    text = _tip(document, sender, states)
+    kept[sender] = (states, chain, text)
+    return text
+
+
+def _view_key(page: CanvasRect, viewport: CanvasRect, inputs: object) -> Hashable:
+    chrome = tuple(getattr(inputs, "chrome", ()))
+    return (page, viewport, chrome, getattr(inputs, "dock", None))
+
+
 def build(static: object, inputs: object, state: Hashable) -> LayerOutput:
     del state
     view = getattr(static, "view", None)
@@ -63,58 +146,73 @@ def build(static: object, inputs: object, state: Hashable) -> LayerOutput:
         grouped[event.sender].append(event)
     if not senders:
         return LayerOutput()
-    placed = {}
-    for item in getattr(static, "placed", ()):
-        placed[item.node] = item.rect
     page = _page(static)
     viewport = getattr(inputs, "viewport", None) or page
     if page is None or viewport is None:
         return LayerOutput()
-    bodies = list(_bodies(document, senders, placed))
-    others_all = _other_widgets(document, static)
-    other_index, other_span = _y_index(others_all)
+    basis = _basis_for(document, static)
+    bodies = tuple(_bodies(document, senders, basis.placed))
+    if not bodies:
+        return LayerOutput()
+    where = _view_key(page, viewport, inputs)
+    chips = _selection_chip(static, inputs, page, viewport)
+    # Seats depend on the geometry and on which senders have badges, in order.
+    # A commit that only changes what a badge says finds its seats here.
+    seat_key = (where, chips, bodies)
+    seated = basis.seats.get(seat_key)
+    if seated is None:
+        seated = _seat_badges(basis, inputs, bodies, page, viewport, chips)
+        if len(basis.seats) >= _MEMO_KEEP:
+            basis.seats.pop(next(iter(basis.seats)))
+        basis.seats[seat_key] = seated
+    items: List[LayerItem] = []
+    for sender, seat in seated:
+        tip = _tip_for(document, sender, tuple(grouped.get(sender, ())))
+        items.append(LayerItem(rect=seat, role="select", layer=NAME, data=("badge", sender, tip)))
+    return LayerOutput(tuple(items))
+
+
+def _seat_badges(
+    basis: _Basis,
+    inputs: object,
+    bodies: Tuple[Tuple[str, CanvasRect], ...],
+    page: CanvasRect,
+    viewport: CanvasRect,
+    chips: Tuple[CanvasRect, ...],
+) -> Tuple[Tuple[str, CanvasRect], ...]:
     requests = []
-    tips = {}
     widget_rect = {}
     for sender, rect in bodies:
-        tips[sender] = _tip(document, sender, grouped.get(sender, ()))
         widget_rect[sender] = rect
-        others = [other for other in _near(other_index, rect.y - other_span, rect.y + rect.height + other_span) if other != rect]
+        others = [
+            other
+            for other in _near(basis.other_index, rect.y - basis.other_span, rect.y + rect.height + basis.other_span)
+            if other != rect
+        ]
         requests.append(
             ChipRequest(sender, rect, CanvasSize(BADGE, BADGE), _corners(rect, others), frozenset(), corners_only=True)
         )
-    if not requests:
-        return LayerOutput()
-    content = _badge_content(document, static)
-    bands = tuple(obstacle.rect for obstacle in getattr(static, "content", ()) if getattr(obstacle, "band", False))
-    fixed = tuple(getattr(inputs, "chrome", ())) + _selection_chip(static, inputs, page, viewport) + bands
-    seats = place_chips(requests, content, fixed, page, viewport, getattr(inputs, "dock", None))
+    fixed = tuple(getattr(inputs, "chrome", ())) + chips + basis.bands
+    seats = place_chips(requests, basis.content, fixed, page, viewport, getattr(inputs, "dock", None))
     seated = {}
     for seat in seats:
         if isinstance(seat, CornerSeat) and _on_own_edge(seat.rect, widget_rect.get(str(seat.key), seat.rect)):
             seated[str(seat.key)] = seat.rect
-    occupied = [item.rect for item in getattr(static, "placed", ())]
-    occupied_index, _occupied_span = _y_index(occupied)
-    blockers = list(others_all) + list(bands)
-    blocker_index, _blocker_span = _y_index(blockers)
-    items: List[LayerItem] = []
+    found: List[Tuple[str, CanvasRect]] = []
     for sender, rect in widget_rect.items():
         seat = seated.get(sender)
-        neighbours = [other for other in _near(blocker_index, rect.y - BADGE - 4, rect.y + rect.height + BADGE + 4) if other != rect]
-        occupied_near = _near(occupied_index, rect.y - BADGE - 4, rect.y + rect.height + BADGE + 4)
+        neighbours = [
+            other
+            for other in _near(basis.blocker_index, rect.y - BADGE - 4, rect.y + rect.height + BADGE + 4)
+            if other != rect
+        ]
+        occupied_near = _near(basis.occupied_index, rect.y - BADGE - 4, rect.y + rect.height + BADGE + 4)
         if seat is None or _covers(seat, occupied_near, rect) or _hits(seat, neighbours):
             seat = _badge_fallback(rect, neighbours)
         if seat is None or _covers(seat, occupied_near, rect) or _hits(seat, neighbours):
             continue
-        items.append(
-            LayerItem(
-                rect=seat,
-                role="select",
-                layer=NAME,
-                data=("badge", sender, tips.get(sender, "")),
-            )
-        )
-    return LayerOutput(tuple(items))
+        found.append((sender, seat))
+    return tuple(found)
 
 
 def paint(painter: QPainter, item: LayerItem, palette: CanvasPalette) -> None:
@@ -218,8 +316,16 @@ def _covers(seat: CanvasRect, occupied: Sequence[CanvasRect], own: CanvasRect) -
     return False
 
 
-def _selection_chip(static: object, inputs: object, page: CanvasRect, viewport: CanvasRect) -> Tuple[CanvasRect, ...]:
-    """The selection chip, seated the same way the frame seats it, as a fixed obstacle."""
+def _selection_chip(
+    static: object,
+    inputs: object,
+    page: CanvasRect,
+    viewport: CanvasRect,
+) -> Tuple[CanvasRect, ...]:
+    """The selection chip, seated the same way the frame seats it, as a fixed obstacle.
+
+    The arrows ask for it as well. Both share the seating kept for this view.
+    """
     selection = getattr(inputs, "selection", None)
     current = getattr(selection, "current", None) if selection is not None else None
     measure = getattr(inputs, "measure", None)
@@ -228,11 +334,8 @@ def _selection_chip(static: object, inputs: object, page: CanvasRect, viewport: 
     document = getattr(inputs, "document")
     if current == document.root.id:
         return ()
-    rect = None
-    for item in getattr(static, "placed", ()):
-        if item.node == current:
-            rect = item.rect
-            break
+    basis = _basis_for(document, static)
+    rect = basis.placed.get(current)
     if rect is None:
         return ()
     from app.features.form_builder.qtside.canvas.core.chips import LABEL_CORNERS
@@ -240,17 +343,38 @@ def _selection_chip(static: object, inputs: object, page: CanvasRect, viewport: 
 
     text = chip_text(document, selection, getattr(inputs, "sizing", None))
     size = CanvasSize(max(1, int(measure(text)) + 12), 18)
+    key = (_view_key(page, viewport, inputs), current, rect, size)
+    kept = basis.chips.get(key)
+    if kept is not None:
+        return kept
     seats = place_chips(
         (ChipRequest(("selection", current), rect, size, LABEL_CORNERS, frozenset(), required=True),),
-        tuple(getattr(static, "content", ())),
+        basis.chip_obstacles,
         tuple(getattr(inputs, "chrome", ())),
         page,
         viewport,
         getattr(inputs, "dock", None),
     )
-    if not seats:
-        return ()
-    return (seats[0].rect,)
+    found = (seats[0].rect,) if seats else ()
+    if len(basis.chips) >= _MEMO_KEEP:
+        basis.chips.pop(next(iter(basis.chips)))
+    basis.chips[key] = found
+    return found
+
+
+def _chip_obstacles(document: UiDocument, static: object) -> Tuple[object, ...]:
+    """Content other than the root and layouts. The selection chip seats among these."""
+    root = document.root.id
+    obstacles = []
+    for obstacle in getattr(static, "content", ()):
+        node_id = getattr(obstacle, "node", None)
+        if node_id == root:
+            continue
+        node = document.get(node_id) if node_id is not None else None
+        if isinstance(node, LayoutNode):
+            continue
+        obstacles.append(obstacle)
+    return tuple(obstacles)
 
 
 def _chain(doc: UiDocument, sender: str) -> Tuple[str, ...]:

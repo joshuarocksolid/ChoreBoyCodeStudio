@@ -27,6 +27,8 @@ from app.features.form_builder.engine.project.handler_names import docstring_wor
 from app.features.form_builder.engine.project.window_facts import WindowRead
 from app.features.form_builder.engine.project.window_file import (
     file_label,
+    line_count,
+    line_start,
     method_source_hash,
     source_lines,
 )
@@ -242,9 +244,8 @@ def plan_stub(
             "%s can't be read, so Code Studio won't change it: "
             "the body of %s is on its class line." % (label, facts.class_name)
         )
-    raw = source_lines(source, keepends=True)
     ending = facts.newline
-    start, opened = _insertion_offset(source, raw, facts.end_line)
+    start, opened = _insertion_offset(source, facts.end_line)
     blanks = facts.blank_lines
     body = "".join(
         _method_lines(facts.indent, method_name, params, sender, event_words, ending)
@@ -336,9 +337,9 @@ def _offset_of(raw: list, line_number: int) -> int:
     return total
 
 
-def _insertion_offset(source: str, raw: list, last_line: int) -> Tuple[int, bool]:
+def _insertion_offset(source: str, last_line: int) -> Tuple[int, bool]:
     """The line after the class, and whether the file is missing a final newline."""
-    if last_line < len(raw):
-        return _offset_of(raw, last_line + 1), False
+    if last_line < line_count(source):
+        return line_start(source, last_line + 1), False
     opened = bool(source) and not source.endswith(("\n", "\r"))
     return len(source), opened

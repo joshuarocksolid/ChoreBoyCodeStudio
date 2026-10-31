@@ -21,7 +21,7 @@ from app.features.form_builder.engine.query.tree import effective_tab_order  # n
 from app.features.form_builder.engine.ui4.spec import Fragment  # noqa: E402
 from app.features.form_builder.qtside.canvas.core.frame import Chip  # noqa: E402
 from app.features.form_builder.qtside.canvas.core.overlay import LayerItem  # noqa: E402
-from app.qt.QtCore import QPoint, Qt  # noqa: E402
+from app.qt.QtCore import QPoint, QRect, Qt  # noqa: E402
 from app.qt.QtTest import QTest  # noqa: E402
 from app.qt.QtWidgets import QApplication, QPushButton  # noqa: E402
 from tests.form_builder.qtside.test_m3_keyboard_scripts import Kb, _close, _session  # noqa: E402
@@ -138,17 +138,20 @@ def test_each_tab_order_badge_sits_on_its_own_widget_with_a_flow_line(tmp_path: 
         _close(window, qapp, guard)
 
 
-def test_the_banner_names_the_overlay_pushes_the_page_down_and_offers_reset(tmp_path: Path, qapp: QApplication) -> None:
+def test_the_banner_names_the_overlay_and_the_page_stays_put(tmp_path: Path, qapp: QApplication) -> None:
     window, kb, guard = _open(tmp_path, qapp)
     try:
         modes = kb.surface.modes
         canvas = _canvas(kb)
         before = canvas.viewport().y()
+        origin = canvas._stage.view_map().page_origin
         modes.open("tab_order")
         kb.pump()
         banner = canvas.banner
         assert banner.isVisible() and banner.name() == "Tab order"
-        assert canvas.viewport().y() >= before + banner.height()
+        assert canvas.viewport().y() == before
+        after = canvas._stage.view_map().page_origin
+        assert abs(after.x - origin.x) <= 1 and abs(after.y - origin.y) <= 1
         assert [b.text() for b in banner.findChildren(QPushButton)] == ["Reset to reading order", "Done · Esc"]
         modes.assign("phoneEdit")
         assert kb.session.document.tabstops() is not None
@@ -302,5 +305,34 @@ def test_undo_with_the_overlay_open_starts_the_numbering_again(tmp_path: Path, q
         kb.surface._toolbar.xml.click()
         kb.pump()
         assert modes.active == "", "View XML closes the overlay"
+    finally:
+        _close(window, qapp, guard)
+
+
+def test_the_banner_stays_in_the_gutter_until_it_wraps(tmp_path: Path, qapp: QApplication) -> None:
+    """D31: default width does not move the page. A wrapped banner covers no widget."""
+    window, kb, guard = _open(tmp_path, qapp)
+    try:
+        canvas = _canvas(kb)
+        origin = canvas._stage.view_map().page_origin
+        kb.surface.modes.open("connections")
+        kb.pump()
+        after = canvas._stage.view_map().page_origin
+        assert abs(after.x - origin.x) <= 1 and abs(after.y - origin.y) <= 1
+        canvas.resize(236, 520)
+        font = canvas.font()
+        font.setPointSizeF(max(1.0, font.pointSizeF()) * 2)
+        canvas.setFont(font)
+        canvas._fit_banner()
+        kb.pump()
+        banner = canvas.banner
+        band = banner.geometry()
+        for name in ("nameLabel", "nameEdit", "emailEdit", "phoneEdit"):
+            rect = canvas.viewport_rect((kb.session.document.by_name(name)[0],))
+            assert rect is not None
+            origin_pt = canvas.viewport().mapTo(canvas, QPoint(rect.x(), rect.y()))
+            widget = QRect(origin_pt, rect.size())
+            overlap = band.intersected(widget)
+            assert overlap.width() <= 1 and overlap.height() <= 1, name
     finally:
         _close(window, qapp, guard)

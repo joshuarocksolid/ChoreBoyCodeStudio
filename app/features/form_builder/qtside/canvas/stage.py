@@ -294,8 +294,13 @@ class Stage:
         bottom_right = self._view.mapFromScene(rect.bottomRight())
         _fit_label(self._name)
         _fit_label(self._size)
+        view = self._view.viewport()
+        limit = view.width() if view is not None else 0
+        x = top_left.x()
+        if limit and x + self._name.width() > limit:
+            x = max(0, limit - self._name.width() - 4)
         self._name.move(
-            top_left.x(),
+            x,
             max(0, top_left.y() - self._banner_push - self._name.height() - 4),
         )
         self._name.raise_()
@@ -313,8 +318,13 @@ class Stage:
             name.hide()
             return
         title.setFixedWidth(full - name.width() - gap)
+        parent = name.parentWidget()
+        limit = parent.width() if parent is not None else full
+        x = title.x() + title.width() + gap
+        if x + name.width() > limit:
+            x = max(0, limit - name.width() - 4)
         name.move(
-            title.x() + title.width() + gap,
+            x,
             title.y() + max(0, (title.height() - name.height()) // 2),
         )
         name.show()

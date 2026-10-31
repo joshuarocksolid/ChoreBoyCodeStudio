@@ -60,6 +60,32 @@ def _empty(status: ReadStatus, reason: str, line: int, relative: str) -> WindowR
     return WindowRead(status, reason, line, WindowFacts(), relative)
 
 
+def line_count(text: str) -> int:
+    """How many lines ``source_lines`` would return, without building them."""
+    if not text:
+        return 0
+    breaks = 0
+    last_end = 0
+    for match in _LINE_BREAK.finditer(text):
+        breaks += 1
+        last_end = match.end()
+    if last_end < len(text):
+        return breaks + 1
+    return breaks
+
+
+def line_start(text: str, line: int) -> int:
+    """Offset where a 1-based line begins. Past the last line is ``len(text)``."""
+    if line <= 1:
+        return 0
+    seen = 0
+    for match in _LINE_BREAK.finditer(text):
+        seen += 1
+        if seen == line - 1:
+            return match.end()
+    return len(text)
+
+
 def source_lines(text: str, keepends: bool = False) -> List[str]:
     """Lines as Python numbers them: split on CRLF, CR and LF only.
 
@@ -90,31 +116,50 @@ def method_source_hash(text: str) -> str:
     return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
 
 
-def read_window(project_root: str, relative: str, text: Optional[str] = None) -> WindowRead:
+def read_window(
+    project_root: str, relative: str, text: Optional[str] = None, token: Optional[str] = None
+) -> WindowRead:
     """The window class and its methods. Never imports or runs the file."""
     relative = relative.replace("\\", "/")
     if text is None:
         cached = _cached_file(project_root, relative)
         if cached is not None:
+            _seed_text_cache(project_root, relative, cached)
             return cached
         follow = _Follow()
         read = _stamp_followed(
             _read_path(project_root, relative, chain=(), budget=follow), follow
         )
         _store_file(project_root, relative, read, follow.files)
+        _seed_text_cache(project_root, relative, read)
         return read
+    if token:
+        peeked = peek_window(project_root, relative, token)
+        if peeked is not None:
+            return peeked
     digest = hashlib.sha256(text.encode("utf-8", "surrogatepass")).hexdigest()
-    key = "%s\0%s\0%s" % (project_root, relative, digest)
+    digest_key = "%s\0%s\0%s" % (project_root, relative, digest)
+    # The token is part of the key, and so is the text. A new revision of
+    # different text cannot reuse the scan stored for the previous text.
+    key = ("%s\0%s\0token:%s\0%s" % (project_root, relative, token, digest)) if token else digest_key
     with _CACHE_LOCK:
         cached_text = _TEXT_CACHE.get(key)
+        if cached_text is None and key != digest_key:
+            cached_text = _TEXT_CACHE.get(digest_key)
     if cached_text is not None and _fresh(project_root, cached_text[1]):
+        if token and key != digest_key:
+            with _CACHE_LOCK:
+                _remember(_TEXT_CACHE, key, cached_text)
         return cached_text[0]
     follow = _Follow()
     read = _stamp_followed(
         _read_text(project_root, relative, text, chain=(), budget=follow), follow
     )
+    stamped = (read, _stamps(project_root, follow.files))
     with _CACHE_LOCK:
-        _remember(_TEXT_CACHE, key, (read, _stamps(project_root, follow.files)))
+        _remember(_TEXT_CACHE, key, stamped)
+        if key != digest_key:
+            _remember(_TEXT_CACHE, digest_key, stamped)
     return read
 
 
@@ -174,6 +219,236 @@ def _store_file(
     key = (os.path.abspath(full), getattr(info, "st_mtime_ns", 0), info.st_size)
     with _CACHE_LOCK:
         _remember(_FILE_CACHE, key, (read, _stamps(project_root, files)))
+
+
+def _token_key(project_root: str, relative: str, token: str) -> str:
+    return "%s\0%s\0rev:%s" % (project_root, relative.replace("\\", "/"), token)
+
+
+def peek_window(project_root: str, relative: str, token: str) -> Optional[WindowRead]:
+    """The reading stored for this buffer token. None when the token is new.
+
+    The token changes when the buffer text changes, so a hit is the same
+    characters the editor holds. A miss reparses.
+    """
+    if not token:
+        return None
+    with _CACHE_LOCK:
+        hit = _TEXT_CACHE.get(_token_key(project_root, relative, token))
+    if hit is None or not _fresh(project_root, hit[1]):
+        return None
+    return hit[0]
+
+
+def install_inserted_method(
+    project_root: str,
+    relative: str,
+    read: WindowRead,
+    plan: object,
+    token: Optional[str],
+) -> WindowRead:
+    """Remember a stub the bridge just inserted, without parsing the file again.
+
+    Line numbers below the edit shift by the net line count, and the new method
+    is placed where it sits in the class. A replacement that cuts through a
+    method is parsed instead of patched. A later edit misses this entry
+    because its buffer token is different.
+    """
+    source = read.source if isinstance(read.source, str) else ""
+    edit = getattr(plan, "edit")
+    start = int(edit.start)
+    end = int(edit.end)
+    inserted = str(edit.text)
+    if not (0 <= start <= end <= len(source)):
+        return read
+    new_source = source[:start] + inserted + source[end:]
+    name = str(getattr(plan, "method_name"))
+    patched = _patch_inserted(read, source, new_source, start, end, inserted, name)
+    if patched is None:
+        parsed = read_window(project_root, relative, text=new_source, token=token)
+        _remember_disk(project_root, relative, parsed, new_source)
+        return parsed
+    _store_text(project_root, relative, patched, token, new_source)
+    _remember_disk(project_root, relative, patched, new_source)
+    return patched
+
+
+def _patch_inserted(
+    read: WindowRead,
+    source: str,
+    new_source: str,
+    start: int,
+    end: int,
+    inserted: str,
+    name: str,
+) -> Optional[WindowRead]:
+    """The reading after the edit, or None when the lines cannot be shifted exactly."""
+    facts = read.facts
+    if read.status != "ok" or not facts.class_name:
+        return None
+    if not _at_line_boundary(source, start) or not _at_line_boundary(source, end):
+        return None
+    at = inserted.find("def %s" % name)
+    if at < 0:
+        return None
+    line_break = max(inserted.rfind("\n", 0, at), inserted.rfind("\r", 0, at))
+    prefix = inserted[line_break + 1 : at] if line_break >= 0 else inserted[:at]
+    if prefix.strip():
+        return None
+    edit_line = _breaks(source[:start]) + 1
+    after_line = _breaks(source[:end]) + 1
+    shift = _breaks(inserted) - _breaks(source[start:end])
+    def_line = edit_line + _breaks(inserted[:at])
+    # The indent shares the def line. The hash covers that whole line.
+    method_text = prefix + inserted[at:]
+    body = method_text.splitlines()
+    while body and not body[-1].strip():
+        body.pop()
+    if not body:
+        return None
+    end_line = def_line + len(body) - 1
+    header = method_text.splitlines()[0] if method_text.splitlines() else ""
+    parsed = _stub_params(header)
+    if parsed is None:
+        return None
+    params, required, has_varargs = parsed
+    shifted = []
+    for method in facts.methods:
+        if method.name == name:
+            return None
+        overlaps = method.line < after_line and method.end_line >= edit_line
+        inside = end == start and method.line < edit_line <= method.end_line
+        if overlaps or inside:
+            return None
+        if method.line >= after_line:
+            shifted.append(replace(method, line=method.line + shift, end_line=method.end_line + shift))
+        else:
+            shifted.append(method)
+    chunk = "\n".join(body)
+    added = MethodFacts(
+        name=name,
+        line=def_line,
+        end_line=end_line,
+        params=params,
+        required=required,
+        has_varargs=has_varargs,
+        body_is_empty=_stub_body_empty(body[1:]),
+        source_hash=method_source_hash(chunk),
+    )
+    shifted.append(added)
+    shifted.sort(key=lambda item: item.line)
+    class_end = facts.end_line
+    if class_end and edit_line <= class_end + 1:
+        if end > start and after_line > class_end + 1:
+            return None
+        class_end += shift
+    patched_facts = replace(facts, end_line=class_end, methods=tuple(shifted))
+    return replace(read, facts=patched_facts, source=new_source)
+
+
+def _breaks(text: str) -> int:
+    return sum(1 for _ in _LINE_BREAK.finditer(text))
+
+
+def _at_line_boundary(text: str, offset: int) -> bool:
+    if offset == 0 or offset == len(text):
+        return True
+    previous = text[offset - 1]
+    if previous == "\n":
+        return True
+    return previous == "\r" and text[offset : offset + 1] != "\n"
+
+
+def _stub_params(header: str) -> Optional[Tuple[Tuple[str, ...], int, bool]]:
+    """``(params, required, has_varargs)`` for a plain ``def`` header, else None."""
+    open_paren = header.find("(")
+    close_paren = header.rfind(")")
+    if open_paren < 0 or close_paren <= open_paren:
+        return None
+    raw = header[open_paren + 1 : close_paren]
+    if any(char in raw for char in "*[]{}:()"):
+        return None
+    names: List[str] = []
+    required = 0
+    skipped_self = False
+    for part in raw.split(","):
+        piece = part.strip()
+        if not piece or piece == "/":
+            continue
+        if not skipped_self:
+            skipped_self = True
+            continue
+        name = piece.split("=", 1)[0].strip()
+        if not name.isidentifier():
+            return None
+        names.append(name)
+        if "=" not in piece:
+            required += 1
+    return tuple(names), required, False
+
+
+def _stub_body_empty(lines: Sequence[str]) -> bool:
+    """True when the body is only ``pass``, ``...``, or a docstring."""
+    quote: Optional[str] = None
+    for line in lines:
+        stripped = line.strip()
+        if quote is not None:
+            if quote in stripped:
+                quote = None
+            continue
+        if not stripped or stripped in ("pass", "..."):
+            continue
+        if stripped.startswith('"""') or stripped.startswith("'''"):
+            mark = stripped[:3]
+            if mark not in stripped[3:]:
+                quote = mark
+            continue
+        return False
+    return quote is None
+
+
+def _seed_text_cache(project_root: str, relative: str, read: WindowRead) -> None:
+    """A disk read answers a later read of the same characters without parsing again."""
+    text = read.source
+    if isinstance(text, str):
+        _store_text(project_root, relative, read, None, text)
+
+
+def _remember_disk(project_root: str, relative: str, read: WindowRead, text: str) -> None:
+    """The on-disk file is this text, so the next disk read skips the parse.
+
+    The gesture writes the file before it asks for this. A reader that has no
+    editor buffer yet (the tab is still opening) looks up the file cache, and
+    the prewarm entry is for the previous bytes.
+    """
+    relative = relative.replace("\\", "/")
+    full = os.path.join(project_root, *relative.split("/")) if project_root else relative
+    if not project_root or not inside_project(full, project_root):
+        return
+    try:
+        data = _read_regular(full, project_root)
+    except OSError:
+        return
+    if data is None or data != text.encode("utf-8"):
+        return
+    _store_file(project_root, relative, read, tuple(read.followed))
+
+
+def _store_text(
+    project_root: str,
+    relative: str,
+    read: WindowRead,
+    token: Optional[str],
+    text: str,
+) -> None:
+    digest = hashlib.sha256(text.encode("utf-8", "surrogatepass")).hexdigest()
+    relative = relative.replace("\\", "/")
+    digest_key = "%s\0%s\0%s" % (project_root, relative, digest)
+    stamped = (read, _stamps(project_root, read.followed))
+    with _CACHE_LOCK:
+        _remember(_TEXT_CACHE, digest_key, stamped)
+        if token:
+            _remember(_TEXT_CACHE, _token_key(project_root, relative, token), stamped)
 
 
 def _remember(cache: Dict, key: object, read: object) -> None:

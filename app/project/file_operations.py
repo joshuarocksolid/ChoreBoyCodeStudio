@@ -5,7 +5,7 @@ from __future__ import annotations
 import shutil
 from pathlib import Path
 
-from app.bootstrap.paths import PathInput
+from app.bootstrap.paths import PathInput, invalidate_resolved
 from app.filesystem.trash import move_path_to_trash
 from app.project.file_operation_models import FileOperationResult
 
@@ -16,6 +16,7 @@ def create_file(target_path: str, *, content: str = "") -> FileOperationResult:
         return FileOperationResult(success=False, message=f"Path already exists: {destination}")
     destination.parent.mkdir(parents=True, exist_ok=True)
     destination.write_text(content, encoding="utf-8")
+    _invalidate_resolved_paths(target_path, str(destination))
     return FileOperationResult(success=True, message="File created.", destination_path=str(destination))
 
 
@@ -24,6 +25,7 @@ def create_directory(target_path: str) -> FileOperationResult:
     if destination.exists():
         return FileOperationResult(success=False, message=f"Path already exists: {destination}")
     destination.mkdir(parents=True, exist_ok=False)
+    _invalidate_resolved_paths(target_path, str(destination))
     return FileOperationResult(success=True, message="Directory created.", destination_path=str(destination))
 
 
@@ -35,6 +37,7 @@ def rename_path(source_path: str, destination_path: str) -> FileOperationResult:
     if destination.exists():
         return FileOperationResult(success=False, message=f"Destination already exists: {destination}")
     source.rename(destination)
+    _invalidate_resolved_paths(source_path, destination_path, str(source), str(destination))
     return FileOperationResult(
         success=True,
         message="Path renamed.",
@@ -52,6 +55,7 @@ def move_path(source_path: str, destination_path: str) -> FileOperationResult:
         return FileOperationResult(success=False, message=f"Destination already exists: {destination}")
     destination.parent.mkdir(parents=True, exist_ok=True)
     shutil.move(str(source), str(destination))
+    _invalidate_resolved_paths(source_path, destination_path, str(source), str(destination))
     return FileOperationResult(
         success=True,
         message="Path moved.",
@@ -72,6 +76,7 @@ def copy_path(source_path: str, destination_path: str) -> FileOperationResult:
         shutil.copytree(source, destination)
     else:
         shutil.copy2(source, destination)
+    _invalidate_resolved_paths(destination_path, str(destination))
     return FileOperationResult(
         success=True,
         message="Path copied.",
@@ -92,6 +97,7 @@ def delete_path(
     if use_trash:
         try:
             trash_result = move_path_to_trash(target, state_root=state_root)
+            _invalidate_resolved_paths(target_path, str(target))
             return FileOperationResult(
                 success=True,
                 message="Path moved to trash.",
@@ -104,6 +110,7 @@ def delete_path(
         shutil.rmtree(target)
     else:
         target.unlink()
+    _invalidate_resolved_paths(target_path, str(target))
     return FileOperationResult(success=True, message="Path deleted permanently.", source_path=str(target))
 
 
@@ -113,6 +120,12 @@ def duplicate_path(source_path: str) -> FileOperationResult:
         return FileOperationResult(success=False, message=f"Source does not exist: {source}")
     destination = _next_duplicate_path(source)
     return copy_path(str(source), str(destination))
+
+
+def _invalidate_resolved_paths(*paths: str) -> None:
+    for path in paths:
+        if path:
+            invalidate_resolved(path)
 
 
 def _next_duplicate_path(source: Path) -> Path:

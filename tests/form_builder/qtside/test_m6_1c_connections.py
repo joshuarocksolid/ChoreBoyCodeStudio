@@ -252,20 +252,24 @@ class _Obstacle:
         self.band = band
 
 
-def _sale_world(log: Any) -> tuple:
+def _sale_world(log: Any, scale: int = 1) -> tuple:
     """sale.ui widgets on the button row the gate photographed, plus the form layout as content."""
     document = log.document
+
+    def box(x: int, y: int, w: int, h: int) -> CanvasRect:
+        return CanvasRect(x * scale, y * scale, w * scale, h * scale)
+
     boxes = {
-        "Sale": CanvasRect(0, 0, 520, 240),
-        "nameLabel": CanvasRect(16, 16, 64, 22),
-        "nameEdit": CanvasRect(96, 12, 200, 26),
-        "phoneLabel": CanvasRect(16, 52, 64, 22),
-        "phoneEdit": CanvasRect(96, 48, 200, 26),
-        "clearButton": CanvasRect(16, 148, 88, 28),
-        "printButton": CanvasRect(112, 148, 120, 28),
-        "saveButton": CanvasRect(240, 148, 80, 28),
-        "cancelButton": CanvasRect(328, 196, 72, 24),
-        "buttonBox": CanvasRect(200, 190, 210, 36),
+        "Sale": box(0, 0, 520, 240),
+        "nameLabel": box(16, 16, 64, 22),
+        "nameEdit": box(96, 12, 200, 26),
+        "phoneLabel": box(16, 52, 64, 22),
+        "phoneEdit": box(96, 48, 200, 26),
+        "clearButton": box(16, 148, 88, 28),
+        "printButton": box(112, 148, 120, 28),
+        "saveButton": box(240, 148, 80, 28),
+        "cancelButton": box(328, 196, 72, 24),
+        "buttonBox": box(200, 190, 210, 36),
     }
     placed = []
     content = []
@@ -277,18 +281,46 @@ def _sale_world(log: Any) -> tuple:
         content.append(obstacle)
     layout = document.root.layout
     assert layout is not None
-    content.append(_Obstacle(layout.id, CanvasRect(8, 8, 500, 220)))
-    content.append(_Obstacle(document.root.id, CanvasRect(0, 0, 520, 22), band=True))
+    content.append(_Obstacle(layout.id, box(8, 8, 500, 220)))
+    content.append(_Obstacle(document.root.id, box(0, 0, 520, 22), band=True))
     static = SimpleNamespace(view=_view(), placed=tuple(placed), content=tuple(content))
     current = document.by_name("clearButton")[0]
     inputs = SimpleNamespace(
         document=document,
         selection=SimpleNamespace(current=current, ids=(current,)),
-        viewport=CanvasRect(0, 0, 800, 600),
+        viewport=box(0, 0, 800, 600),
         chrome=(),
-        measure=lambda text: len(text) * 7,
+        measure=lambda text, scale=scale: len(text) * 7 * scale,
     )
     return static, inputs, boxes
+
+
+@pytest.mark.parametrize("scale", (1, 2))
+def test_clear_button_chips_do_not_overlap(scale: int) -> None:
+    from app.features.form_builder.qtside.canvas.layers.logic_badges import _selection_chip
+
+    text = (Path(__file__).resolve().parents[1] / "fixtures" / "m6" / "forms" / "sale.ui").read_text(encoding="utf-8")
+    log = open_log(text)
+    log.execute(
+        SetEventSteps(
+            "clearButton",
+            "clicked",
+            (call_step("print_receipt"), slot_step("Sale", "accept()")),
+        )
+    )
+    static, inputs, _boxes = _sale_world(log, scale)
+    items = build_arrows(static, inputs, ArrowState("all", None)).items
+    rects = [
+        item.rect
+        for item in items
+        if isinstance(item.data, tuple) and item.data[0] == "chip" and item.data[1] in ("code", "form", "label")
+    ]
+    page = inputs.viewport
+    rects.extend(_selection_chip(static, inputs, page, page))
+    assert len(rects) >= 3
+    for index, left in enumerate(rects):
+        for right in rects[index + 1 :]:
+            assert not left.intersects(right), (scale, left, right)
 
 
 def test_sale_code_and_form_chips_cover_no_widget() -> None:

@@ -28,6 +28,8 @@ from app.features.form_builder.engine.logic.events import (
     EventState,
     NativeRef,
     declared_methods,
+    event_edits,
+    note_event_anchors,
     read_event,
     sender_node,
     signal_property,
@@ -93,11 +95,16 @@ class SetEventSteps:
         return None
 
     def apply(self, doc: UiDocument, ctx: PlanContext) -> None:
-        require_logic_writable(doc)
-        sender_id = _plan_event(doc, ctx, self.sender, self.signal_name, tuple(self.steps))
-        for extra in self.also:
-            _plan_event(doc, ctx, extra.sender, extra.signal_name, tuple(extra.steps))
-        ctx.select((sender_id,), sender_id)
+        pairs = ((self.sender, self.signal_name),) + tuple(
+            (extra.sender, extra.signal_name) for extra in self.also
+        )
+        with event_edits(doc, pairs):
+            require_logic_writable(doc)
+            sender_id = _plan_event(doc, ctx, self.sender, self.signal_name, tuple(self.steps))
+            for extra in self.also:
+                _plan_event(doc, ctx, extra.sender, extra.signal_name, tuple(extra.steps))
+            note_event_anchors(doc, pairs)
+            ctx.select((sender_id,), sender_id)
 
 
 @dataclass(frozen=True)
@@ -118,10 +125,12 @@ class MergeEventStorage:
         return None
 
     def apply(self, doc: UiDocument, ctx: PlanContext) -> None:
-        require_logic_writable(doc)
-        state = read_event(doc, self.sender, self.signal_name)
-        sender_id = _plan_event(doc, ctx, self.sender, self.signal_name, state.steps)
-        ctx.select((sender_id,), sender_id)
+        with event_edits(doc, ((self.sender, self.signal_name),)):
+            require_logic_writable(doc)
+            state = read_event(doc, self.sender, self.signal_name)
+            sender_id = _plan_event(doc, ctx, self.sender, self.signal_name, state.steps)
+            note_event_anchors(doc, ((self.sender, self.signal_name),))
+            ctx.select((sender_id,), sender_id)
 
 
 def steps_added(

@@ -193,6 +193,10 @@ class DiagnosticsStore:
     def all(self) -> Tuple[FormDiagnostic, ...]:
         return self._sorted
 
+    def rows(self, source: str) -> Tuple[FormDiagnostic, ...]:
+        """The rows one producer last published. Empty when it has not published."""
+        return self._by_source.get(source, ())
+
     def for_node(self, node_id: NodeId) -> Tuple[FormDiagnostic, ...]:
         """O(k) via an index by node id."""
         return self._by_node.get(node_id, ())

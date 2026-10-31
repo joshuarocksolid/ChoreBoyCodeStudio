@@ -317,10 +317,25 @@ class FormSurface(QWidget):
 
         return bridge_for(self.window(), self._request.project_root or "")
 
+    def return_from_code(self, window: Any, file_path: str, source: str, symbol: str, cursor: int) -> bool:
+        """F12 in the code tab, when this form names the method under the caret."""
+        from app.features.form_builder.integration.keys_ext.code import return_to_form
+
+        if window is None:
+            return False
+        return return_to_form(window, file_path, source, symbol, cursor)
+
     def activation_claim(self, document: Any, node: NodeId) -> Optional[str]:
         """Hover words when a double-click contributor claims ``node`` (M6.0s); the canvas asks on hover and double-click."""
         from app.features.form_builder.integration.activate_ext import default_registry as activators
 
+        from app.features.form_builder.integration.activate_ext.handlers import _default, _target, named_method
+
+        sender, class_name = _target(document, node)
+        signal = _default(document, class_name) if sender else ""
+        name = named_method(self, sender, signal)
+        if name:
+            return "double-click to go to %s()" % name
         return activators().claim(document, node)
 
     def activate_node(self, node: NodeId) -> None:
@@ -798,6 +813,9 @@ class FormSurface(QWidget):
         self._modes.dispose()
         self._menu_edit.dispose()
         self._clear_shell_undo()
+        host = self.window()
+        if getattr(host, "_form_return_from_code", None) is self.return_from_code:
+            host._form_return_from_code = None  # type: ignore[attr-defined]
         self._selection_unsub()
         self._source_unsub()
         self._changes.close()
@@ -892,6 +910,23 @@ class FormSurface(QWidget):
         super().showEvent(event)  # type: ignore[arg-type]
         self._apply_responsive()
         self._attach_tab_watch()
+        self._arm_window_prewarm()
+
+    def _arm_window_prewarm(self) -> None:
+        if self._released or getattr(self, "_cbcs_window_prewarmed", False):
+            return
+        if getattr(self, "_cbcs_window_prewarm_armed", False):
+            return
+        self._cbcs_window_prewarm_armed = True
+        QTimer.singleShot(0, self._run_window_prewarm)
+
+    def _run_window_prewarm(self) -> None:
+        self._cbcs_window_prewarm_armed = False
+        if self._released:
+            return
+        from app.features.form_builder.integration.handlers_code import prewarm_window_read
+
+        prewarm_window_read(self)
 
     def focusInEvent(self, event: object) -> None:  # noqa: N802
         super().focusInEvent(event)  # type: ignore[arg-type]
@@ -1044,7 +1079,8 @@ class FormSurface(QWidget):
         self._refresh_save_state()
         self._rewrite_hover()
         self._refresh_shell_status()
-        self._command_toast.place()
+        if self._command_toast.isVisible():
+            self._command_toast.place()
 
     def _sync_toast(self, change_set: object) -> None:
         if self._toast_held:
@@ -2008,6 +2044,7 @@ class FormSurface(QWidget):
             redo.triggered.connect(lambda _checked=False, host=window: _shell_history(host, True))
             window._form_undo_wired = True  # type: ignore[attr-defined]
         window._form_undo_surface = self  # type: ignore[attr-defined]
+        window._form_return_from_code = self.return_from_code  # type: ignore[attr-defined]
         _silence(window, self, (_RENAME_ACTION,))
         self._sync_shell_undo()
 

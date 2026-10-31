@@ -8,7 +8,7 @@ it carries XML text.
 from __future__ import annotations
 
 from dataclasses import replace
-from typing import Dict, FrozenSet, List, Optional, Tuple
+from typing import Dict, FrozenSet, List, Optional, Set, Tuple
 
 from app.features.form_builder.engine.commands.log import (
     DEFAULT_UNDO_LIMIT,
@@ -209,13 +209,58 @@ class FormSession:
             self._diagnostics.publish("connections", found)
 
     def _publish_behavior(self) -> None:
-        """Logic and event rows. A step-list edit never touches connection fields, so this is not gated on that scan."""
+        """Logic and event rows. A step edit republishes only the senders it edited."""
+        from app.features.form_builder.engine.logic.events import take_event_narrow
+
+        narrow = take_event_narrow(self._document)
+        if narrow:
+            self._publish_behavior_for(narrow)
+            return
         from app.features.form_builder.engine.diagnostic_codes.fb406 import name_diagnostics
         from app.features.form_builder.engine.diagnostic_codes.fb40x_events import event_diagnostics
         from app.features.form_builder.engine.diagnostic_codes.fb4xx_logic import logic_diagnostics
 
         self._diagnostics.publish("logic.storage", logic_diagnostics(self._document))
         self._diagnostics.publish("events", event_diagnostics(self._document) + name_diagnostics(self._document))
+
+    def _publish_behavior_for(self, pairs: Set[Tuple[str, str]]) -> None:
+        from app.features.form_builder.engine.diagnostic_codes.fb406 import name_diagnostics
+        from app.features.form_builder.engine.diagnostic_codes.fb40x_events import event_diagnostics
+        from app.features.form_builder.engine.diagnostic_codes.fb4xx_logic import logic_diagnostics
+        from app.features.form_builder.engine.logic.codec import read_marker
+        from app.features.form_builder.engine.logic.storage import SUPPORTED_LOGIC_VERSION, signal_property
+
+        doc = self._document
+        fresh = event_diagnostics(doc, only=pairs) + name_diagnostics(doc, only=pairs)
+        edited = {(sender, signal_property(signal)) for sender, signal in pairs}
+        kept = tuple(
+            row
+            for row in self._diagnostics.rows("events")
+            if (row.location.object_name, row.location.property) not in edited
+        )
+        self._diagnostics.publish("events", kept + fresh)
+        marker = read_marker(doc.root.prop("cbcsLogic"))
+        blocked = (not marker.readable) or (
+            marker.version is not None and marker.version > SUPPORTED_LOGIC_VERSION
+        )
+        if blocked or doc.logic_property_count() == 0:
+            self._diagnostics.publish("logic.storage", logic_diagnostics(doc))
+            return
+        nodes = []
+        for sender, _signal in pairs:
+            found = doc.by_name(sender)
+            if found:
+                nodes.append(doc.node(found[0]))
+        fresh_logic = logic_diagnostics(doc, nodes=tuple(nodes))
+        ids = {node.id for node in nodes}
+        kept_logic = tuple(
+            row
+            for row in self._diagnostics.rows("logic.storage")
+            if row.code != "FB402"
+            and row.location.property != "cbcsLogic"
+            and row.location.node_id not in ids
+        )
+        self._diagnostics.publish("logic.storage", kept_logic + fresh_logic)
 
     def _on_selection_notify(self, changeset: ChangeSet) -> None:
         del changeset
