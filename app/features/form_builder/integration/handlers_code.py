@@ -239,8 +239,7 @@ class CodeHandlers:
                 return _fail(surface, outcome.reason)
         finally:
             if replay:
-                for saved in pending:
-                    notify(saved)
+                _notify_when_idle(notify, pending)
         entries = surface.session.log.entries()
         if len(entries) > before:
             book.note(
@@ -390,6 +389,17 @@ def _warm_first_commit(surface: Any) -> None:
     except ImportError:
         return
     initialize_tree_sitter_runtime()
+    # The tab's highlighter compiles the highlight and locals queries. That is
+    # the largest one-time cost in the tab open, and the same for every form.
+    located = SERVICE._located(surface)
+    if located is None:
+        return
+    from app.treesitter.highlighter_core import prewarm_queries
+    from app.treesitter.language_registry import default_tree_sitter_language_registry
+
+    resolved = default_tree_sitter_language_registry().resolve_for_path(file_path=located[0])
+    if resolved is not None:
+        prewarm_queries(resolved)
 
 
 def _read(surface: Any, path: str, relative: str) -> WindowRead:
@@ -539,6 +549,24 @@ def _hold_save_notify(bridge: Any) -> Tuple[Any, List[str]]:
 
     bridge.notify_saved = hold  # type: ignore[method-assign]
     return notify, pending
+
+
+def _notify_when_idle(notify: Any, saved: List[str]) -> None:
+    """Tell the save listeners once the loop is about to block.
+
+    The form step is stored. The checks that follow read the whole window file
+    and the form, so they wait for the idle turn the way the editor's own
+    after-save work does.
+    """
+    from app.shell.idle_turn import run_when_idle
+
+    paths = tuple(saved)
+
+    def tell() -> None:
+        for path in paths:
+            notify(path)
+
+    run_when_idle(tell)
 
 
 def _publish(surface: Any) -> None:

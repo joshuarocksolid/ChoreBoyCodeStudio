@@ -112,7 +112,9 @@ class AutosaveStore:
         project_root: Optional[str] = None,
     ) -> None:
         """Delete persisted draft for file path if present."""
-        normalized_path = str(Path(file_path).expanduser().resolve())
+        # The tab open resolved this path already. A highlighter pass reaches
+        # here with the same path and must not resolve it a second time.
+        normalized_path = cached_resolve(file_path)
         self._history_store.delete_draft(
             normalized_path,
             project_id=project_id,

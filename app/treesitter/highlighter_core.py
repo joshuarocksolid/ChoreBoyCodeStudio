@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import threading
 from typing import Any
 
 from app.bootstrap.logging_setup import get_subsystem_logger
@@ -21,6 +22,42 @@ from app.treesitter.ts_api import compile_query, make_parser
 from app.treesitter.markdown_lexical import TreeSitterMarkdownLexicalMixin
 
 _LOGGER = get_subsystem_logger("treesitter")
+
+# Compiling the highlight and locals queries costs tens of milliseconds, and a
+# compiled query holds no per-document state. Each language compiles a given
+# source once per process; a later highlighter reuses the compiled query. The
+# entry keeps the language object so a reloaded grammar misses.
+_QUERY_LOCK = threading.Lock()
+_COMPILED_QUERIES: dict[tuple[str, str], tuple[object, Any]] = {}
+
+
+def shared_compiled_query(language_key: str, language: object, query_source: str) -> Any:
+    """The compiled query for ``query_source``, built on first use. Raises what the compile raises."""
+    key = (language_key, query_source)
+    with _QUERY_LOCK:
+        found = _COMPILED_QUERIES.get(key)
+    if found is not None and found[0] is language:
+        return found[1]
+    compiled = compile_query(language, query_source)
+    with _QUERY_LOCK:
+        _COMPILED_QUERIES[key] = (language, compiled)
+    return compiled
+
+
+def prewarm_queries(resolved_language: TreeSitterResolvedLanguage) -> None:
+    """Compile a language's queries now, so the first editor tab does not."""
+    for source in (
+        resolved_language.highlights_query_source,
+        resolved_language.locals_query_source,
+        resolved_language.injections_query_source,
+    ):
+        if not source.strip():
+            continue
+        try:
+            shared_compiled_query(resolved_language.language_key, resolved_language.language, source)
+        except Exception:
+            # The highlighter reports the failure when it builds.
+            return
 
 
 @dataclass(frozen=True)
@@ -170,7 +207,7 @@ class TreeSitterHighlighter(
         if not query_source.strip():
             return None
         try:
-            return compile_query(self._language, query_source)
+            return shared_compiled_query(self._language_key, self._language, query_source)
         except Exception:  # pragma: no cover - exercised through diagnostics-facing tests
             import traceback
 
