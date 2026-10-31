@@ -994,6 +994,229 @@ One Qt-side service per window: `text_of(path) -> Optional[str]` (the open tab's
 
 `load_form` gains the optional field `form_methods: [[name, n_params], …]` (no version bump, §10.2). The child's host class gains a method per name that takes `*args`, does nothing, and sends `log` with `kind="would_call"` and `method`; the editor turns it into UX-CODE-016's status sentence, naming the event when exactly one event of the form calls that method. The child still never imports the window file.
 
+## 17. Formulas (M7.1)
+
+Binding for M7 and M8. This section refines LOGIC_DESIGN §4.1–4.8 and §4.10. Where they differ, this section wins, and LOGIC_DESIGN's "Changes recorded by M7.0" lists each difference. The UX clauses are in UX_SPEC §13.4.
+
+### 17.1 Package and layering
+
+`engine/logic/formula/` is Qt-free and pure. It never imports PySide6, never touches the filesystem, and never runs user code.
+
+| Module | Owner | Contents |
+| --- | --- | --- |
+| `nodes.py` | M7.1a | The typed tree (§17.3), `Span`, and `FormulaProblem` |
+| `types.py` | M7.1a | `FType` and the widget value table (§17.4) |
+| `env.py` | M7.1a | `FormulaEnv`, `WidgetFacts`, `MethodFacts` lookup, and `SlotKind` (§17.5) |
+| `parse.py` | M7.1a | The guards, the Excel recognisers, `ast` lowering and the allowlist (§17.2, §17.7) |
+| `check.py` | M7.1a | Names, types and blank rules (§17.4, §17.6) |
+| `normalize.py` | M7.1a | Canonical formula text (§17.8) |
+| `library.py` | M7.1a (signatures), M7.1b (bodies) | The function table (§17.9) |
+| `compile.py` | M7.1b | Typed tree to Python source (§17.10) |
+| `runtime.py` | M7.1b | The helper sources and live helpers made from the same text (§17.11) |
+| `evaluate.py` | M7.1b | Design-time evaluation for "now:" values (§17.12) |
+| `diagnostic_codes/fb1xx_formula.py` | M7.1a | FB101–FB119 (§17.13) |
+
+The public entry points are `analyze(text, env, slot) -> Analysis` (parse plus check plus fixes, in M7.1a) and `compile_formula(analysis, env) -> Emitted` (in M7.1b). UI and codegen lanes call only these two, plus `normalize` and `evaluate`.
+
+### 17.2 Parsing
+
+1. **Guards.** These run before anything else. Text longer than 2,000 characters, or with more than 400 `tokenize` tokens, is FB111 and never parsed. Bracket depth over 32 is FB111. The `tokenize` pass is the M6 pre-scan idea (§16.1 step 2). It bounds the tree depth, so `ast.parse` can't overflow the C stack on Python 3.9.
+2. **Excel recognisers** run on the raw text (§17.7). Each produces an FB107 problem with a `Fix`. When the text does not parse as Python but one or more fixes apply, the analysis reports only the fixes, never a bare syntax error.
+3. **Parse.** `ast.parse(text, mode="eval")`. A `SyntaxError` becomes FB106, with the offset converted from UTF-8 bytes to characters. Shown text is always measured in characters.
+4. **Lowering.** The `ast` is lowered to the typed tree of §17.3, using LOGIC_DESIGN §4.2's allowlist. Any other node is FB103, with that clause's message. A subscript, a keyword argument, `**`, `//`, `%`, `is`, an f-string, a comprehension or `lambda` is FB103. An attribute chain longer than two is FB114.
+5. **Literals.** A number literal is lowered from its **source text**, never from the `ast` float: `1.1` becomes `Decimal("1.1")`, and an integer stays `int`. `1_000` is allowed. A `%` suffix is only an Excel recogniser (§17.7). Strings follow Python rules. Bytes are FB103.
+
+### 17.3 The typed tree (`nodes.py`)
+
+Frozen dataclasses. Every node has `span: Span(start, end)` in characters of the original text, plus `type: FType` (filled in by the checker).
+
+- `Lit(value)`: `Decimal`, `int`, `str`, `bool` or `None`.
+- `Ref(name)`: a widget's main value, or a page name.
+- `Attr(base, name, sub=None)`: `widget.text`, `combo.terms_days`, `grid.selected.qty`, `form.isNew`, `record.status`.
+- `Call(func, args)`: a library function.
+- `WindowCall(method, args)`.
+- `Unary(op, x)`, `Bin(op, a, b)`, `Bool(op, values)`, `Compare(first, pairs)` (chains kept), `IfElse(test, then, other)`, `ListLit(items)` (only on the right of `in` / `not in`).
+
+`Analysis(text, tree, type, problems, fixes, reads, window_calls)`:
+- `reads`: a frozenset of the widget object names the formula reads (dependency edges).
+- `window_calls`: the method names it calls on the window.
+- `problems`: a tuple of `FormulaProblem(code, span, message, fix_id)`.
+- `tree` is None when parsing failed.
+
+### 17.4 Types (`types.py`)
+
+`FType`: `TEXT`, `WHOLE`, `NUMBER`, `MONEY`, `YESNO`, `DATE`, `TIME`, `DATETIME`, `PAGE`, `ANY`, `BLANK` (the literal `None`), plus `choice(T)` and `column(T)`. `WHOLE ⊂ NUMBER`, `MONEY ⊂ NUMBER` for comparisons, and arithmetic follows LOGIC §4.4's table exactly.
+
+The widget value table is LOGIC §4.3's table as data: `VALUE_TABLE: Mapping[class name, ValueSpec(type_rule, read, blank_rule, write)]`. It also covers the M4 catalog's subclasses: a class resolves to its nearest base in the table, using the M4 class table's inheritance. A FreeCAD widget with no entry has no main value, so `Ref` to it is FB114, "{display} has no value a formula can read".
+
+Kinds (`cbcsKind`) apply to `QLineEdit`, `QLabel` and `QPlainTextEdit`: `text`, `whole`, `number:N` (N from 0 to 6), `money`, `percent`, `date`, `time`. An unknown kind is FB118 (Warning), and the widget reads as `text`.
+
+### 17.5 The environment (`env.py`)
+
+`FormulaEnv` is a frozen snapshot that the caller builds once per document revision and window-file reading:
+- `widgets: Mapping[name, WidgetFacts]`. `WidgetFacts` holds class, kind, decimals, prefix, tristate, allow_blank, `has_items_data`, pages, and the lookup `also` columns (empty until M8).
+- `methods: Mapping[name, MethodFacts]`, from §16.1.
+- `reserved`: `form`, `record`, `window`, `True`, `False`, `None`, the function names, and anything starting with `cbcs`.
+- `data`: None until M8. While it is None, `form.*`, `record.*`, `grid.*` and `combo.<column>` are FB115, "Connect this form to a table first (coming with data forms)".
+
+`SlotKind` says what a slot needs, and the checker enforces it:
+- `CONDITION`: YesNo. A blank counts as no.
+- `VALUE(target)` and `DEFAULT(target)`: assignable to the target widget's type. Whole fits Number. Number to Money rounds. Anything to Text needs `text()`, and that error is FB102.
+- `CHECK`: YesNo.
+- `WHEN`: YesNo.
+- `SET(target)`: like `VALUE`.
+- `MESSAGE`: Text.
+- `RANGE_BOUND(target)`.
+
+Building the environment is O(form). It is cached on `(doc.revision, window reading token)`.
+
+### 17.6 Names and blanks
+
+- Name lookup goes in this order: reserved word, widget object name, page name. Then FB101 with the closest object name or display name, within an edit distance of 2 or as a case-insensitive match. A display name that matches exactly gives the FB107 "These are labels" fix (LOGIC §4.10, last row).
+- A widget named with a reserved word is FB108 on the widget (Error), with a rename offered. It is reported once per form, not per formula.
+- `window.m(...)`. The method must exist in the window class reading. If it doesn't, that's FB109, with "Create method" offered by M7.2b, which reuses the M6 method gesture. Its return annotation, read as a source string, sets the type: `bool`, `int`, `Decimal`, `float` (as Number), `str` or `date`. Anything else, or no annotation, is ANY. ANY in a CONDITION slot is wrapped in `bool()` with FB110 (Info). The argument count is checked against `required`/`params` (FB112).
+- The blank rules are LOGIC §4.6, with one refinement: `x == None` and `x == ""` normalize to `is_blank(x)` only through the FB107 fix. The checker accepts them as written, with the same meaning.
+
+### 17.7 Excel recognisers (`parse.py`)
+
+Each recogniser has a stable `fix_id`, a message and a replacement computed on the raw text. They cover exactly LOGIC §4.10's rows, plus a `;` argument separator, which becomes `,`. All of them are FB107 (Error), because they are not valid formulas as typed.
+
+The fixes are applied one at a time, and Ctrl+. applies the first. "Fix all" applies them left to right and re-analyzes after each one. Each fix is pure, so `apply(text, fix)` gives a new text. Two applications of the same fix never stack.
+
+### 17.8 Canonical text (`normalize.py`)
+
+`normalize(text) -> str` re-emits the token stream from `tokenize`:
+- one space around binary and comparison operators, and around `and`, `or`, `not`, `if`, `else` and `in`;
+- none inside brackets or before a comma, and one space after a comma;
+- unary minus attached to its operand.
+
+Strings and numbers are copied character for character. Line breaks (Shift+Enter) are kept as one `\n` plus a four-space indent inside brackets. Outside brackets, a break is collapsed to one space.
+
+`normalize` is idempotent: `normalize(normalize(t)) == normalize(t)`. It keeps meaning: `ast.dump` is equal before and after for every text that parses. It is applied when a formula is committed. The stored text is the normalized text (§15.4 rule 6).
+
+### 17.9 The function library (`library.py`)
+
+The table is LOGIC §4.8, as `FUNCTIONS: Mapping[name, FunctionSpec(params, varargs, result_rule, helper_id, doc)]`. `result_rule` computes the result type from the argument types. An argument of the wrong type is FB102. A wrong argument count is FB112. `matches(x, pattern)` needs a literal pattern, compiled at analysis time with `re.compile`, with no flags and length ≤ 200. A bad pattern is FB105.
+
+Every function is **total**: it returns blank instead of raising. `round` rounds half up. `min`, `max`, `sum`, `avg` and `count` follow the blank rules. Aggregates over `column(T)` exist only once M8 provides grids. Until then a column argument is FB115.
+
+### 17.10 Compiling (`compile.py`)
+
+`compile_formula(analysis, env, *, self_name="self") -> Emitted(source, helpers, imports)`:
+
+- `source` is one Python expression. It reads widgets with exactly the `read` column of the value table, as `self.<name>.<accessor>`. It is 3.9-parseable, and it uses no f-strings, no walrus and no `match`. A line is at most 100 characters. When it is longer, the caller wraps it in brackets.
+- **Plain operators** are used where the types prove neither side can be blank (LOGIC §7.1 rule 1). Otherwise the `_cbcs_*` helpers are used: `_cbcs_add`, `_cbcs_sub`, `_cbcs_mul`, `_cbcs_div`, `_cbcs_lt`, and so on.
+- Decimal literals are written `Decimal("1.1")`, and `imports` holds `("decimal", "Decimal")`.
+- `WindowCall` compiles to `self._form.<method>(...)`. `_form` is the window object `_cbcs_setup` stores (LOGIC §7.2).
+- Compiling an analysis with any Error problem raises `ValueError`. The callers (codegen expanders) never compile a broken formula: they emit the skip comment of §18.2.
+
+### 17.11 Helpers (`runtime.py`)
+
+`HELPERS: Tuple[(helper_id, source), ...]` is the helper table, in fixed order. It fills `codegen/logic_hooks.HELPER_TABLE`.
+
+`live_helpers()` builds a namespace by `exec`-ing **the same source strings** once, into an empty module dict that holds only `Decimal`, `ROUND_HALF_UP`, `date`, `datetime`, `time` and `re`. That way the evaluator and the generated module share one definition of every helper (LOGIC §2.10: one compiler, one meaning). A test compares `inspect.getsource`-free behavior: each helper's live result equals the generated module's result on the conformance cases.
+
+### 17.12 Design-time evaluation (`evaluate.py`)
+
+`evaluate(emitted, reader, window_values) -> Value | EvalBlank(reason)` runs `eval(compile(source, "<formula>", "eval"), {"__builtins__": {}, **live_helpers(), "Decimal": Decimal}, {"self": reader})`.
+
+- `reader` is a Qt-side object whose attributes are the **canvas's real widgets**, plus `_form`, a stand-in whose methods return `window_values[name]`, or raise `_NeedsValue`.
+- The source can only contain allowlisted constructs, so evaluation calls only the value table's read accessors and the helpers.
+- `_NeedsValue` gives `EvalBlank("needs a window value")`. Any other exception gives `EvalBlank(str(e))` and is logged at debug level, because helpers are total, so an exception is a bug to report rather than a user error.
+- The evaluation runs on the GUI thread with no timeout. That is safe because the language has no loops, and each formula is bounded at 400 tokens.
+
+### 17.13 FB101–FB119 (`diagnostic_codes/fb1xx_formula.py`)
+
+| Code | Severity | Meaning (message in UX §13.4.8) | Fix |
+| --- | --- | --- | --- |
+| FB101 | Error | Unknown name | Replace with the suggestion |
+| FB102 | Error | Type mismatch (including a slot's type) | Wrap (`text()`, `number()`), set the kind, or remove |
+| FB103 | Error | Not available in formulas | "Move this into a method" (creates a stub) |
+| FB104 | Error | Circular values (the rule graph, §18.1) | Select the cycle |
+| FB105 | Error | Bad pattern | — |
+| FB106 | Error | Syntax error | — |
+| FB107 | Error | Excel habit (§17.7) | The recogniser's fix |
+| FB108 | Error | A widget uses a reserved name | Rename |
+| FB109 | Error | `window.m()` is not in the window class | Create method |
+| FB110 | Info | A window value has no type; `bool()` is used | Add `-> bool` (Go to code) |
+| FB111 | Error | Formula too long or nested too deep | — |
+| FB112 | Error | Wrong number of values for a function or method | — |
+| FB113 | Error | A column outside an aggregate (M8) | — |
+| FB114 | Error | That widget has no such value or attribute | — |
+| FB115 | Error | Needs a data form (until M8) | — |
+| FB116 | Warning | A rule targets a property that your code also sets (LOGIC FB207, renumbered) | Show the rule |
+| FB117 | Warning | A one-off step changes a property a rule controls | Show the rule |
+| FB118 | Warning | Unknown kind or format code; text is used | Pick a kind |
+| FB119 | Info | A check has no error label; the message shows only as a tooltip and an outline | Add label |
+
+LOGIC §2.9's FB207 (your code sets a rule's property) is **FB116**, because the FB2xx range is M6's window-file checks. M7.8's code-connection discovery produces it.
+
+### 17.14 Conformance (MUST)
+
+`tests/form_builder/engine/logic/formula/` holds a table-driven suite of at least 400 cases. Each case is `(text, env fixture, slot) -> (type | problem codes, normalized text, compiled source, value for given widget values)`. It covers every row of LOGIC §4.2–4.10 and every function.
+
+Two fuzzers run on every PR:
+- Random token streams over the grammar: never an exception, and `analyze` is linear in tokens.
+- For every formula that analyzes clean, `normalize` keeps `ast.dump`, and `evaluate` equals running the compiled source inside a generated module under PySide6, for 20 random widget states.
+
+Both lanes run the suite under the Python 3.9 AppRun lane as well as 3.11.
+
+## 18. Rules, checks, formats and steps in generated code (M7.2–M7.4)
+
+### 18.1 The rule graph (`engine/logic/rules.py`, M7.2a)
+
+`rule_graph(doc, env) -> RuleGraph`. The nodes are `(widget, key)` for `cbcsValue`, `cbcsDefault`, `cbcsEnabledWhen`, `cbcsVisibleWhen` and `cbcsReadOnlyWhen`.
+
+- An edge runs from each widget a formula reads to the `cbcsValue` node of that widget, when it has one.
+- `order()` is a topological order of the Value nodes, then the state nodes. Ties are broken by widget tree order (LOGIC §7.1 rule 3).
+- `cycles()` lists the strongly connected components. Every node in a cycle gets FB104, and the whole cycle generates nothing.
+- The graph is rebuilt incrementally: only the edited nodes, keyed on `doc.structure_revision` and the touched logic properties, as M6.R's event splice did. Building the whole graph of a 300-widget form with 100 rules costs at most 5 ms on the Mac.
+
+### 18.2 Expanders (`engine/codegen/expanders/`, order per `logic_hooks`)
+
+| Order | Expander | Owner | Emits |
+| --- | --- | --- | --- |
+| 100 | `steps.py` (exists) | M7.4 extends | `_cbcs_<sender>_<signal>`, now with every verb of §18.4 and `when` |
+| 150 | `form_events.py` | M7.4 | `cbcsOnOpened` runs at the end of `_cbcs_setup` after the first refresh; `cbcsOnClosing` runs through `_CbcsCloseGuard` (LOGIC §7.7) |
+| 200 | `rules.py` | M7.2a | input connects in `_cbcs_setup`, `cbcs_refresh` (LOGIC §7.1 rule 6, §7.2–7.3), and the first `cbcs_refresh()` |
+| 250 | `defaults.py` | M7.2a | `_cbcs_apply_defaults()`, called once before the first refresh (M8 also calls it on New) |
+| 300 | `checks.py` | M7.3a | `_cbcs_check_<w>`, touch and recheck, `cbcs_validate` (LOGIC §7.4) |
+| 350 | `formats.py` | M7.3a | Formats applied on leaving a line edit, and in a Value write (`_cbcs_money`, and the rest) |
+
+- Each rule block starts with `# {widget}: {Rule words} = {formula text}`, the source reference that "Open rule" uses (§18.5).
+- A rule with an Error emits, at its place in `cbcs_refresh`, exactly `# {widget}: {Rule words} skipped ({FBcode}: see Problems)`. It emits nothing else.
+- The rule-input connects use each widget's change signal from one table, `CHANGE_SIGNALS`, in `rules.py`. Examples: `QLineEdit.textChanged`, `QSpinBox.valueChanged`, `QCheckBox.toggled`, `QComboBox.currentIndexChanged`, `QDateEdit.dateChanged`.
+- A widget is connected once, however many rules read it.
+- **Generated code for a form with no M7 logic is byte-identical to M6's.** Golden tests prove it on the whole M6 corpus.
+
+### 18.3 Run-time behavior (MUST)
+
+- `cbcs_refresh()` keeps its re-entrancy flag (LOGIC §7.1 rule 6). Writing a calculated widget does not mark the form dirty (that matters in M8).
+- **A rule wins over the Qt property at run time. The Qt property stays the design-time default** (LOGIC P3). The generator never removes or changes the Qt property.
+- A Value target is shown "Calculated" in the inspector. Its value property can't be edited there (UX §13.4).
+- A blank Value writes the widget's blank form: empty text, the special-value minimum, or index −1. Division by zero writes blank and sets the target's tooltip to "Can't divide by zero" (LOGIC §2.11).
+- Checks follow LOGIC §4.9 timing exactly:
+  - on leaving a field once it has been touched;
+  - live re-check only to clear;
+  - "Check all fields" covers every field;
+  - cross-field checks re-run when any field they read changes, while the check is showing.
+- Each field shows only its first failing message. `cbcsInvalid` and the tooltip are set as in §7.4.
+
+### 18.4 Step verbs (M7.4)
+
+M7.4 types these verbs in the codec (§15.3) and in a verb registry, `engine/logic/verbs/` (M7.0s), so the codec, codegen and the step picker learn each verb from one entry. The verbs: `validate`, `set`, `clear`, `focus`, `enable`, `disable`, `show`, `hide`, `message`, `ask`, `stop`, `page`, `openForm`, `close`, `call` (now with `when`), `slot` (now with `when`). Their fields are LOGIC §4.12's.
+
+M8 adds `new`, `save`, `delete`, `revert`, `reload`, `first`, `previous`, `next`, `last`, `find`, `refreshLookups`, `addRow` and `deleteRow`. Until then they stay FB403 (read-only, kept).
+
+- `when` compiles as `if not (<formula>): pass-to-next`. A `when` with an Error makes **only that step** skip, with a comment. The rest of the list still runs. This differs from §15.3's whole-list FB401, which is about JSON shape, not formula meaning.
+- `call` with a following step that depends on it: `if self._form.<m>(...) is False: return` (LOGIC §7.5).
+- `openForm` imports the target form's window module inside the step function, not at module top: `from forms.<stem>_window import <Class>`. In dialog mode it uses `exec()`. A target form that doesn't generate is FB120, "That form isn't in this project's forms folder", which M7.4 declares in its own module.
+- `close` runs the close guard (M8 adds the unsaved prompt). With no data, it is `self._form.accept()`, `reject()` or `close()`.
+
+### 18.5 "Open rule" links
+
+The run console turns a traceback frame inside `ui_<stem>.py` into a link when the line falls in a block whose first comment is a source reference. The block's lines are found by scanning back from the frame line to the nearest `# {widget}: ` comment at the method's indent. Activating the link opens the form and selects that widget's rule row. M7.3b owns the run-console link through a new `integration/run_links_ext/` contributor. If the shell's console has no extension point, M7.0s adds a minimal one.
+
 ## Appendix A. Spike: kept, replaced, dropped
 
 | Spike element | Verdict | Production |
