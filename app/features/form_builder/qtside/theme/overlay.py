@@ -47,6 +47,8 @@ class OverlayPalette:
     code: str = "#15803DFF"
     #: Logic badges (``ov.logic_badge``). The glyph uses ``chip_text``.
     logic_badge: str = "#4B5563FF"
+    #: Data feeds (``ov.feeds``).
+    feeds: str = "#6B7280FF"
 
 
 OVERLAY = OverlayPalette(
@@ -89,6 +91,7 @@ OVERLAY_HIGH_CONTRAST = OverlayPalette(
     connect_faint="#1E1B8A99",
     code="#00553AFF",
     logic_badge="#000000FF",
+    feeds="#000000FF",
 )
 
 

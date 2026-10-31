@@ -70,6 +70,7 @@ def generate_form_module(
     scope: FormScope,
     source_bytes: Optional[bytes],
     options: CodegenOptions = CodegenOptions(),
+    trace: bool = False,
 ) -> CodegenResult:
     """Generate ``ui_<name>.py`` for a project or adopted form.
 
@@ -108,7 +109,7 @@ def generate_form_module(
             uses_freecadgui=False,
             header=None,
         )
-    pieces = emit_module(doc, scope, options)
+    pieces = emit_module(doc, scope, options, trace=trace)
     if pieces.refused:
         return CodegenResult(
             text=None,

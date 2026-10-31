@@ -32,6 +32,7 @@ from app.features.form_builder.qtside.inspector.behavior_ext._rows import (
     friendly_class,
     outline_names,
 )
+from app.features.form_builder.qtside.pickers.groups_ext.m6 import _code_rows, _intent_rows
 from app.features.form_builder.qtside.pickers.method_page import method_blocks, method_notice, method_page
 
 _BASES = ("QWidget", "QObject")
@@ -358,8 +359,12 @@ def _event_page(ctx: PickContext, text: str, show_base: Optional[bool] = None) -
 def _step_page(
     ctx: PickContext, signal: str, wide: bool, replace_index: int, back: str, text: str = ""
 ) -> Page:
-    rows = _intent_rows(ctx, signal)
-    rows.extend(_code_rows(ctx, signal))
+    from app.features.form_builder.qtside.pickers.groups_ext import bind_page_signal, default_registry
+
+    rows: list = []
+    with bind_page_signal(signal):
+        for group in default_registry().ordered():
+            rows.extend(group.rows(ctx))
     rows.append(Item("header", "", "EVERYTHING ELSE", header=True))
     rows.append(Item("widget-action", "", "A widget's own action\u2026"))
     chain = _sender_chain(ctx)
@@ -441,35 +446,6 @@ def _slots_page(
         page.signal, "slots", target, page.wide, page.replace_index, "target",
     )
     return _select_first(built)
-
-
-def _intent_rows(ctx: PickContext, event: Optional[str]) -> list:
-    specs = intents_for(ctx.doc, ctx.classes, ctx.source.sender, event)
-    rows = []
-    if specs:
-        rows.append(Item("header", "", "DO THIS", header=True))
-        for spec in specs:
-            rows.append(Item("intent", spec.intent_id, spec.words, search=_intent_search(ctx, spec)))
-    return rows
-
-
-def _code_rows(ctx: PickContext, signal: str) -> list:
-    from app.features.form_builder.qtside.pickers.method_page import _fitting
-
-    rows = [Item("header", "", "YOUR CODE", header=True), Item("new-method", "", "Call a new method\u2026")]
-    if not ctx.window_file and not ctx.methods and not ctx.method_infos:
-        rows.append(Item("header", "", "This form isn't in a project, so it has no window file.", header=True))
-        return rows
-    rows.append(Item("header", "", ctx.window_file, header=True))
-    used = _used_methods(ctx, signal)
-    sends = len(_sends(ctx, signal))
-    for info in _fitting(ctx, sends):
-        name = str(getattr(info, "name", info) or "")
-        if not name or not compat.is_name(name) or _other_event_method(ctx, name, signal):
-            continue
-        mark = " already here" if name in used else ""
-        rows.append(Item("method", name, "Call %s()%s" % (name, mark)))
-    return rows
 
 
 _BOUND: weakref.WeakKeyDictionary = weakref.WeakKeyDictionary()

@@ -448,7 +448,7 @@ def _step_view(
     header: str,
     read_only: bool,
 ) -> StepView:
-    unknown = step.raw is not None or step.verb not in ("slot", "call")
+    unknown = step.raw is not None or not _editable_verb(step.verb)
     missing = _missing(doc, step)
     if unknown:
         words = "A step Code Studio can't edit (%s)" % step.verb
@@ -612,8 +612,15 @@ def _bad_step(step: EventStep) -> bool:
     return False
 
 
+def _editable_verb(verb: str) -> bool:
+    from app.features.form_builder.engine.logic.verbs import default_registry
+
+    spec = default_registry().get(verb)
+    return spec is not None and spec.editable
+
+
 def _readonly_step(step: EventStep) -> bool:
-    return step.raw is not None or step.verb not in ("slot", "call")
+    return step.raw is not None or not _editable_verb(step.verb)
 
 
 # --- gestures ----------------------------------------------------------------------------

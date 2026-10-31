@@ -43,15 +43,34 @@ MAX_DEPTH = 32
 _MAX_INT_DIGITS = 4300
 _MAX_FLOAT_CHARS = 400
 
+def _verb_spec(verb: str) -> object:
+    """The registered verb, or None. Imported on use so this module can load first."""
+    from app.features.form_builder.engine.logic.verbs import default_registry
+
+    return default_registry().get(verb)
+
+
+class _TypedVerbs:
+    """Field names in written order, from the verb registry. Not built at import."""
+
+    def get(self, verb: str, default: Optional[Tuple[str, ...]] = None) -> Optional[Tuple[str, ...]]:
+        spec = _verb_spec(verb)
+        if spec is None:
+            return default
+        return tuple(field.name for field in spec.fields)  # type: ignore[attr-defined]
+
+    def __contains__(self, verb: object) -> bool:
+        return isinstance(verb, str) and _verb_spec(verb) is not None
+
+    def __getitem__(self, verb: str) -> Tuple[str, ...]:
+        found = self.get(verb)
+        if found is None:
+            raise KeyError(verb)
+        return found
+
+
 #: The verbs this build types, with their fields in written order (CONTRACTS 15.3).
-TYPED_VERBS = {
-    "slot": ("target", "slot", "hints"),
-    "call": ("method", "args"),
-}
-_REQUIRED_FIELDS = {
-    "slot": ("target", "slot"),
-    "call": ("method",),
-}
+TYPED_VERBS = _TypedVerbs()
 
 #: Designer ``<hint>`` points are int32, and a step list keeps at most this many.
 HINT_COORD_MIN = -2147483648
@@ -410,6 +429,8 @@ def _step_from_object(obj: JsonObject) -> Step:
     enabled = True
     rest: List[Tuple[str, JsonValue]] = []
     schema = TYPED_VERBS.get(verb)
+    spec = _verb_spec(verb) if schema is not None else None
+    hint_names = tuple(field.name for field in spec.fields if field.kind == "hints") if spec is not None else ()
     for key, value in obj.pairs:
         if key == "do":
             continue
@@ -421,13 +442,13 @@ def _step_from_object(obj: JsonObject) -> Step:
             # A typed step with a condition it can't read must not pass for a plain step
             # (it would become a native connection and the condition would be lost).
             raise _Refused(1, '"when" must be text and "enabled" true or false')
-        elif key == "hints" and verb == "slot":
+        elif key in hint_names:
             _parse_hint_map(value)
             if isinstance(value, JsonObject) and value.pairs:
                 rest.append((key, value))
         else:
             rest.append((key, value))
-    if schema is None:
+    if schema is None or spec is None:
         return Step(verb, when, enabled, tuple(rest), ())
     taken = {}
     unknown: List[Tuple[str, JsonValue]] = []
@@ -436,14 +457,7 @@ def _step_from_object(obj: JsonObject) -> Step:
             taken[key] = value
         else:
             unknown.append((key, value))
-    for name in _REQUIRED_FIELDS[verb]:
-        value = taken.get(name)
-        if not isinstance(value, str) or not value:
-            raise _Refused(1, 'a "%s" step needs "%s" as text' % (verb, name))
-    if "args" in taken:
-        count = taken["args"]
-        if isinstance(count, bool) or not isinstance(count, int) or count < 0:
-            raise _Refused(1, '"args" must be a whole number')
+    spec.validate(taken)  # type: ignore[attr-defined]
     fields = tuple((name, taken[name]) for name in schema if name in taken)
     return Step(verb, when, enabled, fields, tuple(unknown))
 

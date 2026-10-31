@@ -16,11 +16,14 @@ from typing import Dict, List, Optional, Sequence, Set, Tuple
 from app.features.form_builder.engine.codegen.api_types import CodegenOptions
 from app.features.form_builder.engine.codegen.literals import py_float, py_string
 from app.features.form_builder.engine.codegen.logic_hooks import (
-    HELPER_TABLE,
     CodegenContext,
     Contribution,
+    FormatSettings,
     Method,
+    WidgetFacts,
+    helper_table,
     load_expanders,
+    one_line,
 )
 from app.features.form_builder.engine.codegen.names import (
     check_cpp_name,
@@ -200,9 +203,11 @@ class ModulePieces:
     form_param: str
 
 
-def emit_module(doc: UiDocument, scope: FormScope, options: CodegenOptions) -> ModulePieces:
+def emit_module(
+    doc: UiDocument, scope: FormScope, options: CodegenOptions, trace: bool = False
+) -> ModulePieces:
     """Generate the module body, or refuse when a name cannot be emitted."""
-    emitter = _Emitter(doc, scope, options)
+    emitter = _Emitter(doc, scope, options, trace=trace)
     return emitter.build()
 
 
@@ -219,10 +224,12 @@ def _function_name(written: Optional[str]) -> Optional[str]:
 
 
 class _Emitter:
-    def __init__(self, doc: UiDocument, scope: FormScope, options: CodegenOptions) -> None:
+    def __init__(self, doc: UiDocument, scope: FormScope, options: CodegenOptions, trace: bool = False) -> None:
         self.doc = doc
         self.scope = scope
         self.options = options
+        self.trace = trace
+        self._widgets: Dict[str, WidgetFacts] = {}
         self.lines: List[str] = []
         self.retranslate: List[str] = []
         self.splitter_lines: List[str] = []
@@ -1755,10 +1762,15 @@ class _Emitter:
         return (class_name, open_class)
 
     def _expand(self) -> List[Contribution]:
+        self._widgets = _widget_facts(self.doc)
         ctx = CodegenContext(
             ui_class_name=self.ui_class,
             form_param=self.form_param,
             attribute_names=tuple(self.attributes),
+            window=None,
+            formats=FormatSettings(),
+            widgets=self._widgets,
+            trace=self.trace,
         )
         found = []
         for expander in load_expanders():
@@ -1775,7 +1787,7 @@ class _Emitter:
 
     def _has_logic(self, contributions: Sequence[Contribution]) -> bool:
         for item in contributions:
-            if item.setup_lines or item.methods or item.helpers:
+            if item.setup_lines or item.methods or item.helpers or item.needs_form or item.connects:
                 return True
         return False
 
@@ -1809,22 +1821,22 @@ class _Emitter:
         for item in contributions:
             for method in item.methods:
                 methods.append(_render_method(method))
-        setup_lines: List[str] = []
-        for item in contributions:
-            setup_lines.extend(item.setup_lines)
-        if setup_lines:
+        if self.trace:
+            methods.append(_TRACE_METHOD)
+        setup_lines = self._logic_setup(contributions)
+        if _wants_setup(contributions):
             methods.append(self._method("_cbcs_setup", setup_lines))
         chunks.append("class %s(object):\n%s" % (self.ui_class, "\n\n".join(methods)))
-        helper_ids = []
-        for item in contributions:
-            for helper_id in item.helpers:
-                if helper_id not in helper_ids:
-                    helper_ids.append(helper_id)
-        known = {helper_id: source for helper_id, source in HELPER_TABLE}
-        for helper_id in helper_ids:
-            source = known.get(helper_id)
-            if source:
-                chunks.append(source.rstrip())
+        wanted = {helper_id for item in contributions for helper_id in item.helpers}
+        if wanted:
+            # Table order, not contribution order, so the output never depends on expander order.
+            table = helper_table()
+            missing = wanted - {helper_id for helper_id, _source in table}
+            if missing:
+                raise ValueError("unknown formula helpers: %s" % ", ".join(sorted(missing)))
+            for helper_id, source in table:
+                if helper_id in wanted:
+                    chunks.append(source.rstrip())
         return "\n\n".join(chunks) + "\n"
 
     def _connect_slots(self) -> bool:
@@ -1843,9 +1855,40 @@ class _Emitter:
         body.append("self.retranslateUi(%s)" % self.form_param)
         if connect:
             body.append("QMetaObject.connectSlotsByName(%s)" % self.form_param)
-        if any(item.setup_lines for item in contributions):
+        if _wants_setup(contributions):
             body.append("self._cbcs_setup(%s)" % self.form_param)
         return body
+
+    def _logic_setup(self, contributions: Sequence[Contribution]) -> List[str]:
+        lines: List[str] = []
+        if any(item.needs_form for item in contributions):
+            lines.append("self._form = %s" % self.form_param)
+        seen: List[Tuple[str, str]] = []
+        for item in contributions:
+            lines.extend(item.setup_lines)
+            for widget, handler in item.connects:
+                pair = (widget, handler)
+                if pair in seen:
+                    continue
+                seen.append(pair)
+                line = self._change_connect(widget, handler)
+                if line:
+                    lines.append(line)
+        return lines
+
+    def _change_connect(self, widget: str, handler: str) -> Optional[str]:
+        from app.features.form_builder.engine.codegen.change_signals import change_signal
+        from app.features.form_builder.engine.logic import compat
+
+        if not compat.is_name(widget) or not compat.is_name(handler):
+            return None
+        facts = self._widgets.get(widget)
+        if facts is None:
+            return None
+        signal = change_signal(facts.class_name, _class_bases(facts.class_name))
+        if not signal or not compat.is_name(signal):
+            return None
+        return "self.%s.%s.connect(self.%s)" % (widget, signal, handler)
 
     def _method(self, name: str, statements: Sequence[str]) -> str:
         lines = ["    def %s(self, %s):" % (name, self.form_param)]
@@ -2294,9 +2337,118 @@ def _format_import(module: str, names: Sequence[str]) -> str:
 _SELECTOR_TYPES = re.compile(r"^[A-Za-z_][A-Za-z0-9_:<>*&, ]*$")
 
 
+def _wants_setup(contributions: Sequence[Contribution]) -> bool:
+    return any(item.setup_lines or item.needs_form or item.connects for item in contributions)
+
+
+def _class_bases(class_name: str) -> Tuple[str, ...]:
+    try:
+        from app.features.form_builder.engine.ui4.defaults import QtClassTable
+
+        names = [info.name for info in QtClassTable.shared().chain(class_name)]
+    except Exception:
+        return ()
+    return tuple(name for name in names if name != class_name)
+
+
+def _widget_facts(doc: UiDocument) -> Dict[str, WidgetFacts]:
+    """One record per widget. A property this build cannot read stays at its default."""
+    found: Dict[str, WidgetFacts] = {}
+    try:
+        widgets = tuple(doc.iter_widgets())
+    except Exception:
+        return found
+    for node in widgets:
+        try:
+            name = node.object_name
+            if not name:
+                continue
+            found[name] = WidgetFacts(
+                class_name=node.class_name or "",
+                decimals=_whole_prop(node, "decimals"),
+                prefix=_text_prop(node, "prefix"),
+                tristate=_bool_prop(node, "tristate"),
+                has_items_data=_has_items(node),
+                pages=_page_names(doc, node),
+            )
+        except Exception:
+            continue
+    return found
+
+
+def _whole_prop(node: Node, name: str) -> int:
+    from app.features.form_builder.engine.ui4.values import (
+        DoubleValue,
+        FloatValue,
+        LongLongValue,
+        NumberValue,
+        UIntValue,
+        ULongLongValue,
+    )
+
+    try:
+        value = node.value(name)
+    except Exception:
+        return 0
+    if isinstance(value, (NumberValue, UIntValue, LongLongValue, ULongLongValue, DoubleValue, FloatValue)):
+        return int(value.value)
+    return 0
+
+
+def _text_prop(node: Node, name: str) -> str:
+    from app.features.form_builder.engine.ui4.values import StringValue
+
+    try:
+        value = node.value(name)
+    except Exception:
+        return ""
+    if isinstance(value, StringValue):
+        return value.text
+    return ""
+
+
+def _bool_prop(node: Node, name: str) -> bool:
+    from app.features.form_builder.engine.ui4.values import BoolValue
+
+    try:
+        value = node.value(name)
+    except Exception:
+        return False
+    if isinstance(value, BoolValue):
+        return bool(value.value)
+    return False
+
+
+def _has_items(node: Node) -> bool:
+    try:
+        return bool(node.children("items"))
+    except Exception:
+        return False
+
+
+def _page_names(doc: UiDocument, node: Node) -> Tuple[str, ...]:
+    try:
+        from app.features.form_builder.engine.query.pages import pages
+
+        return tuple(child.object_name for child in pages(doc, node.id) if child.object_name)
+    except Exception:
+        return ()
+
+
+_TRACE_METHOD = "\n".join(
+    (
+        "    def _cbcs_trace(self, kind, ref, value):",
+        "        form = getattr(self, \"_form\", None)",
+        "        trace = getattr(form, \"_cbcs_trace\", None)",
+        "        if trace is not None:",
+        "            trace(kind, ref, value)",
+    )
+)
+
+
 def _render_method(method: Method) -> str:
     params = ", " + method.params if method.params else ""
-    lines = ["    def %s(self%s):" % (method.name, params), "        # %s" % method.source_ref.replace("\n", " ")]
+    lines = ["    def %s(self%s):" % (method.name, params), "        # %s" % one_line(method.source_ref)]
     body = method.body.strip("\n")
     if not body:
         lines.append("        pass")
