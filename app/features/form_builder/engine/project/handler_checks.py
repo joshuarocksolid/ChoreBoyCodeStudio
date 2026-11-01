@@ -581,6 +581,11 @@ def _method_index(read: WindowRead) -> Dict[str, MethodFacts]:
     return found
 
 
+def shadow_sentence(name: str, qt_base: str) -> str:
+    """FB204, shared by the window-file check and Rename."""
+    return "The method name %s would replace %s's own %s." % (name, qt_base, name)
+
+
 def _qt_base(bases: Tuple[str, ...], classes: object) -> str:
     info = getattr(classes, "class_info", None)
     if callable(info):
@@ -718,7 +723,7 @@ def _shadow(
     return _diag(
         "FB204",
         Severity.ERROR,
-        "The method name %s would replace %s's own %s." % (name, qt_base, name),
+        shadow_sentence(name, qt_base),
         call,
         line,
         (_go(name, line or 1),),

@@ -922,6 +922,7 @@ class _Row(QWidget):
             menu.addAction("Change\u2026", lambda: self._body._activate(self))
         if self.method_name:
             menu.addAction("Go to code", lambda: self._body._go_code(self.method_name))
+            menu.addAction("Rename", lambda name=self.method_name: _arm_rename(self, name))
         if "runs by its name" in self._full:
             menu.addAction("Why does it run?", lambda: _narrate(self, _by_name_why()))
         menu.popup(self.mapToGlobal(self.rect().bottomLeft()))
@@ -1354,6 +1355,12 @@ def _surface(widget: QWidget) -> object:
 
 def _create(host: SectionHost) -> QWidget:
     return EventsBody(host)
+
+
+def _arm_rename(widget: QWidget, method: str) -> None:
+    from app.features.form_builder.qtside.logic_panel.open import arm_method_rename
+
+    arm_method_rename(widget, method)
 
 
 def register(registry: object) -> None:

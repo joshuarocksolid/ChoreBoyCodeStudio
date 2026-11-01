@@ -59,6 +59,11 @@ class FindReplaceWorkflow:
         find_bar.open_find_replace(initial)
 
     def open_find_in_files(self) -> None:
+        window = self._shell_window()
+        hook = getattr(window, "_form_builder_forms_logic", None) if window is not None else None
+        claim = getattr(hook, "claim_chord", None) if hook is not None else None
+        if callable(claim) and claim(window):
+            return
         if self._host.loaded_project() is None:
             self._host.show_warning("Find in Files", "Open a project first.")
             return
@@ -69,6 +74,10 @@ class FindReplaceWorkflow:
             initial = editor_widget.selected_text() or editor_widget.word_under_cursor()
         if initial:
             self._host.focus_search_sidebar(initial)
+
+    def _shell_window(self) -> object | None:
+        finder = getattr(self._host, "shell_window", None)
+        return finder() if callable(finder) else None
 
     def handle_find(self, text: str, options: FindOptions) -> None:
         editor_widget = self._host.active_editor_widget()
@@ -139,6 +148,9 @@ class MainWindowFindReplaceHost:
 
     def loaded_project(self) -> object | None:
         return self._window._loaded_project
+
+    def shell_window(self) -> object:
+        return self._window
 
     def set_activity_view(self, view_id: str) -> None:
         if self._window._activity_bar is not None:

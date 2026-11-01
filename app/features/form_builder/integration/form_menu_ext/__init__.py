@@ -57,6 +57,7 @@ TOP_LEVEL: Tuple[Tuple[str, str], ...] = (
     ("Preview options", "b"),
     ("View Python code", "b"),
     ("View XML", "b"),
+    ("Read Behavior as Text", "b"),
     ("Style sheet of the form…", "c"),
     ("Form settings…", "c"),
     ("Save as template…", "c"),

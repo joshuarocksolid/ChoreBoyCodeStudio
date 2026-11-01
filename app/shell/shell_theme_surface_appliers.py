@@ -133,6 +133,7 @@ def apply_search_sidebar_theme(refs: ShellThemeSurfaceRefs, tokens: ShellThemeTo
             text_primary=tokens.text_primary,
             text_muted=tokens.text_muted,
             badge_bg=tokens.badge_bg,
+            background=tokens.editor_bg,
         )
 
 

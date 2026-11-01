@@ -85,6 +85,38 @@ def show_uses(surface: Any) -> None:
     dialog.activateWindow()
 
 
+def arm_method_rename(widget: QWidget, method: str) -> None:
+    """Arm the rename hook with this method, then open the shell preview."""
+    if not method:
+        return
+    surface = widget
+    while surface is not None and not (
+        getattr(surface, "session", None) is not None and callable(getattr(surface, "logic_window_file", None))
+    ):
+        surface = surface.parentWidget()
+    window = widget.window()
+    hook = getattr(window, "_form_builder_method_rename", None)
+    arm = getattr(hook, "arm", None)
+    if surface is None or not callable(arm):
+        return
+    arm(surface, method)
+    registry_of = getattr(window, "menu_registry", None)
+    registry = registry_of() if callable(registry_of) else registry_of
+    action_of = getattr(registry, "action", None)
+    action = action_of("shell.action.edit.renameSymbol") if callable(action_of) else None
+    if action is not None and action.isEnabled():
+        action.trigger()
+        return
+    workflow = getattr(window, "_semantic_navigation_workflow", None)
+    run = getattr(workflow, "handle_rename_symbol_action", None)
+    if callable(run):
+        run()
+        return
+    clear = getattr(hook, "clear", None)
+    if callable(clear):
+        clear()
+
+
 def _display(surface: Any, name: str) -> str:
     return displays_for(_env(surface)).get(name) or name
 

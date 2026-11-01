@@ -7,6 +7,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from app.qt.QtCore import QRect, QSize, Qt
 from app.qt.QtWidgets import (
+    QHBoxLayout,
     QLabel,
     QLineEdit,
     QScrollArea,
@@ -129,6 +130,17 @@ class LogicPanel(QWidget):
         column = QVBoxLayout(self)
         column.setContentsMargins(4, 4, 4, 4)
         column.setSpacing(4)
+        link_row = QHBoxLayout()
+        link_row.setContentsMargins(0, 0, 0, 0)
+        link_row.addStretch(1)
+        self._read = QToolButton(self)
+        self._read.setObjectName("formBuilder.logic.readAsText")
+        self._read.setText("Read as text")
+        self._read.setAutoRaise(True)
+        self._read.setMinimumWidth(0)
+        self._read.clicked.connect(self._open_behavior_text)
+        link_row.addWidget(self._read)
+        column.addLayout(link_row)
         self._filter = QLineEdit(self)
         self._filter.setObjectName("formBuilder.logic.filter")
         self._filter.setPlaceholderText("Filter")
@@ -179,6 +191,20 @@ class LogicPanel(QWidget):
     def book(self) -> Optional[LogicBook]:
         return self._book
 
+    def set_filter_text(self, text: str) -> None:
+        """Ctrl+Shift+F on a form tab. The text is the selection, then the filter takes focus."""
+        self._filter.setText(text)
+        self._filter.setFocus()
+        self._filter.selectAll()
+
+    def _open_behavior_text(self) -> None:
+        surface = _surface_of(self)
+        if surface is None:
+            return
+        from app.features.form_builder.qtside.logic_panel.read_as_text import show_behavior_text
+
+        show_behavior_text(surface)
+
     @property
     def tokens(self) -> object:
         return self._tokens
@@ -205,6 +231,9 @@ class LogicPanel(QWidget):
             " border-radius: 10px; padding: 2px 8px; font-size: 11px; }"
             "QToolButton:checked { color: %s; background: %s; border: 1px solid %s; }"
             "QToolButton:focus { border: %dpx solid %s; }"
+            "QToolButton#formBuilder\\.logic\\.readAsText { color: %s; background: transparent;"
+            " border: none; border-radius: 0; padding: 0; font-size: 11px; }"
+            "QToolButton#formBuilder\\.logic\\.readAsText:focus { border: %dpx solid %s; }"
             "QScrollArea#formBuilder\\.logic\\.scroll { background: %s; border: none; }"
             % (
                 tokens.panel_bg,  # type: ignore[attr-defined]
@@ -224,6 +253,9 @@ class LogicPanel(QWidget):
                 chrome.on_accent,
                 tokens.accent,  # type: ignore[attr-defined]
                 tokens.accent,  # type: ignore[attr-defined]
+                width,
+                tokens.accent,  # type: ignore[attr-defined]
+                tokens.text_muted,  # type: ignore[attr-defined]
                 width,
                 tokens.accent,  # type: ignore[attr-defined]
                 tokens.panel_bg,  # type: ignore[attr-defined]
