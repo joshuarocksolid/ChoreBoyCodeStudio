@@ -104,7 +104,10 @@ def test_filter_and_enter_open_the_behavior_row(tmp_path: Path, qapp: QApplicati
         _pump(qapp)
         assert _selected(surface) == "discountEdit"
         editor = surface.findChild(QWidget, "formBuilder.formula")  # type: ignore[attr-defined]
-        assert editor is not None and editor.isVisible()
+        builder = surface.findChild(QWidget, "formBuilder.builder")  # type: ignore[attr-defined]
+        # E2: a row whose formula fits the builder opens there; the formula text is the same.
+        assert editor is not None
+        assert editor.isVisible() or (builder is not None and builder.isVisible())
         assert editor.toPlainText() == "discountCheck"  # type: ignore[attr-defined]
         field.setText("")  # type: ignore[attr-defined]
         _pump(qapp)
