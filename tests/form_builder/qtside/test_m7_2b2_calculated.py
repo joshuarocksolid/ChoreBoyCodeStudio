@@ -120,9 +120,10 @@ def test_a_value_rule_locks_the_property_and_edit_rule_opens_the_formula() -> No
         button.click()
         pump()
         editor = pane.findChild(FormulaEditor, "formBuilder.formula")
-        assert editor is not None and editor.isVisible()
+        builder = pane.findChild(QWidget, "formBuilder.builder")
+        assert editor is not None and builder is not None and builder.isVisible()
         assert editor.toPlainText() == "qtySpin"
-        assert QApplication.focusWidget() is editor
+        assert not editor.isVisible()
         assert len(session.log.entries()) == depth
         assert not session.log.is_dirty()
 

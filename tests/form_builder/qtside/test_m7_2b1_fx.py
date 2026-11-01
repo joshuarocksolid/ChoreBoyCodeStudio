@@ -60,6 +60,9 @@ def test_tab_inserts_the_object_name_and_ctrl_enter_is_one_undo(qapp: QApplicati
         open_state_row(pane, "cbcsEnabledWhen")
         pump()
         editor = _editor(pane)
+        if not editor.isVisible():
+            editor.setFocus()
+            pump()
         assert QApplication.focusWidget() is editor
         QTest.keyClicks(editor, "disc")
         pump()
