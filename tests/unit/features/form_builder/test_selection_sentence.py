@@ -143,5 +143,5 @@ def test_a_group_box_names_the_widgets_in_its_layout() -> None:
     group = document.by_name("receiptGroup")[0]
     assert (
         selection_sentence(document, group, 1)
-        == "receiptGroup · Group box · 2 widgets in a horizontal layout"
+        == "Receipt group · Group box · 2 widgets in a horizontal layout"
     )

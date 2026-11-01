@@ -54,7 +54,7 @@ class UsesDialog(QDialog):
         self._fill()
         if tokens is not None:
             self.apply_theme(tokens)
-        self.resize(420, 420)
+        self.resize(560, 320)
 
     def keyPressEvent(self, event: object) -> None:  # noqa: N802
         if enum_value(event.key()) == enum_value(Qt.Key.Key_Escape):  # type: ignore[attr-defined]
@@ -141,6 +141,9 @@ def _face(use: Use, display: str, lines: Sequence[str]) -> RowFace:
     if use.kind == "step":
         aside = "· %s" % use.signal if use.signal else ""
         body = use.summary or use.method
+        if body and "\u2192" in body:
+            accessible = "%s %s" % (display, body)
+            return RowFace(display, body, "", False, False, body, accessible)
         return RowFace(display, aside, body, True, False, body, accessible)
     return RowFace(display, use.signal or use.method, use.summary, True, False, use.widget, accessible)
 

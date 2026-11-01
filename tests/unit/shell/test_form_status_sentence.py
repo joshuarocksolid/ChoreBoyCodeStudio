@@ -56,7 +56,7 @@ def test_form_tab_status_matches_the_surface_sentence(tmp_path: Path, qapp: QApp
         assert surface.reveal(1, {"fb_object": "okButton"})
         qapp.processEvents()
         assert label.text() == surface.editor_status_sentence()
-        assert "okButton" in label.text()
+        assert "OK" in label.text() and "Push button" in label.text()
         assert label.text() != "Invoice · the form"
     finally:
         shutdown_main_window_for_test(window, qapp)

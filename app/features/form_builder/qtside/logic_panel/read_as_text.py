@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import html
 import os
-from typing import List
+from typing import List, Optional
 
 from app.qt.QtCore import Qt
 from app.qt.QtGui import QFont, QFontMetrics, QImage
@@ -47,8 +47,8 @@ class _Line(QLabel):
 
 
 class BehaviorTextPage(QWidget):
-    def __init__(self, surface: object) -> None:
-        super().__init__()
+    def __init__(self, surface: object, parent: Optional[QWidget] = None) -> None:
+        super().__init__(parent)
         self._surface = surface
         self._sentences: tuple = ()
         self._tokens: object = None
@@ -268,7 +268,9 @@ def show_behavior_text(surface: object) -> None:
     """The Logic link and the Form menu both open this page."""
     page = getattr(surface, "_behavior_text_page", None)
     if not isinstance(page, BehaviorTextPage):
-        page = BehaviorTextPage(surface)
+        stack = getattr(surface, "_stack", None)
+        parent = stack if isinstance(stack, QWidget) else surface if isinstance(surface, QWidget) else None
+        page = BehaviorTextPage(surface, parent)
         surface._behavior_text_page = page  # type: ignore[attr-defined]
         stack = getattr(surface, "_stack", None)
         if stack is not None:

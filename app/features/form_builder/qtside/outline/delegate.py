@@ -22,6 +22,7 @@ FAINT = _user(2)
 PROBLEM = _user(3)
 TONE = _user(4)
 EXTRA = _user(5)
+OWNER = _user(6)
 
 
 def _flag(name: str) -> int:
@@ -67,7 +68,8 @@ class OutlineRowDelegate(QStyledItemDelegate):
             visible = viewport.width() - max(option.rect.x(), 0)
             if visible > 0:
                 width = min(width, visible)
-        boxes = layout_row(width, bool(caption), problem, caption_px, name_px)
+        elide_caption = bool(index.data(OWNER))  # type: ignore[attr-defined]
+        boxes = layout_row(width, bool(caption), problem, caption_px, name_px, elide_caption)
         selected = bool(enum_value(option.state) & enum_value(QStyle.State_Selected))
         palette = option.palette
         name_color = self._swatch(

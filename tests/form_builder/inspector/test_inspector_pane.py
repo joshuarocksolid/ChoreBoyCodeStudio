@@ -164,7 +164,8 @@ def test_outline_click_fills_the_header(qapp: QApplication) -> None:
     kind = pane.findChild(QLabel, "formBuilder.inspectorClass")
     assert name is not None and kind is not None
     assert name.text() == "okButton"
-    assert "QPushButton" in kind.text()
+    assert kind.text() == "Push button"
+    assert "QPushButton" in kind.toolTip()
     _close(window, pane, realizer, session)
 
 @pytest.mark.parity("R3-28")
@@ -288,7 +289,8 @@ def _text_editor(pane: QWidget) -> QLineEdit:
 
 def _tree_item(tree: QTreeWidget, needle: str) -> QTreeWidgetItem:
     def walk(item: QTreeWidgetItem) -> Optional[QTreeWidgetItem]:
-        if needle in item.text(0):
+        caption = str(item.data(0, int(Qt.UserRole) + 1) or "")
+        if needle in item.text(0) or needle == caption:
             return item
         for index in range(item.childCount()):
             child = item.child(index)

@@ -129,7 +129,7 @@ def status_sentence(gesture: str, overlay: str, inert: str, hover: str, selectio
 
 
 def selection_sentence(document: UiDocument, current: Optional[NodeId], count: int) -> str:
-    """Status-bar sentence. Object names only. Never a session id."""
+    """Status-bar sentence. The first word is the spoken name. Never a session id."""
     if count > 1:
         return "%d selected" % count
     if current is None or current == document.root.id:
@@ -145,7 +145,9 @@ def selection_sentence(document: UiDocument, current: Optional[NodeId], count: i
         return "%s · action · %s" % (node.name, used) if used else "%s · action" % node.name
     if not isinstance(node, WidgetNode):
         return _form_sentence(document)
-    name = node.object_name or "Widget"
+    from app.features.form_builder.engine.logic.read_as_text import spoken_display
+
+    name = spoken_display(document, node.object_name) if node.object_name else "Widget"
     kind = widget_class_phrase(node.class_name)
     contained = _contained_phrase(node)
     if contained:

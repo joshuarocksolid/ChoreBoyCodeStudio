@@ -23,7 +23,7 @@ import pytest
 pytest.importorskip("app.qt.QtWidgets", exc_type=ImportError)
 
 from app.features.form_builder.integration import editor_memory  # noqa: E402
-from app.qt.QtCore import QTimer  # noqa: E402
+from app.qt.QtCore import Qt, QTimer  # noqa: E402
 from app.qt.QtGui import QAction, QFontDatabase  # noqa: E402
 from app.qt.QtTest import QTest  # noqa: E402
 from app.qt.QtWidgets import (  # noqa: E402
@@ -414,7 +414,8 @@ def _go_to_row(kb: Kb, tree: QTreeWidget, text: str) -> None:
     for key in ("Key_Down", "Key_Up"):
         for _ in range(30):
             item = tree.currentItem()
-            if item is not None and item.text(0) == text:
+            caption = "" if item is None else str(item.data(0, int(Qt.UserRole) + 1) or "")
+            if item is not None and (item.text(0) == text or caption == text):
                 return
             kb.press(key)
     kb.check(False, "the outline reaches %s" % text)

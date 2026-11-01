@@ -278,6 +278,7 @@ def _enter(ctx: PickContext, page: Page) -> object:
                 signal=page.signal,
                 method=name,
                 args=1 if page.checked else 0,
+                open_code=True,
             )
         )
     return page

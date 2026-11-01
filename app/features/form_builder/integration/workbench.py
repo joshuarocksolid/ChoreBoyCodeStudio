@@ -130,6 +130,7 @@ from app.features.form_builder.qtside.outline.delegate import (
     CAPTION,
     EXTRA,
     FAINT,
+    OWNER,
     PROBLEM,
     TONE,
     OutlineRowDelegate,
@@ -2100,8 +2101,19 @@ class OutlinePane(QWidget):
             current.takeChild(row)
 
     def _write_item(self, item: QTreeWidgetItem, row: object, states: Dict[NodeId, str]) -> None:
-        item.setText(0, row.primary)  # type: ignore[attr-defined]
-        caption = _row_caption(row)
+        owner = str(getattr(row, "owner_name", "") or "")
+        object_name = str(getattr(row, "name", "") or "")
+        if owner and getattr(row, "kind", "") != "page":
+            item.setText(0, owner)
+            caption = object_name
+            item.setData(0, OWNER, True)
+            friendly = str(getattr(row, "friendly", "") or "")
+            tip = "%s · %s" % (friendly, object_name) if friendly else object_name
+        else:
+            item.setText(0, row.primary)  # type: ignore[attr-defined]
+            caption = _row_caption(row)
+            item.setData(0, OWNER, False)
+            tip = row.primary if not caption else "%s  %s" % (row.primary, caption)  # type: ignore[attr-defined]
         item.setData(0, CAPTION, caption)
         item.setData(0, PROBLEM, bool(row.problem))  # type: ignore[attr-defined]
         item.setData(0, TONE, row.tone)  # type: ignore[attr-defined]
@@ -2109,7 +2121,7 @@ class OutlinePane(QWidget):
         faint = kind == "ancestor" or bool(row.hidden)  # type: ignore[attr-defined]
         item.setData(0, FAINT, faint)
         item.setHidden(kind == "hidden")
-        item.setToolTip(0, row.primary if not caption else "%s  %s" % (row.primary, caption))  # type: ignore[attr-defined]
+        item.setToolTip(0, tip)
         color = self._faint_color if faint else self._name_color
         if row.tone == "layout" and not faint and self._layout_color:
             color = self._layout_color

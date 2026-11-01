@@ -184,6 +184,13 @@ def _editor(qapp: QApplication) -> QLineEdit:
     return widget
 
 
+def _object_name(item: QTreeWidgetItem) -> str:
+    """The object name. Owner rows keep it in the faint caption slot."""
+    if bool(item.data(0, int(getattr(Qt, "UserRole")) + 6)):
+        return str(item.data(0, int(getattr(Qt, "UserRole")) + 1) or "")
+    return item.text(0)
+
+
 def _find_item(tree: QTreeWidget, text: str) -> QTreeWidgetItem:
     found = _walk_item(tree, text)
     assert found is not None
@@ -192,7 +199,8 @@ def _find_item(tree: QTreeWidget, text: str) -> QTreeWidgetItem:
 
 def _walk_item(tree: QTreeWidget, text: str) -> Optional[QTreeWidgetItem]:
     def walk(item: QTreeWidgetItem) -> Optional[QTreeWidgetItem]:
-        if item.text(0) == text:
+        caption = str(item.data(0, int(getattr(Qt, "UserRole")) + 1) or "")
+        if item.text(0) == text or caption == text:
             return item
         for index in range(item.childCount()):
             child = item.child(index)
@@ -417,7 +425,9 @@ def test_a_text_edit_keeps_other_row_items(qapp: QApplication) -> None:
         after = _items(pane.tree)
         for node, item in before.items():
             assert after[node] is item
-        assert "\u201cSave\u201d" in after[int(shop)].toolTip(0)
+        shop_item = after[int(shop)]
+        assert shop_item.text(0) == "Save"
+        assert shop_item.toolTip(0) == "Label · shop"
         assert after[int(_id(session, "other"))].text(0) == "other"
 
 
@@ -766,8 +776,9 @@ def test_row_boxes_stay_disjoint_at_236(qapp: QApplication) -> None:
         for index, left in enumerate(shown):
             for right in shown[index + 1 :]:
                 assert not _overlaps(left, right)
-        advance = pane.tree.fontMetrics().horizontalAdvance(item.text(0))
-        assert advance > boxes.name[2]
+        drawn = [text for _rect, text in _painted(pane, item)]
+        assert drawn[0] == "Hi"
+        assert any("\u2026" in text for text in drawn)
         mode = pane.tree.textElideMode()
         elide = getattr(getattr(Qt, "TextElideMode", Qt), "ElideRight")
         assert enum_value(mode) == enum_value(elide)
@@ -920,7 +931,7 @@ def test_undo_of_a_cell_move_restores_reading_order(qapp: QApplication) -> None:
         pane.note_edited()
         qapp.processEvents()
         _matches(pane, session)
-        names = [_find_item(pane.tree, name).text(0) for name in ("cellA", "cellB", "cellC")]
+        names = [_object_name(_find_item(pane.tree, name)) for name in ("cellA", "cellB", "cellC")]
         assert names == ["cellA", "cellB", "cellC"]
         order = _tree_ids(pane.tree)
         assert order.index(int(_id(session, "cellA"))) < order.index(int(_id(session, "cellB")))
@@ -1048,19 +1059,20 @@ def test_a_narrow_outline_drops_the_caption_before_the_name(qapp: QApplication, 
             drawn = _painted(pane, item)
             for rect, text in drawn:
                 assert metrics.horizontalAdvance(text) <= rect.width(), (width, name, text)
+            shown = item.text(0)
             texts = [text for _rect, text in drawn]
             rect = pane.tree.visualItemRect(item)
             room = min(rect.width(), pane.tree.viewport().width() - max(rect.x(), 0)) - 20
-            if metrics.horizontalAdvance(name) <= room:
-                assert texts[0] == name, (width, texts)
+            if metrics.horizontalAdvance(shown) <= room:
+                assert texts[0] == shown, (width, texts)
             else:
-                assert texts[0] != name and "\u2026" in texts[0], (width, texts)
+                assert texts[0] != shown and "\u2026" in texts[0], (width, texts)
                 assert caption not in texts
             if caption in texts:
-                assert texts[0] == name
-        # The reviewer's case: the name fits on its own, the caption does not.
+                assert texts[0] == shown
+        # The reviewer's case: the owner's word fits, and the object name is the faint caption.
         group = [text for _rect, text in _painted(pane, _find_item(pane.tree, "receiptGroup"))]
-        assert group[0] == "receiptGroup"
+        assert group[0] == "Receipt group"
         assert pane.tree.horizontalScrollBar().isVisible() is False
 
 
@@ -1079,7 +1091,9 @@ def _shape(tree: QTreeWidget) -> Tuple[Tuple[int, int, str], ...]:
 
     def walk(item: QTreeWidgetItem, parent: int) -> None:
         node = int(item.data(0, role))
-        found.append((node, parent, item.text(0)))
+        owner = bool(item.data(0, role + 6))
+        shown = str(item.data(0, role + 1) or "") if owner else item.text(0)
+        found.append((node, parent, shown))
         for index in range(item.childCount()):
             walk(item.child(index), node)
 
@@ -1090,7 +1104,7 @@ def _shape(tree: QTreeWidget) -> Tuple[Tuple[int, int, str], ...]:
 
 def _project_shape(session: FormSession) -> Tuple[Tuple[int, int, str], ...]:
     forest = project(session.document, frozenset(), lambda name: name)
-    return tuple((int(row.node), -1 if row.parent is None else int(row.parent), row.primary) for row in forest.rows)
+    return tuple((int(row.node), -1 if row.parent is None else int(row.parent), row.name) for row in forest.rows)
 
 
 @pytest.mark.parametrize("seed", range(6))

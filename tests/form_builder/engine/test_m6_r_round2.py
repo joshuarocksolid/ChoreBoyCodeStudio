@@ -130,7 +130,7 @@ def test_a_layout_connection_is_kept_and_not_emitted(tmp_path: Path) -> None:
     assert result.text is not None
     assert "invalidate" not in result.text
     words = [row.words for row in project_form(read.document, QtClassTable.shared())]
-    assert any("kept" in line and "verticalLayout" in line for line in words)
+    assert any("kept" in line and "Vertical layout" in line for line in words)
 
 
 def test_clear_a_field_does_not_offer_a_label() -> None:

@@ -127,12 +127,19 @@ def _tree(surface: object) -> QTreeWidget:
     return tree
 
 
+def _object_name(item: QTreeWidgetItem) -> str:
+    if bool(item.data(0, int(getattr(Qt, "UserRole")) + 6)):
+        return str(item.data(0, int(getattr(Qt, "UserRole")) + 1) or "")
+    return item.text(0)
+
+
 def _item(tree: QTreeWidget, text: str) -> QTreeWidgetItem:
     found = None
 
     def walk(item: QTreeWidgetItem) -> None:
         nonlocal found
-        if item.text(0) == text:
+        caption = str(item.data(0, int(getattr(Qt, "UserRole")) + 1) or "")
+        if item.text(0) == text or caption == text:
             found = item
         for index in range(item.childCount()):
             child = item.child(index)
@@ -260,7 +267,7 @@ def test_a_keyboard_session_stays_in_the_outline(tmp_path: Path, qapp: QApplicat
         _select(tree, qapp, "cellA")
         _press(tree, qapp, "Key_Down", "AltModifier")
         _stay(surface)
-        assert tree.currentItem().text(0) == "cellA"
+        assert _object_name(tree.currentItem()) == "cellA"
 
         _select(tree, qapp, "cellB")
         _press(tree, qapp, "Key_Down", "AltModifier")
@@ -329,7 +336,7 @@ def test_a_keyboard_session_stays_in_the_outline(tmp_path: Path, qapp: QApplicat
         _press(delete, qapp, "Key_Escape")
         _stay(surface)
         assert not confirm.isVisible()
-        assert tree.currentItem().text(0) == "customerEmail"
+        assert _object_name(tree.currentItem()) == "customerEmail"
 
         _select(tree, qapp, "cellC")
         _press(tree, qapp, "Key_Delete")
@@ -337,7 +344,7 @@ def test_a_keyboard_session_stays_in_the_outline(tmp_path: Path, qapp: QApplicat
         _matches(tree, surface)
         assert not surface.session.document.by_name("cellC")  # type: ignore[attr-defined]
         current = tree.currentItem()
-        assert current is not None and current.text(0) in ("cellB", "grid")
+        assert current is not None and _object_name(current) in ("cellB", "grid")
         _press(tree, qapp, "Key_Z", "ControlModifier")
         _matches(tree, surface)
         assert surface.session.document.by_name("cellC")  # type: ignore[attr-defined]

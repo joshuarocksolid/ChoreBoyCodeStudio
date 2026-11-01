@@ -257,6 +257,11 @@ class InspectorPane(QWidget):
                 if callable(reveal):
                     reveal(first)
                 return
+            methods = self.findChild(QWidget, "formBuilder.yourMethods")
+            method_row = methods.first_focus() if methods is not None and hasattr(methods, "first_focus") else None
+            if method_row is not None:
+                method_row.setFocus()
+                return
         page = self.tabs.widget(index)
         if page is not None:
             page.setFocus()

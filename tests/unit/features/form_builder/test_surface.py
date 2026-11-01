@@ -120,7 +120,7 @@ def test_open_shows_the_form_name_and_structure(qapp) -> None:  # type: ignore[n
     assert name.text() == "Form · Vertical layout"
     labels = _tree_labels(surface)
     assert "Form" in labels
-    assert "okButton" in labels
+    assert "OK" in labels
     assert surface.content_source().serialize_count == 0
     assert surface.source_editor() is None
     surface.release()
@@ -140,7 +140,7 @@ def test_selecting_a_widget_keeps_the_same_outline_items(qapp) -> None:  # type:
     assert tree.topLevelItem(0) is top
     current = tree.currentItem()
     assert current is not None
-    assert "okButton" in current.text(0)
+    assert current.text(0) == "OK"
     surface.release()
 
 
@@ -292,7 +292,7 @@ def test_invalid_xml_save_then_design_stays_in_xml(qapp, tmp_path: Path) -> None
     assert toggle.isChecked() is False
     assert banner.isVisibleTo(surface) is False
     assert discard.isVisibleTo(surface) is False
-    assert "okButton" in _tree_labels(surface)
+    assert "OK" in _tree_labels(surface)
     assert surface.content_source().log.document.root.object_name == "Form"
     surface.release()
 

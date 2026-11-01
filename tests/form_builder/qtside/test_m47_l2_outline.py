@@ -93,7 +93,12 @@ def test_narrowing_a_selection_drops_the_old_highlight(qapp: QApplication) -> No
         assert len(pane.tree.selectedItems()) == 2
         session.selection.set((second,), current=second, source=SelectionSource.CANVAS)
         pane.show_current(second)
-        names = [item.text(0) for item in pane.tree.selectedItems()]
+        names = []
+        for item in pane.tree.selectedItems():
+            if bool(item.data(0, int(Qt.UserRole) + 6)):
+                names.append(str(item.data(0, int(Qt.UserRole) + 1) or ""))
+            else:
+                names.append(item.text(0))
         assert names == ["field1"]
 
 

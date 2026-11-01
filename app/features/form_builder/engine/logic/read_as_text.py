@@ -53,20 +53,61 @@ class Sentence:
     text: str
 
 
+_PREFERRED: Dict[Tuple[int, int], Dict[str, Tuple[str, bool]]] = {}
+
+
 def spoken_display(doc: UiDocument, name: str) -> str:
-    """The name a sentence uses: buddy or own text, else the form-row caption, else words."""
-    shown = display_name(doc, name)
-    if shown and shown != name:
-        return shown
+    """The name a sentence uses. A fallback that collides becomes the split object name."""
+    preferred = _preferred(doc)
+    mine, mine_fallback = preferred.get(name, (_humanize(name), True))
+    folded = mine.casefold()
+    taken = {text.casefold() for key, (text, _flag) in preferred.items() if key != name}
+    if mine_fallback and folded in taken:
+        return _split_name(name)
+    return mine
+
+
+def _preferred(doc: UiDocument) -> Dict[str, Tuple[str, bool]]:
+    """Object name to (spoken, fallback). Fallback is the humanized object name."""
+    revision = getattr(doc, "revision", None)
+    key = (id(doc), int(revision)) if isinstance(revision, int) else None
+    if key is not None:
+        cached = _PREFERRED.get(key)
+        if cached is not None:
+            return cached
+    captions: Dict[str, str] = {}
     for label_id, field in form_row_pairs(doc):
-        if field != name:
+        if field in captions:
             continue
         text = caption(doc, label_id)
-        node = doc.get(label_id)
-        own = node.object_name if isinstance(node, WidgetNode) else ""
+        label = doc.get(label_id)
+        own = label.object_name if isinstance(label, WidgetNode) else ""
         if text and text != own:
-            return text
-    return _humanize(name)
+            captions[field] = text
+    found: Dict[str, Tuple[str, bool]] = {}
+    for node in doc.iter_preorder():
+        if not isinstance(node, WidgetNode) or not node.object_name:
+            continue
+        name = node.object_name
+        shown = display_name(doc, name)
+        if shown and shown != name:
+            found[name] = (shown, False)
+        elif name in captions:
+            found[name] = (captions[name], False)
+        else:
+            found[name] = (_humanize(name), True)
+    if key is not None:
+        if len(_PREFERRED) > 4:
+            _PREFERRED.clear()
+        _PREFERRED[key] = found
+    return found
+
+
+def _split_name(name: str) -> str:
+    parts = re.findall(r"[A-Z]+(?![a-z])|[A-Z]?[a-z]+|\d+", name)
+    if not parts:
+        return name
+    return " ".join(part.lower() for part in parts)
 
 
 def behavior_text(doc: UiDocument, env: Optional[FormulaEnv] = None) -> Tuple[Sentence, ...]:

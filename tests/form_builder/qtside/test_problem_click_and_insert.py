@@ -115,6 +115,8 @@ def _selected_name(surface: object) -> str:
     item = tree.currentItem()
     if item is None:
         return ""
+    if bool(item.data(0, int(Qt.UserRole) + 6)):
+        return str(item.data(0, int(Qt.UserRole) + 1) or "")
     return item.text(0)
 
 
