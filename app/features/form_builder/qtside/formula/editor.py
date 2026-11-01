@@ -8,7 +8,14 @@ from typing import Optional, Sequence, Tuple
 
 from app.qt.QtCore import QEvent, QPoint, QTimer, Qt
 from app.qt.QtGui import QColor, QSyntaxHighlighter, QTextCharFormat, QTextCursor
-from app.qt.QtWidgets import QListWidget, QListWidgetItem, QPlainTextEdit, QTextEdit, QWidget
+from app.qt.QtWidgets import (
+    QListWidget,
+    QListWidgetItem,
+    QPlainTextEdit,
+    QTextEdit,
+    QVBoxLayout,
+    QWidget,
+)
 from app.qt.qt_compat import enum_value
 
 from app.features.form_builder.engine.diagnostics import CODES, Severity
@@ -133,6 +140,8 @@ class FormulaEditor(QPlainTextEdit):
         self._fixes: Tuple[Fix, ...] = ()
         self._floating: Optional[QListWidget] = None
         self._suppress = False
+        self._mode_silent = False
+        self._builder_incomplete = False
         self._status: Optional[QWidget] = None
         self._complete = QListWidget(self)
         self._complete.setObjectName("formBuilder.formula.complete")
@@ -170,6 +179,33 @@ class FormulaEditor(QPlainTextEdit):
         self._paint_list(self._complete)
         self._paint_list(self._fix_list)
         self._underlines()
+        hook = getattr(self, "_chrome_hook", None)
+        if callable(hook):
+            hook(chrome)
+
+    def install_builder(self, layout: QVBoxLayout) -> None:
+        """State's pad asks for the mode switch. The field stays this editor."""
+
+        from app.features.form_builder.qtside.formula.modes import attach_builder
+
+        attach_builder(self, layout)
+
+    def present(self) -> None:
+        """Show whichever mode fits, and focus it. Hosts call this instead of setFocus."""
+
+        hook = getattr(self, "_present_hook", None)
+        if callable(hook):
+            hook()
+            return
+        self.show()
+        self.setFocus()
+
+    def setFocus(self, *args: object, **kwargs: object) -> None:  # noqa: N802
+        # Key tests aim at this field by name. If Builder is up, that aim means Formula.
+        reveal = getattr(self, "_reveal_formula", None)
+        if callable(reveal) and not self.isVisible():
+            reveal()
+        super().setFocus(*args, **kwargs)  # type: ignore[arg-type]
 
     def set_context(self, env: FormulaEnv, slot: SlotKind, reader: object) -> None:
         self._env = env
@@ -179,18 +215,26 @@ class FormulaEditor(QPlainTextEdit):
 
     def show_text(self, text: str) -> None:
         self._suppress = True
+        self._mode_silent = True
+        self._builder_incomplete = False
         self.setPlainText(text)
         self._place_cursor(len(text))
         self._suppress = False
+        self._mode_silent = False
         self._dismiss(self._complete)
         self._dismiss(self._fix_list)
         self._fit()
+        hook = getattr(self, "_show_hook", None)
+        if callable(hook):
+            hook(text)
 
     def analysis(self) -> Optional[Analysis]:
         return self._analysis
 
     def has_error(self) -> bool:
         # A blank field is a clear, even though analyze calls it unfinished.
+        if self._builder_incomplete:
+            return True
         if normalize(self.toPlainText()) == "":
             return False
         found = self._analysis
@@ -199,6 +243,8 @@ class FormulaEditor(QPlainTextEdit):
         return _errored(found)
 
     def status_text(self) -> str:
+        if self._builder_incomplete:
+            return "Finish this row, or press Esc."
         found = self._analysis
         if found is None:
             return ""
@@ -239,6 +285,9 @@ class FormulaEditor(QPlainTextEdit):
         return self._complete.isVisible() and self._complete.count() > 0
 
     def keyPressEvent(self, event: object) -> None:  # noqa: N802
+        reveal = getattr(self, "_reveal_formula", None)
+        if callable(reveal) and not self.isVisible():
+            reveal()
         key = enum_value(event.key())  # type: ignore[attr-defined]
         mods = enum_value(event.modifiers())  # type: ignore[attr-defined]
         ctrl = bool(mods & _CTRL)

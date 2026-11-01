@@ -96,7 +96,11 @@ def _open(pane: InspectorPane, key: str) -> FormulaEditor:
     state.open_row(key)  # type: ignore[attr-defined]
     pump()
     editor = pane.findChild(FormulaEditor, "formBuilder.formula")
-    assert editor is not None and editor.isVisible()
+    assert editor is not None
+    if not editor.isVisible():
+        editor.setFocus()
+        pump()
+    assert editor.isVisible()
     return editor
 
 

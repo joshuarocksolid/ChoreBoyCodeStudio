@@ -292,9 +292,8 @@ class StateBody(QWidget):
         editor.set_chrome(self._services.chrome)
         editor.set_context(self._env, _slot(spec, self._env, self._node), self._reader())
         editor.show_text(_stored(self._node, key))
-        editor.show()
+        editor.present()
         status.show()
-        editor.setFocus()
         self._arm_live(key)
 
     def _commit_open(self) -> None:
@@ -351,7 +350,6 @@ class StateBody(QWidget):
         for key, row in self._rows.items():
             if key not in wanted:
                 row.hide()
-        previous = self._column.count()
         for index, spec in enumerate(specs):
             row = self._rows.get(spec.key)
             if row is None:
@@ -361,7 +359,20 @@ class StateBody(QWidget):
                 self._column.removeWidget(row)
                 self._column.insertWidget(index + 1, row)
             row.show()
-        del previous
+        # Rows created after the inspector is on screen never join Qt's tab
+        # chain. Enabled when is already in that chain. Hang the later rows
+        # off it. The first argument stays where it is.
+        previous = self._rows.get("cbcsEnabledWhen")
+        if previous is None or previous.isHidden():
+            previous = None
+        for spec in specs:
+            if spec.key == "cbcsEnabledWhen" or spec.slot in ("kind", "format"):
+                continue
+            row = self._rows.get(spec.key)
+            if row is None or row.isHidden() or previous is None:
+                continue
+            QWidget.setTabOrder(previous, row)
+            previous = row
 
     def _make(self, spec: StateRowSpec) -> _Row:
         row = _Row(self, spec)
@@ -506,7 +517,7 @@ class StateBody(QWidget):
         pad.setSizePolicy(getattr(names, "Preferred"), getattr(names, "Minimum"))
         status.hide()
         editor.hide()
-        layout.addWidget(editor)
+        editor.install_builder(layout)
         layout.addWidget(status)
         editor.set_status_label(status)
         editor.set_handlers(self._commit_open, self._cancel)
@@ -694,6 +705,10 @@ def _holds(body: StateBody, focus: object) -> bool:
     editor = body._editor
     if editor is None:
         return False
+    # The builder and the mode switch sit beside the text field, in the same pad.
+    pad = body._pad
+    if pad is not None and (focus is pad or pad.isAncestorOf(focus)):  # type: ignore[attr-defined]
+        return True
     if focus is editor or editor.isAncestorOf(focus):  # type: ignore[arg-type]
         return True
     for widget in (body._complete, body._fixes, body._status):
