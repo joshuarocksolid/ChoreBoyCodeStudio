@@ -8,6 +8,8 @@ The walk set is `scratchpad/walk7r` (copied from `scratchpad/walk77`). The scree
 
 The walk was `4 passed in 49.81s`. The screenshot modules passed, including a second run of the What ran, Logic, and Checks shots after display names were wired through. `test_m7_4_k29.py` writes verb pages for light at 100% only, and that test passed.
 
+The follow-up commit is `485c949f`. Rows marked Fixed below are that commit. M7R-10 is not.
+
 ## Findings
 
 | id | screen | heuristic | what's wrong (quote the screen) | severity | fix |
