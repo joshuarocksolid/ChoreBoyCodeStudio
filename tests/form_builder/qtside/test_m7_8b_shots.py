@@ -18,7 +18,6 @@ from app.shell.search_sidebar_widget import SearchSidebarWidget
 from app.shell.style_sheet_sections_workspace import shell_section_workspace_tree_editors
 from app.shell.theme_tokens import tokens_from_palette
 from tests.form_builder.qtside.test_m7_2b1_shots import _MODES, _grab, _pump, _with_pytest_path
-from tests.form_builder.qtside.test_m7_8a_panel import open_invoice
 
 pytestmark = pytest.mark.unit
 
@@ -46,10 +45,38 @@ def _paint_find(sidebar: SearchSidebarWidget, query: str) -> None:
     sidebar._results_tree.expandAll()
 
 
+def _behavior_form() -> str:
+    from app.features.form_builder.engine.logic.events_codec import EventStep, call_step, write_list
+    from tests.form_builder.engine.logic.test_m7_8a_uses import _prop
+
+    steps = write_list((EventStep("validate"), call_step("save_invoice")))
+    return (
+        '<?xml version="1.0" encoding="UTF-8"?>'
+        '<ui version="4.0"><class>Invoice</class>'
+        '<widget class="QDialog" name="Invoice">'
+        '<property name="windowTitle"><string>Invoice</string></property>'
+        '<widget class="QDoubleSpinBox" name="discountEdit">%s</widget>'
+        '<widget class="QSpinBox" name="qtySpin"/>'
+        '<widget class="QLabel" name="discountRateLabel">'
+        '<property name="text"><string>Discount rate</string></property>'
+        '<property name="buddy"><cstring>discountEdit</cstring></property>'
+        "</widget>"
+        '<widget class="QLabel" name="qtyLabel">'
+        '<property name="text"><string>Qty</string></property>'
+        '<property name="buddy"><cstring>qtySpin</cstring></property>'
+        "</widget>"
+        '<widget class="QPushButton" name="saveButton">'
+        '<property name="text"><string>Save</string></property>'
+        "%s</widget></widget></ui>"
+    ) % (_prop("cbcsReadOnlyWhen", "qtySpin > 10"), _prop("cbcsOnClicked", steps))
+
+
 def _shoot(qapp: QApplication, folder: Path, scale: str) -> None:
     from app.features.form_builder.qtside.logic_panel.read_as_text import show_behavior_text
+    from app.shell.main_window import MainWindow
+    from tests.form_builder.engine.logic.test_m7_8a_uses import window_source
     from tests.form_builder.engine.logic.test_m7_8b_find import _form, _prop
-    from tests.form_builder.qtside.test_m3_keyboard_scripts import _close
+    from tests.form_builder.qtside.test_m3_keyboard_scripts import _NoMouse, _close, _open, _project, _require
 
     root = Path(tempfile.mkdtemp()).resolve()
     (root / "alpha.ui").write_text(
@@ -61,8 +88,16 @@ def _shoot(qapp: QApplication, folder: Path, scale: str) -> None:
     host.show()
     _paint_find(host._sidebar, "seasonRate")  # type: ignore[attr-defined]
     _pump(qapp)
+    _require()
     tmp = Path(tempfile.mkdtemp()).resolve()
-    window, surface, guard = open_invoice(tmp, qapp)
+    window = MainWindow(state_root=str((tmp / "state").resolve()))
+    shop = tmp / "shop"
+    _project(window, shop)
+    path = shop / "forms" / "invoice.ui"
+    (path.parent / "invoice_window.py").write_text(window_source(), encoding="utf-8")
+    surface = _open(window, qapp, path, _behavior_form())
+    guard = _NoMouse()
+    qapp.installEventFilter(guard)
     try:
         show_behavior_text(surface)
         page = surface._behavior_text_page  # type: ignore[attr-defined]
@@ -82,9 +117,13 @@ def _shoot(qapp: QApplication, folder: Path, scale: str) -> None:
             _pump(qapp)
             _grab(host, folder / ("find-forms-%s-%s.png" % (mode, scale)))
             surface.apply_theme(tokens)
-            page.resize(420, 640)
-            _pump(qapp)
-            _grab(page, folder / ("read-as-text-%s-%s.png" % (mode, scale)))
+            for width, stem in ((1000, "read-as-text"), (500, "read-as-text-500")):
+                page.setMinimumWidth(0)
+                page.setMaximumWidth(16777215)
+                page.resize(width, 720)
+                page._fit_column()  # type: ignore[attr-defined]
+                _pump(qapp)
+                _grab(page, folder / ("%s-%s-%s.png" % (stem, mode, scale)))
     finally:
         host.close()
         _close(window, qapp, guard)

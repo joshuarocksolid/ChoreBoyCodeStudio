@@ -15,7 +15,8 @@ def test_invoice_sentences_include_the_rule_and_the_total() -> None:
     assert "Discount rate is enabled only when Discount is checked." in texts
     assert "Line total is always Qty \u00d7 Price." in texts
     assert any(sentence.section == "CHECKS" and "Enter an email address" in sentence.text for sentence in sentences)
-    assert any(sentence.section == "EVENTS" and "Call save_invoice()" in sentence.text for sentence in sentences)
+    assert any(sentence.section == "EVENTS" and "call save_invoice" in sentence.text for sentence in sentences)
+    assert not any("Call save_invoice()" in sentence.text for sentence in sentences)
     assert [sentence.number for sentence in sentences] == list(range(1, len(sentences) + 1))
     sections = []
     for sentence in sentences:

@@ -26,31 +26,56 @@ def _box(page: QWidget, child: QWidget) -> QRect:
     return QRect(int(origin.x()), int(origin.y()), int(child.width()), int(child.height()))
 
 
-def _assert_width(page: QWidget, width: int, qapp: QApplication) -> None:
+def _named(page: QWidget, prefix: str) -> list:
+    return [
+        child
+        for child in page.findChildren(QWidget)
+        if child.objectName().startswith(prefix) and child.isVisible()
+    ]
+
+
+def _assert_width(page: QWidget, width: int, qapp: QApplication, *, wrapped: bool) -> None:
     page.setParent(None)
     page.setMinimumWidth(0)
-    page.setMaximumWidth(width)
+    page.setMaximumWidth(16777215)
     page.setFixedWidth(width)
     page.resize(width, 900)
     page.show()
     _pump(qapp)
-    bounds = page.rect()
-    rows = [
-        child
-        for child in page.findChildren(QWidget)
-        if child.objectName().startswith("formBuilder.readText.") and child.isVisible()
-    ]
-    assert rows
-    rects = []
-    for row in rows:
-        rect = _box(page, row)
-        assert bounds.contains(rect), row.objectName()
+    column = page.findChild(QWidget, "formBuilder.readText.column")
+    assert isinstance(column, QWidget)
+    column_box = _box(page, column)
+    assert page.rect().contains(column_box)
+    paragraphs = _named(page, "formBuilder.readText.paragraph.")
+    numbers = _named(page, "formBuilder.readText.number.")
+    headers = _named(page, "formBuilder.readText.title.")
+    heading = page.findChild(QWidget, "formBuilder.readText.heading")
+    assert paragraphs and numbers and isinstance(heading, QWidget)
+    text_left = None
+    for paragraph in paragraphs:
+        number_name = paragraph.objectName().replace("paragraph.", "number.")
+        number = page.findChild(QWidget, number_name)
+        assert isinstance(number, QWidget)
+        paragraph_box = _box(column, paragraph)
+        number_box = _box(column, number)
+        assert column.rect().contains(paragraph_box), paragraph.objectName()
+        assert column.rect().contains(number_box)
+        assert paragraph_box.left() >= number_box.right() - 1
+        if text_left is None:
+            text_left = paragraph_box.left()
+        assert paragraph_box.left() == text_left
+    pieces = paragraphs + numbers + headers + [heading]
+    rects = [_box(page, piece) for piece in pieces]
+    for rect in rects:
+        assert page.rect().contains(rect)
         assert rect.width() > 0 and rect.height() > 0
-        rects.append(rect)
     for index, rect in enumerate(rects):
         for other in rects[index + 1 :]:
             overlap = rect.intersected(other)
             assert overlap.width() <= 1 or overlap.height() <= 1
+    if wrapped:
+        line = paragraphs[0].fontMetrics().height()
+        assert any(paragraph.height() > line + 2 for paragraph in paragraphs)
 
 
 def _assert_widths(qapp: QApplication, tmp_path: Path) -> None:
@@ -61,8 +86,8 @@ def _assert_widths(qapp: QApplication, tmp_path: Path) -> None:
         show_behavior_text(surface)
         page = getattr(surface, "_behavior_text_page", None)
         assert isinstance(page, QWidget)
-        for width in (184, 320):
-            _assert_width(page, width, qapp)
+        _assert_width(page, 320, qapp, wrapped=True)
+        _assert_width(page, 1000, qapp, wrapped=False)
     finally:
         _close(window, qapp, guard)
 

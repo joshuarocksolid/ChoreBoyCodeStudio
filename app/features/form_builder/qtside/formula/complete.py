@@ -6,35 +6,8 @@ from dataclasses import dataclass
 from typing import Tuple
 
 from app.features.form_builder.engine.logic.formula.env import FormulaEnv, WidgetFacts
+from app.features.form_builder.engine.logic.formula.kind_words import kind_words as _kind
 from app.features.form_builder.engine.logic.formula.library import FUNCTIONS
-from app.features.form_builder.engine.logic.formula.types import (
-    FKind,
-    lookup_spec,
-    main_type,
-)
-
-_KIND_WORDS = {
-    "text": "Text",
-    "whole": "Whole number",
-    "money": "Money",
-    "percent": "Percent",
-    "date": "Date",
-    "time": "Time",
-}
-
-_TYPE_WORDS = {
-    FKind.TEXT: "Text",
-    FKind.WHOLE: "Whole number",
-    FKind.NUMBER: "Number",
-    FKind.MONEY: "Money",
-    FKind.YESNO: "Yes or no",
-    FKind.DATE: "Date",
-    FKind.TIME: "Time",
-    FKind.DATETIME: "Date and time",
-    FKind.PAGE: "Page",
-    FKind.CHOICE: "Choice",
-    FKind.COLUMN: "Column",
-}
 
 
 @dataclass(frozen=True)
@@ -94,26 +67,3 @@ def _token(text: str, cursor: int) -> Tuple[int, str]:
 
 def _prefix(prefix: str, value: str) -> bool:
     return value.casefold().startswith(prefix.casefold())
-
-
-def _kind(env: FormulaEnv, facts: WidgetFacts) -> str:
-    code = (facts.kind or "").strip()
-    if code in _KIND_WORDS:
-        return _KIND_WORDS[code]
-    if code.startswith("number:"):
-        return "Number"
-    chain = env.class_chain(facts.class_name)
-    matched, spec = lookup_spec(facts.class_name, chain)
-    if spec is None or matched is None:
-        return facts.class_name
-    found, _unknown = main_type(
-        spec,
-        matched,
-        kind=facts.kind,
-        prefix=facts.prefix,
-        decimals=facts.decimals,
-        has_items_data=facts.has_items_data,
-    )
-    if found is None:
-        return facts.class_name
-    return _TYPE_WORDS.get(found.kind, facts.class_name)

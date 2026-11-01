@@ -20,9 +20,7 @@ from app.features.form_builder.engine.logic.checks import (
 from app.features.form_builder.engine.logic.events import read_events
 from app.features.form_builder.engine.logic.events_catalog import class_chain, event_clause, step_words
 from app.features.form_builder.engine.logic.formula.env import FormulaEnv
-from app.features.form_builder.engine.logic.formula.nodes import Bin, Bool, Call, IfElse, Lit, Ref, Unary
-from app.features.form_builder.engine.logic.formula.parse import parse_text
-from app.features.form_builder.engine.logic.formula.types import lookup_spec
+from app.features.form_builder.engine.logic.formula.speak import speak_text
 from app.features.form_builder.engine.logic.formula_env import env_for
 from app.features.form_builder.engine.logic.storage import FORMULA_KEYS
 from app.features.form_builder.engine.query.tab_stops import caption, display_name, form_row_pairs
@@ -132,122 +130,7 @@ def _stored(node: object, key: str) -> Optional[str]:
 
 
 def _speak_formula(text: str, env: FormulaEnv, kind: str) -> str:
-    """English for a formula the builder can show. Empty when it cannot.
-
-    The phrase tables match ``qtside/formula/builder/words.py``. This module
-    cannot import that file: engine code is not allowed to import qtside.
-    """
-    parsed = parse_text(text.strip(), env)
-    tree = parsed.tree
-    if tree is None:
-        return ""
-    if kind == "condition":
-        return _speak_condition(tree, env)
-    if kind == "value":
-        return _speak_value(tree, env)
-    return ""
-
-
-def _speak_condition(node: object, env: FormulaEnv) -> str:
-    if isinstance(node, Bool) and node.op in ("and", "or"):
-        parts = [_speak_row(part, env) for part in node.values]
-        if any(not part for part in parts) or len(parts) < 2:
-            return ""
-        joiner = " or " if node.op == "or" else " and "
-        return joiner.join(parts)
-    return _speak_row(node, env)
-
-
-def _speak_row(node: object, env: FormulaEnv) -> str:
-    if isinstance(node, Ref) and _family(env, node.name) == "yesno":
-        return "%s is checked" % _widget(env, node.name)
-    if isinstance(node, Unary) and node.op == "not" and isinstance(node.x, Ref):
-        if _family(env, node.x.name) == "yesno":
-            return "%s is not checked" % _widget(env, node.x.name)
-    if isinstance(node, Call) and node.args and isinstance(node.args[0], Ref):
-        field = _widget(env, node.args[0].name)
-        if node.func == "is_blank" and len(node.args) == 1:
-            return "%s is blank" % field
-        if node.func == "contains" and len(node.args) == 2:
-            other = _atom_text(node.args[1], env)
-            if other:
-                return "%s contains %s" % (field, other)
-        if node.func == "starts_with" and len(node.args) == 2:
-            other = _atom_text(node.args[1], env)
-            if other:
-                return "%s starts with %s" % (field, other)
-    return ""
-
-
-def _speak_value(node: object, env: FormulaEnv) -> str:
-    if isinstance(node, IfElse):
-        test = _speak_condition(node.test, env)
-        then_value = _speak_piece(node.then, env)
-        other = _speak_piece(node.other, env)
-        if not test or not then_value or not other:
-            return ""
-        return "If %s, then %s, otherwise %s" % (test, then_value, other)
-    return _speak_piece(node, env)
-
-
-def _speak_piece(node: object, env: FormulaEnv) -> str:
-    flat = _flatten(node, env)
-    if flat is None:
-        return ""
-    atoms, ops = flat
-    if len(atoms) == 1 and not ops:
-        return atoms[0]
-    if not (2 <= len(atoms) <= 4 and len(ops) == len(atoms) - 1):
-        return ""
-    text = atoms[0]
-    glyphs = {"+": "+", "-": "−", "*": "×", "/": "÷"}
-    for op, atom in zip(ops, atoms[1:]):
-        text = "%s %s %s" % (text, glyphs.get(op, op), atom)
-    return text
-
-
-def _flatten(node: object, env: FormulaEnv) -> Optional[Tuple[Tuple[str, ...], Tuple[str, ...]]]:
-    atom = _atom_text(node, env)
-    if atom:
-        return ((atom,), ())
-    if not isinstance(node, Bin) or node.op not in ("+", "-", "*", "/"):
-        return None
-    left = _flatten(node.a, env)
-    right = _flatten(node.b, env)
-    if left is None or right is None:
-        return None
-    return (left[0] + right[0], left[1] + (node.op,) + right[1])
-
-
-def _atom_text(node: object, env: FormulaEnv) -> str:
-    if isinstance(node, Ref):
-        return _widget(env, node.name)
-    if isinstance(node, Lit) and not isinstance(node.value, bool):
-        return str(node.value)
-    return ""
-
-
-def _widget(env: FormulaEnv, name: str) -> str:
-    facts = env.widgets.get(name)
-    if facts is None or not facts.display:
-        return name
-    return facts.display
-
-
-def _family(env: FormulaEnv, name: str) -> str:
-    facts = env.widgets.get(name)
-    if facts is None:
-        return ""
-    chain = tuple(info.name for info in QtClassTable.shared().chain(facts.class_name))
-    _matched, spec = lookup_spec(facts.class_name, chain)
-    rule = spec.type_rule if spec is not None else ""
-    if rule == "yesno":
-        return "yesno"
-    if rule in ("whole", "number_or_money", "number"):
-        return "number"
-    if rule in ("text", "kind", "choice_or_text"):
-        return "text"
-    return ""
+    return speak_text(text, env, kind)
 
 
 def _state(doc: UiDocument, env: FormulaEnv, displays: Dict[str, str]) -> List[Tuple[str, str]]:
@@ -319,6 +202,7 @@ def _events(doc: UiDocument, env: FormulaEnv, displays: Dict[str, str]) -> List[
         display = displays.get(state.sender, state.sender)
         chain = _chain(doc, state.sender, classes)
         clause = event_clause(state.signal_name, chain, display)
+        parts: List[str] = []
         for step in state.steps:
             target = step.target or doc.root.object_name
             named = displays.get(target, target)
@@ -328,13 +212,32 @@ def _events(doc: UiDocument, env: FormulaEnv, displays: Dict[str, str]) -> List[
                 is_form=target == doc.root.object_name,
                 target_chain=_chain(doc, target, classes),
             )
-            sentence = "When %s, %s." % (clause, words)
+            piece = _mid_sentence(words)
             if step.when and step.when.strip():
                 spoken = _speak_formula(step.when, env, "condition")
                 extra = spoken if spoken else "`%s`" % step.when.strip()
-                sentence = sentence[:-1] + ", only if %s." % extra
-            found.append(("EVENTS", sentence))
+                piece = "%s, only if %s" % (piece, extra)
+            parts.append(piece)
+        if not parts:
+            continue
+        found.append(("EVENTS", "When %s, %s." % (clause, _join_steps(parts))))
     return found
+
+
+def _mid_sentence(words: str) -> str:
+    """Step words sit after 'When …,'. The first letter drops, and so does an empty call."""
+    text = words.strip()
+    if text.endswith("()"):
+        text = text[:-2].rstrip()
+    if not text:
+        return ""
+    return text[0].lower() + text[1:]
+
+
+def _join_steps(parts: Sequence[str]) -> str:
+    if len(parts) == 1:
+        return parts[0]
+    return "%s, then %s" % (", ".join(parts[:-1]), parts[-1])
 
 
 def _chain(doc: UiDocument, name: str, classes: QtClassTable) -> Tuple[str, ...]:
