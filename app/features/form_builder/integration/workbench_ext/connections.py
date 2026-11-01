@@ -22,6 +22,8 @@ from app.features.form_builder.qtside.canvas.layers.connections import (
     drawable_steps,
     mark_at,
 )
+from app.features.form_builder.qtside.canvas.layers.feeds import NAME as FEEDS
+from app.features.form_builder.qtside.canvas.layers.feeds import form_has_rules
 from app.features.form_builder.qtside.canvas.layers.logic_badges import NAME as BADGES
 from app.features.form_builder.qtside.canvas.layers.logic_badges import mark_at as badge_at
 from app.features.form_builder.qtside.canvas.layers.logic_badges import tip_at
@@ -46,15 +48,16 @@ def layer_plan(
     behavior: bool,
     show_all: bool,
     has_events: bool,
+    has_rules: bool = False,
 ) -> Tuple[bool, Optional[str]]:
     """``(badges on, arrow scope or None)``.
 
     Badges show in Design when no overlay is open. Scope ``all`` wins over the
     Behavior tab. Tab order and Buddies hide arrows even when Show all is on,
     so those clicks are not stolen. Any other overlay hides arrows unless
-    Show all is on.
+    Show all is on. A form with rules and no events uses the same scope.
     """
-    if not design or not has_events:
+    if not design or not (has_events or has_rules):
         return False, None
     if overlay in ("tab_order", "buddies"):
         return False, None
@@ -134,12 +137,15 @@ class ConnectionHost(QObject):
             return
         self._wire(surface)
         canvas = workbench.canvas
+        document = workbench._session.document
+        has_rules = form_has_rules(document)
         badges, scope = layer_plan(
             bool(surface.can_use_overlays()),
             str(getattr(surface._modes, "active", "") or ""),
             _behavior(workbench),
             self._show_all,
-            bool(read_events(workbench._session.document)),
+            bool(read_events(document)),
+            has_rules,
         )
         if badges:
             canvas.show_layer(BADGES, True)
@@ -149,6 +155,10 @@ class ConnectionHost(QObject):
             canvas.hide_layer(ARROWS)
         else:
             canvas.show_layer(ARROWS, ArrowState(scope, self._hover, self._aimed))
+        if scope is not None and has_rules:
+            canvas.show_layer(FEEDS, scope)
+        else:
+            canvas.hide_layer(FEEDS)
         self._announce()
 
     def eventFilter(self, watched: QObject, event: QEvent) -> bool:

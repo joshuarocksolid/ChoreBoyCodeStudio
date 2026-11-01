@@ -540,10 +540,15 @@ def read_property(
         key = EditorKey("enum")
     else:
         key = editor_key(name, element)
-    return _open_or_kept(
+    opened = _open_or_kept(
         facts, spec, name, value, ValueSpec(element, enum, chosen), key, write,
         origin=origin, dynamic=dynamic and kind == "property",
     )
+    if not isinstance(opened, OpenRow):
+        return opened
+    from app.features.form_builder.qtside.inspector.editors.calculated import rule_row
+
+    return rule_row(facts.document, owners, opened)
 
 def filter_rows(rows: Sequence[Row], search: str) -> Tuple[Row, ...]:
     needle = search.strip().lower()

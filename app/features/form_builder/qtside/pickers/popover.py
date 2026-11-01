@@ -14,6 +14,7 @@ from app.qt.QtWidgets import (
     QLabel,
     QLineEdit,
     QListView,
+    QPlainTextEdit,
     QStyledItemDelegate,
     QStyle,
     QStyleOptionViewItem,
@@ -219,6 +220,8 @@ class EventPicker(QFrame):
             return True
         if on_verb and key not in _ENTER and key != _ESCAPE:
             return False
+        if on_verb and key in _ENTER and self._shift_keeps_the_line(event):
+            return False
         if key == _UP:
             return self._press("up")
         if key == _DOWN:
@@ -236,6 +239,15 @@ class EventPicker(QFrame):
         if key == _BACK and self._line() is self.field:
             return False
         return False
+
+    def _shift_keeps_the_line(self, event: QKeyEvent) -> bool:
+        mods = enum_value(event.modifiers())
+        shift = enum_value(Qt.KeyboardModifier.ShiftModifier)
+        if not mods & shift:
+            return False
+        from app.features.form_builder.qtside.formula.editor import FormulaEditor
+
+        return isinstance(QApplication.focusWidget(), FormulaEditor)
 
     def _line(self) -> QLineEdit:
         return self.field if self.field.isVisible() else self.search
@@ -333,22 +345,54 @@ class EventPicker(QFrame):
             return
         self._clear_verb()
         self._verb_names = names
-        from app.features.form_builder.qtside.pickers.verb_pages import formula_line
+        from app.features.form_builder.engine.logic.formula import SlotKind
+        from app.features.form_builder.engine.logic.formula.types import ANY
+        from app.features.form_builder.engine.logic.formula_env import env_for
+        from app.features.form_builder.qtside.pickers.verb_pages import formula_line, wire_verb_text
 
+        env = None
+        if self._ctx is not None:
+            env = env_for(self._ctx.doc, None, QtClassTable.shared())
         first = None
         for item in page.rows:
             if item.kind != "vfield":
                 continue
             label = QLabel(item.text, self.verb_box)
-            edit = formula_line(self.verb_box) if item.note == "formula" else QLineEdit(self.verb_box)
-            edit.setObjectName("formBuilder.verbField.%s" % item.payload)
+            status = None
+            if item.note == "formula" and item.payload != "when":
+                field_env = env
+                if field_env is None:
+                    from app.features.form_builder.engine.logic.formula.env import FormulaEnv
+
+                    field_env = FormulaEnv.for_test()
+                slot = SlotKind.message() if page.intent_id == "message" else SlotKind.set(ANY)
+                edit = formula_line(
+                    self.verb_box,
+                    field_env,
+                    slot,
+                    self._chrome,
+                    object_name="formBuilder.verbField.%s" % item.payload,
+                )
+                status = QLabel(self.verb_box)
+                status.setObjectName("formBuilder.verbStatus.%s" % item.payload)
+                status.setWordWrap(True)
+                status.setMinimumWidth(0)
+                muted = getattr(self._chrome, "muted", "") or getattr(self._chrome, "text", "")
+                if muted:
+                    status.setStyleSheet("color: %s; background: transparent;" % muted)
+                status.hide()
+                edit.set_status_label(status)
+            else:
+                edit = QLineEdit(self.verb_box)
+                edit.setObjectName("formBuilder.verbField.%s" % item.payload)
             edit.setAccessibleName(item.text)
             edit.setPlaceholderText(item.text)
-            edit.setText(item.faint)
+            wire_verb_text(edit, item.faint, lambda text, name=item.payload: self._verb_typed(name, text))
             edit.installEventFilter(self)
-            edit.textChanged.connect(lambda text, name=item.payload: self._verb_typed(name, text))
             self.verb_fields.addWidget(label)
             self.verb_fields.addWidget(edit)
+            if status is not None:
+                self.verb_fields.addWidget(status)
             if first is None:
                 first = edit
         self.verb_box.show()
@@ -370,7 +414,7 @@ class EventPicker(QFrame):
         self._press("vfield", "%s\n%s" % (name, text))
 
     def _focus_verb(self, direction: int) -> None:
-        edits = self.verb_box.findChildren(QLineEdit)
+        edits = self._verb_edits()
         if not edits:
             return
         focus = QApplication.focusWidget()
@@ -379,6 +423,20 @@ class EventPicker(QFrame):
         except ValueError:
             index = 0
         edits[(index + direction) % len(edits)].setFocus()
+
+    def _verb_edits(self) -> list:
+        edits = []
+        for index in range(self.verb_fields.count()):
+            item = self.verb_fields.itemAt(index)
+            widget = item.widget() if item is not None else None
+            if widget is None:
+                continue
+            name = widget.objectName()
+            if not name.startswith("formBuilder.verbField"):
+                continue
+            if isinstance(widget, (QLineEdit, QPlainTextEdit)):
+                edits.append(widget)
+        return edits
 
     def _fill(self, page: Page) -> None:
         # Every match is in the model. The view paints only the rows in view.

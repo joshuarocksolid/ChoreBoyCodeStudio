@@ -1,21 +1,52 @@
-"""One editor page per M7 verb. Formula fields are a plain line until the FX editor lands."""
+"""One editor page per M7 verb. Formula fields use the FX editor."""
 
 from __future__ import annotations
 
 import json
-from typing import Tuple
+from types import SimpleNamespace
+from typing import Callable, Tuple
 
 from app.qt.QtWidgets import QLineEdit, QWidget
 
+from app.features.form_builder.engine.logic.formula import SlotKind
+from app.features.form_builder.engine.logic.formula.env import FormulaEnv
+from app.features.form_builder.qtside.formula.editor import FormulaEditor
 from app.features.form_builder.qtside.pickers.flow import Item, Page
+from app.features.form_builder.qtside.theme.chrome import FormChrome
 
 
-def formula_line(parent: QWidget) -> QLineEdit:
-    """The formula field. M7.2b replaces this function with the FX editor."""
-    edit = QLineEdit(parent)
-    edit.setObjectName("formBuilder.formulaLine")
+def formula_line(
+    parent: QWidget,
+    env: FormulaEnv,
+    slot: SlotKind,
+    chrome: FormChrome,
+    reader: object = None,
+    object_name: str = "",
+) -> FormulaEditor:
+    """The formula field. Enter and Esc stay with the picker."""
+    edit = FormulaEditor(parent)
+    if object_name:
+        edit.setObjectName(object_name)
+    edit.set_context(env, slot, reader if reader is not None else SimpleNamespace())
+    edit.set_chrome(chrome)
     edit.setAccessibleName("Formula")
+    edit.setMinimumWidth(0)
     return edit
+
+
+def wire_verb_text(edit: QWidget, text: str, on_text: Callable[[str], None]) -> None:
+    """Put ``text`` in the field and report later edits as plain text."""
+    if isinstance(edit, FormulaEditor):
+        edit.show_text(text)
+
+        def _read() -> None:
+            on_text(edit.toPlainText())
+
+        edit.textChanged.connect(_read)
+        return
+    if isinstance(edit, QLineEdit):
+        edit.setText(text)
+        edit.textChanged.connect(on_text)
 
 
 _PAIRS = {

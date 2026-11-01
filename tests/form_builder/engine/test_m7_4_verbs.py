@@ -292,7 +292,7 @@ def test_each_verb_emits_and_runs(tmp_path: Path, qapp: Any) -> None:
     ast.parse(source, feature_version=(3, 9))
     for fragment in (
         "_cbcs_value = 'Hi'",
-        'self.nameEdit.setText("" if _cbcs_value is None else _cbcs_value)',
+        'self.nameEdit.setText("" if _cbcs_value is None else str(_cbcs_value))',
         "self.phoneEdit.setFocus()",
         "self.giftCheck.setEnabled(True)",
         "self.nameEdit.show()",

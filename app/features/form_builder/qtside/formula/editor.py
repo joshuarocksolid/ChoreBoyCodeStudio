@@ -159,9 +159,13 @@ class FormulaEditor(QPlainTextEdit):
         self._chrome = chrome
         self._highlighter.set_colors(chrome)
         if chrome.text and chrome.input:
+            name = (self.objectName() or "formBuilder.formula").replace("\\", "\\\\").replace(".", "\\.")
+            focus = chrome.focus_width if chrome.focus_width > 0 else 1
+            ink = chrome.accent or chrome.text
             self.setStyleSheet(
-                "QPlainTextEdit#formBuilder\\.formula { color: %s; background: %s; border: 1px solid %s; }"
-                % (chrome.text, chrome.input, chrome.border)
+                "QPlainTextEdit#%s { color: %s; background: %s; border: 1px solid %s; }"
+                "QPlainTextEdit#%s:focus { border: %dpx solid %s; }"
+                % (name, chrome.text, chrome.input, chrome.border, name, focus, ink)
             )
         self._paint_list(self._complete)
         self._paint_list(self._fix_list)
@@ -443,6 +447,8 @@ class FormulaEditor(QPlainTextEdit):
         label.setToolTip(text)  # type: ignore[attr-defined]
         label.setWordWrap(True)  # type: ignore[attr-defined]
         label.setText(text)  # type: ignore[attr-defined]
+        if text:
+            label.setVisible(True)  # type: ignore[attr-defined]
         label.setMinimumHeight(0)  # type: ignore[attr-defined]
         measure = int(label.contentsRect().width())  # type: ignore[attr-defined]
         if measure >= 20 and bool(label.hasHeightForWidth()):  # type: ignore[attr-defined]
@@ -484,25 +490,47 @@ class FormulaEditor(QPlainTextEdit):
             pad.layout().activate()
         if host.layout() is not None:
             host.layout().activate()
-        width = host.width() if host is not self and host.width() > 20 else max(self.width(), 160)
-        widget.setFixedWidth(max(160, width))
+        margin = 8
+        if host is self or host.width() <= 20:
+            origin_x = 0
+            width = max(self.width(), 160)
+        else:
+            origin_x = margin
+            width = max(120, host.width() - margin * 2)
+        screen = host.screen() if host is not self else None
+        if screen is not None:
+            avail = screen.availableGeometry()
+            left = host.mapToGlobal(QPoint(origin_x, 0)).x()
+            width = min(width, max(120, avail.right() - left - 4))
+        widget.setFixedWidth(width)
         if widget is self._complete and self._rows:
             self._fill(
                 widget,
                 [_fit_completion(row.label, widget.fontMetrics(), widget.viewport().width()) for row in self._rows],
             )
         list_h = widget.height()
-        if pad is not None and pad.objectName() == "formBuilder.state.edit" and host is not self:
-            below = pad.mapTo(host, QPoint(0, pad.height() + 2))
-            if below.y() + list_h > host.height():
-                above = self.mapTo(host, QPoint(0, -(list_h + 2)))
-                point = above if above.y() >= 0 else below
-            else:
-                point = below
-        elif host is self:
+        if host is self:
             point = QPoint(0, self.height())
         else:
-            point = self.mapTo(host, QPoint(0, self.height() + 1))
+            if pad is not None and pad.objectName() == "formBuilder.state.edit":
+                below_anchor = pad
+            elif self._status is not None and self._status.isVisible():
+                below_anchor = self._status
+            else:
+                below_anchor = self
+            below_y = below_anchor.mapTo(host, QPoint(0, below_anchor.height() + 2)).y()
+            above_y = self.mapTo(host, QPoint(0, -(list_h + 2))).y()
+            fits = below_y >= margin and below_y + list_h <= host.height() - margin
+            if screen is not None and fits:
+                global_y = host.mapToGlobal(QPoint(0, below_y)).y()
+                fits = global_y + list_h <= screen.availableGeometry().bottom() - 4
+            if fits:
+                top = below_y
+            elif above_y >= 0:
+                top = above_y
+            else:
+                top = max(0, below_y)
+            point = QPoint(origin_x, top)
         widget.move(point)
         widget.raise_()
         widget.show()
@@ -545,11 +573,15 @@ class FormulaEditor(QPlainTextEdit):
 
     def _popup_host(self) -> QWidget:
         current: Optional[QWidget] = self.parentWidget()
+        picker: Optional[QWidget] = None
         while current is not None:
-            if current.objectName() == "formBuilder.state":
+            name = current.objectName()
+            if name == "formBuilder.state":
                 return current
+            if name == "formBuilder.eventPicker":
+                picker = current
             current = current.parentWidget()
-        return self
+        return picker if picker is not None else self
 
     def _paint_list(self, widget: QListWidget) -> None:
         chrome = self._chrome

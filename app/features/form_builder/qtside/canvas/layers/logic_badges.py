@@ -230,9 +230,15 @@ def _seat_badges(
             if other != rect
         ]
         occupied_near = _near(basis.occupied_index, rect.y - BADGE - 4, rect.y + rect.height + BADGE + 4)
-        if seat is None or _covers(seat, occupied_near, rect) or _hits(seat, neighbours):
-            seat = _badge_fallback(rect, neighbours)
-        if seat is None or _covers(seat, occupied_near, rect) or _hits(seat, neighbours):
+        if seat is None or _covers(seat, occupied_near, rect) or _hits(seat, neighbours) or _hits(seat, chips):
+            seat = _badge_fallback(rect, neighbours, chips)
+        if seat is None or _hits(seat, chips):
+            continue
+        others = [other for other in neighbours if not _same_rect(other, rect)]
+        if seat.intersects(rect):
+            if _hits(seat, others):
+                continue
+        elif _covers(seat, occupied_near, rect) or _hits(seat, others):
             continue
         found.append((sender, seat))
     return tuple(found)
@@ -515,18 +521,59 @@ def _hits(seat: CanvasRect, blockers: Sequence[CanvasRect]) -> bool:
     return any(seat.intersects(other) for other in blockers)
 
 
-def _badge_fallback(rect: CanvasRect, blockers: Sequence[CanvasRect]) -> Optional[CanvasRect]:
-    """A corner of this widget that clears the title band and every other widget."""
+def _same_rect(a: CanvasRect, b: CanvasRect) -> bool:
+    return a.x == b.x and a.y == b.y and a.width == b.width and a.height == b.height
+
+
+def _chip_covers(rect: CanvasRect, chips: Sequence[CanvasRect], *, right: bool) -> bool:
+    if right:
+        corner = CanvasRect(rect.x + rect.width - BADGE - 4, rect.y - BADGE - 4, BADGE + 10, BADGE + 8)
+    else:
+        corner = CanvasRect(rect.x - 2, rect.y - BADGE - 4, BADGE + 10, BADGE + 8)
+    return any(chip.intersects(corner) for chip in chips)
+
+
+def _badge_fallback(
+    rect: CanvasRect,
+    blockers: Sequence[CanvasRect],
+    chips: Sequence[CanvasRect] = (),
+) -> Optional[CanvasRect]:
+    """A corner clear of neighbours and of the selection chip.
+
+    Outside corners come first. When every outside corner is taken, the mark
+    sits inside the corner opposite the chip so the chip cannot cover it.
+    """
     y_above = rect.y - BADGE - 2
     y_below = rect.y + rect.height + 2
-    spots = (
-        CanvasRect(rect.x + rect.width - BADGE, y_above, BADGE, BADGE),
-        CanvasRect(rect.x, y_above, BADGE, BADGE),
-        CanvasRect(rect.x + rect.width - BADGE, y_below, BADGE, BADGE),
-        CanvasRect(rect.x, y_below, BADGE, BADGE),
+    inset = 2
+    right_out = CanvasRect(rect.x + rect.width - BADGE, y_above, BADGE, BADGE)
+    left_out = CanvasRect(rect.x, y_above, BADGE, BADGE)
+    right_below = CanvasRect(rect.x + rect.width - BADGE, y_below, BADGE, BADGE)
+    left_below = CanvasRect(rect.x, y_below, BADGE, BADGE)
+    right_in = CanvasRect(rect.x + max(0, rect.width - BADGE - inset), rect.y + inset, BADGE, BADGE)
+    left_in = CanvasRect(rect.x + inset, rect.y + inset, BADGE, BADGE)
+    right_low = CanvasRect(
+        rect.x + max(0, rect.width - BADGE - inset),
+        rect.y + max(inset, rect.height - BADGE - inset),
+        BADGE,
+        BADGE,
     )
+    left_low = CanvasRect(rect.x + inset, rect.y + max(inset, rect.height - BADGE - inset), BADGE, BADGE)
+    # A one-line widget has no room for a mark on its text. Below, then the bottom corner.
+    if rect.height < BADGE * 3:
+        right_in, left_in = right_low, left_low
+    right_first = (right_out, right_below, left_out, left_below, right_in, left_in)
+    left_first = (left_out, left_below, right_out, right_below, left_in, right_in)
+    chip_on_right = _chip_covers(rect, chips, right=True)
+    chip_on_left = _chip_covers(rect, chips, right=False)
+    spots = left_first if chip_on_right and not chip_on_left else right_first
+    walls = tuple(blockers) + tuple(chips)
     for spot in spots:
-        if not _hits(spot, blockers) and not spot.intersects(rect):
+        if spot.intersects(rect) or _hits(spot, walls):
+            continue
+        return spot
+    for spot in spots:
+        if spot.intersects(rect) and not _hits(spot, walls):
             return spot
     return None
 

@@ -289,6 +289,39 @@ def main_type(
     return _RULE_TYPE[rule], False
 
 
+def written_type(
+    spec: ValueSpec,
+    matched_class: str,
+    *,
+    kind: str,
+    prefix: str,
+    decimals: int,
+    has_items_data: bool,
+    fmt: str = "",
+) -> FType:
+    """The type a value formula must produce for this widget.
+
+    A text label accepts a number and shows it. A format still wins, so money
+    stays money.
+    """
+    found, _unknown = main_type(
+        spec,
+        matched_class,
+        kind=kind,
+        prefix=prefix,
+        decimals=decimals,
+        has_items_data=has_items_data,
+    )
+    target = TEXT if found is None else found
+    if fmt == "money":
+        return MONEY
+    if fmt.startswith("number") or fmt.startswith("percent"):
+        return NUMBER
+    if matched_class == "QLabel" and target.kind == FKind.TEXT:
+        return ANY
+    return target
+
+
 # Arithmetic results. Missing pairs are FB102. BLANK is applied before lookup:
 # a blank side keeps the other side's type (text plus blank is text).
 def _fill_arith() -> Dict[Tuple[str, FKind, FKind], FKind]:

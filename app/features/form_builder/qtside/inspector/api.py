@@ -472,4 +472,12 @@ __all__ = [
     "Written",
     "editor_key",
     "mark",
+    "open_state_row",
 ]
+
+
+def open_state_row(inspector: object, key: str) -> None:
+    """Open a State row. Property editors use this instead of importing the section."""
+    from app.features.form_builder.qtside.inspector.behavior_ext.state import open_state_row as _open
+
+    _open(inspector, key)
