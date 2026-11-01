@@ -21,7 +21,7 @@ from app.features.form_builder.engine.logic.formula.env import SlotKind
 from app.features.form_builder.qtside.formula.builder.model import BLOCKED, load_formula
 from app.features.form_builder.qtside.formula.builder.view import FormulaBuilder
 from app.features.form_builder.qtside.formula.editor import FormulaEditor
-from app.features.form_builder.qtside.theme.chrome import FormChrome
+from app.features.form_builder.qtside.theme.chrome import FormChrome, link_ink
 
 _VALUE = frozenset({"value", "default"})
 
@@ -54,26 +54,34 @@ class _Modes:
         self.bar = QWidget(editor.parentWidget())
         self.bar.setObjectName("formBuilder.formula.bar")
         self.bar.setMinimumWidth(0)
-        row = QHBoxLayout(self.bar)
-        row.setContentsMargins(0, 0, 0, 0)
-        row.setSpacing(4)
+        column = QVBoxLayout(self.bar)
+        column.setContentsMargins(0, 0, 0, 0)
+        column.setSpacing(2)
+        self._row = QHBoxLayout()
+        self._row.setContentsMargins(0, 0, 0, 0)
+        self._row.setSpacing(4)
+        self._row.addStretch(1)
         self.switch = QPushButton("Formula ›", self.bar)
         self.switch.setObjectName("formBuilder.formula.switch")
-        self.switch.setMinimumWidth(0)
+        self.switch.setProperty("fbLink", True)
+        self.switch.setFlat(True)
+        self.switch.setCursor(getattr(getattr(Qt, "CursorShape", Qt), "PointingHandCursor"))
+        names = getattr(QSizePolicy, "Policy", QSizePolicy)
+        self.switch.setSizePolicy(getattr(names, "Maximum"), getattr(names, "Fixed"))
         self.switch.clicked.connect(self._toggle)
+        self._row.addWidget(self.switch)
         self.note = QLabel(self.bar)
         self.note.setObjectName("formBuilder.builder.blocked")
         self.note.setWordWrap(True)
         self.note.setMinimumWidth(0)
         self.note.setText(BLOCKED)
         self.note.hide()
-        names = getattr(QSizePolicy, "Policy", QSizePolicy)
         self.note.setSizePolicy(getattr(names, "Ignored"), getattr(names, "Minimum"))
         fitted = self.note.sizePolicy()
         fitted.setHeightForWidth(True)
         self.note.setSizePolicy(fitted)
-        row.addWidget(self.switch)
-        row.addWidget(self.note, 1)
+        column.addLayout(self._row)
+        column.addWidget(self.note)
         self.builder = FormulaBuilder(self._on_builder, editor.parentWidget() or self.bar)
         context = getattr(Qt, "WidgetWithChildrenShortcut")
         self._commit = QShortcut(QKeySequence("Ctrl+Return"), self.builder)
@@ -99,12 +107,13 @@ class _Modes:
         self.builder.apply_chrome(chrome)
         self.note.setStyleSheet("color: %s; background: transparent;" % chrome.text)
         focus = chrome.focus_width if chrome.focus_width > 0 else 1
-        ink = chrome.accent or chrome.text
+        ink = link_ink(chrome)
         self.switch.setStyleSheet(
-            "QPushButton { color: %s; background: %s; border: 1px solid %s; }"
+            "QPushButton { color: %s; background: transparent; border: none; padding: 0;"
+            " text-decoration: underline; }"
             "QPushButton:focus { border: %dpx solid %s; }"
-            "QPushButton:disabled { color: %s; }"
-            % (chrome.text, chrome.input, chrome.border, focus, ink, chrome.muted)
+            "QPushButton:disabled { color: %s; text-decoration: none; }"
+            % (ink, focus, chrome.accent or ink, chrome.muted)
         )
 
     def on_show_text(self, text: str) -> None:
@@ -183,6 +192,22 @@ class _Modes:
             self._fits = True
         finally:
             self._pushing = False
+        self._speak()
+
+    def _speak(self) -> None:
+        if not self._builder_on:
+            return
+        spoken = self.builder.spoken()
+        if not spoken:
+            return
+        self.editor._words = spoken  # type: ignore[attr-defined]
+        self.editor._publish_status()
+
+    def _home_switch(self) -> None:
+        self.builder.release_switch(self.switch)
+        self._row.removeWidget(self.switch)
+        self.switch.setParent(self.bar)
+        self._row.addWidget(self.switch)
 
     def _paint(self, *, take_focus: bool) -> None:
         self._commit.setEnabled(self._builder_on)
@@ -191,20 +216,26 @@ class _Modes:
         focus = QApplication.focusWidget()
         if self._builder_on:
             self.builder.show()
+            self.builder.adopt_switch(self.switch)
             # Hide the text field only after focus sits inside the builder.
             # Hiding a focused field moves focus out of State, and State then
-            # commits and closes the row.
+            # commits and closes the row. The link moves first, for the same reason.
             in_editor = focus is self.editor or (
                 focus is not None and self.editor.isAncestorOf(focus)
             )
-            if take_focus or in_editor:
+            in_bar = focus is self.switch or (focus is not None and self.bar.isAncestorOf(focus))
+            if take_focus or in_editor or in_bar:
                 self.builder.focus_first()
+            self.bar.hide()
             self.editor.hide()
             self.switch.setText("Formula ›")
             self.switch.setEnabled(True)
             self.switch.setToolTip("")
             self.note.hide()
+            self._speak()
         else:
+            self._home_switch()
+            self.bar.show()
             self.editor.show()
             in_builder = focus is self.builder or (
                 focus is not None and self.builder.isAncestorOf(focus)
@@ -214,6 +245,7 @@ class _Modes:
             self.builder.hide()
             self.switch.setText("‹ Builder")
             self.switch.setEnabled(self._fits)
+            self.editor._reanalyze()
             if self._fits:
                 self.switch.setToolTip("")
                 self.note.hide()
@@ -221,6 +253,8 @@ class _Modes:
                 self.switch.setToolTip(BLOCKED)
                 self.switch.setAccessibleDescription(BLOCKED)
                 self.note.show()
+                self.editor._words = BLOCKED  # type: ignore[attr-defined]
+                self.editor._publish_status()
         self.switch.setAccessibleName(self.switch.text())
 
 

@@ -118,6 +118,21 @@ def test_empty_text_is_an_empty_builder() -> None:
         assert write_formula(model) == ""
 
 
+def test_builder_readback_uses_menu_words() -> None:
+    from app.features.form_builder.qtside.formula.builder.words import speak
+
+    env = _env()
+    value = load_formula("qtySpin * priceSpin", env, "value")
+    assert value is not None
+    assert speak(value, env) == "Qty × Price"
+    choice = load_formula("qtySpin * priceSpin if discountCheck else 0", env, "value")
+    assert choice is not None
+    assert speak(choice, env) == "If Discount is checked, then Qty × Price, otherwise 0"
+    both = load_formula("discountCheck and discountCheck", env, "condition")
+    assert both is not None
+    assert speak(both, env) == "Discount is checked and Discount is checked"
+
+
 def test_picker_label_uses_the_display_name_and_kind() -> None:
     from app.features.form_builder.qtside.formula.builder.model import picker_label
 

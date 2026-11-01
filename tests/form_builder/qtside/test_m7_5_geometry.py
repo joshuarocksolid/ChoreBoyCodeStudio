@@ -12,13 +12,13 @@ from pathlib import Path
 import pytest
 
 from app.qt.QtCore import QPoint, QRect
-from app.qt.QtWidgets import QApplication, QWidget
+from app.qt.QtWidgets import QApplication, QComboBox, QWidget
 from tests.form_builder.qtside.test_m7_2b1_shots import _pump, _set_inspector_width, _with_pytest_path
 
 pytestmark = [pytest.mark.unit]
 
 _CONDITION = (
-    "formBuilder.formula.bar",
+    "formBuilder.formula.switch",
     "formBuilder.builder.cond.join",
     "formBuilder.builder.cond.row.0",
     "formBuilder.builder.cond.row.1",
@@ -26,7 +26,7 @@ _CONDITION = (
     "formBuilder.state.status",
 )
 _VALUE = (
-    "formBuilder.formula.bar",
+    "formBuilder.formula.switch",
     "formBuilder.builder.shape",
     "formBuilder.builder.if",
     "formBuilder.builder.then",
@@ -66,6 +66,28 @@ def _assert_rows(pane: QWidget, names: tuple) -> None:
             next_top = top
     if next_top is not None:
         assert pad_bottom <= next_top, (pad_bottom, next_top)
+    _assert_inside(pane)
+
+
+def _assert_inside(pane: QWidget) -> None:
+    """Every builder child sits in the section, and no combo is narrower than its hint."""
+
+    state = pane.findChild(QWidget, "formBuilder.state")
+    builder = pane.findChild(QWidget, "formBuilder.builder")
+    assert state is not None and builder is not None
+    content = state.contentsRect().adjusted(-1, -1, 1, 1)
+    for child in builder.findChildren(QWidget):
+        if not child.isVisible():
+            continue
+        rect = _mapped(child, state)
+        if rect.width() <= 0 or rect.height() <= 0:
+            continue
+        assert content.contains(rect), (child.objectName(), rect, content)
+    for combo in builder.findChildren(QComboBox):
+        if not combo.isVisible() or combo.width() <= 0:
+            continue
+        hint = combo.minimumSizeHint().width()
+        assert combo.width() + 1 >= hint, (combo.objectName(), combo.width(), hint)
 
 
 def _open_formula(pane: QWidget, key: str, text: str) -> None:

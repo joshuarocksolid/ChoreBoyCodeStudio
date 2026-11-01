@@ -8,7 +8,7 @@ import pytest
 from app.features.form_builder.qtside.inspector.behavior_ext.state import open_state_row
 from app.qt.QtCore import Qt
 from app.qt.QtTest import QTest
-from app.qt.QtWidgets import QApplication, QLineEdit, QPushButton, QWidget
+from app.qt.QtWidgets import QApplication, QLabel, QLineEdit, QPushButton, QWidget
 from tests.form_builder.qtside.test_m7_2b1_fx import _editor
 from tests.form_builder.qtside.test_m7_2b1_state import _select, _stored, desk, pump
 
@@ -53,6 +53,24 @@ def test_empty_condition_opens_in_the_builder_and_switches_without_loss(qapp: QA
         assert not editor.isVisible()
         assert editor.toPlainText() == ""
         assert switch.text() == "Formula ›"
+
+
+def test_builder_status_reads_the_condition_in_words(qapp: QApplication) -> None:
+    del qapp
+    with desk() as (session, pane):
+        _select(session, pane, "discountEdit")
+        open_state_row(pane, "cbcsEnabledWhen")
+        pump()
+        editor = _editor(pane)
+        editor.setFocus()
+        pump()
+        editor.setPlainText("discountCheck and discountCheck")
+        pump()
+        QTest.keyClick(_switch(pane), _key("Key_Space"))  # type: ignore[arg-type]
+        pump()
+        status = pane.findChild(QLabel, "formBuilder.state.status")
+        assert status is not None
+        assert status.text().splitlines()[-1] == "Discount is checked and Discount is checked"
 
 
 def test_a_complex_formula_disables_builder(qapp: QApplication) -> None:

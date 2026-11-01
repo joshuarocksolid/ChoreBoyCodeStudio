@@ -39,8 +39,10 @@ from app.qt.QtCore import QEvent, QObject, QTimer, Qt
 from app.qt.QtGui import QColor, QKeyEvent, QKeySequence, QPalette, QShowEvent
 from app.qt.QtWidgets import (
     QApplication,
+    QFrame,
     QLabel,
     QPushButton,
+    QScrollArea,
     QTabWidget,
     QVBoxLayout,
     QWidget,
@@ -61,6 +63,20 @@ def _cover_tabs(order: Tuple[TabId, ...]) -> Tuple[TabId, ...]:
 
 
 TAB_ORDER: Tuple[TabId, ...] = _cover_tabs((TabId.PROPERTIES, TabId.BEHAVIOR, TabId.DATA))
+
+
+def _behavior_scroll(page: QWidget, parent: QWidget) -> QScrollArea:
+    """The Behavior tab scrolls vertically. A short page must not crush the builder."""
+
+    scroll = QScrollArea(parent)
+    scroll.setObjectName("formBuilder.behaviorScroll")
+    scroll.setWidgetResizable(True)
+    scroll.setFocusPolicy(getattr(getattr(Qt, "FocusPolicy", Qt), "NoFocus"))
+    scroll.setFrameShape(getattr(getattr(QFrame, "Shape", QFrame), "NoFrame"))
+    scroll.setHorizontalScrollBarPolicy(getattr(getattr(Qt, "ScrollBarPolicy", Qt), "ScrollBarAlwaysOff"))
+    scroll.setWidget(page)
+    return scroll
+
 
 class InspectorPane(QWidget):
 
@@ -107,6 +123,7 @@ class InspectorPane(QWidget):
         self.properties = PropertiesPage(self._services, self._schedule, self.tabs)
         self.behavior = BehaviorPage(self._services, realizer, self.tabs)
         self.behavior.set_refresh(self._refresh_now)
+        self._behavior_scroll = _behavior_scroll(self.behavior, self.tabs)
         self._tab_index: Dict[TabId, int] = {}
         for tab in TAB_ORDER:
             if tab is TabId.DATA and not data_tab:
@@ -114,7 +131,7 @@ class InspectorPane(QWidget):
             if tab is TabId.PROPERTIES:
                 page: QWidget = self.properties
             elif tab is TabId.BEHAVIOR:
-                page = self.behavior
+                page = self._behavior_scroll
             else:
                 page = _data_page(self.tabs)
             self.tabs.addTab(page, tab.value.capitalize())
@@ -187,6 +204,15 @@ class InspectorPane(QWidget):
         )
         self.properties.set_match_color(chrome.search_match_bg)
         self.behavior.apply_colors(chrome.panel, chrome.text)
+        self._behavior_scroll.setStyleSheet(
+            "QScrollArea#formBuilder\\.behaviorScroll { background: %s; border: none; }"
+            % chrome.panel
+        )
+        viewport = self._behavior_scroll.viewport()
+        viewport.setAutoFillBackground(True)
+        viewport_palette = viewport.palette()
+        viewport_palette.setColor(QPalette.ColorRole.Window, QColor(chrome.panel))
+        viewport.setPalette(viewport_palette)
         data = self.findChild(QWidget, "formBuilder.dataBody")
         if data is not None:
             data.setStyleSheet(

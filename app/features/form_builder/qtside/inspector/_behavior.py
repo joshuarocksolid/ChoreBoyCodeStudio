@@ -23,7 +23,7 @@ from app.features.form_builder.qtside.inspector.behavior_ext import (
 from app.features.form_builder.qtside.inspector.model import BehaviorView
 from app.features.form_builder.qtside.realize import Realizer
 from app.qt.QtGui import QShowEvent
-from app.qt.QtWidgets import QVBoxLayout, QWidget
+from app.qt.QtWidgets import QSizePolicy, QVBoxLayout, QWidget
 
 logger = logging.getLogger(__name__)
 
@@ -47,6 +47,11 @@ class BehaviorPage(QWidget):
     ) -> None:
         super().__init__(parent)
         self.setObjectName("formBuilder.behaviorBody")
+        names = getattr(QSizePolicy, "Policy", QSizePolicy)
+        # Ignored on the width so a 236 px inspector can narrow the page.
+        # Minimum on the height so a short page scrolls instead of crushing rows.
+        self.setSizePolicy(getattr(names, "Ignored"), getattr(names, "Minimum"))
+        self.setMinimumWidth(0)
         self._services = services
         self._realizer = realizer
         self._registry = registry if registry is not None else default_registry()
