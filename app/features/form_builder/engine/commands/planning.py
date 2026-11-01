@@ -1199,7 +1199,7 @@ def set_logic(doc: UiDocument, ctx: PlanContext, owner: NodeId, key: str, text: 
     if pending and doc.revision != before:
         from app.features.form_builder.engine.logic.rules import note_formula_edit
 
-        note_formula_edit(doc, owner, key)
+        note_formula_edit(doc, owner, key, before)
 
 
 def allocate_spec(ctx: PlanContext, spec: NodeSpec) -> NodeSpec:

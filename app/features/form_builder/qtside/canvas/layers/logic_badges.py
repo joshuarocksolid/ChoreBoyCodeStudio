@@ -170,7 +170,7 @@ def _formula_touched(document: UiDocument, sender: str) -> bool:
     if names is None:
         names = set()
         held = getattr(document, "_formula_edits", None)
-        if isinstance(held, list) and len(held) == 2 and held[0] == revision and isinstance(held[1], list):
+        if isinstance(held, tuple) and len(held) == 2 and isinstance(held[1], list):
             for node_id, _prop in held[1]:
                 if not document.contains(node_id):
                     continue

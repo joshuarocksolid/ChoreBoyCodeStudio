@@ -33,12 +33,17 @@ def form_has_rules(doc: UiDocument) -> bool:
     """True when any formula text is set.
 
     A commit that only rewrites a formula keeps the same structure and the same
-    logic-property count, so the answer is reused.
+    logic-property count, so the answer is reused. Blanking a formula leaves the
+    property in place, so that answer is checked again.
     """
     stamp = (doc.structure_revision, doc.logic_property_count())
     held = _HAS_RULES.get(doc)
     if held is not None and (held[0], held[1]) == stamp:
-        return held[2]
+        answer = _cached_rules_answer(doc, held[2])
+        if answer is not None:
+            if answer != held[2]:
+                _HAS_RULES[doc] = (stamp[0], stamp[1], answer)
+            return answer
     found = False
     for node in doc.iter_widgets():
         for key in FORMULA_KEYS:
@@ -50,6 +55,33 @@ def form_has_rules(doc: UiDocument) -> bool:
         if found:
             break
     _HAS_RULES[doc] = (stamp[0], stamp[1], found)
+    return found
+
+
+def _cached_rules_answer(doc: UiDocument, found: bool) -> Optional[bool]:
+    """The cached answer, or None when a blanked formula has to be scanned.
+
+    Whitespace leaves the property set, so the logic-property count does not move.
+    A non-blank write on a form that had no rules is enough on its own.
+    """
+    note = getattr(doc, "_formula_edits", None)
+    if not isinstance(note, tuple) or len(note) != 2 or not isinstance(note[1], list) or not note[1]:
+        return found
+    blank = False
+    wrote = False
+    for node_id, key in note[1]:
+        if not doc.contains(node_id):
+            return None
+        stored = doc.node(node_id).value(key)
+        body = getattr(stored, "text", None)
+        if isinstance(body, str) and body.strip():
+            wrote = True
+        else:
+            blank = True
+    if found and blank:
+        return None
+    if not found and wrote:
+        return True
     return found
 
 

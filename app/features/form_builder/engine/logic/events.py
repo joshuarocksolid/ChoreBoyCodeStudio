@@ -313,7 +313,7 @@ def _formula_revision(doc: UiDocument) -> bool:
     if getattr(doc, "_formula_pending", False):
         return True
     held = getattr(doc, "_formula_edits", None)
-    return isinstance(held, list) and len(held) == 2 and held[0] == doc.revision and bool(held[1])
+    return isinstance(held, tuple) and len(held) == 2 and isinstance(held[1], list) and bool(held[1])
 
 
 def _event_fingerprint(doc: UiDocument) -> Tuple[object, ...]:

@@ -5,13 +5,12 @@ a widget's Value rule to a rule that reads that widget. Defaults are outside
 the refresh order. A default that reads a calculated field, and every node of
 a cycle, is FB104 and generates nothing.
 
-The graph reads formula text, so a hit in the same revision is reused. A later
-revision that changes formula text but not which widgets those formulas read
-keeps the previous order and only replaces the records. A geometry edit does
-not bump a separate counter: if the widget set and the read sets are unchanged
-the same order is reused, and if a widget moves the graph is built again. A
-different formula environment is a different cache key. The structure memo is
-not used: a rule commit does not move ``structure_revision``.
+The graph reads formula text, so a hit in the same revision is reused. A run of
+formula writes notes ``(base_revision, edits)``, where ``base_revision`` is the
+revision before the first write. Later formula writes in that run append.
+Anything else drops the note. The next graph replaces those records only when
+the cached graph was built at ``base_revision``. Otherwise it walks the form.
+A different formula environment is a different cache key.
 """
 
 from __future__ import annotations
@@ -96,19 +95,37 @@ _GRAPHS: "weakref.WeakKeyDictionary[UiDocument, Tuple[int, Dict[str, Tuple[RuleG
 )
 
 
-def note_formula_edit(doc: UiDocument, node_id: NodeId, key: str) -> None:
-    """Remember a formula write so the next graph update can skip the other widgets.
+def note_formula_edit(doc: UiDocument, node_id: NodeId, key: str, before: int) -> None:
+    """Remember formula writes since ``before`` so a later graph can patch them.
 
-    The note is for the revision the write just produced. A later geometry edit
-    moves the revision again and the note no longer applies.
+    ``before`` is the revision before this write. The first write of a run stores
+    that revision. A later write appends when the cached graph is still that
+    revision. A graph that is already current starts a new run.
     """
     if key not in FORMULA_KEYS:
+        doc._formula_edits = None  # type: ignore[attr-defined]
         return
     held = getattr(doc, "_formula_edits", None)
-    if not isinstance(held, list) or held[0] != doc.revision:
-        doc._formula_edits = [doc.revision, [(node_id, key)]]  # type: ignore[attr-defined]
+    cached = _GRAPHS.get(doc)
+    graph_rev = None if cached is None else cached[0]
+    if graph_rev == before or not _note_continues(held, graph_rev):
+        doc._formula_edits = (before, [(node_id, key)])  # type: ignore[attr-defined]
         return
-    held[1].append((node_id, key))
+    assert isinstance(held, tuple)
+    edits = list(held[1])
+    edits.append((node_id, key))
+    doc._formula_edits = (held[0], edits)  # type: ignore[attr-defined]
+
+
+def _note_continues(held: object, graph_rev: Optional[int]) -> bool:
+    """True when ``held`` is an unconsumed formula run for the cached graph."""
+    return (
+        graph_rev is not None
+        and isinstance(held, tuple)
+        and len(held) == 2
+        and held[0] == graph_rev
+        and isinstance(held[1], list)
+    )
 
 
 def rule_graph(doc: UiDocument, env: FormulaEnv) -> RuleGraph:
@@ -181,6 +198,8 @@ def _assemble(
             return _build(doc, env)
     if not changed:
         return previous, previous_reads
+    # FB104 names the widgets in a cycle, or says a default reads a calculated
+    # field. Neither message quotes formula text, so a text-only patch keeps them.
     graph = RuleGraph(
         records=MappingProxyType(dict(by_id)),
         diagnostics=previous.diagnostics,
@@ -243,8 +262,12 @@ def _build(doc: UiDocument, env: FormulaEnv) -> Tuple[RuleGraph, Dict[RuleId, Fr
 
 
 def _formula_edits(doc: UiDocument) -> Optional[List[Tuple[NodeId, str]]]:
+    """Edits to patch. None when the cached graph is not the note's base revision."""
     held = getattr(doc, "_formula_edits", None)
-    if not isinstance(held, list) or len(held) != 2 or held[0] != doc.revision:
+    if not isinstance(held, tuple) or len(held) != 2:
+        return None
+    cached = _GRAPHS.get(doc)
+    if cached is None or held[0] != cached[0]:
         return None
     edits = held[1]
     if not isinstance(edits, list) or not edits:
