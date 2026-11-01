@@ -77,7 +77,8 @@ def test_tab_inserts_the_object_name_and_ctrl_enter_is_one_undo(qapp: QApplicati
         assert list_top >= status_bottom - 2
         pane.window().resize(280, 720)
         pump()
-        assert status.height() > status.fontMetrics().lineSpacing()
+        needed = status.heightForWidth(max(1, status.width()))
+        assert status.height() + 1 >= needed
         list_top = listed.mapTo(state, QPoint(0, 0)).y()
         status_bottom = status.mapTo(state, QPoint(0, status.height())).y()
         assert list_top >= status_bottom - 2
@@ -342,7 +343,11 @@ def _assert_block(pane: QWidget, list_open: bool) -> None:
     inspector = state.window().findChild(QWidget, "formBuilder.inspector")
     if inspector is not None:
         assert state.width() <= inspector.width(), (state.width(), inspector.width())
-    assert status.isVisible() and "Fix or press Esc to undo this formula" in status.text()
+    assert status.isVisible()
+    if list_open:
+        assert "is not a field on this form" not in status.text()
+    else:
+        assert "Fix or press Esc to undo this formula" in status.text()
     status_bottom = status.mapTo(state, QPoint(0, status.height())).y()
     next_top = nxt.mapTo(state, QPoint(0, 0)).y()
     assert status_bottom <= next_top, (status_bottom, next_top, status.height(), status.width())

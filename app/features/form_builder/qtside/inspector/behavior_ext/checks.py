@@ -44,7 +44,6 @@ _UP = enum_value(Qt.Key.Key_Up)
 _DOWN = enum_value(Qt.Key.Key_Down)
 _DELETE = enum_value(Qt.Key.Key_Delete)
 _ALT = enum_value(Qt.KeyboardModifier.AltModifier)
-_ELIDE = getattr(getattr(Qt, "TextElideMode", Qt), "ElideRight")
 _OVERRIDE = enum_value(getattr(getattr(QEvent, "Type", QEvent), "ShortcutOverride"))
 _KEY_PRESS = enum_value(getattr(getattr(QEvent, "Type", QEvent), "KeyPress"))
 # User content for the form, the same red the check manual names. The hex
@@ -131,13 +130,15 @@ class _CheckRow(QWidget):
         self.words.setMinimumWidth(0)
         self.message = QLabel(self)
         self.message.setObjectName("formBuilder.checks.messageText.%d" % index)
+        self.message.setWordWrap(True)
         self.message.setMinimumWidth(0)
-        names = getattr(QSizePolicy, "Policy", QSizePolicy)
-        self.message.setSizePolicy(getattr(names, "Ignored"), getattr(names, "Preferred"))
+        message_policy = self.message.sizePolicy()
+        message_policy.setHeightForWidth(True)
+        self.message.setSizePolicy(message_policy)
         self.qt = QLabel("Qt", self)
         self.qt.setObjectName("formBuilder.checks.qt.%d" % index)
         host = QWidget(self)
-        host.setFixedHeight(24)
+        host.setMinimumHeight(22)
         host.setMinimumWidth(0)
         line = QHBoxLayout(host)
         line.setContentsMargins(0, 0, 0, 0)
@@ -199,15 +200,10 @@ class _CheckRow(QWidget):
 
     def _elide(self) -> None:
         full = self._full
-        if self.message.width() <= 0:
+        if self.message.text() != full:
             self.message.setText(full)
-            return
-        shown = self.message.fontMetrics().elidedText(full, _ELIDE, max(1, self.message.width()))
-        if self.message.text() != shown:
-            self.message.setText(shown)
-        tip = full if shown != full else ""
-        if self.message.toolTip() != tip:
-            self.message.setToolTip(tip)
+        if self.message.toolTip():
+            self.message.setToolTip("")
 
 
 _LEFT = getattr(getattr(Qt, "AlignmentFlag", Qt), "AlignLeft")

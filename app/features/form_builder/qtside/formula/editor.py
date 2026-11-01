@@ -201,7 +201,8 @@ class FormulaEditor(QPlainTextEdit):
         self.setFocus()
 
     def setFocus(self, *args: object, **kwargs: object) -> None:  # noqa: N802
-        # Key tests aim at this field by name. If Builder is up, that aim means Formula.
+        # Key tests and the mode tests aim at this field by name. Builder hides
+        # it, and that aim means Formula. present() is the call for hosts.
         reveal = getattr(self, "_reveal_formula", None)
         if callable(reveal) and not self.isVisible():
             reveal()
@@ -252,6 +253,16 @@ class FormulaEditor(QPlainTextEdit):
         if normalize(text) == "":
             return ""
         problem = _lead_problem(found)
+        # A visible completion row means an unfinished name, not a finished miss.
+        listing = self._complete.isVisible() and self._complete.count() > 0
+        prefix_miss = (
+            listing
+            and problem is not None
+            and "is not a field on this form" in problem.message
+        )
+        if prefix_miss:
+            phrase = _type_words(found)
+            return "%s    now: %s" % (phrase, self._now) if phrase else "now: %s" % self._now
         if problem is not None and _severity(problem.code) is Severity.ERROR:
             return "%s\n%s" % (problem.message, _ESC_SENTENCE)
         phrase = _type_words(found)

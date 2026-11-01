@@ -1,0 +1,21 @@
+{
+  "discount_before": false,
+  "discount_after": true,
+  "discount_how": "mouseClick",
+  "qty_how": "keyClick",
+  "price_how": "keyClick",
+  "qty": 2,
+  "price": 3.0,
+  "total_before": "$0.00",
+  "total_after": "$6.00",
+  "email_seen": true,
+  "what_ran": "13:04:40\tRules ran (2)\t2 rules\n  \tlineTotalLabel \u00b7 Value\t\n  \tdiscountEdit \u00b7 Enabled when\t\n13:04:40\tRules ran (2)\t2 rules\n  \tlineTotalLabel \u00b7 Value\t\n  \tdiscountEdit \u00b7 Enabled when\t\n13:04:40\tRules ran (2)\t2 rules\n  \tlineTotalLabel \u00b7 Value\t\n  \tdiscountEdit \u00b7 Enabled when\t\n13:04:40\tRules ran (2)\t2 rules\n  \tlineTotalLabel \u00b7 Value\t\n  \tdiscountEdit \u00b7 Enabled when\t\n13:04:40\tSave is clicked: stopped at step 1 (Check all fields)\tsaveButton \u00b7 When clicked\n",
+  "visible": "preview.runBehavior text Run behavior\npreview.whatRan.title text What ran\npreview.whatRan.clear text Clear\npreview.whatRan.copy text Copy\ndiscountCheck text Discount\nqtyLabel text Qty\nqtySpin text 2\nqt_spinbox_lineedit text 2\npriceLabel text Price\npriceSpin text 3\nqt_spinbox_lineedit text 3\nlineTotalLabel text $6.00\nsaveButton text Save\npreview.windowValues.title text Window values\npreview.runBehavior text Run behavior\npreview.whatRan.title text What ran\npreview.whatRan.clear text Clear\npreview.whatRan.copy text Copy\ndiscountCheck text Discount\nqtyLabel text Qty\nqtySpin text 2\nqt_spinbox_lineedit text 2\npriceLabel text Price\npriceSpin text 3.00\nqt_spinbox_lineedit text 3.00\nlineTotalLabel text $6.00\nemailEdit toolTip Email is required\nemailEditError text Email is required\nsaveButton text Save\npreview.windowValues.title text Window values",
+  "checks": {
+    "discount": true,
+    "total": true,
+    "email": true,
+    "save": true
+  },
+  "what_ran_window": false
+}

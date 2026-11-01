@@ -1,0 +1,13 @@
+13:04:40	Rules ran (2)	2 rules
+  	lineTotalLabel · Value	
+  	discountEdit · Enabled when	
+13:04:40	Rules ran (2)	2 rules
+  	lineTotalLabel · Value	
+  	discountEdit · Enabled when	
+13:04:40	Rules ran (2)	2 rules
+  	lineTotalLabel · Value	
+  	discountEdit · Enabled when	
+13:04:40	Rules ran (2)	2 rules
+  	lineTotalLabel · Value	
+  	discountEdit · Enabled when	
+13:04:40	Save is clicked: stopped at step 1 (Check all fields)	saveButton · When clicked

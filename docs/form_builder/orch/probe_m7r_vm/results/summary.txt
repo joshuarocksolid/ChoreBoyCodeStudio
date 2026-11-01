@@ -1,0 +1,12 @@
+M7.R probe  runs 20  load None  loadavg_blocked True
+CPU rows use process_time. preview_reload p50 and p95 are wall clock, because the child is another process.
+The first sample of each timed row is warm-up and is left out of p50 and p95.
+idle_reference  p50 3.424 ms  p95 3.706 ms  load None  budget   
+analyze_compile  p50 2.277 ms  p95 2.52 ms  load None  budget 6.0  pass
+formula_keystroke  p50 3.543 ms  p95 4.395 ms  load None  budget 40.0  pass
+behavior_fill  p50 18.129 ms  p95 22.386 ms  load None  budget 40.0  pass
+commit_rule_added  p50 68.968 ms  p95 79.905 ms  load None  budget 50.0  fail
+save_generate  p50 106.162 ms  p95 128.693 ms  load None  budget 250.0  pass
+cbcs_refresh  p50 0.16 ms  p95 0.211 ms  load None  budget 16.0  pass
+preview_reload  p50 852.478 ms  p95 907.657 ms  load None  budget 1500.0  pass
+try_pass True

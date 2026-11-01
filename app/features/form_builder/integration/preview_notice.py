@@ -382,7 +382,9 @@ class PreviewNotices:
             return
         self.last_response = response
         if not response.ok:
-            self._say("Preview could not open this form.")
+            detail = str(getattr(response, "detail", "") or "").strip()
+            first = detail.split("\n", 1)[0] if detail else ""
+            self._say(first or "Preview could not open this form.")
             return
         if not self._failures:
             return

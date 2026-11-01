@@ -1,0 +1,48 @@
+         7821059 function calls (7762131 primitive calls) in 4.620 seconds
+
+   Ordered by: cumulative time
+   List reduced from 1909 to 40 due to restriction <40>
+
+   ncalls  tottime  percall  cumtime  percall filename:lineno(function)
+        8    0.000    0.000    4.696    0.587 /home/default/cbprobe_jobs/probe_m7r_vm-20261101T120328Z-20261101T180328Z-eee027/payload/run_probe.py:521(commit)
+        8    0.000    0.000    3.427    0.428 /home/default/cbprobe_jobs/probe_m7r_vm-20261101T120328Z-20261101T180328Z-eee027/payload/run_probe.py:466(paint)
+        8    0.230    0.029    2.775    0.347 {built-in method processEvents}
+        8    0.000    0.000    2.053    0.257 /home/default/cbprobe_jobs/probe_m7r_vm-20261101T120328Z-20261101T180328Z-eee027/payload/payload/app/features/form_builder/integration/preview_control.py:353(_reload_open)
+        8    0.000    0.000    2.053    0.257 /home/default/cbprobe_jobs/probe_m7r_vm-20261101T120328Z-20261101T180328Z-eee027/payload/payload/app/features/form_builder/integration/preview_control.py:250(preview)
+        8    0.000    0.000    2.040    0.255 /home/default/cbprobe_jobs/probe_m7r_vm-20261101T120328Z-20261101T180328Z-eee027/payload/payload/app/features/form_builder/integration/preview_notice.py:334(preview)
+        8    0.000    0.000    2.010    0.251 /home/default/cbprobe_jobs/probe_m7r_vm-20261101T120328Z-20261101T180328Z-eee027/payload/payload/app/features/form_builder/integration/preview_notice.py:115(preview_request)
+        8    0.000    0.000    1.998    0.250 /home/default/cbprobe_jobs/probe_m7r_vm-20261101T120328Z-20261101T180328Z-eee027/payload/payload/app/features/form_builder/integration/preview_notice.py:148(build_try_start)
+        8    0.019    0.002    1.684    0.210 /home/default/cbprobe_jobs/probe_m7r_vm-20261101T120328Z-20261101T180328Z-eee027/payload/payload/app/features/form_builder/engine/codegen/api.py:88(generate_form_module)
+        8    0.000    0.000    1.461    0.183 /home/default/cbprobe_jobs/probe_m7r_vm-20261101T120328Z-20261101T180328Z-eee027/payload/payload/app/features/form_builder/engine/codegen/emit.py:207(emit_module)
+        8    0.000    0.000    1.460    0.183 /home/default/cbprobe_jobs/probe_m7r_vm-20261101T120328Z-20261101T180328Z-eee027/payload/payload/app/features/form_builder/engine/codegen/emit.py:287(build)
+      144    0.000    0.000    0.869    0.006 /home/default/cbprobe_jobs/probe_m7r_vm-20261101T120328Z-20261101T180328Z-eee027/payload/payload/app/features/form_builder/engine/ui4/document.py:148(structure_memo)
+     2440    0.003    0.000    0.731    0.000 /home/default/cbprobe_jobs/probe_m7r_vm-20261101T120328Z-20261101T180328Z-eee027/payload/payload/app/features/form_builder/engine/logic/formula/check.py:134(analyze)
+     2440    0.023    0.000    0.727    0.000 /home/default/cbprobe_jobs/probe_m7r_vm-20261101T120328Z-20261101T180328Z-eee027/payload/payload/app/features/form_builder/engine/logic/formula/check.py:155(_analyze)
+        8    0.000    0.000    0.705    0.088 /home/default/cbprobe_jobs/probe_m7r_vm-20261101T120328Z-20261101T180328Z-eee027/payload/payload/app/features/form_builder/engine/codegen/emit.py:1785(_expand)
+     2480    0.017    0.000    0.688    0.000 /home/default/cbprobe_jobs/probe_m7r_vm-20261101T120328Z-20261101T180328Z-eee027/payload/payload/app/features/form_builder/engine/logic/formula/parse.py:123(parse_text)
+        8    0.000    0.000    0.667    0.083 /home/default/cbprobe_jobs/probe_m7r_vm-20261101T120328Z-20261101T180328Z-eee027/payload/payload/app/features/form_builder/engine/commands/log.py:163(execute)
+        8    0.000    0.000    0.660    0.083 /home/default/cbprobe_jobs/probe_m7r_vm-20261101T120328Z-20261101T180328Z-eee027/payload/payload/app/features/form_builder/engine/commands/log.py:427(_store)
+        8    0.001    0.000    0.659    0.082 /home/default/cbprobe_jobs/probe_m7r_vm-20261101T120328Z-20261101T180328Z-eee027/payload/payload/app/features/form_builder/engine/commands/log.py:647(_emit)
+   2400/8    0.023    0.000    0.585    0.073 /home/default/cbprobe_jobs/probe_m7r_vm-20261101T120328Z-20261101T180328Z-eee027/payload/payload/app/features/form_builder/engine/codegen/emit.py:682(emit_widget)
+   2368/8    0.004    0.000    0.581    0.073 /home/default/cbprobe_jobs/probe_m7r_vm-20261101T120328Z-20261101T180328Z-eee027/payload/payload/app/features/form_builder/engine/codegen/emit.py:760(_emit_children)
+     40/8    0.002    0.000    0.574    0.072 /home/default/cbprobe_jobs/probe_m7r_vm-20261101T120328Z-20261101T180328Z-eee027/payload/payload/app/features/form_builder/engine/codegen/emit.py:893(emit_layout)
+  2320/16    0.007    0.000    0.574    0.036 /home/default/cbprobe_jobs/probe_m7r_vm-20261101T120328Z-20261101T180328Z-eee027/payload/payload/app/features/form_builder/engine/codegen/emit.py:922(_emit_layout_item)
+        8    0.000    0.000    0.466    0.058 /home/default/cbprobe_jobs/probe_m7r_vm-20261101T120328Z-20261101T180328Z-eee027/payload/payload/app/features/form_builder/integration/content_source.py:270(_on_log)
+        8    0.000    0.000    0.466    0.058 /home/default/cbprobe_jobs/probe_m7r_vm-20261101T120328Z-20261101T180328Z-eee027/payload/payload/app/features/form_builder/integration/content_source.py:274(_notify)
+       24    0.000    0.000    0.457    0.019 /home/default/cbprobe_jobs/probe_m7r_vm-20261101T120328Z-20261101T180328Z-eee027/payload/payload/app/shell/editor_tab_workflow_mixins.py:93(update_editor_status_for_path)
+       24    0.000    0.000    0.457    0.019 /home/default/cbprobe_jobs/probe_m7r_vm-20261101T120328Z-20261101T180328Z-eee027/payload/payload/app/shell/editor_tab_buffer_workflow.py:182(update_editor_status_for_path)
+       24    0.000    0.000    0.457    0.019 /home/default/cbprobe_jobs/probe_m7r_vm-20261101T120328Z-20261101T180328Z-eee027/payload/payload/app/shell/editor_tab_buffer_workflow.py:190(_refresh_editor_status)
+       24    0.000    0.000    0.456    0.019 /home/default/cbprobe_jobs/probe_m7r_vm-20261101T120328Z-20261101T180328Z-eee027/payload/payload/app/shell/editor_tab_buffer_workflow.py:292(_editor_status_sentence)
+       24    0.000    0.000    0.456    0.019 /home/default/cbprobe_jobs/probe_m7r_vm-20261101T120328Z-20261101T180328Z-eee027/payload/payload/app/features/form_builder/integration/surface.py:690(editor_status_sentence)
+        8    0.000    0.000    0.455    0.057 /home/default/cbprobe_jobs/probe_m7r_vm-20261101T120328Z-20261101T180328Z-eee027/payload/payload/app/shell/editor_tab_factory.py:333(on_changed)
+        8    0.000    0.000    0.455    0.057 /home/default/cbprobe_jobs/probe_m7r_vm-20261101T120328Z-20261101T180328Z-eee027/payload/payload/app/shell/editor_tab_workflow_mixins.py:87(handle_content_source_changed)
+        8    0.000    0.000    0.455    0.057 /home/default/cbprobe_jobs/probe_m7r_vm-20261101T120328Z-20261101T180328Z-eee027/payload/payload/app/shell/editor_tab_buffer_workflow.py:97(handle_content_source_changed)
+       24    0.001    0.000    0.455    0.019 /home/default/cbprobe_jobs/probe_m7r_vm-20261101T120328Z-20261101T180328Z-eee027/payload/payload/app/features/form_builder/integration/chrome_text.py:131(selection_sentence)
+       32    0.000    0.000    0.455    0.014 /home/default/cbprobe_jobs/probe_m7r_vm-20261101T120328Z-20261101T180328Z-eee027/payload/payload/app/features/form_builder/engine/logic/read_as_text.py:59(spoken_display)
+        8    0.000    0.000    0.454    0.057 /home/default/cbprobe_jobs/probe_m7r_vm-20261101T120328Z-20261101T180328Z-eee027/payload/payload/app/shell/editor_tabs_coordinator.py:106(refresh_tab_presentation)
+       32    0.007    0.000    0.449    0.014 /home/default/cbprobe_jobs/probe_m7r_vm-20261101T120328Z-20261101T180328Z-eee027/payload/payload/app/features/form_builder/engine/logic/read_as_text.py:70(_preferred)
+        8    0.000    0.000    0.430    0.054 /home/default/cbprobe_jobs/probe_m7r_vm-20261101T120328Z-20261101T180328Z-eee027/payload/payload/app/features/form_builder/qtside/inspector/pane.py:272(flush)
+        8    0.000    0.000    0.428    0.053 /home/default/cbprobe_jobs/probe_m7r_vm-20261101T120328Z-20261101T180328Z-eee027/payload/payload/app/features/form_builder/qtside/inspector/_behavior.py:93(paint)
+       24    0.000    0.000    0.426    0.018 /home/default/cbprobe_jobs/probe_m7r_vm-20261101T120328Z-20261101T180328Z-eee027/payload/payload/app/features/form_builder/qtside/inspector/_behavior.py:146(_call)
+
+

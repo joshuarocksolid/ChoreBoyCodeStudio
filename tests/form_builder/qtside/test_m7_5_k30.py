@@ -144,83 +144,93 @@ def _combo_data(root: QWidget, name: str) -> object:
     return box.currentData()  # type: ignore[attr-defined]
 
 
-def test_k30_walkthrough_1_condition_builder(tmp_path: Path, qapp: QApplication) -> None:
-    window, kb, guard, _path = _session(tmp_path, qapp)
+def script_k30_condition(kb: Kb) -> None:
+    """K30 walkthrough 1 on an open discount form. Keys only."""
     steps: List[str] = []
     keys: List[int] = []
+    _run(kb, steps, keys, "select Discount rate", lambda: _select(kb, "discountEdit"))
+    _run(kb, steps, keys, "open Enabled when", lambda: _open_row(kb, "formBuilder.state.row.cbcsEnabledWhen"))
+    assert not kb.window.findChild(QWidget, "formBuilder.formula").isVisible()  # type: ignore[union-attr]
+
+    def pick() -> None:
+        kb.type("disc")
+        kb.press("Key_Tab")
+        kb.pump()
+
+    _run(kb, steps, keys, "pick Discount", pick)
+    pane = kb.window
+    assert _combo_data(pane, "formBuilder.builder.cond.row.0.cmp") == "checked"
+    _run(kb, steps, keys, "commit", lambda: kb.press("Key_Return", "Control"))
+    assert kb.session.log.undo_label() == "Set Enabled when for Discount rate"  # type: ignore[attr-defined]
+    assert _logic(kb, "discountEdit", "cbcsEnabledWhen") == "discountCheck"
+    assert len(steps) <= 12, steps
+    print("K30 walkthrough 1 steps=%d keys=%d %s" % (len(steps), sum(keys), steps))
+
+
+def test_k30_walkthrough_1_condition_builder(tmp_path: Path, qapp: QApplication) -> None:
+    window, kb, guard, _path = _session(tmp_path, qapp)
     try:
-        _run(kb, steps, keys, "select Discount rate", lambda: _select(kb, "discountEdit"))
-        _run(kb, steps, keys, "open Enabled when", lambda: _open_row(kb, "formBuilder.state.row.cbcsEnabledWhen"))
-        assert not kb.window.findChild(QWidget, "formBuilder.formula").isVisible()  # type: ignore[union-attr]
-
-        def pick() -> None:
-            kb.type("disc")
-            kb.press("Key_Tab")
-            kb.pump()
-
-        _run(kb, steps, keys, "pick Discount", pick)
-        pane = kb.window
-        assert _combo_data(pane, "formBuilder.builder.cond.row.0.cmp") == "checked"
-        _run(kb, steps, keys, "commit", lambda: kb.press("Key_Return", "Control"))
-        assert kb.session.log.undo_label() == "Set Enabled when for Discount rate"  # type: ignore[attr-defined]
-        assert _logic(kb, "discountEdit", "cbcsEnabledWhen") == "discountCheck"
-        assert len(steps) <= 12, steps
+        script_k30_condition(kb)
         assert guard.seen == []
-        print("K30 walkthrough 1 steps=%d keys=%d %s" % (len(steps), sum(keys), steps))
     finally:
         _close(window, qapp, guard)
 
 
-def test_k30_walkthrough_2_value_builder(tmp_path: Path, qapp: QApplication) -> None:
-    window, kb, guard = _invoice(tmp_path, qapp)
+def script_k30_value(kb: Kb) -> None:
+    """K30 walkthrough 2 on an open invoice form. Keys only."""
     steps: List[str] = []
     keys: List[int] = []
+    _run(kb, steps, keys, "select Line total", lambda: _select(kb, "lineTotalLabel"))
+    _run(kb, steps, keys, "open Value", lambda: _open_row(kb, "formBuilder.state.row.cbcsValue"))
+    editor = kb.window.findChild(QWidget, "formBuilder.formula")
+    assert editor is not None and not editor.isVisible()
+
+    def shape() -> None:
+        kb.press("Key_Down")
+        kb.pump()
+
+    _run(kb, steps, keys, "choose field op field", shape)
+    assert _combo_data(kb.window, "formBuilder.builder.shape") == "arith"
+
+    def qty() -> None:
+        _tab_until(kb, {"formBuilder.builder.term.0.field"})
+        kb.type("qty")
+        kb.press("Key_Tab")
+        kb.pump()
+
+    _run(kb, steps, keys, "pick Qty", qty)
+
+    def operator() -> None:
+        _tab_until(kb, {"formBuilder.builder.op.1"})
+        kb.press("Key_Down")
+        kb.press("Key_Down")
+        kb.pump()
+
+    _run(kb, steps, keys, "pick ×", operator)
+    assert _combo_data(kb.window, "formBuilder.builder.op.1") == "*"
+
+    def price() -> None:
+        _tab_until(kb, {"formBuilder.builder.term.1.field"})
+        kb.type("price")
+        kb.press("Key_Tab")
+        kb.pump()
+
+    _run(kb, steps, keys, "pick Price", price)
+    _run(kb, steps, keys, "commit", lambda: kb.press("Key_Return", "Control"))
+    assert _logic(kb, "lineTotalLabel", "cbcsValue") == "qtySpin * priceSpin", kb.log[-8:]
+    assert kb.session.log.undo_label() == "Set Value for Line total"  # type: ignore[attr-defined]
+    depth = len(kb.session.log.entries())  # type: ignore[attr-defined]
+    assert kb.session.log.undo()  # type: ignore[attr-defined]
+    assert _logic(kb, "lineTotalLabel", "cbcsValue") == ""
+    assert len(kb.session.log.entries()) == depth - 1  # type: ignore[attr-defined]
+    assert len(steps) <= 12, steps
+    print("K30 walkthrough 2 steps=%d keys=%d %s" % (len(steps), sum(keys), steps))
+
+
+def test_k30_walkthrough_2_value_builder(tmp_path: Path, qapp: QApplication) -> None:
+    window, kb, guard = _invoice(tmp_path, qapp)
     try:
-        _run(kb, steps, keys, "select Line total", lambda: _select(kb, "lineTotalLabel"))
-        _run(kb, steps, keys, "open Value", lambda: _open_row(kb, "formBuilder.state.row.cbcsValue"))
-        editor = kb.window.findChild(QWidget, "formBuilder.formula")
-        assert editor is not None and not editor.isVisible()
-
-        def shape() -> None:
-            kb.press("Key_Down")
-            kb.pump()
-
-        _run(kb, steps, keys, "choose field op field", shape)
-        assert _combo_data(kb.window, "formBuilder.builder.shape") == "arith"
-
-        def qty() -> None:
-            _tab_until(kb, {"formBuilder.builder.term.0.field"})
-            kb.type("qty")
-            kb.press("Key_Tab")
-            kb.pump()
-
-        _run(kb, steps, keys, "pick Qty", qty)
-
-        def operator() -> None:
-            _tab_until(kb, {"formBuilder.builder.op.1"})
-            kb.press("Key_Down")
-            kb.press("Key_Down")
-            kb.pump()
-
-        _run(kb, steps, keys, "pick ×", operator)
-        assert _combo_data(kb.window, "formBuilder.builder.op.1") == "*"
-
-        def price() -> None:
-            _tab_until(kb, {"formBuilder.builder.term.1.field"})
-            kb.type("price")
-            kb.press("Key_Tab")
-            kb.pump()
-
-        _run(kb, steps, keys, "pick Price", price)
-        _run(kb, steps, keys, "commit", lambda: kb.press("Key_Return", "Control"))
-        assert _logic(kb, "lineTotalLabel", "cbcsValue") == "qtySpin * priceSpin", kb.log[-8:]
-        assert kb.session.log.undo_label() == "Set Value for Line total"  # type: ignore[attr-defined]
-        depth = len(kb.session.log.entries())  # type: ignore[attr-defined]
-        assert kb.session.log.undo()  # type: ignore[attr-defined]
-        assert _logic(kb, "lineTotalLabel", "cbcsValue") == ""
-        assert len(kb.session.log.entries()) == depth - 1  # type: ignore[attr-defined]
-        assert len(steps) <= 12, steps
+        script_k30_value(kb)
         assert guard.seen == []
-        print("K30 walkthrough 2 steps=%d keys=%d %s" % (len(steps), sum(keys), steps))
     finally:
         _close(window, qapp, guard)

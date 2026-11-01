@@ -174,18 +174,16 @@ class BehaviorTextPage(QWidget):
         muted = str(getattr(tokens, "text_muted", "") or text)
         faint = str(getattr(tokens, "gutter_text", "") or muted)
         accent = str(getattr(tokens, "accent", "") or text)
-        border = str(getattr(tokens, "border", "") or text)
-        hover = str(getattr(tokens, "tree_hover_bg", "") or panel)
-        selected = str(getattr(tokens, "tree_selected_bg", "") or hover)
         names = (
             "formBuilder\\.readAsText\\.open",
             "formBuilder\\.readAsText\\.copy",
             "formBuilder\\.readAsText\\.print",
         )
 
-        def _buttons(suffix: str) -> str:
-            return ", ".join("QToolButton#%s%s" % (name, suffix) for name in names)
-
+        selectors = ["QToolButton#%s" % name for name in names]
+        focus = ", ".join("%s:focus" % selector for selector in selectors)
+        paint = getattr(self._surface, "flat_button_qss", None)
+        button_qss = paint(selectors) if callable(paint) else ""
         self.setStyleSheet(
             "QWidget#formBuilder\\.readAsText { background: %s; color: %s; }"
             "QWidget#formBuilder\\.readAsText\\.holder { background: %s; }"
@@ -194,16 +192,13 @@ class BehaviorTextPage(QWidget):
             "QLabel[cbcsReadTitle=\"true\"] { color: %s; background: transparent; border: none;"
             " font-size: 10px; font-weight: 600; letter-spacing: 0.5px; }"
             "QLabel#formBuilder\\.readText\\.file { color: %s; }"
-            "%s { color: %s; background: transparent; border: 1px solid transparent; padding: 2px 8px; }"
-            "%s { background: %s; }"
-            "%s { background: %s; border-color: %s; }"
+            "%s"
             "%s { border: %dpx solid %s; }"
             "QScrollArea { background: %s; border: none; }"
             % (
                 panel, text, panel, panel, text, text, muted, faint,
-                _buttons(""), text, _buttons(":hover"), hover,
-                _buttons(":checked"), selected, border,
-                _buttons(":focus"), width, accent, panel,
+                button_qss,
+                focus, width, accent, panel,
             )
         )
 

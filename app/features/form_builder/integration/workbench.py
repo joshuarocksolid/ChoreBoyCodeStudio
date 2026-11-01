@@ -2108,7 +2108,12 @@ class OutlinePane(QWidget):
             caption = object_name
             item.setData(0, OWNER, True)
             friendly = str(getattr(row, "friendly", "") or "")
-            tip = "%s · %s" % (friendly, object_name) if friendly else object_name
+            bits = [part for part in (owner, friendly, object_name) if part]
+            seen = []
+            for part in bits:
+                if part not in seen:
+                    seen.append(part)
+            tip = " · ".join(seen)
         else:
             item.setText(0, row.primary)  # type: ignore[attr-defined]
             caption = _row_caption(row)

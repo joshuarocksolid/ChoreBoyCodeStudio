@@ -581,6 +581,15 @@ class FormSurface(QWidget):
     def layout_plan(self) -> LayoutPlan:
         return self._plan
 
+    def flat_button_qss(self, selectors: Sequence[str]) -> str:
+        """The form toolbar's flat button chrome, for pages on this tab."""
+        from app.shell.toolbar_style import flat_tool_button_qss
+
+        tokens = getattr(self, "_tokens", None)
+        if tokens is None:
+            return ""
+        return flat_tool_button_qss(tokens, list(selectors))
+
     def apply_theme(self, tokens: ShellThemeTokens) -> None:
         self._tokens = tokens
         page = getattr(self, "_behavior_text_page", None)

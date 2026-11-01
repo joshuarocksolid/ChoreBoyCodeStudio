@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from types import SimpleNamespace
 from typing import Dict, Optional, Tuple
 
-from app.qt.QtCore import Qt, Signal
+from app.qt.QtCore import QSize, Qt, Signal
 from app.qt.QtWidgets import (
     QComboBox,
     QHBoxLayout,
@@ -77,7 +77,6 @@ _ORDER = (
 )
 # The five rule words. Kind and Format share this width so every row lines up.
 _RULE_WORDS = ("Enabled when", "Visible when", "Read-only when", "Value", "Default")
-_ELIDE = getattr(getattr(Qt, "TextElideMode", Qt), "ElideRight")
 _RIGHT = getattr(getattr(Qt, "AlignmentFlag", Qt), "AlignRight")
 _VCENTER = getattr(getattr(Qt, "AlignmentFlag", Qt), "AlignVCenter")
 
@@ -94,9 +93,11 @@ class _Row(QWidget):
         self.words.setMinimumWidth(0)
         self.value = QLabel(self)
         self.value.setObjectName("formBuilder.state.value.%s" % spec.key)
-        self.value.setWordWrap(False)
+        self.value.setWordWrap(True)
         self.value.setMinimumWidth(0)
-        self.value.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+        value_policy = self.value.sizePolicy()
+        value_policy.setHeightForWidth(True)
+        self.value.setSizePolicy(value_policy)
         self.now = QLabel(self)
         self.now.setObjectName("formBuilder.state.now.%s" % spec.key)
         self.now.setMinimumWidth(0)
@@ -105,17 +106,30 @@ class _Row(QWidget):
         self.places: Optional[QSpinBox] = None
         self.column = QVBoxLayout(self)
         self.column.setContentsMargins(0, 0, 0, 0)
-        self.column.setSpacing(2)
+        self.column.setSpacing(0)
         self.line_host = QWidget(self)
-        self.line_host.setFixedHeight(24)
+        self.line_host.setMinimumHeight(22)
         self.line = QHBoxLayout(self.line_host)
         self.line.setContentsMargins(0, 0, 0, 0)
         self.line.setSpacing(8)
         self.line.addWidget(self.words)
         self.line.addWidget(self.value, 1)
-        self.line.addWidget(self.now)
         self.column.addWidget(self.line_host)
+        self.column.addWidget(self.now)
         self._body = body
+
+    def hasHeightForWidth(self) -> bool:  # noqa: N802
+        return True
+
+    def heightForWidth(self, width: int) -> int:  # noqa: N802
+        return self.column.heightForWidth(width)
+
+    def sizeHint(self) -> QSize:  # noqa: N802
+        hint = super().sizeHint()
+        laid_out = self.height()
+        if laid_out > hint.height():
+            hint.setHeight(laid_out)
+        return hint
 
     def resizeEvent(self, event: object) -> None:  # noqa: N802
         super().resizeEvent(event)  # type: ignore[arg-type]
@@ -127,27 +141,13 @@ class _Row(QWidget):
         self._elide()
 
     def _elide(self) -> None:
+        """Keep the whole sentence. ``now:`` sits on the next line, so the rule is not cut."""
         if self.spec.slot in ("kind", "format"):
             return
         full = self._full
-        if len(full) <= 48:
-            if self.value.text() != full:
-                self.value.setText(full)
-            self._set_tip("")
-            return
-        if self.width() <= 0:
-            if self.value.text() != full:
-                self.value.setText(full)
-            self._set_tip(full)
-            return
-        metrics = self.value.fontMetrics()
-        room = self.value.width()
-        if room < 8:
-            room = max(8, self.width() - self.words.width() - self.now.sizeHint().width() - 16)
-        shown = metrics.elidedText(full, _ELIDE, max(1, room))
-        if self.value.text() != shown:
-            self.value.setText(shown)
-        self._set_tip(full if shown != full else "")
+        if self.value.text() != full:
+            self.value.setText(full)
+        self._set_tip(getattr(self, "_tip", "") or "")
 
     def _set_tip(self, elided: str) -> None:
         tip = getattr(self, "_tip", "") or elided
