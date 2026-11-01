@@ -2807,6 +2807,10 @@ class FormWorkbench(QWidget):
         code_view = getattr(self, "code_view", None)
         if code_view is not None:
             code_view.apply_theme(tokens)
+        for _spec, widget in self._sections:
+            paint = getattr(widget, "apply_theme", None)
+            if callable(paint):
+                paint(tokens)
         self.outline.set_hover_fill(tokens.tree_hover_bg)
         self.outline.set_drop_color(tokens.accent)
         self.outline.apply_colors(tokens)
