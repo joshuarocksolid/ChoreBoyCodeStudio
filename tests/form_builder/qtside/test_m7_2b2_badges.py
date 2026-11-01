@@ -95,7 +95,7 @@ def test_rule_widgets_show_equals_and_question_badges() -> None:
         assert value[3] == "="
         assert value[4] == 2
         assert marks["discountCheck"][3] == "?"
-        assert marks["noteEdit"][3] == "!"
+        assert marks["noteEdit"][3] == "\u2713"
     finally:
         session.dispose()
 

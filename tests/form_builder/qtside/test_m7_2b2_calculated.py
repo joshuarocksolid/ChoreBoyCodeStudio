@@ -217,9 +217,12 @@ def _assert_calculated_and_verb(width: int) -> None:
 
 
 def _with_pytest_path(env: dict) -> dict:
-    import pytest_timeout
+    import importlib.util
 
-    root = Path(pytest_timeout.__file__).resolve().parent
+    spec = importlib.util.find_spec("pytest_timeout")
+    if spec is None or spec.origin is None:
+        return env
+    root = Path(spec.origin).resolve().parent
     if root.name == "pytest_timeout":
         root = root.parent
     prior = env.get("PYTHONPATH", "")
