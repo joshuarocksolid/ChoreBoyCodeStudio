@@ -159,9 +159,13 @@ class FormulaEditor(QPlainTextEdit):
         self._chrome = chrome
         self._highlighter.set_colors(chrome)
         if chrome.text and chrome.input:
+            name = (self.objectName() or "formBuilder.formula").replace("\\", "\\\\").replace(".", "\\.")
+            focus = chrome.focus_width if chrome.focus_width > 0 else 1
+            ink = chrome.accent or chrome.text
             self.setStyleSheet(
-                "QPlainTextEdit#formBuilder\\.formula { color: %s; background: %s; border: 1px solid %s; }"
-                % (chrome.text, chrome.input, chrome.border)
+                "QPlainTextEdit#%s { color: %s; background: %s; border: 1px solid %s; }"
+                "QPlainTextEdit#%s:focus { border: %dpx solid %s; }"
+                % (name, chrome.text, chrome.input, chrome.border, name, focus, ink)
             )
         self._paint_list(self._complete)
         self._paint_list(self._fix_list)
@@ -443,6 +447,8 @@ class FormulaEditor(QPlainTextEdit):
         label.setToolTip(text)  # type: ignore[attr-defined]
         label.setWordWrap(True)  # type: ignore[attr-defined]
         label.setText(text)  # type: ignore[attr-defined]
+        if text:
+            label.setVisible(True)  # type: ignore[attr-defined]
         label.setMinimumHeight(0)  # type: ignore[attr-defined]
         measure = int(label.contentsRect().width())  # type: ignore[attr-defined]
         if measure >= 20 and bool(label.hasHeightForWidth()):  # type: ignore[attr-defined]
@@ -499,6 +505,9 @@ class FormulaEditor(QPlainTextEdit):
                 point = above if above.y() >= 0 else below
             else:
                 point = below
+        elif host.objectName() == "formBuilder.eventPicker":
+            anchor = self._status if self._status is not None and self._status.isVisible() else self
+            point = anchor.mapTo(host, QPoint(0, anchor.height() + 2))
         elif host is self:
             point = QPoint(0, self.height())
         else:
@@ -506,6 +515,11 @@ class FormulaEditor(QPlainTextEdit):
         widget.move(point)
         widget.raise_()
         widget.show()
+        if host.objectName() == "formBuilder.eventPicker":
+            needed = point.y() + list_h + 8
+            if host.height() < needed:
+                host.setMinimumHeight(needed)
+                host.resize(max(host.width(), widget.width() + 16), needed)
 
     def _reflow_block(self) -> None:
         # activate() only packs children into the height already assigned.
@@ -545,11 +559,15 @@ class FormulaEditor(QPlainTextEdit):
 
     def _popup_host(self) -> QWidget:
         current: Optional[QWidget] = self.parentWidget()
+        picker: Optional[QWidget] = None
         while current is not None:
-            if current.objectName() == "formBuilder.state":
+            name = current.objectName()
+            if name == "formBuilder.state":
                 return current
+            if name == "formBuilder.eventPicker":
+                picker = current
             current = current.parentWidget()
-        return self
+        return picker if picker is not None else self
 
     def _paint_list(self, widget: QListWidget) -> None:
         chrome = self._chrome

@@ -27,6 +27,7 @@ from app.features.form_builder.engine.ui4.defaults import QtClassTable
 from app.features.form_builder.engine.ui4.nodes import WidgetNode
 from app.features.form_builder.engine.ui4.values import StringValue
 from app.features.form_builder.qtside.formula.editor import FormulaEditor
+from app.features.form_builder.qtside.formula.live_plate import plate_for
 from app.features.form_builder.qtside.inspector._services import Dropped, Rejected
 from app.features.form_builder.qtside.inspector.behavior_ext import BehaviorSection, SectionHost, SectionInputs
 from app.features.form_builder.qtside.inspector.model import OneBehavior
@@ -171,6 +172,7 @@ class StateBody(QWidget):
         self._node: Optional[WidgetNode] = None
         self._env = None
         self._open_key: Optional[str] = None
+        self._live_id: object = None
         self._closing = False
         self._filling = False
         self._rows: Dict[str, _Row] = {}
@@ -189,6 +191,12 @@ class StateBody(QWidget):
         self._column.setContentsMargins(0, 4, 0, 4)
         self._column.setSpacing(4)
         self._column.addWidget(overline)
+        realizer = self._realizer
+        if realizer is not None:
+            def _clear_plate(*_args: object, realizer: object = realizer) -> None:
+                plate_for(realizer).clear()
+
+            self.destroyed.connect(_clear_plate)
         # The formula field is built the first time a row opens. Painting the
         # closed section only creates the label rows.
         self._pad: Optional[QWidget] = None
@@ -214,7 +222,12 @@ class StateBody(QWidget):
 
     def paint(self, inputs: SectionInputs) -> None:
         self._inputs = inputs
-        self._node = _selected(inputs)
+        selected = _selected(inputs)
+        selected_id = None if selected is None else selected.id
+        if self._live_id is not None and selected_id != self._live_id:
+            self._drop_live()
+            self._cancel()
+        self._node = selected
         if self._node is None:
             self._cancel()
             for row in self._rows.values():
@@ -282,6 +295,7 @@ class StateBody(QWidget):
         editor.show()
         status.show()
         editor.setFocus()
+        self._arm_live(key)
 
     def _commit_open(self) -> None:
         if self._open_key is None or self._closing:
@@ -496,6 +510,7 @@ class StateBody(QWidget):
         layout.addWidget(status)
         editor.set_status_label(status)
         editor.set_handlers(self._commit_open, self._cancel)
+        editor.textChanged.connect(self._revise_live)
         editor.set_chrome(self._services.chrome)
         complete, fixes = editor.lists()
         self._pad = pad
@@ -518,6 +533,7 @@ class StateBody(QWidget):
 
     def _close_editor(self) -> None:
         self._open_key = None
+        self._drop_live()
         editor = self._editor
         pad = self._pad
         if editor is None or pad is None or self._status is None:
@@ -529,6 +545,28 @@ class StateBody(QWidget):
         self._column.removeWidget(pad)
         pad.setParent(self)
         editor._reflow_block()
+
+    def _arm_live(self, key: str) -> None:
+        node = self._node
+        env = self._env
+        editor = self._editor
+        if node is None or env is None or editor is None or self._realizer is None:
+            return
+        plate_for(self._realizer).arm(node, key, editor.toPlainText(), env, self._reader())
+        self._live_id = node.id
+
+    def _revise_live(self) -> None:
+        editor = self._editor
+        if self._live_id is None or editor is None or self._realizer is None:
+            return
+        plate_for(self._realizer).revise(editor.toPlainText(), self._reader())
+
+    def _drop_live(self) -> None:
+        realizer = self._realizer
+        self._live_id = None
+        if realizer is None:
+            return
+        plate_for(realizer).clear()
 
     def _reader(self) -> SimpleNamespace:
         env = self._env

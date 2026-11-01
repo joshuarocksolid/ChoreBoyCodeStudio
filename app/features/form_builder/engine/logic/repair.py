@@ -1,6 +1,7 @@
 """Broken formula, label, and step references after a rename or delete outside Code Studio.
 
-The dialog that offers these fixes is M7.2b. This module only lists them.
+The dialog that offers these fixes is M7.2b. This module lists them and builds
+the commands for a chosen rename. It does not write the document.
 A missing name whose old class has one or more new widgets of that class is a
 fix. A missing name with no new widget of that class is not a fix: Problems
 already reports it, and nothing is removed.
@@ -10,12 +11,19 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from typing import Dict, List, Mapping, Tuple
+from typing import Dict, List, Mapping, Optional, Sequence, Tuple
 
+from app.features.form_builder.engine.commands.catalog import SetLogic
 from app.features.form_builder.engine.logic.formula.env import reserved_names
-from app.features.form_builder.engine.logic.refs import formula_names, step_target_names
+from app.features.form_builder.engine.logic.refs import (
+    formula_names,
+    rename_formulas_in_logic,
+    rename_step_targets,
+    step_target_names,
+)
 from app.features.form_builder.engine.logic.storage import FORMULA_KEYS, LABEL_KEYS, is_signal_property, text_kind
 from app.features.form_builder.engine.ui4.document import UiDocument
+from app.features.form_builder.engine.ui4.nodes import WidgetNode
 from app.features.form_builder.engine.ui4.values import CStringValue, StringValue
 
 _ASSIGNED = re.compile(r"self\.([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(?:QtWidgets\.)?([A-Za-z_][A-Za-z0-9_]*)\(")
@@ -89,6 +97,75 @@ def repair_references(doc: UiDocument, previous: Mapping[str, str]) -> Tuple[Rep
                     continue
                 fixes.append(RepairFix(owner=owner, key=key, missing=missing, candidates=candidates))
     return tuple(fixes)
+
+
+def repair_edits(
+    doc: UiDocument,
+    fixes: Sequence[RepairFix],
+    chosen: Mapping[str, str],
+) -> Tuple[SetLogic, ...]:
+    """Commands that rename the chosen missing names. The document is not written."""
+    allowed: Dict[str, str] = {}
+    order: List[Tuple[str, str]] = []
+    seen = set()
+    for fix in fixes:
+        if fix.missing not in chosen:
+            continue
+        allowed[fix.missing] = chosen[fix.missing]
+        ident = (fix.owner, fix.key)
+        if ident in seen:
+            continue
+        seen.add(ident)
+        order.append(ident)
+    if not allowed:
+        return ()
+    commands: List[SetLogic] = []
+    for owner, key in order:
+        found = doc.by_name(owner)
+        if not found:
+            continue
+        node = doc.node(found[0])
+        if not isinstance(node, WidgetNode):
+            continue
+        current = _current_text(node, key)
+        if current is None:
+            continue
+        updated = _rewrite(key, current, allowed)
+        if updated is None or updated == current:
+            continue
+        commands.append(SetLogic(node.id, key, updated))
+    return tuple(commands)
+
+
+def _current_text(node: WidgetNode, key: str) -> Optional[str]:
+    value = node.value(key)
+    text = getattr(value, "text", None)
+    return text if isinstance(text, str) else None
+
+
+def _rewrite(key: str, text: str, mapping: Mapping[str, str]) -> Optional[str]:
+    if not mapping:
+        return None
+    kind = text_kind(key)
+    if kind == "label":
+        name = text.strip()
+        if name not in mapping or mapping[name] == text:
+            return None
+        return mapping[name]
+    updated = text
+    changed = False
+    renamed = rename_formulas_in_logic(key, text, mapping)
+    if renamed is not None and renamed != text:
+        updated = renamed
+        changed = True
+    if kind == "steps":
+        stepped = rename_step_targets(updated, mapping)
+        if stepped is not None and stepped != updated:
+            updated = stepped
+            changed = True
+    if not changed:
+        return None
+    return updated
 
 
 def _is_reference_key(key: str) -> bool:
