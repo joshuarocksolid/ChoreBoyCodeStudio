@@ -227,7 +227,7 @@ def test_a_missing_name_draws_no_arrow_and_feeds_only_enter_the_selection() -> N
    <item>
     <widget class="QLabel" name="totalLabel">
      <property name="text"><string>Total</string></property>
-     <property name="cbcsValue"><string>oldName * qtySpin.value()</string></property>
+     <property name="cbcsValue"><string>oldName * qtySpin</string></property>
     </widget>
    </item>
    <item>

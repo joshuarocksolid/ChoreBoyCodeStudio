@@ -170,7 +170,7 @@ def test_qty_times_price_shows_zero_while_the_editor_is_open() -> None:
         depth = _depth(session)
         _select(session, pane, "totalLabel")
         editor = _open(pane, "cbcsValue")
-        editor.setPlainText("qtySpin.value() * priceSpin.value()")
+        editor.setPlainText("qtySpin * priceSpin")
         pump()
         assert label.text() == "0"
         assert _depth(session) == depth
@@ -190,7 +190,7 @@ def test_a_money_format_shows_the_formatted_zero_while_the_editor_is_open() -> N
         session.log.execute(SetLogic(cast(NodeId, _id(session, "totalLabel")), "cbcsFormat", "money"))
         _select(session, pane, "totalLabel")
         editor = _open(pane, "cbcsValue")
-        editor.setPlainText("qtySpin.value() * priceSpin.value()")
+        editor.setPlainText("qtySpin * priceSpin")
         pump()
         assert label.text() == "$0.00"
         QTest.keyClick(editor, Qt.Key.Key_Escape)

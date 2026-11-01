@@ -256,7 +256,7 @@ def _shoot(qapp: QApplication, folder: Path, scale: str) -> None:
         session = surface.session
         document = session.document
         label_id = document.by_name("totalLabel")[0]
-        session.log.execute(SetLogic(label_id, "cbcsValue", "qtySpin.value() * priceSpin.value()"))
+        session.log.execute(SetLogic(label_id, "cbcsValue", "qtySpin * priceSpin"))
         session.log.execute(SetLogic(document.by_name("discountCheck")[0], "cbcsEnabledWhen", "totalLabel"))
         inspector = surface.workbench.inspector
         canvas = surface.workbench.canvas
@@ -306,7 +306,7 @@ def _shoot(qapp: QApplication, folder: Path, scale: str) -> None:
             button = inspector.findChild(QWidget, "formBuilder.calculatedEdit")
             assert row is not None and label is not None and button is not None
             assert label.text().startswith("Calculated:")
-            assert "qtySpin.value()" in label.text()
+            assert "qtySpin * priceSpin" in label.text()
             assert "\u2026" not in label.text()
             search = inspector.findChild(QWidget, "formBuilder.inspectorSearch")
             if search is not None:
@@ -361,7 +361,7 @@ def _shoot(qapp: QApplication, folder: Path, scale: str) -> None:
             _pump(qapp)
             _grab(picker, folder / ("verb-formula-%s-%s.png" % (mode, scale)))
             picker.close()
-            session.log.execute(SetLogic(label_id, "cbcsValue", "qtySpin.value() * priceSpin.value()"))
+            session.log.execute(SetLogic(label_id, "cbcsValue", "qtySpin * priceSpin"))
             _pump(qapp)
     finally:
         from tests.form_builder.qtside.test_m3_keyboard_scripts import _close
