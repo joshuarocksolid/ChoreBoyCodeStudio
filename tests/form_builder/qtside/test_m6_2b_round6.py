@@ -133,8 +133,13 @@ def test_a_refused_save_keeps_the_earlier_undo_and_the_caret(tmp_path: Path, qap
     from app.features.form_builder.integration.handlers_code import SERVICE
     from tests.form_builder.test_m6_2b_gesture import _request
 
+    import app.shell.external_file_change_workflow as external
+
     warning = save_workflow.QMessageBox.warning
+    question = external.QMessageBox.question
     save_workflow.QMessageBox.warning = staticmethod(lambda *_args, **_kwargs: 0)  # type: ignore[method-assign]
+    # The file is touched on disk below. A due poll would open a modal and never return.
+    external.QMessageBox.question = staticmethod(lambda *_args, **_kwargs: external.QMessageBox.No)  # type: ignore[method-assign]
     window, kb, guard, path = _session(tmp_path, qapp)
     window_file = path.parent / "sale_window.py"
     try:
@@ -170,5 +175,6 @@ def test_a_refused_save_keeps_the_earlier_undo_and_the_caret(tmp_path: Path, qap
     finally:
         os.chmod(str(window_file), stat.S_IRUSR | stat.S_IWUSR)
         save_workflow.QMessageBox.warning = warning  # type: ignore[method-assign]
+        external.QMessageBox.question = question  # type: ignore[method-assign]
         kb.done(guard)
         _close(window, qapp, guard)

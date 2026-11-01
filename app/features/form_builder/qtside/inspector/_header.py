@@ -181,9 +181,9 @@ class Header(QWidget):
         self._name.setReadOnly(False)
         self._glyph.set_kind(view.glyph)
         if view.class_line:
-            self._set_class_text(view.class_line, view.qt_line)
+            self._set_class_text(view.class_line, view.qt_line or view.class_line)
         else:
-            self._set_class_text("%s \u00b7 %s" % (view.friendly, view.qt_class), view.qt_class)
+            self._set_class_text(view.friendly, view.friendly, view.qt_class)
         if not self._invalid:
             if self._name.hasFocus():
                 if self._name.text() != view.name:
@@ -230,9 +230,10 @@ class Header(QWidget):
         self._class_row.addWidget(self._class_slot, 1)
         self._class_line.show()
 
-    def _set_class_text(self, text: str, short: str) -> None:
+    def _set_class_text(self, text: str, short: str, tip: str = "") -> None:
         self._class_full = text
         self._class_short = short
+        self._class_tip = tip
         self._show_class()
 
     def _show_class(self) -> None:
@@ -251,7 +252,9 @@ class Header(QWidget):
                 shown = self._class_short
         if label.text() != shown:
             label.setText(shown)
-        label.setToolTip(full if shown != full else "")
+        tip = getattr(self, "_class_tip", "") or (full if shown != full else "")
+        if label.toolTip() != tip:
+            label.setToolTip(tip)
 
     def _on_name_entered(self) -> None:
         node = self._node

@@ -194,8 +194,10 @@ class CodeHandlers:
         if existing is not None:
             add_name = _add_label(surface, request, method)
             outcome = _commit(surface, add_name, _relabel(commands, add_name))
-            if outcome.ok:
+            if outcome.ok and getattr(request, "open_code", False):
                 self.go_to(surface, method)
+            elif outcome.ok:
+                _narrate(surface, "Call %s()" % method)
             return outcome
         params = _params_of(request, method)
         sender = str(getattr(request, "sender", "") or "")

@@ -60,6 +60,22 @@ def test_form_row_caption_names_the_field() -> None:
     assert env.widgets["qtySpin"].display == "Qty"
 
 
+def test_a_colliding_fallback_uses_the_split_object_name() -> None:
+    text = """<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0"><class>Invoice</class>
+ <widget class="QDialog" name="Invoice">
+  <widget class="QCheckBox" name="discountCheck">
+   <property name="text"><string>Discount</string></property>
+  </widget>
+  <widget class="QLineEdit" name="discountEdit"/>
+ </widget></ui>"""
+    from app.features.form_builder.engine.logic.read_as_text import spoken_display
+
+    doc = read_ui(text, allocator=IdAllocator()).document
+    assert spoken_display(doc, "discountCheck") == "Discount"
+    assert spoken_display(doc, "discountEdit") == "discount edit"
+
+
 def test_unlabeled_required_message_uses_words() -> None:
     field = plan("QLineEdit", (Required(None),), label="emailEdit", object_name="emailEdit")
     messages = [arm.message for arm in field.runtime if isinstance(arm, RuntimeCheck)]

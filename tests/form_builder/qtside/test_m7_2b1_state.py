@@ -166,6 +166,10 @@ def test_a_line_edit_lists_kind_through_format_and_a_button_lists_two() -> None:
         assert _stored(session, "discountEdit", "cbcsKind") == ""
         combo = pane.findChild(QComboBox, "formBuilder.state.kind")
         assert combo is not None and combo.currentText() == "Text"
+        formats = pane.findChild(QComboBox, "formBuilder.state.format")
+        assert formats is not None
+        money = formats.findData("money")
+        assert money >= 0 and formats.itemText(money) == "Money"
         _select(session, pane, "okButton")
         assert _showing(pane) == ("cbcsEnabledWhen", "cbcsVisibleWhen")
 
@@ -185,9 +189,10 @@ def test_a_filled_enabled_when_row_shows_the_formula_and_now_no(qapp: QApplicati
             row = _row(pane, "cbcsEnabledWhen")
             formula = row.findChild(QLabel, "formBuilder.state.value.cbcsEnabledWhen")
             now = row.findChild(QLabel, "formBuilder.state.now.cbcsEnabledWhen")
-            assert formula is not None and formula.text() == "discountCheck"
+            assert formula is not None and formula.text() == "Discount is checked"
+            assert formula.toolTip() == "discountCheck"
             assert now is not None and now.text() == "now: no" and now.isVisible()
-            assert row.accessibleName() == "Enabled when  discountCheck   now: no"
+            assert row.accessibleName() == "Enabled when  Discount is checked   now: no"
         finally:
             pane.dispose()
             window.close()

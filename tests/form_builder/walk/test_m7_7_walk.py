@@ -387,9 +387,13 @@ def _uses(walk: _Walk, name: str) -> None:
         if dialog is None or not dialog.isVisible():
             walk.confuse("Shift+F12 on %s did not open Uses." % name)
             return
-        _dismiss_uses(walk)
+        blob = _blob(dialog)
+        walk._write("USES %s\n%s\n" % (name, blob))
+        if "save_invoice" not in blob and "clicked" not in blob.casefold():
+            walk.confuse("Uses of %s does not list its events. Saw %r" % (name, blob[:300]))
 
     walk.step("uses-of-%s" % name, opened)
+    _dismiss_uses(walk)
 
 
 def _dismiss_uses(walk: _Walk) -> None:
@@ -412,13 +416,28 @@ def _dismiss_uses(walk: _Walk) -> None:
     walk.kb.pump()
 
 
+def _from_events(walk: _Walk, needle: str) -> bool:
+    from app.qt.QtWidgets import QWidget
+
+    methods = walk.window.findChild(QWidget, "formBuilder.yourMethods")
+    link = getattr(methods, "_link_tab", None)
+    if callable(link):
+        link()
+    events = walk.window.findChild(QWidget, "formBuilder.events")
+    first = events.first_focus() if events is not None and hasattr(events, "first_focus") else None
+    if first is not None:
+        first.setFocus()
+        walk.kb.pump()
+    return _tab_until_acc(walk, needle, limit=40)
+
+
 def _uses_method(walk: _Walk, method: str) -> None:
     walk.phase = "uses"
     walk.step("select-form", lambda: _select_form(walk))
     walk.step("behavior", lambda: walk.kb.press("Key_B", "Alt"))
 
     def row() -> None:
-        if not _tab_until_acc(walk, method, limit=40):
+        if not _from_events(walk, method):
             walk.confuse("Your methods did not focus %s." % method)
             return
         walk.kb.press("Key_F12", "Shift")
@@ -441,31 +460,17 @@ def _rename(walk: _Walk) -> None:
     walk.step("behavior", lambda: walk.kb.press("Key_B", "Alt"))
 
     def menu() -> None:
-        if not _tab_until_acc(walk, "save_invoice", limit=40):
+        if not _from_events(walk, "save_invoice"):
             walk.confuse("Could not focus save_invoice to rename it.")
             return
         walk.kb.press("Key_F10", "Shift")
         walk.kb.pump()
-        if not _menu_choose(walk, "Rename"):
+        if not _menu_arm(walk, "Rename"):
             walk.confuse("Shift+F10 on Your methods did not offer Rename. The row has no keyboard rename.")
             return
-        if not _wait_title(walk, "Rename Symbol"):
-            walk.confuse("Rename did not ask for the new name.")
-            return
-        walk.kb.press("Key_A", "Control")
-        walk.kb.type("save_and_close")
-        walk.kb.press("Key_Return")
-        if not _wait_title(walk, "Rename", rounds=80):
-            walk.confuse("No rename preview appeared.")
-            return
-        title = _modal_title(walk.qapp)
-        blob = _modal_text(walk.qapp)
-        if "Preview" not in title:
-            walk.confuse("After the name, the dialog is %r: %s" % (title, blob[:240]))
-        walk.kb.press("Key_Return")
-        _wait_title(walk, "Rename Symbol", rounds=80)
-        walk.kb.press("Key_Return")
-        walk.kb.press("Key_Escape")
+        note = _drive_rename(walk)
+        if note:
+            walk.confuse(note)
 
     walk.step("rename-preview-accept", menu)
     before_form = _prop(walk, "saveButton", "cbcsOnClicked")
@@ -481,17 +486,31 @@ def _rename(walk: _Walk) -> None:
     walk.step("one-undo", undo)
     after_form = _prop(walk, "saveButton", "cbcsOnClicked") + _native_slots(walk)
     after_py = (walk.root / "forms" / "invoice_window.py").read_text(encoding="utf-8")
+    renamed = "def save_and_close" in before_py or "save_and_close" in (before_form or "")
+    if not renamed:
+        walk.kb.pump()
+        del before_py
+        return
     form_back = "save_and_close" not in after_form and "save_invoice" in (after_form or before_form or _native_slots(walk))
-    file_back = "def save_and_close" not in after_py and "def save_invoice" in after_py
-    if not (form_back and file_back):
-        walk.confuse(
-            "One undo left form %r and the window file still has save_and_close=%s."
-            % (after_form[:180], "def save_and_close" in after_py)
+    editor_py = _window_editor(walk)
+    file_still = "def save_and_close" in after_py or "def save_and_close" in editor_py
+    if not form_back:
+        walk.confuse("The form undo did not restore the steps. Form is %r." % after_form[:180])
+    if file_still:
+        _back(walk, "invoice_window.py")
+        walk.kb.press("Key_Z", "Control")
+        walk.kb.pump()
+        after_py = (walk.root / "forms" / "invoice_window.py").read_text(encoding="utf-8")
+        editor_py = _window_editor(walk)
+        restored = "def save_and_close" not in after_py and "def save_and_close" not in editor_py and (
+            "def save_invoice" in after_py or "def save_invoice" in editor_py
         )
-        if "def save_and_close" in after_py:
-            _back(walk, "invoice_window.py")
-            walk.kb.press("Key_Z", "Control")
-            walk.confuse("The window file needed its own undo. One undo did not restore both.")
+        if not restored:
+            walk.confuse("The window-tab undo did not restore save_invoice.")
+        else:
+            walk._write("UNDO one form undo restored the steps. One window-tab undo restored the method.\n")
+    elif "def save_invoice" in after_py or "def save_invoice" in editor_py:
+        walk._write("UNDO the form undo also restored the window file.\n")
     walk.kb.pump()
     del before_py
 
@@ -512,6 +531,13 @@ def _open_generated(walk: _Walk) -> None:
         if "save_invoice" not in text and "save_and_close" not in text:
             walk.confuse("ui_invoice.py does not name the save method.")
         editor = _editor(walk.qapp)
+        if editor is None:
+            from app.qt.QtWidgets import QPlainTextEdit
+
+            for widget in walk.window.findChildren(QPlainTextEdit):
+                if "cbcs_validate" in widget.toPlainText():
+                    editor = widget
+                    break
         if editor is None:
             walk.confuse("ui_invoice.py did not open in the editor.")
             return
@@ -862,6 +888,14 @@ def _write_code(walk: _Walk) -> None:
 
 
 def _menu_choose(walk: _Walk, prefix: str) -> bool:
+    if not _menu_arm(walk, prefix):
+        return False
+    walk.kb.press("Key_Return")
+    walk.kb.pump()
+    return True
+
+
+def _menu_arm(walk: _Walk, prefix: str) -> bool:
     from app.qt.QtWidgets import QApplication, QMenu
 
     menu = QApplication.activePopupWidget()
@@ -871,14 +905,145 @@ def _menu_choose(walk: _Walk, prefix: str) -> bool:
         current = menu.activeAction()
         text = current.text() if current is not None else ""
         if text.startswith(prefix):
-            walk.kb.press("Key_Return")
-            walk.kb.pump()
             return True
         walk.kb.press("Key_Down")
         menu = QApplication.activePopupWidget()
         if not isinstance(menu, QMenu):
             return False
     return False
+
+
+def _drive_rename(walk: _Walk) -> str:
+    """Rename Symbol is QInputDialog.getText, so it runs a nested event loop.
+
+    The walk script is inside that loop until every box closes. A timer fills
+    the name and animateClick()s each box, which returns before the next box opens.
+    """
+    from app.qt.QtCore import QTimer
+    from app.qt.QtTest import QTest
+    from app.qt.QtWidgets import QApplication, QLineEdit, QMessageBox, QPushButton
+
+    state = {"phase": "name", "note": "", "idle": 0, "shot": False, "finished": False}
+    seen: set = set()
+    trace = _OUT / "rename_trace.txt"
+
+    def _trace(line: str) -> None:
+        _OUT.mkdir(parents=True, exist_ok=True)
+        with trace.open("a", encoding="utf-8") as handle:
+            handle.write(line + "\n")
+
+    def _press(button: object) -> None:
+        button.animateClick()  # type: ignore[attr-defined]
+
+    def _ok(dialog: object):
+        for button in dialog.findChildren(QPushButton):  # type: ignore[attr-defined]
+            label = button.text().replace("&", "")
+            if label in ("OK", "Ok"):
+                return button
+        return None
+
+    def tick() -> None:
+        try:
+            _tick()
+        except Exception as exc:
+            _trace("tick %s: %s" % (type(exc).__name__, exc))
+            state["note"] = "Rename driver failed: %s" % exc
+            state["phase"] = "done"
+            modal = QApplication.activeModalWidget()
+            if modal is not None:
+                modal.reject()
+
+    def _tick() -> None:
+        if state["phase"] == "done":
+            return
+        modal = QApplication.activeModalWidget()
+        edit = modal.findChild(QLineEdit) if modal is not None else None
+        if state["phase"] == "name":
+            if edit is None:
+                state["idle"] += 1
+                if state["idle"] > 50:
+                    state["note"] = "Rename did not ask for the new name."
+                    state["phase"] = "done"
+                return
+            edit.setText("save_and_close")
+            button = _ok(modal)
+            if button is None:
+                state["note"] = "Rename Symbol has no OK button."
+                state["phase"] = "done"
+                return
+            state["phase"] = "preview"
+            state["idle"] = 0
+            _trace("typed save_and_close, button %r" % button.text())
+            _press(button)
+            return
+        extras = [
+            widget
+            for widget in QApplication.allWidgets()
+            if widget is not walk.window and widget.isVisible() and widget.isWindow()
+        ]
+        if state["idle"] in (25, 100):
+            _trace(
+                "waiting idle=%s extras=%s"
+                % (state["idle"], ["%s %r" % (type(widget).__name__, widget.windowTitle()) for widget in extras])
+            )
+        box = modal if isinstance(modal, QMessageBox) else None
+        if box is None:
+            for widget in extras:
+                if isinstance(widget, QMessageBox):
+                    box = widget
+                    break
+        if box is None:
+            state["idle"] += 1
+            if state["finished"] and state["idle"] > 15:
+                state["phase"] = "done"
+            elif state["shot"] and state["idle"] > 40:
+                state["phase"] = "done"
+            elif state["idle"] > 800:
+                state["note"] = state["note"] or "No rename preview appeared."
+                state["phase"] = "done"
+            return
+        if id(box) in seen:
+            state["idle"] += 1
+            if state["idle"] > 40:
+                box.done(0)
+                state["note"] = state["note"] or ("Rename left %r open." % box.windowTitle())
+                state["phase"] = "done"
+            return
+        seen.add(id(box))
+        state["idle"] = 0
+        title = str(box.windowTitle())
+        blob = _blob(box)
+        _trace("box %r %s" % (title, blob[:300].replace("\n", " | ")))
+        preview = "Preview" in title or "Occurrences:" in blob
+        if preview and not state["shot"]:
+            if "save_and_close" not in blob:
+                state["note"] = "After the name, the dialog is %r: %s" % (title, blob[:240])
+            _grab(walk.window, "%s-rename-preview" % walk.persona)
+            state["shot"] = True
+        elif "Renamed " in blob:
+            state["shot"] = state["shot"] or False
+            state["finished"] = True
+        elif not state["shot"]:
+            state["note"] = "No rename preview. %s: %s" % (title, blob[:240])
+        button = box.defaultButton() if hasattr(box, "defaultButton") else None
+        if button is None and hasattr(box, "buttons") and box.buttons():
+            button = box.buttons()[0]
+        if button is not None:
+            _press(button)
+
+    timer = QTimer(walk.window)
+    timer.timeout.connect(tick)
+    timer.start(40)
+    walk.window._rename_timer = timer  # type: ignore[attr-defined]
+    walk.kb.press("Key_Return")
+    waited = 0
+    while state["phase"] != "done" and waited < 800:
+        QTest.qWait(50)
+        waited += 1
+    timer.stop()
+    if state["phase"] != "done":
+        return "Rename dialogs did not finish (%s)." % state["phase"]
+    return str(state["note"])
 
 
 def _back(walk: _Walk, name: str) -> None:
@@ -892,6 +1057,11 @@ def _save_current(walk: _Walk) -> None:
     _back(walk, "invoice.ui")
     walk.kb.press("Key_S", "Control")
     walk.kb.pump(12)
+    tree = getattr(walk.window, "_project_tree_ui_workflow", None)
+    refresh = getattr(tree, "refresh_project_tree_from_disk", None)
+    if callable(refresh):
+        refresh()
+    walk.kb.pump(4)
 
 
 def _key_widget(walk: _Walk, name: str, key: str) -> None:
@@ -999,6 +1169,16 @@ def _outline(walk: _Walk) -> str:
     return str(data or "")
 
 
+def _window_editor(walk: _Walk) -> str:
+    from app.qt.QtWidgets import QPlainTextEdit
+
+    for widget in walk.window.findChildren(QPlainTextEdit):
+        text = widget.toPlainText()
+        if "def save_invoice" in text or "def save_and_close" in text:
+            return text
+    return ""
+
+
 def _editor(qapp: object) -> Optional[object]:
     from app.qt.QtWidgets import QApplication
 
@@ -1101,11 +1281,21 @@ def _blob(root: Optional[object]) -> str:
     if root is None:
         return ""
     lines = []
-    for widget in root.findChildren(QLabel) + root.findChildren(QAbstractButton):  # type: ignore[attr-defined]
-        if not widget.isVisible():
+    from app.qt.QtWidgets import QWidget
+
+    widgets = list(root.findChildren(QLabel)) + list(root.findChildren(QAbstractButton))  # type: ignore[attr-defined]
+    widgets.extend(root.findChildren(QWidget))  # type: ignore[attr-defined]
+    seen = set()
+    for widget in widgets:
+        if not widget.isVisible() or id(widget) in seen:
             continue
-        text = widget.text()
-        if text and text.strip():
+        seen.add(id(widget))
+        text = widget.text() if hasattr(widget, "text") else ""
+        try:
+            text = str(text or "")
+        except Exception:
+            text = ""
+        if text.strip():
             lines.append(text.replace("\n", " "))
     return "\n".join(lines)
 
@@ -1127,6 +1317,24 @@ def _named_any(walk: _Walk, name: str) -> Optional[object]:
     return _child(walk, name)
 
 
+def _grab(window: object, name: str) -> None:
+    """Grab without processEvents. Safe from a timer inside a modal event loop."""
+    from app.qt.QtCore import QPoint
+    from app.qt.QtGui import QPainter
+    from app.qt.QtWidgets import QApplication
+
+    _OUT.mkdir(parents=True, exist_ok=True)
+    image = window.grab()  # type: ignore[attr-defined]
+    painter = QPainter(image)
+    origin = window.mapToGlobal(QPoint(0, 0))  # type: ignore[attr-defined]
+    extra = QApplication.activeModalWidget() or QApplication.activePopupWidget()
+    if extra is not None and extra is not window and extra.isVisible() and extra.width() >= 30:
+        corner = extra.mapToGlobal(QPoint(0, 0)) - origin
+        painter.drawPixmap(corner, extra.grab())
+    painter.end()
+    image.save(str(_OUT / ("%s.png" % name)))
+
+
 def _shot(window: object, qapp: object, name: str) -> None:
     from app.qt.QtCore import QPoint
     from app.qt.QtGui import QPainter
@@ -1138,11 +1346,15 @@ def _shot(window: object, qapp: object, name: str) -> None:
     image = window.grab()  # type: ignore[attr-defined]
     painter = QPainter(image)
     origin = window.mapToGlobal(QPoint(0, 0))  # type: ignore[attr-defined]
-    for widget in QApplication.topLevelWidgets():
-        if widget is window or not widget.isVisible() or widget.width() < 30:
-            continue
-        corner = widget.mapToGlobal(QPoint(0, 0)) - origin
-        painter.drawPixmap(corner, widget.grab())
+    extra = QApplication.activeModalWidget() or QApplication.activePopupWidget()
+    if (
+        extra is not None
+        and extra is not window
+        and extra.isVisible()
+        and extra.width() >= 30
+    ):
+        corner = extra.mapToGlobal(QPoint(0, 0)) - origin
+        painter.drawPixmap(corner, extra.grab())
     painter.end()
     image.save(str(_OUT / ("%s.png" % name)))
 

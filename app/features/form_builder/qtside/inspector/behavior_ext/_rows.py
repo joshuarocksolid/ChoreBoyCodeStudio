@@ -153,6 +153,7 @@ class Gesture:
     verb: str = ""
     verb_fields: str = ""
     condition: str = ""
+    open_code: bool = False
 
 
 @dataclass(frozen=True)
@@ -165,6 +166,7 @@ class MethodAsk:
     params: str = ""
     sender: str = ""
     event_words: str = ""
+    open_code: bool = False
 
 
 @dataclass(frozen=True)
@@ -212,9 +214,9 @@ def project_sender(
     if not class_name:
         return _blank("layout", LAYOUT)
     chain = class_chain(classes, class_name)
-    display = display_name(doc, sender)
+    display = _named(doc, sender)
     friendly = _friendly(class_name)
-    line = "%s \u00b7 %s" % (display, sender)
+    line = display
     read_only = marker_read_only(doc.root.prop("cbcsLogic"))
     notice = NEWER_NOTICE if read_only else ""
     default = default_event(classes, class_name) or ""
@@ -527,10 +529,9 @@ def _short_words(doc: UiDocument, classes: QtClassTable, step: EventStep) -> str
 
 
 def _named(doc: UiDocument, name: str) -> str:
-    display = display_name(doc, name)
-    if not name or display == name:
-        return display or name
-    return "%s (%s)" % (display, name)
+    from app.features.form_builder.engine.logic.read_as_text import spoken_display
+
+    return spoken_display(doc, name) or name
 
 
 def _empty_sentence(display: str, signal: str, chain: Sequence[str]) -> str:
@@ -855,7 +856,7 @@ def _add_call(doc: UiDocument, classes: QtClassTable, sender: str, gesture: Gest
     header = event_words(gesture.signal, chain).header
     caption = "Write code for %s %s" % (display_name(doc, sender), header)
     command = steps_added(doc, sender, gesture.signal, (step,), caption)
-    ask = MethodAsk(caption, (command,), gesture.method, "", sender, header)
+    ask = MethodAsk(caption, (command,), gesture.method, "", sender, header, gesture.open_code)
     return Outcome(None, "", ask, gesture.signal, len(state.steps))
 
 

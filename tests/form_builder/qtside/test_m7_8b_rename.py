@@ -1,5 +1,5 @@
 # pyright: reportAttributeAccessIssue=false
-"""Rename a method used three ways. One form undo. Cancel and close write nothing."""
+"""Rename a method used three ways. The form undo and the window-file undo are separate. Cancel and close write nothing."""
 
 from __future__ import annotations
 

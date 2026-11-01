@@ -26,15 +26,28 @@ def method_page(ctx: object, page: object) -> object:
 
         text = text_of(node)
     stock = _stock(ctx)
-    suggested = suggest_method_name(
+    taken = _taken(ctx)
+    natural = suggest_method_name(
         class_name=class_name,
         object_name=ctx.source.sender,  # type: ignore[attr-defined]
         text=text,
         signal=page.signal,  # type: ignore[attr-defined]
         form_class=ctx.doc.form_class_name(),  # type: ignore[attr-defined]
-        taken=_taken(ctx),
+        taken=(),
         inherited=stock,
     )
+    if natural in set(taken):
+        suggested = natural
+    else:
+        suggested = suggest_method_name(
+            class_name=class_name,
+            object_name=ctx.source.sender,  # type: ignore[attr-defined]
+            text=text,
+            signal=page.signal,  # type: ignore[attr-defined]
+            form_class=ctx.doc.form_class_name(),  # type: ignore[attr-defined]
+            taken=taken,
+            inherited=stock,
+        )
     sends = _sends(ctx, page.signal)  # type: ignore[attr-defined]
     receive = ""
     if _show_receive(ctx, sends, chain, page.signal):  # type: ignore[attr-defined]

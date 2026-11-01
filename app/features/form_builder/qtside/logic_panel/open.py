@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import os
-from typing import Any, Optional
+from typing import Any, Optional, Tuple
 
+from app.qt.QtCore import Qt
 from app.qt.QtWidgets import QApplication, QWidget
 
 from app.features.form_builder.engine.logic.formula_env import env_for
@@ -54,6 +55,13 @@ def show_uses(surface: Any) -> None:
         return
     book = _book(surface)
     uses = of_name(book, name) if book is not None else ()
+    own = _own_event_uses(surface, name)
+    if own:
+        uses = own + tuple(
+            use
+            for use in uses
+            if not (use.name == name and use.widget == name and use.kind == "step")
+        )
     source, _relative = _window_text(surface)
     shown = _display(surface, name)
     previous = getattr(surface, "_logic_uses", None)
@@ -80,9 +88,11 @@ def show_uses(surface: Any) -> None:
         _code_family(surface),
     )
     surface._logic_uses = dialog  # type: ignore[attr-defined]
+    dialog.setWindowModality(Qt.WindowModality.WindowModal)
     dialog.show()
     dialog.raise_()
     dialog.activateWindow()
+    dialog.setFocus()
 
 
 def arm_method_rename(widget: QWidget, method: str) -> None:
@@ -115,6 +125,35 @@ def arm_method_rename(widget: QWidget, method: str) -> None:
     clear = getattr(hook, "clear", None)
     if callable(clear):
         clear()
+
+
+def _own_event_uses(surface: Any, name: str) -> Tuple[Use, ...]:
+    """The widget's own steps. Uses of a button is its events, not only readers of its name."""
+    session = getattr(surface, "session", None)
+    document = getattr(session, "document", None) if session is not None else None
+    if document is None or not name:
+        return ()
+    from app.features.form_builder.engine.logic.events import events_of_sender
+    from app.features.form_builder.engine.logic.events_catalog import event_words
+
+    found = []
+    for state in events_of_sender(document, name):
+        bits = []
+        for step in state.steps:
+            if step.verb == "validate":
+                bits.append("check all fields")
+            elif step.verb == "call" and step.method:
+                bits.append("call %s" % step.method)
+            elif step.verb == "slot" and step.slot:
+                bits.append(step.slot)
+            elif step.verb:
+                bits.append(step.verb.replace("_", " "))
+        if not bits:
+            continue
+        header = event_words(state.signal_name, ()).header
+        summary = "%s → %s" % (header, ", ".join(bits))
+        found.append(Use(name, "call", "step", name, summary, "", 0, "", 0, "", ""))
+    return tuple(found)
 
 
 def _display(surface: Any, name: str) -> str:

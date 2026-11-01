@@ -164,7 +164,8 @@ def test_outline_click_fills_the_header(qapp: QApplication) -> None:
     kind = pane.findChild(QLabel, "formBuilder.inspectorClass")
     assert name is not None and kind is not None
     assert name.text() == "okButton"
-    assert "QPushButton" in kind.text()
+    assert kind.text() == "Push button"
+    assert "QPushButton" in kind.toolTip()
     _close(window, pane, realizer, session)
 
 @pytest.mark.parity("R3-28")

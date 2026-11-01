@@ -59,7 +59,7 @@ def test_reveal_uses_the_diagnostic_key_before_the_object_name(qapp: QApplicatio
         )
         surface._session.diagnostics.publish("reader", (diagnostic,))  # noqa: SLF001
         assert surface.reveal(1, {"fb_key": diagnostic.key, "fb_object": "missing"})
-        assert "email" in surface.editor_status_sentence()
+        assert "Email" in surface.editor_status_sentence()
     finally:
         surface.release()
         parent.deleteLater()

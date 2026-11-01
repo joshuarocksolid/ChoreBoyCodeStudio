@@ -109,7 +109,7 @@ def script_k24(kb: Kb) -> None:
     kb.press("Key_Return")
     kb.check(_depth(kb) == before + 1, "one undo step for Clear Name")
     kb.check(_label(kb) == "Add Clear Name to Clear clicked", _label(kb))
-    kb.check(_focus_shows(kb, "Clear Name (nameEdit)"), "Clear Name is focused")
+    kb.check(_focus_shows(kb, "Clear Name"), "Clear Name is focused")
 
     before = _depth(kb)
     kb.press("Key_Down")

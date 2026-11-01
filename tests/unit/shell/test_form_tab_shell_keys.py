@@ -237,7 +237,7 @@ def test_reveal_after_an_xml_apply_selects_the_live_node(tmp_path: Path, qapp: Q
         assert surface.reveal(row.line_number, row.detail)  # type: ignore[attr-defined]
         qapp.processEvents()
         assert session.selection.state.current == live
-        assert "shopName" in surface.editor_status_sentence()  # type: ignore[attr-defined]
+        assert "Shop name" in surface.editor_status_sentence()  # type: ignore[attr-defined]
     finally:
         shutdown_main_window_for_test(window, qapp)
 

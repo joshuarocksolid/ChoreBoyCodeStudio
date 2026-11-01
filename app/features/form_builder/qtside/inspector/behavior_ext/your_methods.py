@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import List, Optional, Tuple
 
-from app.qt.QtCore import QEvent, Qt
+from app.qt.QtCore import QEvent, QPoint, Qt
 from app.qt.QtGui import QKeyEvent, QResizeEvent
 from app.qt.QtWidgets import QHBoxLayout, QLabel, QMenu, QVBoxLayout, QWidget
 from app.qt.qt_compat import enum_value, event_global_pos
@@ -24,6 +24,9 @@ from app.features.form_builder.qtside.pickers import method_actions
 
 _ENTER = frozenset({enum_value(Qt.Key.Key_Return), enum_value(Qt.Key.Key_Enter)})
 _DELETE = enum_value(Qt.Key.Key_Delete)
+_F10 = enum_value(Qt.Key.Key_F10)
+_F12 = enum_value(Qt.Key.Key_F12)
+_SHIFT = enum_value(Qt.KeyboardModifier.ShiftModifier)
 
 
 class YourMethods(QWidget):
@@ -84,6 +87,7 @@ class YourMethods(QWidget):
             if line is None and name in base_slots:
                 continue
             self._add_method(name, file_name, phrases, line, name in declared_methods(doc))
+        self._link_tab()
         declared = doc.ui.field("form_slots")
         signals = declared.signals if isinstance(declared, SlotsDecl) else ()
         if signals:
@@ -115,6 +119,24 @@ class YourMethods(QWidget):
         row = _MethodRow(self, name, text, accessible, warn, declared and not phrases)
         self._column.addWidget(row)
         self._rows.append(row)
+
+    def first_focus(self) -> Optional[QWidget]:
+        for row in self._rows:
+            if isinstance(row, _MethodRow) and row.isVisible():
+                return row
+        return None
+
+    def _link_tab(self) -> None:
+        rows = [row for row in self._rows if isinstance(row, _MethodRow)]
+        if not rows:
+            return
+        parent = self.parentWidget()
+        events = parent.findChild(QWidget, "formBuilder.events") if parent is not None else None
+        start = events.first_focus() if events is not None and hasattr(events, "first_focus") else None
+        previous: Optional[QWidget] = start if start is not None else self
+        for row in rows:
+            QWidget.setTabOrder(previous, row)
+            previous = row
 
     def go(self, method: str) -> None:
         surface = _surface(self)
@@ -183,6 +205,15 @@ class _MethodRow(QWidget):
             self._body.go(self.method_name)
             event.accept()
             return
+        mods = enum_value(event.modifiers())
+        if key == _F12 and mods & _SHIFT:
+            self._uses()
+            event.accept()
+            return
+        if key == _F10 and mods & _SHIFT:
+            self._rename_menu()
+            event.accept()
+            return
         if key == _DELETE:
             if self._can_delete:
                 self._body.delete(self.method_name)
@@ -193,6 +224,18 @@ class _MethodRow(QWidget):
             event.accept()
             return
         super().keyPressEvent(event)
+
+    def _uses(self) -> None:
+        from app.features.form_builder.qtside.logic_panel.open import show_uses
+
+        surface = _surface(self)
+        if surface is not None:
+            show_uses(surface)
+
+    def _rename_menu(self) -> None:
+        menu = QMenu(self)
+        menu.addAction("Rename", lambda: _arm_rename(self))
+        menu.popup(self.mapToGlobal(QPoint(0, self.height())))
 
     def contextMenuEvent(self, event: QEvent) -> None:  # noqa: N802
         menu = QMenu(self)

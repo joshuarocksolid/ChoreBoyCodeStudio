@@ -202,7 +202,8 @@ def test_outline_selection_shows_on_the_inspector(qapp, tmp_path: Path) -> None:
     kind = surface.findChild(QLabel, "formBuilder.inspectorClass")
     assert name is not None and kind is not None
     assert name.text() == "okButton"
-    assert "QPushButton" in kind.text()
+    assert kind.text() == "Push button"
+    assert "QPushButton" in kind.toolTip()
     surface.release()
 
 
@@ -581,7 +582,7 @@ def test_reveal_selects_the_named_widget(qapp, tmp_path: Path) -> None:  # type:
     surface = _open(parent, _FORM, tmp_path / "invoice.ui")
     assert surface.reveal(1, {"fb_object": "okButton"})
     sentence = surface.editor_status_sentence()
-    assert sentence.startswith("okButton · Push button")
+    assert sentence.startswith("OK · Push button")
     surface.release()
 
 
@@ -928,7 +929,8 @@ def test_insert_rail_opens_the_short_drawer(qapp, tmp_path: Path) -> None:  # ty
     assert kind is not None and name is not None
     assert "\n" not in kind.text()
     assert name.text() == "okButton"
-    assert "QPushButton" in kind.text()
+    assert kind.text() == "Push button"
+    assert "QPushButton" in kind.toolTip()
     surface.release()
     host.close()
 

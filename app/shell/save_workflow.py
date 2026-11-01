@@ -639,7 +639,9 @@ class SaveWorkflow:
         loaded_project = host.loaded_project()
         index_root = None
         inventory = None
-        if not path_existed_before_save and project_id is not None:
+        notice = getattr(source, "save_notice", None)
+        wrote_generated = getattr(notice, "kind", "") == "generated"
+        if project_id is not None and (not path_existed_before_save or wrote_generated):
             host.rescan_project_from_disk(reload_plugins=False, reindex=True)
         elif should_refresh_index_after_save(
             host.intelligence_runtime_settings(),

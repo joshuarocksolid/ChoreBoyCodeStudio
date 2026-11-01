@@ -46,15 +46,16 @@ _KINDS = (
 )
 _FORMATS = (
     ("", ""),
-    ("money", "money"),
-    ("number", "number"),
-    ("percent", "percent"),
-    ("date:short", "date:short"),
-    ("date:long", "date:long"),
-    ("date:iso", "date:iso"),
-    ("text:upper", "text:upper"),
-    ("text:proper", "text:proper"),
+    ("Money", "money"),
+    ("Number", "number"),
+    ("Percent", "percent"),
+    ("Short date", "date:short"),
+    ("Long date", "date:long"),
+    ("ISO date", "date:iso"),
+    ("Uppercase", "text:upper"),
+    ("Proper case", "text:proper"),
 )
+_SPEAK = {"condition": "condition", "value": "value", "default": "value"}
 
 
 @dataclass(frozen=True)
@@ -120,17 +121,24 @@ class _Row(QWidget):
         super().resizeEvent(event)  # type: ignore[arg-type]
         self._elide()
 
-    def show_value(self, text: str) -> None:
+    def show_value(self, text: str, tip: str = "") -> None:
         self._full = text
+        self._tip = tip
         self._elide()
 
     def _elide(self) -> None:
         if self.spec.slot in ("kind", "format"):
             return
         full = self._full
+        if len(full) <= 48:
+            if self.value.text() != full:
+                self.value.setText(full)
+            self._set_tip("")
+            return
         if self.width() <= 0:
             if self.value.text() != full:
                 self.value.setText(full)
+            self._set_tip(full)
             return
         metrics = self.value.fontMetrics()
         room = self.value.width()
@@ -139,7 +147,10 @@ class _Row(QWidget):
         shown = metrics.elidedText(full, _ELIDE, max(1, room))
         if self.value.text() != shown:
             self.value.setText(shown)
-        tip = full if shown != full else ""
+        self._set_tip(full if shown != full else "")
+
+    def _set_tip(self, elided: str) -> None:
+        tip = getattr(self, "_tip", "") or elided
         if self.value.toolTip() != tip:
             self.value.setToolTip(tip)
 
@@ -444,12 +455,13 @@ class StateBody(QWidget):
                 muted = "color: %s; background: transparent;" % chrome.muted
                 row.now.setStyleSheet(muted)
                 if stored:
-                    row.show_value(stored)
+                    spoken = _spoken_formula(stored, spec.slot, env)
+                    row.show_value(spoken or stored, stored if spoken else "")
                     row.value.setStyleSheet("color: %s; background: transparent;" % chrome.text)
                     now = _now_of(stored, spec, env, node, self._reader())
                     row.now.setText("now: %s" % now)
                     row.now.show()
-                    line = "%s  %s   now: %s" % (spec.words, stored, now)
+                    line = "%s  %s   now: %s" % (spec.words, spoken or stored, now)
                 else:
                     row.show_value(spec.empty)
                     row.value.setStyleSheet(muted)
@@ -676,6 +688,18 @@ def _slot(spec: StateRowSpec, env: object, node: WidgetNode) -> SlotKind:
     if spec.slot == "default":
         return SlotKind.default(target)
     return SlotKind.value(target)
+
+
+def _spoken_formula(text: str, slot: str, env: object) -> str:
+    kind = _SPEAK.get(slot, "")
+    if not kind or env is None:
+        return ""
+    from app.features.form_builder.engine.logic.formula.speak import speak_text
+
+    try:
+        return speak_text(text, env, kind)  # type: ignore[arg-type]
+    except Exception:
+        return ""
 
 
 def _stored(node: WidgetNode, key: str) -> str:

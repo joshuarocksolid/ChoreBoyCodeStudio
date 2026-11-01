@@ -55,7 +55,7 @@ def test_a_canvas_click_and_an_outline_click_select_the_same_widget(tmp_path: Pa
         _click(canvas, "one")
         assert _current(tree) == int(one)
         _click_row(tree, two)
-        assert surface.editor_status_sentence().startswith("two ·")
+        assert surface.editor_status_sentence().startswith("Two ·")
         assert _current(tree) == int(two)
     finally:
         surface.release()
