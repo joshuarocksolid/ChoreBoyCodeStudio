@@ -366,13 +366,14 @@ class StateBody(QWidget):
         if previous is None or previous.isHidden():
             previous = None
         for spec in specs:
-            if spec.key == "cbcsEnabledWhen" or spec.slot in ("kind", "format"):
+            if spec.key == "cbcsEnabledWhen":
                 continue
             row = self._rows.get(spec.key)
             if row is None or row.isHidden() or previous is None:
                 continue
-            QWidget.setTabOrder(previous, row)
-            previous = row
+            target = row.combo if spec.slot in ("kind", "format") and row.combo is not None else row
+            QWidget.setTabOrder(previous, target)
+            previous = target
 
     def _make(self, spec: StateRowSpec) -> _Row:
         row = _Row(self, spec)
@@ -543,10 +544,12 @@ class StateBody(QWidget):
         self._column.insertWidget(index + 1, pad)
 
     def _close_editor(self) -> None:
+        key = self._open_key
         self._open_key = None
         self._drop_live()
         editor = self._editor
         pad = self._pad
+        row = self._rows.get(key) if key else None
         if editor is None or pad is None or self._status is None:
             return
         editor.hide_lists()
@@ -556,6 +559,8 @@ class StateBody(QWidget):
         self._column.removeWidget(pad)
         pad.setParent(self)
         editor._reflow_block()
+        if row is not None and row.isVisible():
+            row.setFocus()
 
     def _arm_live(self, key: str) -> None:
         node = self._node

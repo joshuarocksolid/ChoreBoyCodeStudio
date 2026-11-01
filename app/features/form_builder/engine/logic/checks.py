@@ -209,6 +209,28 @@ def write_checks(checks: Sequence[Check]) -> Optional[str]:
     return write_json(tuple(payload))
 
 
+def _owner_label(label: str, object_name: str) -> str:
+    """A buddy or form-row caption wins. An object name is spoken as words."""
+    if label and label != object_name:
+        return label
+    words = _split_name(object_name)
+    return words or label or "Value"
+
+
+def _split_name(name: str) -> str:
+    text = name
+    for suffix in ("Label", "Spin", "Edit", "Button", "Check", "Combo"):
+        if text.endswith(suffix) and len(text) > len(suffix):
+            text = text[: -len(suffix)]
+            break
+    parts = re.findall(r"[A-Z]+(?![a-z])|[A-Z]?[a-z]+|\d+", text)
+    if not parts:
+        return ""
+    words = [parts[0][:1].upper() + parts[0][1:].lower()]
+    words.extend(part.lower() for part in parts[1:])
+    return " ".join(words)
+
+
 def plan(
     class_name: str,
     checks: Sequence[Check],
@@ -225,7 +247,7 @@ def plan(
     day is written as a date. The check schema says a string bound is a formula.
     A pure ISO date is treated as a date literal so native-first has a date to write.
     """
-    shown = label or object_name or "Value"
+    shown = _owner_label(label, object_name)
     native: List[NativeWrite] = []
     runtime: List[Union[RuntimeCheck, Skipped]] = []
     family = numeric_family(kind)

@@ -12,6 +12,7 @@ from typing import Dict, Optional, Tuple
 from app.features.form_builder.engine.logic.events_catalog import class_chain
 from app.features.form_builder.engine.logic.formula.env import FormulaEnv, WidgetFacts, reserved_names
 from app.features.form_builder.engine.project.window_facts import MethodFacts, WindowFacts
+from app.features.form_builder.engine.query.tab_stops import caption, form_row_pairs
 from app.features.form_builder.engine.ui4.defaults import QtClassTable
 from app.features.form_builder.engine.ui4.document import UiDocument
 from app.features.form_builder.engine.ui4.nodes import WidgetNode
@@ -104,6 +105,14 @@ def _buddy_labels(doc: UiDocument) -> Dict[str, str]:
         label = _text(node, "text")
         if buddy and label and buddy not in labels:
             labels[buddy] = label
+    for label_id, field in form_row_pairs(doc):
+        if field in labels:
+            continue
+        node = doc.get(label_id)
+        own = node.object_name if isinstance(node, WidgetNode) else ""
+        text = caption(doc, label_id).strip()
+        if text and text != own:
+            labels[field] = text
     return labels
 
 
