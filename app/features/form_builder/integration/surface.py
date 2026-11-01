@@ -583,6 +583,10 @@ class FormSurface(QWidget):
 
     def apply_theme(self, tokens: ShellThemeTokens) -> None:
         self._tokens = tokens
+        page = getattr(self, "_behavior_text_page", None)
+        theme = getattr(page, "apply_theme", None)
+        if callable(theme):
+            theme(tokens)
         self.setStyleSheet(
             "QWidget#formBuilder\\.surface { background: %s; color: %s; }"
             % (tokens.panel_bg, tokens.text_primary)
@@ -1282,6 +1286,23 @@ class FormSurface(QWidget):
         self._session.selection.set((node,), current=node, source=SelectionSource.COMMAND)
         self._workbench.canvas.setFocus()
         return True
+
+    def open_logic_use(self, use: object) -> None:
+        """Open the State row, Checks row, or step a Find result names."""
+        from app.features.form_builder.qtside.logic_panel.open import open_use
+
+        if self._stack.currentWidget() is not self._workbench:
+            self._stack.setCurrentWidget(self._workbench)
+        open_use(self, use)
+
+    def paint_behavior_page(self, image: object, printer: object) -> None:
+        """Print the Read as text raster. The view stays free of this module."""
+        from app.qt.QtGui import QImage
+
+        from app.features.form_builder.integration.image_export import paint_page
+
+        if isinstance(image, QImage):
+            paint_page(image, printer)
 
     def go_to_widget(self) -> bool:
         """Ctrl+R: open the Go to widget picker. False when this tab is not showing."""

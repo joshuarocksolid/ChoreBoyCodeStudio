@@ -6,8 +6,8 @@ from typing import List, Optional, Tuple
 
 from app.qt.QtCore import QEvent, Qt
 from app.qt.QtGui import QKeyEvent, QResizeEvent
-from app.qt.QtWidgets import QHBoxLayout, QLabel, QVBoxLayout, QWidget
-from app.qt.qt_compat import enum_value
+from app.qt.QtWidgets import QHBoxLayout, QLabel, QMenu, QVBoxLayout, QWidget
+from app.qt.qt_compat import enum_value, event_global_pos
 
 from app.features.form_builder.engine.commands.catalog_ext.methods import RemoveMethodDeclaration
 from app.features.form_builder.engine.logic.compat import node_class, split_signature
@@ -193,6 +193,18 @@ class _MethodRow(QWidget):
             event.accept()
             return
         super().keyPressEvent(event)
+
+    def contextMenuEvent(self, event: QEvent) -> None:  # noqa: N802
+        menu = QMenu(self)
+        menu.addAction("Rename", lambda: _arm_rename(self))
+        menu.popup(event_global_pos(event))
+        event.accept()
+
+
+def _arm_rename(row: QWidget) -> None:
+    from app.features.form_builder.qtside.logic_panel.open import arm_method_rename
+
+    arm_method_rename(row, row.method_name)  # type: ignore[attr-defined]
 
 
 def _applies(inputs: SectionInputs) -> bool:

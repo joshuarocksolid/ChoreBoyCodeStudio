@@ -26,26 +26,15 @@ from app.features.form_builder.engine.logic.formula.nodes import (
     Unary,
 )
 from app.features.form_builder.engine.logic.formula.normalize import normalize
+from app.features.form_builder.engine.logic.formula.kind_words import family_of as family_of
+from app.features.form_builder.engine.logic.formula.kind_words import kind_words as _kind
 from app.features.form_builder.engine.logic.formula.parse import parse_text
-from app.features.form_builder.qtside.formula.complete import _kind
 
 BLOCKED = "This is too complex for the builder. Edit it as a formula."
 
 _PREC = {"+": 1, "-": 1, "*": 2, "/": 2}
 _CMP = {"==": "eq", "!=": "ne", "<": "lt", "<=": "le", ">": "gt", ">=": "ge"}
 _SYMBOL = {value: key for key, value in _CMP.items()}
-_FAMILY = {
-    "Yes or no": "yesno",
-    "Whole number": "number",
-    "Number": "number",
-    "Money": "number",
-    "Percent": "number",
-    "Text": "text",
-    "Date": "date",
-    "Time": "time",
-    "Date and time": "datetime",
-    "Choice": "choice",
-}
 
 
 @dataclass(frozen=True)
@@ -132,13 +121,6 @@ def write_formula(model: Model) -> str:
     if isinstance(model, Condition):
         return _write_condition(model)
     return _write_value(model)
-
-
-def family_of(env: FormulaEnv, name: str) -> str:
-    facts = env.widgets.get(name)
-    if facts is None:
-        return ""
-    return _FAMILY.get(_kind(env, facts), "")
 
 
 def picker_label(env: FormulaEnv, name: str) -> str:

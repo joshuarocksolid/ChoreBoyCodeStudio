@@ -21,14 +21,26 @@ class SemanticRenameWorkflow:
         if loaded_project is None:
             QMessageBox.warning(parent, "Rename Symbol", "Open a project first.")
             return
-        editor_manager = self._host.editor_manager()
-        active_tab = editor_manager.active_tab()
-        editor_widget = self._host.active_editor_widget()
-        if active_tab is None or editor_widget is None:
-            QMessageBox.warning(parent, "Rename Symbol", "Open a file tab first.")
-            return
+        hook = getattr(parent, "_form_builder_method_rename", None)
+        seed_of = getattr(hook, "seed", None) if hook is not None else None
+        seed = seed_of(parent) if callable(seed_of) else None
+        if seed is not None:
+            old_symbol = str(getattr(seed, "old_name", "") or "")
+            current_file_path = str(getattr(seed, "window_path", "") or "")
+            source_text = str(getattr(seed, "source", "") or "")
+            cursor_position = int(getattr(seed, "cursor", 0) or 0)
+        else:
+            editor_manager = self._host.editor_manager()
+            active_tab = editor_manager.active_tab()
+            editor_widget = self._host.active_editor_widget()
+            if active_tab is None or editor_widget is None:
+                QMessageBox.warning(parent, "Rename Symbol", "Open a file tab first.")
+                return
+            old_symbol = editor_widget.word_under_cursor()
+            current_file_path = active_tab.file_path
+            source_text = editor_widget.toPlainText()
+            cursor_position = editor_widget.textCursor().position()
 
-        old_symbol = editor_widget.word_under_cursor()
         if not old_symbol:
             QMessageBox.information(parent, "Rename Symbol", "Place cursor on a symbol first.")
             return
@@ -47,14 +59,17 @@ class SemanticRenameWorkflow:
         if not new_symbol.isidentifier():
             QMessageBox.warning(parent, "Rename Symbol", "New name must be a valid Python identifier.")
             return
+        if hook is not None:
+            refuse = getattr(hook, "refusal", None)
+            sentence = refuse(parent, old_symbol, new_symbol, current_file_path) if callable(refuse) else ""
+            if sentence:
+                QMessageBox.warning(parent, "Rename Symbol", sentence)
+                return
 
         if not self._host.save_all_files():
             QMessageBox.warning(parent, "Rename Symbol", "Fix save errors before renaming.")
             return
         project_root = loaded_project.project_root
-        current_file_path = active_tab.file_path
-        source_text = editor_widget.toPlainText()
-        cursor_position = editor_widget.textCursor().position()
         started_at = time.perf_counter()
 
         def on_success(plan) -> None:  # type: ignore[no-untyped-def]
@@ -111,11 +126,30 @@ class SemanticRenameWorkflow:
             if confirm != QMessageBox.Yes:
                 return
 
+            applied = plan
+            if seed is not None and hook is not None:
+                paired = getattr(hook, "apply_paired", None)
+                if callable(paired):
+                    follow = paired(parent, seed, plan)
+                    if getattr(follow, "blocked", False):
+                        message = str(getattr(follow, "message", "") or "")
+                        if message:
+                            QMessageBox.warning(parent, "Rename Symbol", message)
+                        return
+                    applied = getattr(follow, "plan", plan)
+                    if not getattr(applied, "preview_patches", None):
+                        QMessageBox.information(
+                            parent,
+                            "Rename Symbol",
+                            f"Renamed '{old_symbol}' to '{new_symbol}'.",
+                        )
+                        return
+
             def on_apply_success(result) -> None:  # type: ignore[no-untyped-def]
                 self._host.record_local_history_transaction(
-                    {patch.file_path: patch.updated_content for patch in plan.preview_patches},
+                    {patch.file_path: patch.updated_content for patch in applied.preview_patches},
                     source="semantic_rename",
-                    label=f"Rename '{plan.old_symbol}' to '{plan.new_symbol}'",
+                    label=f"Rename '{applied.old_symbol}' to '{applied.new_symbol}'",
                 )
                 self._host.refresh_open_tabs_from_disk(result.changed_files)
                 self._host.reload_current_project()
@@ -129,7 +163,7 @@ class SemanticRenameWorkflow:
                 QMessageBox.warning(parent, "Rename Symbol", f"Failed to apply rename: {exc}")
 
             self._host.intelligence_controller().request_apply_rename(
-                plan=plan,
+                plan=applied,
                 on_success=on_apply_success,
                 on_error=on_apply_error,
             )

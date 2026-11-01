@@ -131,6 +131,11 @@ def install_form_builder(ctx: "ShellCompositionContext") -> None:
     from app.features.form_builder.integration.run_links_ext import install_console_hook
 
     install_console_hook()
+    from app.features.form_builder.integration.find_ext import install_find
+    from app.features.form_builder.integration.rename_ext import install_rename
+
+    install_find(window)
+    install_rename(window)
 
 
 def _refresh_shortcut_maps(window: object) -> None:
