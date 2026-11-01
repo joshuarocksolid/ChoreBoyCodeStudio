@@ -6,7 +6,7 @@ import io
 import tokenize
 from typing import Optional, Sequence, Tuple
 
-from app.qt.QtCore import QEvent, QPoint, QRect, QTimer, Qt
+from app.qt.QtCore import QEvent, QPoint, QTimer, Qt
 from app.qt.QtGui import QColor, QSyntaxHighlighter, QTextCharFormat, QTextCursor
 from app.qt.QtWidgets import QListWidget, QListWidgetItem, QPlainTextEdit, QTextEdit, QWidget
 from app.qt.qt_compat import enum_value
@@ -120,6 +120,7 @@ class FormulaEditor(QPlainTextEdit):
         self.setMinimumWidth(0)
         self._fitting = False
         self._placing = False
+        self._reflowing = False
         self._highlighter = _Highlighter(self.document())
         self._chrome = default_chrome()
         self._env: Optional[FormulaEnv] = None
@@ -442,12 +443,13 @@ class FormulaEditor(QPlainTextEdit):
         label.setToolTip(text)  # type: ignore[attr-defined]
         label.setWordWrap(True)  # type: ignore[attr-defined]
         label.setText(text)  # type: ignore[attr-defined]
-        # The label's own width can still be the unwrapped size hint. Measure
-        # against the field, which is the width the line will actually wrap in.
-        width = self.width() if self.width() > 20 else 160
-        wrap = int(getattr(getattr(Qt, "TextFlag", Qt), "TextWordWrap"))
-        rect = label.fontMetrics().boundingRect(QRect(0, 0, max(1, width), 2000), wrap, text)  # type: ignore[attr-defined]
-        label.setMinimumHeight(max(rect.height(), label.fontMetrics().lineSpacing()) + 4)  # type: ignore[attr-defined]
+        label.setMinimumHeight(0)  # type: ignore[attr-defined]
+        measure = int(label.contentsRect().width())  # type: ignore[attr-defined]
+        if measure >= 20 and bool(label.hasHeightForWidth()):  # type: ignore[attr-defined]
+            needed = int(label.heightForWidth(measure))  # type: ignore[attr-defined]
+            if needed > 0:
+                label.setMinimumHeight(needed)  # type: ignore[attr-defined]
+        self._reflow_block()
 
     def _dismiss(self, widget: QListWidget) -> None:
         if self._floating is widget:
@@ -455,8 +457,6 @@ class FormulaEditor(QPlainTextEdit):
         widget.hide()
         widget.setMinimumWidth(0)
         widget.setMaximumWidth(16777215)
-        if self._floating is None:
-            self._release_block()
 
     def _popup(self, widget: QListWidget) -> None:
         self._floating = widget
@@ -480,8 +480,6 @@ class FormulaEditor(QPlainTextEdit):
         self._paint_list(widget)
         self._publish_status()
         pad = self.parentWidget()
-        self._size_block(pad)
-        self._grow_block(host, pad)
         if pad is not None and pad.layout() is not None:
             pad.layout().activate()
         if host.layout() is not None:
@@ -509,42 +507,41 @@ class FormulaEditor(QPlainTextEdit):
         widget.raise_()
         widget.show()
 
-    def _size_block(self, pad: Optional[QWidget]) -> None:
-        label = self._status
-        if pad is None or label is None or pad.objectName() != "formBuilder.state.edit":
+    def _reflow_block(self) -> None:
+        # activate() only packs children into the height already assigned.
+        # The wrapped status changes heightForWidth, and the tab does not ask
+        # again, so the pad stays short and the label draws over the next rows.
+        # Pin the pad and the section to the height their layouts report for
+        # the width they already have. Do not resize(): that freezes the width.
+        if self._reflowing:
             return
-        lay = pad.layout()
-        top = bottom = spacing = 2
-        if lay is not None:
-            margins = lay.contentsMargins()
-            top = margins.top()
-            bottom = margins.bottom()
-            spacing = max(0, lay.spacing())
-        pad.setFixedHeight(top + self.height() + spacing + label.minimumHeight() + bottom)
-
-    def _release_block(self) -> None:
-        pad = self.parentWidget()
-        if pad is None or pad.objectName() != "formBuilder.state.edit":
-            return
-        pad.setMinimumHeight(0)
-        pad.setMaximumHeight(16777215)
-
-    def _grow_block(self, host: QWidget, pad: Optional[QWidget]) -> None:
-        label = self._status
-        if pad is None or label is None:
-            return
-        pad.setMinimumHeight(self.height() + label.minimumHeight() + 8)
-        widget: Optional[QWidget] = host
-        while widget is not None:
-            lay = widget.layout()
-            if lay is not None:
-                lay.invalidate()
-            widget.updateGeometry()
-            if widget.objectName() == "formBuilder.behaviorBody":
+        self._reflowing = True
+        try:
+            widget: Optional[QWidget] = self.parentWidget()
+            targets = []
+            while widget is not None:
+                targets.append(widget)
+                if widget.objectName() == "formBuilder.behaviorBody":
+                    break
+                widget = widget.parentWidget()
+            for target in targets:
+                width = target.width()
+                if width < 20 or not target.hasHeightForWidth():
+                    continue
+                height = int(target.heightForWidth(width))
+                if height <= 0:
+                    continue
+                # resize() would pin the width captured before the splitter
+                # finished narrowing. A minimum height grows the block and
+                # still lets that pass own the width.
+                if target.objectName() in ("formBuilder.state.edit", "formBuilder.state"):
+                    target.setMinimumHeight(height)
+                lay = target.layout()
                 if lay is not None:
+                    lay.invalidate()
                     lay.activate()
-                break
-            widget = widget.parentWidget()
+        finally:
+            self._reflowing = False
 
     def _popup_host(self) -> QWidget:
         current: Optional[QWidget] = self.parentWidget()
@@ -567,7 +564,10 @@ class FormulaEditor(QPlainTextEdit):
 
     def resizeEvent(self, event: object) -> None:  # noqa: N802
         super().resizeEvent(event)  # type: ignore[arg-type]
+        if self._fitting or self._reflowing:
+            return
         self._fit()
+        self._reflow_block()
         if self._floating is not None:
             self._place_popup()
 

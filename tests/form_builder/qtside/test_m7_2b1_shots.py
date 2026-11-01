@@ -29,6 +29,23 @@ def _pump(qapp: QApplication, times: int = 6) -> None:
         qapp.processEvents()
 
 
+def _with_pytest_path(env: dict) -> dict:
+    """Point the 200% child at the pytest that provides the timeout plugin.
+
+    The checks runner leaves user-site pytest ahead of the vendor tree, and
+    that pytest has no timeout plugin. The child sets PYTHONNOUSERSITE, so it
+    must be given the vendor directory explicitly.
+    """
+    import pytest_timeout
+
+    root = Path(pytest_timeout.__file__).resolve().parent
+    if root.name == "pytest_timeout":
+        root = root.parent
+    prior = env.get("PYTHONPATH", "")
+    env["PYTHONPATH"] = str(root) if not prior else os.pathsep.join((str(root), prior))
+    return env
+
+
 def _grab(widget: QWidget, path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     widget.grab().save(str(path))
@@ -46,7 +63,7 @@ def _theme(window: QWidget, mode: str, qapp: QApplication) -> None:
     _pump(qapp)
 
 
-def _set_inspector_width(window: QWidget, width: int, qapp: QApplication) -> None:
+def _apply_inspector_width(window: QWidget, width: int) -> None:
     from app.qt.QtWidgets import QSplitter
 
     splitter = window.findChild(QSplitter, "formBuilder.splitter")
@@ -58,7 +75,20 @@ def _set_inspector_width(window: QWidget, width: int, qapp: QApplication) -> Non
     total = sum(sizes) or splitter.width()
     left = sizes[0] if len(sizes) == 3 else 232
     splitter.setSizes([left, max(360, total - left - width), width])
+
+
+def _set_inspector_width(window: QWidget, width: int, qapp: QApplication) -> None:
+    # A taller open formula grows the workbench, and that resize puts the
+    # saved inspector width back. Apply once so the section can grow, then
+    # again so the grab sees the requested width.
+    _apply_inspector_width(window, width)
     _pump(qapp)
+    _apply_inspector_width(window, width)
+    qapp.processEvents()
+    editor = window.findChild(QWidget, "formBuilder.formula")
+    reflow = getattr(editor, "_reflow_block", None) if editor is not None else None
+    if editor is not None and editor.isVisible() and callable(reflow):
+        reflow()
 
 
 def _clear_inspector_width(window: QWidget, qapp: QApplication) -> None:
@@ -164,6 +194,7 @@ def test_m7_2b1_shots(qapp: QApplication) -> None:
     env["PYTHONNOUSERSITE"] = "1"
     env["PYTHONUNBUFFERED"] = "1"
     env["CBCS_DISABLE_BACKGROUND_RUNTIME"] = "1"
+    _with_pytest_path(env)
     done = subprocess.run(
         [
             sys.executable,

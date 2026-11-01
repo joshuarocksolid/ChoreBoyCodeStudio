@@ -480,9 +480,16 @@ class StateBody(QWidget):
         status.setObjectName("formBuilder.state.status")
         status.setWordWrap(True)
         status.setMinimumWidth(0)
-        # The unwrapped sentence must not force the section wider than the inspector.
-        policy = getattr(QSizePolicy, "Policy", QSizePolicy)
-        status.setSizePolicy(getattr(policy, "Ignored"), getattr(policy, "Minimum"))
+        # setSizePolicy() clears the height-for-width bit setWordWrap turned on.
+        # The column then keeps a one-line hint and the wrapped sentence draws
+        # over the next rows. Ignored keeps that sentence from widening the section.
+        names = getattr(QSizePolicy, "Policy", QSizePolicy)
+        status.setSizePolicy(getattr(names, "Ignored"), getattr(names, "Minimum"))
+        fitted = status.sizePolicy()
+        fitted.setHeightForWidth(True)
+        status.setSizePolicy(fitted)
+        pad.setMinimumWidth(0)
+        pad.setSizePolicy(getattr(names, "Preferred"), getattr(names, "Minimum"))
         status.hide()
         editor.hide()
         layout.addWidget(editor)
@@ -521,6 +528,7 @@ class StateBody(QWidget):
         pad.hide()
         self._column.removeWidget(pad)
         pad.setParent(self)
+        editor._reflow_block()
 
     def _reader(self) -> SimpleNamespace:
         env = self._env

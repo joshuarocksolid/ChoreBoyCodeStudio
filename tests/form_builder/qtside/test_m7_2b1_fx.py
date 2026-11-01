@@ -3,6 +3,11 @@
 
 from __future__ import annotations
 
+import os
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
 from types import SimpleNamespace
 from typing import Tuple
 
@@ -15,11 +20,12 @@ from app.features.form_builder.engine.ui4.writer import write_ui
 from app.features.form_builder.integration.chrome import chrome_for
 from app.features.form_builder.qtside.formula.editor import FormulaEditor
 from app.features.form_builder.qtside.inspector.behavior_ext.state import open_state_row
-from app.qt.QtCore import QPoint, Qt
+from app.qt.QtCore import QPoint, QRect, Qt
 from app.qt.QtGui import QColor, QTextCharFormat
 from app.qt.QtTest import QTest
 from app.qt.QtWidgets import QApplication, QLabel, QListWidget, QPlainTextEdit, QVBoxLayout, QWidget
 from app.shell.theme_tokens import tokens_from_palette
+from tests.form_builder.qtside.test_m7_2b1_shots import _with_pytest_path
 from tests.form_builder.qtside.test_m7_2b1_state import _select, _stored, desk, pump
 
 pytestmark = [pytest.mark.unit]
@@ -229,6 +235,126 @@ def test_underlines_use_the_chrome_token_for_each_severity(qapp: QApplication) -
     pump()
     _assert_underline(editor, chrome.info, "DotLine")
     window.close()
+
+
+_ROW_KEYS = (
+    "cbcsKind",
+    "cbcsEnabledWhen",
+    "cbcsVisibleWhen",
+    "cbcsReadOnlyWhen",
+    "cbcsValue",
+    "cbcsFormat",
+    "cbcsDefault",
+)
+
+
+@pytest.mark.timeout(120)
+def test_wrapped_status_pushes_the_rows_below_it(qapp: QApplication) -> None:
+    del qapp
+    if os.environ.get("CBCS_FB_GEOM_CHILD") == "1":
+        for width in (236, 300):
+            _assert_status_clears_the_next_row(width)
+        return
+    for width in (236, 300):
+        _assert_status_clears_the_next_row(width)
+    env = os.environ.copy()
+    env["QT_SCALE_FACTOR"] = "2"
+    env["CBCS_FB_GEOM_CHILD"] = "1"
+    env.setdefault("QT_QPA_PLATFORM", "offscreen")
+    env["PYTHONNOUSERSITE"] = "1"
+    env["CBCS_DISABLE_BACKGROUND_RUNTIME"] = "1"
+    _with_pytest_path(env)
+    done = subprocess.run(
+        [
+            sys.executable,
+            "-s",
+            "-m",
+            "pytest",
+            "-p",
+            "no:cacheprovider",
+            "--import-mode=importlib",
+            "-q",
+            str(Path(__file__).resolve()),
+            "-k",
+            "test_wrapped_status_pushes_the_rows_below_it",
+        ],
+        cwd=str(Path(__file__).resolve().parents[3]),
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    text = done.stdout + "\n" + done.stderr
+    tail = "\n".join(text.splitlines()[-12:])
+    # Qt teardown can SIGSEGV after a passing child. The shot harness allows it.
+    passed = "passed" in text and "failed" not in text
+    assert done.returncode == 0 or (done.returncode in (-11, 139) and passed), tail
+
+
+def _assert_status_clears_the_next_row(width: int) -> None:
+    from app.features.form_builder.qtside.inspector import TabId
+    from tests.form_builder.qtside.test_m3_keyboard_scripts import _close
+    from tests.form_builder.qtside.test_m7_2b1_k27 import _session
+    from tests.form_builder.qtside.test_m7_2b1_shots import _pump, _set_inspector_width
+
+    qapp = QApplication.instance()
+    assert isinstance(qapp, QApplication)
+    tmp = Path(tempfile.mkdtemp()).resolve()
+    window, kb, guard, _path = _session(tmp, qapp)
+    try:
+        surface = kb.surface
+        edit = surface.session.document.by_name("discountEdit")[0]
+        inspector = surface.workbench.inspector
+        surface.session.selection.set((edit,), source="canvas")
+        inspector.focus_tab(TabId.BEHAVIOR)
+        inspector.flush()
+        _pump(qapp)
+        _set_inspector_width(window, width, qapp)
+        open_state_row(inspector, "cbcsVisibleWhen")
+        _pump(qapp)
+        editor = _editor(inspector)
+        editor.setPlainText("missingField")
+        QApplication.processEvents()
+        pump()
+        _assert_block(inspector, list_open=False)
+        editor.setPlainText("")
+        QTest.keyClicks(editor, "disc")
+        QApplication.processEvents()
+        pump()
+        _assert_block(inspector, list_open=True)
+    finally:
+        _close(window, qapp, guard)
+
+
+def _mapped(widget: QWidget, root: QWidget) -> QRect:
+    return QRect(widget.mapTo(root, QPoint(0, 0)), widget.size())
+
+
+def _assert_block(pane: QWidget, list_open: bool) -> None:
+    state = pane.findChild(QWidget, "formBuilder.state")
+    status = pane.findChild(QLabel, "formBuilder.state.status")
+    pad = pane.findChild(QWidget, "formBuilder.state.edit")
+    nxt = pane.findChild(QWidget, "formBuilder.state.row.cbcsReadOnlyWhen")
+    assert state is not None and status is not None and pad is not None and nxt is not None
+    assert state.width() <= 320, state.width()
+    inspector = state.window().findChild(QWidget, "formBuilder.inspector")
+    if inspector is not None:
+        assert state.width() <= inspector.width(), (state.width(), inspector.width())
+    assert status.isVisible() and "Fix or press Esc to undo this formula" in status.text()
+    status_bottom = status.mapTo(state, QPoint(0, status.height())).y()
+    next_top = nxt.mapTo(state, QPoint(0, 0)).y()
+    assert status_bottom <= next_top, (status_bottom, next_top, status.height(), status.width())
+    needed = status.heightForWidth(max(1, status.contentsRect().width()))
+    assert status.height() + 1 >= needed, (status.height(), needed, status.contentsRect().width())
+    pad_rect = _mapped(pad, state)
+    for key in _ROW_KEYS:
+        row = pane.findChild(QWidget, "formBuilder.state.row.%s" % key)
+        assert row is not None and not row.isHidden()
+        assert not pad_rect.intersects(_mapped(row, state))
+    if not list_open:
+        return
+    listed = pane.findChild(QListWidget, "formBuilder.formula.complete")
+    assert listed is not None and listed.isVisible()
+    assert not _mapped(listed, state).intersects(_mapped(status, state))
 
 
 def _assert_underline(editor: FormulaEditor, color: str, style_name: str) -> None:
