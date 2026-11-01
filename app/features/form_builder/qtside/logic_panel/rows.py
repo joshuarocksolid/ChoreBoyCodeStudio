@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from typing import Callable, Optional
 
 from app.qt.QtCore import QSize, Qt
-from app.qt.QtGui import QColor, QFont, QPainter, QPalette, QTextCharFormat, QTextCursor, QTextDocument, QTextOption
+from app.qt.QtGui import QColor, QFont, QFontDatabase, QFontInfo, QPainter, QPalette, QTextCharFormat, QTextCursor, QTextDocument, QTextOption
 from app.qt.QtWidgets import QHBoxLayout, QLabel, QSizePolicy, QVBoxLayout, QWidget
 from app.qt.qt_compat import enum_value
 
@@ -227,8 +227,13 @@ class LogicRow(QWidget):
         body_color = faint if not self._face.code and self._face.warning else text
         self._body.set_color(body_color)
         if self._face.code:
-            font = QFont(self._code_family)
+            # Start from the row's font so the code line keeps the body size.
+            font = QFont(self.font())
+            font.setFamily(self._code_family)
             font.setStyleHint(QFont.TypeWriter)  # type: ignore[attr-defined]
+            font.setFixedPitch(True)
+            if not QFontInfo(font).fixedPitch():
+                font.setFamily(QFontDatabase.systemFont(QFontDatabase.FixedFont).family())
             self._body.setFont(font)
         if self._face.warning and warning:
             ratio = float(getattr(self, "devicePixelRatioF", lambda: 1.0)())
