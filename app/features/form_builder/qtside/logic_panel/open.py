@@ -10,7 +10,7 @@ from app.qt.QtWidgets import QApplication, QWidget
 from app.features.form_builder.engine.logic.formula_env import env_for
 from app.features.form_builder.engine.logic.uses import Use, collect, of_name
 from app.features.form_builder.engine.ui4.defaults import QtClassTable
-from app.features.form_builder.qtside.logic_panel.uses_view import UsesDialog
+from app.features.form_builder.qtside.logic_panel.uses_view import UsesDialog, displays_for
 
 _PLACE = "formBuilder.events.place"
 _NEED = "Select a widget, a method, or a logic row first."
@@ -54,6 +54,8 @@ def show_uses(surface: Any) -> None:
         return
     book = _book(surface)
     uses = of_name(book, name) if book is not None else ()
+    source, _relative = _window_text(surface)
+    shown = _display(surface, name)
     previous = getattr(surface, "_logic_uses", None)
     if previous is not None:
         # A closed dialog stays a child and would be the next findChild hit.
@@ -67,11 +69,42 @@ def show_uses(surface: Any) -> None:
         if callable(later):
             later()
     parent = surface.window() if hasattr(surface, "window") else surface
-    dialog = UsesDialog(name, uses, _tokens(surface), parent)
+    dialog = UsesDialog(
+        name,
+        shown,
+        uses,
+        source.splitlines(),
+        displays_for(_env(surface)),
+        _tokens(surface),
+        parent,
+        _code_family(surface),
+    )
     surface._logic_uses = dialog  # type: ignore[attr-defined]
     dialog.show()
     dialog.raise_()
     dialog.activateWindow()
+
+
+def _display(surface: Any, name: str) -> str:
+    return displays_for(_env(surface)).get(name) or name
+
+
+def _env(surface: Any) -> object:
+    session = getattr(surface, "session", None)
+    document = getattr(session, "document", None) if session is not None else None
+    if document is None:
+        return None
+    return env_for(document, None, QtClassTable.shared())
+
+
+def _code_family(surface: Any) -> str:
+    from app.core.constants import UI_EDITOR_FONT_FAMILY_DEFAULT
+
+    window = surface.window() if hasattr(surface, "window") else None
+    family = getattr(window, "_editor_font_family", "") if window is not None else ""
+    if isinstance(family, str) and family.strip():
+        return family.strip()
+    return UI_EDITOR_FONT_FAMILY_DEFAULT
 
 
 def _book(surface: Any) -> object:
@@ -91,9 +124,10 @@ def _book(surface: Any) -> object:
 
 
 def _window_text(surface: Any) -> tuple:
-    from app.features.form_builder.integration.overlay_ext.connections import window_file
-
-    base = window_file(surface)
+    ask = getattr(surface, "logic_window_file", None)
+    base = ask() if callable(ask) else ""
+    if not isinstance(base, str):
+        base = ""
     folder = os.path.dirname(str(getattr(surface, "_path", "") or ""))
     if not base or not folder:
         return "", base or ""

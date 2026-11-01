@@ -50,7 +50,7 @@ def test_alt_l_focuses_the_filter_and_shift_f12_opens_uses(tmp_path: Path, qapp:
         dialog = window.findChild(QWidget, "formBuilder.logic.uses")
         assert dialog is not None
         assert dialog.isVisible()
-        assert "discountEdit" in dialog.windowTitle()
+        assert "Discount rate" in dialog.windowTitle()
         assert guard.seen == []
     finally:
         _close(window, qapp, guard)

@@ -98,6 +98,18 @@ def invoice_text() -> str:
         '<widget class="QLineEdit" name="discountEdit">%s</widget>' % _prop("cbcsEnabledWhen", "discountCheck"),
     )
     text = text.replace(
+        '<item row="0" column="0">',
+        (
+            '<item row="4" column="0">'
+            '<widget class="QLabel" name="discountRateLabel">'
+            '<property name="text"><string>Discount rate</string></property>'
+            '<property name="buddy"><cstring>discountEdit</cstring></property>'
+            "</widget></item>"
+            '<item row="0" column="0">'
+        ),
+        1,
+    )
+    text = text.replace(
         '<widget class="QLabel" name="lineTotalLabel"/>',
         '<widget class="QLabel" name="lineTotalLabel">%s</widget>' % _prop("cbcsValue", "qtySpin * priceSpin"),
     )

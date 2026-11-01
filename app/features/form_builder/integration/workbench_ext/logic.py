@@ -7,7 +7,7 @@ from typing import Any
 from app.qt.QtWidgets import QWidget
 
 from app.features.form_builder.integration.workbench_ext import LeftSection
-from app.features.form_builder.qtside.logic_panel.panel import LogicPanel
+from app.features.form_builder.qtside.logic_panel.panel import LogicPanel, set_idle_runner
 
 
 def _build(workbench: Any) -> LogicPanel:
@@ -27,6 +27,9 @@ def _focus(widget: Any) -> None:
 
 
 def register(slots: Any) -> None:
+    from app.shell.idle_turn import run_when_idle
+
+    set_idle_runner(run_when_idle)
     slots.add_left_section(
         LeftSection("logic", "Logic", _build, order=25, weight=20, keys="Alt+L", focus=_focus)
     )

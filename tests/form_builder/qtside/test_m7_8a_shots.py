@@ -36,10 +36,16 @@ def _shoot(qapp: QApplication, folder: Path, scale: str) -> None:
             tokens = tokens_from_palette(qapp.palette(), force_mode=mode)
             surface.apply_theme(tokens)  # type: ignore[attr-defined]
             _pump(qapp)
+            checks = panel.findChild(QWidget, "formBuilder.logic.chip.checks")
+            assert checks is not None
+            checks.setChecked(False)  # type: ignore[attr-defined]
+            _pump(qapp)
             panel.setFixedWidth(320)
+            panel.setFixedHeight(860)
             _pump(qapp)
             _grab(panel, folder / ("logic-filled-%s-%s.png" % (mode, scale)))
             panel.setFixedWidth(184)
+            panel.setFixedHeight(980)
             _pump(qapp)
             _grab(panel, folder / ("logic-filled-%s-%s-184.png" % (mode, scale)))
             panel.setMinimumWidth(0)

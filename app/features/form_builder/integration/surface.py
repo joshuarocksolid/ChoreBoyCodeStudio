@@ -2036,6 +2036,12 @@ class FormSurface(QWidget):
 
         open_uses(self)
 
+    def logic_window_file(self) -> str:
+        """The window file beside this form. The Logic panel reads it and does not import integration."""
+        from app.features.form_builder.integration.overlay_ext.connections import window_file
+
+        return window_file(self)
+
     def _on_tab_activated(self, _index: int) -> None:
         tab = self._tab_widget
         if tab is None or self._released:

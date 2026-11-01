@@ -1,97 +1,60 @@
-"""Uses of one name. Read, Set and Call, from the same table as the Logic panel."""
+"""Uses of one name. The same two-line row as the Logic panel, grouped by role."""
 
 from __future__ import annotations
 
-from typing import Optional, Tuple
+from typing import Dict, Optional, Sequence, Tuple
 
 from app.qt.QtCore import Qt
+from app.qt.QtGui import QColor, QPalette
 from app.qt.QtWidgets import QDialog, QLabel, QVBoxLayout, QWidget
 from app.qt.qt_compat import enum_value
 
-from app.features.form_builder.engine.logic.uses import Use
+from app.core.constants import UI_EDITOR_FONT_FAMILY_DEFAULT
+from app.features.form_builder.engine.logic.uses import WORDS, Use
+from app.features.form_builder.qtside.logic_panel.rows import LogicRow, RowFace, paint_roles
 
-_ELIDE = getattr(getattr(Qt, "TextElideMode", Qt), "ElideRight")
 _PLAIN = getattr(getattr(Qt, "TextFormat", Qt), "PlainText")
-_FOCUS = getattr(getattr(Qt, "FocusPolicy", Qt), "StrongFocus")
-
-
-def _ignored() -> tuple:
-    from app.qt.QtWidgets import QSizePolicy
-
-    names = getattr(QSizePolicy, "Policy", QSizePolicy)
-    return getattr(names, "Ignored"), getattr(names, "Preferred")
-
-
-class ElidedLabel(QLabel):
-    """One line, cut with an ellipsis, tooltip and accessible name left whole."""
-
-    def __init__(self, full: str, parent: QWidget) -> None:
-        super().__init__(parent)
-        self._full = full
-        self._eliding = False
-        self.setWordWrap(False)
-        self.setMinimumWidth(0)
-        self.setTextFormat(_PLAIN)
-        self.setToolTip(full)
-        ignored, preferred = _ignored()
-        self.setSizePolicy(ignored, preferred)  # type: ignore[arg-type]
-        self._elide()
-
-    def set_full(self, full: str) -> None:
-        self._full = full
-        self.setToolTip(full)
-        self._elide()
-
-    def resizeEvent(self, event: object) -> None:  # noqa: N802
-        super().resizeEvent(event)  # type: ignore[arg-type]
-        self._elide()
-
-    def showEvent(self, event: object) -> None:  # noqa: N802
-        super().showEvent(event)  # type: ignore[arg-type]
-        self._elide()
-
-    def _elide(self) -> None:
-        if self._eliding:
-            return
-        self._eliding = True
-        try:
-            width = max(1, self.width() - 2)
-            shown = self.fontMetrics().elidedText(self._full, _ELIDE, width)
-            if self.text() != shown:
-                self.setText(shown)
-        finally:
-            self._eliding = False
+_GROUPS = (("read", "READS"), ("set", "SETS"), ("call", "CALLS"))
 
 
 class UsesDialog(QDialog):
     def __init__(
         self,
         name: str,
+        display: str,
         uses: Tuple[Use, ...],
+        lines: Sequence[str],
+        displays: Optional[Dict[str, str]],
         tokens: object,
         parent: Optional[QWidget] = None,
+        code_family: str = "",
     ) -> None:
         super().__init__(parent)
         self.setObjectName("formBuilder.logic.uses")
-        self.setWindowTitle("Uses of %s" % name)
+        shown = display or name
+        self.setWindowTitle("Uses of %s" % shown)
         self.setMinimumWidth(0)
         self._name = name
+        self._display = shown
         self._uses = uses
+        self._lines = tuple(lines)
+        self._displays = displays or {}
         self._tokens = tokens
+        self._family = code_family or UI_EDITOR_FONT_FAMILY_DEFAULT
         self._rows: list = []
         column = QVBoxLayout(self)
         column.setContentsMargins(8, 8, 8, 8)
         column.setSpacing(4)
         self._column = column
-        heading = QLabel("Uses of %s" % name, self)
+        heading = QLabel("Uses of %s" % shown, self)
         heading.setObjectName("formBuilder.logic.usesHeading")
-        heading.setWordWrap(False)
+        heading.setWordWrap(True)
         heading.setMinimumWidth(0)
         column.addWidget(heading)
         self._fill()
         if tokens is not None:
             self.apply_theme(tokens)
-        self.resize(420, 360)
+        self.resize(420, 420)
 
     def keyPressEvent(self, event: object) -> None:  # noqa: N802
         if enum_value(event.key()) == enum_value(Qt.Key.Key_Escape):  # type: ignore[attr-defined]
@@ -101,10 +64,8 @@ class UsesDialog(QDialog):
 
     def apply_theme(self, tokens: object) -> None:
         self._tokens = tokens
-        width = tokens.focus_border_width  # type: ignore[attr-defined]
+        chrome = paint_roles(tokens)
         self.setAutoFillBackground(True)
-        from app.qt.QtGui import QColor, QPalette
-
         palette = self.palette()
         role = getattr(QPalette, "ColorRole", QPalette)
         palette.setColor(getattr(role, "Window"), QColor(tokens.panel_bg))  # type: ignore[attr-defined]
@@ -113,22 +74,30 @@ class UsesDialog(QDialog):
         self.setStyleSheet(
             "QDialog#formBuilder\\.logic\\.uses { background: %s; color: %s; }"
             "QLabel { color: %s; background: transparent; }"
-            "QLabel#formBuilder\\.logic\\.usesTitle { color: %s; }"
-            "QLabel#formBuilder\\.logic\\.usesRow:focus { border: %dpx solid %s; }"
+            "QLabel#formBuilder\\.logic\\.title {"
+            " color: %s; font-size: 10px; font-weight: 600; letter-spacing: 0.5px; }"
             % (
                 tokens.panel_bg,  # type: ignore[attr-defined]
                 tokens.text_primary,  # type: ignore[attr-defined]
                 tokens.text_primary,  # type: ignore[attr-defined]
                 tokens.text_muted,  # type: ignore[attr-defined]
-                width,
-                tokens.accent,  # type: ignore[attr-defined]
             )
         )
+        for row in self._rows:
+            row.apply_colors(
+                tokens.text_primary,  # type: ignore[attr-defined]
+                chrome.faint,
+                chrome.row_hover,
+                chrome.selected,
+                chrome.warning,
+                tokens.panel_bg,  # type: ignore[attr-defined]
+                self._family,
+            )
 
     def _fill(self) -> None:
         if not self._uses:
             empty = QLabel(
-                "Nothing in this form reads, sets, or calls %s." % self._name,
+                "Nothing in this form reads, sets, or calls %s." % self._display,
                 self,
             )
             empty.setWordWrap(True)
@@ -137,39 +106,50 @@ class UsesDialog(QDialog):
             self._column.addStretch(1)
             return
         number = 0
-        for role, title in (("read", "Read"), ("set", "Set"), ("call", "Call")):
+        for role, title in _GROUPS:
             rows = tuple(use for use in self._uses if use.role == role)
             if not rows:
                 continue
             heading = QLabel(title, self)
-            heading.setObjectName("formBuilder.logic.usesTitle")
+            heading.setObjectName("formBuilder.logic.title")
+            heading.setTextFormat(_PLAIN)
             self._column.addWidget(heading)
             for use in rows:
-                full = _line(use)
-                label = ElidedLabel(full, self)
+                face = _face(use, self._display_of(use.widget), self._lines)
+                label = LogicRow(face, self, takes_focus=False)
                 label.setObjectName("formBuilder.logic.uses.row.%d" % number)
-                label.setFocusPolicy(_FOCUS)
-                label.setAccessibleName("%s, %s" % (title, full))
                 self._column.addWidget(label)
                 self._rows.append(label)
                 number += 1
         self._column.addStretch(1)
 
+    def _display_of(self, name: str) -> str:
+        return self._displays.get(name) or name
 
-def _line(use: Use) -> str:
-    from app.features.form_builder.engine.logic.uses import WORDS
 
+def _face(use: Use, display: str, lines: Sequence[str]) -> RowFace:
+    accessible = "%s, %s" % (use.role, use.widget or use.name)
+    if use.kind == "code" and use.line:
+        path = use.path or "window file"
+        source = lines[use.line - 1].strip() if 0 < use.line <= len(lines) else ""
+        return RowFace("", "%s:%d" % (path, use.line), source, True, False, source or path, accessible)
     if use.kind == "rule":
         words = WORDS.get(use.property_key, use.property_key)
-        return "%s  %s  %s" % (use.widget, words, use.summary)
+        return RowFace(display, words, use.summary, True, False, use.summary, accessible)
     if use.kind == "check":
-        return "%s  %s" % (use.widget, use.summary)
+        return RowFace(display, use.summary, "", False, False, use.summary, accessible)
     if use.kind == "step":
-        extra = use.summary or use.method
-        if extra:
-            return "%s  %s  %s" % (use.widget, use.signal, extra)
-        return "%s  %s" % (use.widget, use.signal)
-    what = use.summary or use.method or use.signal
-    if use.line:
-        return "%s  %s  line %d" % (use.widget, what, use.line)
-    return "%s  %s" % (use.widget, what)
+        aside = "· %s" % use.signal if use.signal else ""
+        body = use.summary or use.method
+        return RowFace(display, aside, body, True, False, body, accessible)
+    return RowFace(display, use.signal or use.method, use.summary, True, False, use.widget, accessible)
+
+
+def displays_for(env: object) -> Dict[str, str]:
+    widgets = getattr(env, "widgets", None) or {}
+    found = {}
+    for name, facts in widgets.items():
+        display = getattr(facts, "display", "") or ""
+        if isinstance(display, str) and display and display != name:
+            found[name] = display.replace("&", "")
+    return found

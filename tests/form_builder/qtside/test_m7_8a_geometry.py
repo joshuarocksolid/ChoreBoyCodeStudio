@@ -31,15 +31,24 @@ def _assert_width(panel: QWidget, width: int, qapp: QApplication) -> None:
     panel.setMinimumWidth(0)
     panel.setMaximumWidth(width)
     panel.setFixedWidth(width)
-    panel.resize(width, 640)
+    panel.resize(width, 900)
     panel.show()
     _pump(qapp)
     field = panel.findChild(QWidget, "formBuilder.logic.filter")
     assert field is not None
     bounds = panel.rect()
-    box = _box(panel, field)
-    assert box.width() > 0 and box.height() > 0
-    assert bounds.contains(box)
+    seen = []
+    for child in panel.findChildren(QWidget):
+        if not child.isVisible():
+            continue
+        if child is panel:
+            continue
+        rect = _box(panel, child)
+        if rect.width() <= 0 or rect.height() <= 0:
+            continue
+        assert bounds.contains(rect), child.objectName() or child.__class__.__name__
+        seen.append(child)
+    assert seen
     rows = [
         child
         for child in panel.findChildren(QWidget)
@@ -50,8 +59,11 @@ def _assert_width(panel: QWidget, width: int, qapp: QApplication) -> None:
     for row in rows:
         rect = _box(panel, row)
         assert rect.width() > 0 and rect.height() > 0, row.objectName()
-        assert rect.left() >= -1, row.objectName()
-        assert rect.right() <= bounds.right() + 1, row.objectName()
+        formula = row.formula()  # type: ignore[attr-defined]
+        if formula.isVisible() and formula.text():
+            assert "\u2026" not in formula.text()
+            wrapped = formula.heightForWidth(max(1, formula.width()))
+            assert formula.height() + 2 >= wrapped
         rects.append(rect)
     for index, rect in enumerate(rects):
         for other in rects[index + 1 :]:
