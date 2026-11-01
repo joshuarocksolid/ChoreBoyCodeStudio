@@ -68,8 +68,12 @@ def spoken_display(doc: UiDocument, name: str) -> str:
 
 
 def _preferred(doc: UiDocument) -> Dict[str, Tuple[str, bool]]:
-    """Object name to (spoken, fallback). Fallback is the humanized object name."""
-    revision = getattr(doc, "revision", None)
+    """Object name to (spoken, fallback). Fallback is the humanized object name.
+
+    Spoken names come from captions and the tree, not from formula text, so a
+    rule commit (revision moves, structure does not) hits.
+    """
+    revision = getattr(doc, "structure_revision", None)
     key = (id(doc), int(revision)) if isinstance(revision, int) else None
     if key is not None:
         cached = _PREFERRED.get(key)

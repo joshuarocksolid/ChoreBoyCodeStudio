@@ -6,7 +6,7 @@ Colours come from ``FormChrome``. This module does not import the shell.
 from __future__ import annotations
 
 import time
-from typing import Dict, Optional, Sequence
+from typing import Dict, Mapping, Optional, Sequence
 
 from app.features.form_builder.qtside.preview.try_log import TryLine, source_label, source_of
 from app.features.form_builder.qtside.preview.try_plan import value_to_wire, wire_to_value
@@ -95,22 +95,29 @@ class WhatRan(QWidget):
         self._clear.clicked.connect(self.clear)
         self._copy.clicked.connect(self.copy)
         self._lines: list[TryLine] = []
+        self._names: Dict[str, str] = {}
+
+    def set_names(self, names: Mapping[str, str]) -> None:
+        """Object name to display name, sent with the preview start."""
+        self._names = {str(key): value for key, value in names.items() if value}
 
     def add(self, lines: Sequence[TryLine], ts_ms: int) -> None:
         stamp = time.strftime("%H:%M:%S", time.localtime(ts_ms / 1000.0))
         for line in lines:
-            item = QTreeWidgetItem([stamp, line.sentence, _shown_source(line)])
+            if self._absorb_rule(line):
+                continue
+            item = QTreeWidgetItem([stamp, line.sentence, _shown_source(line, self._names)])
             item.setData(0, _user_role(), line)
             item.setToolTip(1, line.sentence)
-            item.setToolTip(2, _source_tip(line))
+            item.setToolTip(2, _source_tip(line, self._names))
             for ref in line.details:
-                child = QTreeWidgetItem(["", source_label(ref), ""])
+                child = QTreeWidgetItem(["", source_label(ref, self._names), ""])
                 child.setToolTip(1, ref)
                 child.setToolTip(2, ref)
                 child.setData(
                     0,
                     _user_role(),
-                    TryLine(source_label(ref), ref, source_of(ref), "rule"),
+                    TryLine(source_label(ref, self._names), ref, source_of(ref), "rule"),
                 )
                 item.addChild(child)
             self._list.addTopLevelItem(item)
@@ -122,6 +129,37 @@ class WhatRan(QWidget):
     def clear(self) -> None:
         self._list.clear()
         self._lines = []
+
+    def _absorb_rule(self, line: TryLine) -> bool:
+        """Fold the next identical Rules ran row into the one above it.
+
+        Four refreshes of the same two rules become one row, ``Rules ran (2) ×4``.
+        The children stay the rules of that one row. A check, a step, or a
+        different rule list breaks the run.
+        """
+        if line.kind != "rule" or not line.sentence.startswith("Rules ran ("):
+            return False
+        count = self._list.topLevelItemCount()
+        if count <= 0:
+            return False
+        item = self._list.topLevelItem(count - 1)
+        prev = item.data(0, _user_role())
+        if not isinstance(prev, TryLine) or prev.kind != "rule" or prev.details != line.details:
+            return False
+        base = _rule_base(prev.sentence)
+        if base != line.sentence and base != _rule_base(line.sentence):
+            return False
+        if not base.startswith("Rules ran ("):
+            return False
+        times = _rule_times(item.text(1), base) + 1
+        sentence = "%s \u00d7%d" % (base, times)
+        merged = TryLine(sentence, prev.ref, prev.source, "rule", prev.method, prev.details)
+        item.setText(1, sentence)
+        item.setToolTip(1, sentence)
+        item.setData(0, _user_role(), merged)
+        if self._lines:
+            self._lines[-1] = merged
+        return True
 
     def copy(self) -> None:
         from app.qt.QtWidgets import QApplication
@@ -351,20 +389,40 @@ class TryChrome(QWidget):
             child.setPalette(native)
 
 
-def _shown_source(line: TryLine) -> str:
+def _shown_source(line: TryLine, names: Mapping[str, str]) -> str:
     if line.kind == "rule" and line.details:
         return "%d rules" % len(line.details)
     if line.kind in ("rule", "check", "step"):
-        return source_label(line.ref)
+        return source_label(line.ref, names)
     return line.ref
 
 
-def _source_tip(line: TryLine) -> str:
+def _source_tip(line: TryLine, names: Mapping[str, str]) -> str:
     if line.details:
-        return "\n".join("%s (%s)" % (source_label(ref), ref) for ref in line.details)
+        return "\n".join("%s (%s)" % (source_label(ref, names), ref) for ref in line.details)
     if line.kind in ("rule", "check", "step"):
-        return "%s (%s)" % (source_label(line.ref), line.ref)
+        return "%s (%s)" % (source_label(line.ref, names), line.ref)
     return line.ref
+
+
+def _rule_base(sentence: str) -> str:
+    mark = " \u00d7"
+    if mark in sentence:
+        head, _, tail = sentence.rpartition(mark)
+        if tail.isdigit() and head.startswith("Rules ran ("):
+            return head
+    return sentence
+
+
+def _rule_times(shown: str, base: str) -> int:
+    if shown == base:
+        return 1
+    mark = " \u00d7"
+    if shown.startswith(base + mark):
+        tail = shown[len(base) + len(mark) :]
+        if tail.isdigit():
+            return int(tail)
+    return 1
 
 
 def _paint(widget: QWidget, background: str, foreground: str) -> None:

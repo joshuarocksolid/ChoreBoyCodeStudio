@@ -667,6 +667,7 @@ class _Group(QWidget):
 
 
 _STEP_MENU_RESERVE = 0
+_TOP = getattr(getattr(Qt, "AlignmentFlag", Qt), "AlignTop")
 
 
 def _step_menu_reserve(parent: QWidget) -> int:
@@ -702,6 +703,7 @@ class _Row(QWidget):
     ) -> None:
         super().__init__(body)
         self._fitted = False
+        self._growing = False
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self.signal_name = signal
         self.step_index = index
@@ -714,23 +716,37 @@ class _Row(QWidget):
         self._body = body
         self._event = None
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
-        self.setFixedHeight(24)
-        self.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
         self.setAccessibleName(accessible)
         self.setToolTip(text)
         head, _sep, condition = text.partition("\n")
-        if condition:
-            self.setFixedHeight(40)
+        # A step sentence wraps. setFixedHeight would clip it. Header rows stay one line.
+        if index >= 0:
+            self.setMinimumHeight(22)
+            self.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Minimum)
+            row_policy = self.sizePolicy()
+            row_policy.setHeightForWidth(True)
+            self.setSizePolicy(row_policy)
+        else:
+            self.setFixedHeight(40 if condition else 24)
+            self.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
         line = QHBoxLayout(self)
         line.setContentsMargins(2, 0, 2, 0)
+        if index >= 0:
+            line.setAlignment(_TOP)
         text_col = QVBoxLayout()
         text_col.setContentsMargins(0, 0, 0, 0)
         text_col.setSpacing(0)
         self._label = QLabel(head, self)
         self._label.setWordWrap(True)
         self._label.setMinimumWidth(0)
-        self._label.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
-        self._label.setToolTip(text)
+        # setSizePolicy() clears the height-for-width bit setWordWrap turned on.
+        # The row then keeps a one-line hint and the wrapped sentence draws
+        # over the next row. Ignored keeps the sentence from widening the section.
+        self._label.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Minimum)
+        fitted = self._label.sizePolicy()
+        fitted.setHeightForWidth(True)
+        self._label.setSizePolicy(fitted)
+        self._label.setToolTip(head)
         self._label.setAccessibleName(accessible)
         text_col.addWidget(self._label)
         if condition:
@@ -738,7 +754,10 @@ class _Row(QWidget):
             only.setObjectName("formBuilder.events.onlyIf")
             only.setWordWrap(True)
             only.setMinimumWidth(0)
-            only.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+            only.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Minimum)
+            only_policy = only.sizePolicy()
+            only_policy.setHeightForWidth(True)
+            only.setSizePolicy(only_policy)
             only.setStyleSheet("color: %s; background: transparent;" % body._chrome.faint)
             text_col.addWidget(only)
         line.addLayout(text_col, 1)
@@ -772,8 +791,19 @@ class _Row(QWidget):
         if step is not None and step.unknown:
             self._label.setStyleSheet("color: %s;" % warning_color(body._chrome))
 
+    def hasHeightForWidth(self) -> bool:  # noqa: N802
+        return self.step_index >= 0
+
+    def heightForWidth(self, width: int) -> int:  # noqa: N802
+        layout = self.layout()
+        if layout is None:
+            return 22
+        return max(22, layout.heightForWidth(width))
+
     def resizeEvent(self, event: QResizeEvent) -> None:  # noqa: N802
         super().resizeEvent(event)
+        if self._growing:
+            return
         self._fit_texts()
 
     def showEvent(self, event: QEvent) -> None:  # noqa: N802
@@ -784,10 +814,11 @@ class _Row(QWidget):
         self._fitted = True
 
     def _fit_texts(self) -> None:
-        """Elide the call first, down to about eight characters, then the place.
+        """Wrap a step sentence. Header rows still elide the call.
 
-        The place keeps a trailing ``:NN``. Neither widget is given a maximum
-        width smaller than the text it shows, so glyphs are never clipped.
+        The place keeps a trailing ``:NN`` and middle-elides the file name.
+        A step label's maximum width is the room beside the place, so the
+        sentence wraps instead of drawing past the row.
         """
         if self.width() <= 0:
             return
@@ -809,7 +840,18 @@ class _Row(QWidget):
         call_natural = _text_width(call_metrics, call_full) + 4
         place_floor_sample = "\u2026:NN"
         place_floor = _text_width(place_metrics, place_floor_sample) + pad if place_full else 0
-        if call_natural + place_natural <= available:
+        if self.step_index >= 0:
+            # The sentence wraps in full. Only the place link gives up width.
+            call_shown = call_full
+            if place_natural and place_natural + 80 <= available:
+                place_budget = place_natural
+                place_shown = place_full
+            else:
+                place_budget = place_floor if place_full else 0
+                if place_full and available > place_floor + 40:
+                    place_budget = min(place_natural, max(place_floor, available // 2))
+                place_shown = _elide_place(place_full, place_metrics, max(8, place_budget - pad)) if place_full else ""
+        elif call_natural + place_natural <= available:
             call_shown = call_full
             place_shown = place_full
             place_budget = place_natural
@@ -824,7 +866,12 @@ class _Row(QWidget):
             call_shown = _elide_call(call_full, call_metrics, call_room)
         if self._label.text() != call_shown:
             self._label.setText(call_shown)
+        if self.step_index >= 0:
+            label_width = max(8, available - place_budget)
+            if self._label.maximumWidth() != label_width:
+                self._label.setMaximumWidth(label_width)
         if place is None:
+            self._grow_step()
             return
         # The button centers its text, so the width must cover every glyph.
         # A shortfall clips the middle. Elide again until the ink fits.
@@ -839,6 +886,33 @@ class _Row(QWidget):
             tip = (place_full + "\n" + reason) if place_shown != place_full and place_full else reason
             if place.toolTip() != tip:
                 place.setToolTip(tip)
+        self._grow_step()
+
+    def _grow_step(self) -> None:
+        if self.step_index < 0 or self.width() <= 0 or self._growing:
+            return
+        self._growing = True
+        try:
+            width = self._label.width()
+            cap = self._label.maximumWidth()
+            if 8 <= cap < 100000:
+                width = cap if width < 8 else min(width, cap)
+            if width < 8:
+                return
+            label_h = self._label.heightForWidth(width)
+            if label_h > 0 and self._label.minimumHeight() != label_h:
+                self._label.setMinimumHeight(label_h)
+            needed = label_h + 6
+            only = self.findChild(QLabel, "formBuilder.events.onlyIf")
+            if only is not None:
+                only_h = only.heightForWidth(width)
+                if only_h > 0 and only.minimumHeight() != only_h:
+                    only.setMinimumHeight(only_h)
+                needed += only_h
+            if needed > 0 and self.minimumHeight() != needed:
+                self.setMinimumHeight(needed)
+        finally:
+            self._growing = False
 
     def _make_menu(self) -> QToolButton:
         button = QToolButton(self)
@@ -1169,10 +1243,7 @@ def _fit_place(full: str, shown: str, metrics: object, budget: int, pad: int) ->
         if tail.isdigit():
             suffix = ":" + tail
             body = head
-    mark = "\u2026"
-    while body and _text_width(metrics, body + mark + suffix) > room:
-        body = body[:-1]
-    return body + mark + suffix if body else mark + suffix
+    return _middle_elide(body, metrics, room) + suffix if suffix or body else ""
 
 
 def _elide_call(text: str, metrics: object, width: int) -> str:
@@ -1182,7 +1253,11 @@ def _elide_call(text: str, metrics: object, width: int) -> str:
 
 
 def _elide_place(text: str, metrics: object, width: int) -> str:
-    """Right-elide a place, keeping a trailing ``:NN`` line suffix."""
+    """Middle-elide a file stem, keeping a trailing ``:NN`` line suffix.
+
+    Right-elide turned ``invoice_window.py:13`` into ``invoic…:13``. The stem
+    is elided in the middle so both ends of the file name stay readable.
+    """
     suffix = ""
     body = text
     if ":" in text:
@@ -1192,11 +1267,43 @@ def _elide_place(text: str, metrics: object, width: int) -> str:
             body = head
     elide = metrics.elidedText  # type: ignore[attr-defined]
     if not suffix:
-        return elide(text, Qt.TextElideMode.ElideRight, max(1, width))
+        return elide(text, Qt.TextElideMode.ElideMiddle, max(1, width))
     room = width - metrics.horizontalAdvance(suffix)  # type: ignore[attr-defined]
     if room < 8:
         room = 8
-    return elide(body, Qt.TextElideMode.ElideRight, room) + suffix
+    return elide(body, Qt.TextElideMode.ElideMiddle, room) + suffix
+
+
+def _middle_elide(body: str, metrics: object, room: int) -> str:
+    """Keep both ends of ``body``. Used when ``elidedText`` is still a pixel over."""
+    mark = "\u2026"
+    if not body:
+        return mark
+    if _text_width(metrics, body) <= room:
+        return body
+    lo = 0
+    hi = len(body)
+    best = mark
+    while lo <= hi:
+        keep = (lo + hi) // 2
+        if keep <= 0:
+            candidate = mark
+        else:
+            left = (keep + 1) // 2
+            right = keep // 2
+            if left + right > len(body):
+                right = max(0, len(body) - left)
+            tail = body[-right:] if right else ""
+            # Don't repeat characters that the left half already kept.
+            if right and left + right > len(body):
+                tail = body[left:]
+            candidate = body[:left] + mark + tail
+        if _text_width(metrics, candidate) <= room and (keep <= 1 or (body[:1] and candidate)):
+            best = candidate
+            lo = keep + 1
+        else:
+            hi = keep - 1
+    return best
 
 
 def _elide_row(text: str, metrics: object, width: int) -> str:

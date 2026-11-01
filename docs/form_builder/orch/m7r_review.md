@@ -4,55 +4,44 @@ Mode is reference.
 
 ## Method
 
-I opened 55 screenshots. The walk set is `scratchpad/walk7r` (copied from `scratchpad/walk77` after the persona walk). The screenshot set is `scratchpad/shots7r`. Themes I opened are light, dark, high contrast light, and high contrast dark. Scales I opened are 100% and 200%. The 200% files are `state-filled-light-200.png`, `builder-value-dark-200.png`, `builder-if-high_contrast_light-200.png`, and `read-as-text-high_contrast_dark-200.png`. Inspector width 236 px is the files whose names end in `-236`. I opened those for State in light, dark, and high contrast dark, and for Checks in light. The walk uses the window's own inspector width. The 184 px files are the Logic panel and the Uses dialog. The walk outline pane is about 208 px wide. No shot sets the outline pane to 184 px.
+The walk set is `scratchpad/walk7r` (copied from `scratchpad/walk77`). The screenshot set is `scratchpad/shots7r`. Both were deleted and written again after the follow-up fixes. Themes opened are light, dark, high contrast light, and high contrast dark, at 100% and 200%. Inspector width 236 px is the files whose names end in `-236`. Logic and Uses at 184 px are the files whose names end in `-184`.
 
-The walk was `4 passed in 49.56s`. The screenshot run was `9 passed in 84.58s`. No file skipped. `test_m7_4_k29.py` writes verb pages for light at 100% only, and that test passed.
+The walk was `4 passed in 49.81s`. The screenshot modules passed, including a second run of the What ran, Logic, and Checks shots after display names were wired through. `test_m7_4_k29.py` writes verb pages for light at 100% only, and that test passed.
 
 ## Findings
 
 | id | screen | heuristic | what's wrong (quote the screen) | severity | fix |
 | --- | --- | --- | --- | --- | --- |
-| M7R-01 | Try, walk preview | 1 Visibility of system status | After the try key the window stays on Design. The What ran panel is absent. The status bar still says "Save · Push button · row 2 of the vertical layout". The launch failure is absent from this screen. The shot set's What ran panel does open and lists the run. | S2 | Fixed. A failed open shows the first line of the error. If `/opt/freecad/AppRun` is missing, the preview starts on the editor's interpreter. The walk shot above is from before this fix. |
-| M7R-02 | State, closed rows | 6 Recognition rather than recall | The closed Enabled when row shows "Discount is c now: no" on the walk, "Discount is check now: no" on the State shot at 100% and at 200%, and "Discol now: no" at 236 px. At 236 px Value shows "typed by the pe". The closed Visible when row shows "eeds a window value" where the row is "window.is_manager()" and "now: needs a window value". | S2 | Fixed. The sentence wraps, and "now:" sits on the line under it. The shots above are from before this fix. |
-| M7R-03 | Checks | 6 Recognition rather than recall | The email row shows "Enter an email addres…". The full message is "Enter an email address like name@example.com". | S2 | Fixed. The check message wraps and keeps the full words. The shot above is from before this fix. |
-| M7R-04 | Events, step row | 6 Recognition rather than recall | The step shows "Check all fields (stops here if a…". The place link shows "invoic...:13". | S2 | Deferred, owner M8. The step row is a custom layout. Wrapping it is larger than this lane. |
-| M7R-05 | Formula editor | 1 Visibility of system status | The completion list paints through the rows under it. The list shows "discountCheck", "rateLabel Dis...", and "discountEdit". Behind it, Read-only when, Value, and Format are broken into scraps such as "R" and "ed by the person". The same overlap is on the high contrast dark shot. | S2 | Deferred, owner M8. The list already raises itself. The rows under it still paint through. |
+| M7R-01 | Try, walk preview | 1 Visibility of system status | After the try key the window stays on Design. The What ran panel is absent. The status bar still says "Save · Push button · row 2 of the vertical layout". The launch failure is absent from this screen. The shot set's What ran panel does open and lists the run. | S2 | Fixed. A failed open shows the first line of the error. If `/opt/freecad/AppRun` is missing, the preview starts on the editor's interpreter. |
+| M7R-02 | State, closed rows | 6 Recognition rather than recall | The closed Enabled when row shows "Discount is c now: no" on the walk, "Discount is check now: no" on the State shot at 100% and at 200%, and "Discol now: no" at 236 px. At 236 px Value shows "typed by the pe". The closed Visible when row shows "eeds a window value" where the row is "window.is_manager()" and "now: needs a window value". | S2 | Fixed. The sentence wraps, and "now:" sits on the line under it. `state-filled-light-100-236.png` reads "Discount is checked" and then "now: no". The same wrap is on the high contrast light 236 px shot. |
+| M7R-03 | Checks | 6 Recognition rather than recall | The email row shows "Enter an email addres…". The full message is "Enter an email address like name@example.com". | S2 | Fixed. The check message wraps and keeps the full words. |
+| M7R-04 | Events, step row | 6 Recognition rather than recall | The step shows "Check all fields (stops here if a…". The place link shows "invoic...:13". | S2 | Fixed. The step wraps. `scratchpad/walk7r/owner-24-check-all-first.png` shows "Check all fields (stops here if a field fails)" in full. A place link keeps the file name, or elides the middle and keeps `:line`. It does not cut the name and then append `:13`. |
+| M7R-05 | Formula editor | 1 Visibility of system status | The completion list paints through the rows under it. The list shows "discountCheck", "rateLabel Dis...", and "discountEdit". Behind it, Read-only when, Value, and Format are broken into scraps such as "R" and "ed by the person". The same overlap is on the high contrast dark shot. | S2 | Fixed. The list is a child of the State section. It fills its own background and viewport in all four themes. The shot test samples pixels inside the list rect and accepts only the list fill, the text colour, and the selection blend. Letters still visible beside the list are the row ends the list does not cover. |
 | M7R-06 | Formula editor | 5 Error prevention | While the list offers a match, the status says the prefix is wrong. "qty is not a field on this form." sits above "qtySpin Whole number". "disc is not a field on this form." sits above "discountCheck". The finished name "missingField" keeps "missingField is not a field on this form." and the list has no row for it. | S2 | Fixed. While the list has a match, the status keeps the type line and drops "is not a field on this form." A finished name with an empty list still shows the error. |
-| M7R-07 | What ran | 2 Match between system and the real world | The form says "Discount", "Qty", "Price", and "$6.00". The trace says "lineTotalLabel · Value", "discountEdit · Enabled when", "emailEdit · Checks", and "saveButton · When clicked". The same names are on the high contrast light and high contrast dark shots. | S2 | Deferred, owner M8. The trace lines come from the generated names. |
-| M7R-08 | Logic panel | 4 Consistency and standards | One state row says "Discount rate" and "Enabled when". The next says "lineTotalLabel" and "qtySpin * priceSpin". The closed State row for that value says "Qty × Price". | S2 | Deferred, owner M8. The Logic panel still shows the stored formula. |
-| M7R-09 | Uses at 184 px | 8 Aesthetic and minimalist design | The call breaks mid-word. "self.ui.discountEdit.setEn" is on one line and "abled(True)" is on the next. The Logic panel at 184 px breaks the same call as "setEna" and "bled". | S3 | Deferred, owner M8. The width stays 184 px. |
-
-## Known notes
-
-M7R-02 is fixed in this lane. The shots still show the old elision. On the walk the closed row read "Discount is c now: no". On the State shot it read "Discount is check now: no", and at 236 px "Discol now: no". The row now wraps the full sentence, and "now:" is on the next line.
-
-The outline object name still elides on nested rows. The walk outline shows "Discount discoun...", "discount edit disc...", and "Line total lineTota...". The pane width stays. The tooltip now carries the spoken name, the class, and the object name, for example "Discount rate · Line edit · discountEdit".
+| M7R-07 | What ran | 2 Match between system and the real world | The form says "Discount", "Qty", "Price", and "$6.00". The trace says "lineTotalLabel · Value", "discountEdit · Enabled when", "emailEdit · Checks", and "saveButton · When clicked". The same names are on the high contrast light and high contrast dark shots. | S2 | Fixed. Trace lines and the Source column use the inspector's spoken name. `preview-what-ran-light-100.png` and the high contrast light shot show "Line total · Value", "Note · Value", "discount edit · Enabled when", "Check Email: …", "Email · Checks", and "Save · When clicked". Generated code still carries the object name. The preview start sends the spoken map. Consecutive identical "Rules ran (N)" rows collapse to one row with a count. The three "Rules ran (3)" rows in that shot are not consecutive, so they stay separate. |
+| M7R-08 | Logic panel | 4 Consistency and standards | One state row says "Discount rate" and "Enabled when". The next says "lineTotalLabel" and "qtySpin * priceSpin". The closed State row for that value says "Qty × Price". | S2 | Fixed. `logic-filled-light-100.png` shows "Line total · Value · Qty × Price" and "Discount rate · Enabled when · Discount is checked". The raw formula is the tooltip. A formula the speaker cannot say keeps the code line under the row. |
+| M7R-09 | Uses at 184 px | 8 Aesthetic and minimalist design | The call breaks mid-word. "self.ui.discountEdit.setEn" is on one line and "abled(True)" is on the next. The Logic panel at 184 px breaks the same call as "setEna" and "bled". | S3 | Fixed. Code lines gain a break opportunity before `.` and `(`. `logic-uses-light-100-184.png` breaks before `.setEnabled(True)`. The high contrast dark Logic panel at 200% and 184 px breaks before `.discountEdit.setEnabled`. |
+| M7R-10 | Commit a rule | speed | A rule commit walked the form and rebuilt the canvas frame. Mac added p95 was 44.076 ms against 17 ms. VM added p95 was 79.905 ms against 50 ms. | S2 | Not met on the Mac. After the status cache, the structure memo, the badge-only frame splice, and a parse cache, Mac added p95 is 28.12 ms (p50 23.488) against 17 ms. Paired commit p95 34.539 ms, bare repaint p95 7.018 ms. VM added p95 is 48.148 ms against 50 ms, on ChoreBoyExp, Python 3.11.14, PySide6. The new Mac profile's internal-time leaders, 8 commits, are `free_grid.paint` 0.037 s, `free_grid._covered` 0.030 s, `processEvents` 0.029 s, `QWidget.repaint` 0.027 s, and `FormCanvas.viewportEvent` 0.014 s. Those paints also run in the bare repaint. The added work under them is `rule_graph` rebuilding because the revision moved, the State inspector fill, and `setStyleSheet`. |
+| M7R-11 | Method rename | 6 Recognition rather than recall | Closed forms that name the method are not listed or rewritten. The preview sentence would be "Also used in {form}.ui (not open)". Apply needs the rename plan, the .ui writer, and undo. | S2 | Deferred to M8. |
 
 ## Deferred
 
 | id | screen | what's wrong | owner |
 | --- | --- | --- | --- |
-| M7R-04 | Events step | "Check all fields (stops here if a…" and "invoic...:13" | M8 |
-| M7R-05 | Formula list | The completion list paints through the rows under it | M8 |
-| M7R-07 | What ran | Trace uses object names such as "lineTotalLabel · Value" | M8 |
-| M7R-08 | Logic panel | "lineTotalLabel" and "qtySpin * priceSpin" beside "Qty × Price" | M8 |
-| M7R-09 | Uses at 184 px | "setEn" / "abled" | M8 |
-| M7R-10 | Commit a rule | Mac added p95 44.076 ms against 17 ms. VM added p95 79.905 ms against 50 ms. Profiles are `docs/form_builder/orch/m7r_mac/results/profile_commit_added.txt` and `docs/form_builder/orch/probe_m7r_vm/results/profile_commit_rule_added.txt`. The hot path is a full document walk on commit. | M8 |
-| M7R-11 | Method rename | Closed forms that name the method are not listed or rewritten. The preview sentence would be "Also used in {form}.ui (not open)". Apply needs the rename plan, the .ui writer, and undo. That is more than this lane. | M8 |
-
-## Screens that held up
-
-The value builder shows "Qty × Price" and "now: 0.00" in light and in dark at 200%. The if builder's sentence reads "If Discount is checked, then Qty × Price, otherwise 0" in light and in high contrast light at 200%. The field chip on that row says "Discount · Y..." and the sentence under it is complete. Repair says "1 rule points at a widget that was renamed outside Code Studio." and the dialog says "oldName → noteEdit · Line edit" in light and in high contrast dark. Read as text keeps the full sentences, including "stops here if a field fails", in the walk, at 500 px, and in high contrast dark at 200%. The Check all fields and Show a message verb pages are plain and complete. No shot in this set shows a step's only-if row. The if builder above is the value If / Then / Otherwise page.
+| M7R-10 | Commit a rule | Mac added p95 28.12 ms against 17 ms. VM added p95 48.148 ms against 50 ms, pass. Profile `docs/form_builder/orch/m7r_mac/results/profile_commit_added.txt`. VM summary `docs/form_builder/orch/probe_m7r_vm/results/summary.txt`. | this lane, Mac column still open |
+| M7R-11 | Method rename | Closed forms that name the method are not listed or rewritten. | M8 |
 
 ## Ten shots
 
-1. `scratchpad/walk7r/owner-05-commit-enabled.png`
-2. `scratchpad/shots7r/state-filled-light-100-236.png`
-3. `scratchpad/walk7r/developer-18-formula-is-manager.png`
-4. `scratchpad/shots7r/fx-complete-light-100.png`
-5. `scratchpad/shots7r/verb-formula-light-100.png`
-6. `scratchpad/walk7r/owner-20-commit-email.png`
-7. `scratchpad/walk7r/owner-23-add-check-all.png`
-8. `scratchpad/walk7r/owner-26-preview.png`
-9. `scratchpad/shots7r/preview-what-ran-high_contrast_dark-100.png`
-10. `scratchpad/shots7r/logic-uses-light-100-184.png`
+All of these were taken after the fixes.
+
+1. `scratchpad/shots7r/state-filled-light-100-236.png` wrapped closed Enabled when, "Discount is checked" then "now: no".
+2. `scratchpad/shots7r/state-filled-high_contrast_light-100-236.png` the same wrap on high contrast light at 236 px.
+3. `scratchpad/walk7r/owner-24-check-all-first.png` the Events step "Check all fields (stops here if a field fails)" wraps in full.
+4. `scratchpad/shots7r/fx-complete-light-100-236.png` the completion list.
+5. `scratchpad/shots7r/fx-complete-dark-100-236.png` the same list in dark.
+6. `scratchpad/shots7r/preview-what-ran-light-100.png` What ran with "Line total · Value", "Email · Checks", and "Save · When clicked".
+7. `scratchpad/shots7r/preview-what-ran-high_contrast_light-100.png` the same names on high contrast light.
+8. `scratchpad/shots7r/logic-filled-light-100.png` "Line total · Value · Qty × Price".
+9. `scratchpad/shots7r/logic-filled-high_contrast_dark-200-184.png` that row at 200% on high contrast dark, 184 px wide.
+10. `scratchpad/shots7r/logic-uses-light-100-184.png` the Uses call breaks before `.setEnabled`, not inside the name.

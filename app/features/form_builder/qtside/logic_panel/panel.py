@@ -44,6 +44,13 @@ _CHIPS = (
 )
 _ORDER = ("STATE", "CHECKS", "EVENTS", "IN YOUR CODE")
 _IDLE = None  # type: ignore[var-annotated]
+_SPEAK = {
+    "cbcsEnabledWhen": "condition",
+    "cbcsVisibleWhen": "condition",
+    "cbcsReadOnlyWhen": "condition",
+    "cbcsValue": "value",
+    "cbcsDefault": "value",
+}
 
 
 def set_idle_runner(runner: Any) -> None:
@@ -328,7 +335,17 @@ class LogicPanel(QWidget):
             query.events,
             query.problems,
             self._filename,
-            tuple((row.section, row.use.widget, row.words, row.summary, row.problem) for row in rows),
+            tuple(
+                (
+                    row.section,
+                    self._shown(row.use.widget),
+                    row.words,
+                    row.summary,
+                    _spoken_rule(row.summary, row.use.property_key, self._env),
+                    row.problem,
+                )
+                for row in rows
+            ),
         )
         if key == self._row_key and self._body_layout.count():
             return
@@ -364,7 +381,7 @@ class LogicPanel(QWidget):
 
     def _add_row(self, row: PanelRow, number: int, section: str = "") -> int:
         use = row.use
-        face = _face(row, self._shown(use.widget), section)
+        face = _face(row, self._shown(use.widget), section, self._env)
         label = LogicRow(face, self._body, lambda use=use: self.open_row(use))  # type: ignore[misc]
         label.use = use  # type: ignore[attr-defined]
         label.setObjectName("formBuilder.logic.row.%d" % number)
@@ -398,6 +415,13 @@ class LogicPanel(QWidget):
         self._body_layout.addStretch(1)
 
     def _shown(self, name: str) -> str:
+        document = self._session.document if self._session is not None else None
+        if document is not None:
+            from app.features.form_builder.engine.logic.read_as_text import spoken_display
+
+            shown = spoken_display(document, name).replace("&", "")
+            if shown:
+                return shown
         widgets = getattr(self._env, "widgets", None) or {}
         facts = widgets.get(name)
         display = getattr(facts, "display", "") if facts is not None else ""
@@ -434,7 +458,21 @@ class LogicPanel(QWidget):
                 widget.deleteLater()
 
 
-def _face(row: PanelRow, display: str, section: str = "") -> RowFace:
+def _spoken_rule(summary: str, key: str, env: object) -> str:
+    """The engine speaker, or "" when the builder cannot say this formula."""
+    kind = _SPEAK.get(key, "")
+    text = summary.strip()
+    if not kind or env is None or not text:
+        return ""
+    from app.features.form_builder.engine.logic.formula.speak import speak_text
+
+    try:
+        return speak_text(text, env, kind)  # type: ignore[arg-type]
+    except Exception:
+        return ""
+
+
+def _face(row: PanelRow, display: str, section: str = "", env: object = None) -> RowFace:
     use = row.use
     where = section or row.section
     tooltip = "%s\n%s\n%s" % (use.widget, row.words, row.summary)
@@ -450,6 +488,16 @@ def _face(row: PanelRow, display: str, section: str = "") -> RowFace:
         body = row.summary if row.summary.casefold() != row.words.casefold() else ""
         aside = "· %s" % row.words if row.words else ""
         return RowFace(display, aside, body, True, False, tooltip, accessible)
+    if row.section == "STATE":
+        raw = row.summary.strip()
+        spoken = _spoken_rule(raw, use.property_key, env)
+        tip = raw or tooltip
+        if spoken:
+            aside = "%s · %s" % (row.words, spoken) if row.words else spoken
+            heard = "%s, %s, %s, %s" % (where, use.widget, row.words, spoken)
+            return RowFace(display, aside, "", False, False, tip, heard)
+        heard = "%s, %s, %s, %s" % (where, use.widget, row.words, raw)
+        return RowFace(display, row.words, raw, True, False, tip, heard)
     body = row.summary.strip()
     if body.casefold() == row.words.casefold():
         body = ""

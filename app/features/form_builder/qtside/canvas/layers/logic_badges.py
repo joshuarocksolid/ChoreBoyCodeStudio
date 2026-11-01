@@ -10,6 +10,7 @@ import weakref
 from typing import Dict, Hashable, List, Optional, Sequence, Tuple
 
 from app.features.form_builder.engine.logic.events import events_of_sender, read_events
+from app.features.form_builder.engine.logic.storage import is_logic_key
 from app.features.form_builder.engine.logic.events_catalog import event_words
 from app.features.form_builder.engine.style.classes import widget_chain
 from app.features.form_builder.engine.ui4.document import UiDocument
@@ -86,6 +87,9 @@ class _Basis:
 
 _BASIS: Optional[_Basis] = None
 _MEMO_KEEP = 8
+# Widget names for one structure, and each sender's mark for one logic fingerprint.
+_NAMES: Dict[Tuple[int, int], Tuple[str, ...]] = {}
+_MARKS: Dict[Tuple[int, int], Dict[str, Tuple[str, Optional[Tuple[str, str, int]]]]] = {}
 
 
 def _basis_for(document: UiDocument, static: object) -> _Basis:
@@ -101,6 +105,68 @@ def forget_badge_memo() -> None:
     """Drop the kept seating. The next build seats every badge again."""
     global _BASIS
     _BASIS = None
+    _NAMES.clear()
+    _MARKS.clear()
+
+
+def _drop_other_revisions(cache: dict, key: Tuple[int, int]) -> None:
+    stale = [item for item in cache if item[0] == key[0] and item != key]
+    for item in stale:
+        del cache[item]
+    if len(cache) > 4:
+        cache.clear()
+
+
+def _widget_names(document: UiDocument) -> Tuple[str, ...]:
+    key = (id(document), document.structure_revision)
+    cached = _NAMES.get(key)
+    if cached is not None:
+        return cached
+    names = tuple(name for name in (node.object_name for node in document.iter_widgets()) if name)
+    _drop_other_revisions(_NAMES, key)
+    _NAMES[key] = names
+    return names
+
+
+def _logic_text(document: UiDocument, sender: str) -> str:
+    found = document.by_name(sender)
+    if not found:
+        return ""
+    node = document.node(found[0])
+    parts = []
+    for entry in node.properties():
+        if not is_logic_key(entry.name):
+            continue
+        text = getattr(entry.value, "text", "")
+        parts.append("%s=%s" % (entry.name, text if isinstance(text, str) else ""))
+    return "\0".join(parts)
+
+
+def _event_text(states: Sequence[object]) -> str:
+    """Step text the mark reads. A step commit does not move structure_revision."""
+    parts = []
+    for state in states:
+        steps = getattr(state, "steps", ())
+        parts.append("%s:%s" % (getattr(state, "signal_name", ""), repr(tuple(steps))))
+    return "\0".join(parts)
+
+
+def _cached_mark(
+    document: UiDocument, sender: str, states: Sequence[object]
+) -> Optional[Tuple[str, str, int]]:
+    key = (id(document), document.structure_revision)
+    page = _MARKS.get(key)
+    if page is None:
+        _drop_other_revisions(_MARKS, key)
+        page = {}
+        _MARKS[key] = page
+    fingerprint = "%s\0%s" % (_logic_text(document, sender), _event_text(states))
+    held = page.get(sender)
+    if held is not None and held[0] == fingerprint:
+        return held[1]
+    mark = _mark(document, sender, tuple(states))
+    page[sender] = (fingerprint, mark)
+    return mark
 
 
 def _badge_senders(document: UiDocument) -> Tuple[List[str], dict]:
@@ -113,11 +179,10 @@ def _badge_senders(document: UiDocument) -> Tuple[List[str], dict]:
             senders.append(event.sender)
         grouped[event.sender].append(event)
     seen = set(senders)
-    for node in document.iter_widgets():
-        name = node.object_name
-        if not name or name in seen:
+    for name in _widget_names(document):
+        if name in seen:
             continue
-        if _mark(document, name, ()) is None:
+        if _cached_mark(document, name, ()) is None:
             continue
         senders.append(name)
         grouped[name] = []
@@ -187,7 +252,7 @@ def build(static: object, inputs: object, state: Hashable) -> LayerOutput:
         basis.seats[seat_key] = seated
     items: List[LayerItem] = []
     for sender, seat in seated:
-        mark = _mark(document, sender, tuple(grouped.get(sender, ())))
+        mark = _cached_mark(document, sender, tuple(grouped.get(sender, ())))
         if mark is None:
             continue
         tip, glyph, count = mark

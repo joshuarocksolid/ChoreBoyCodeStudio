@@ -30,10 +30,17 @@ from app.qt.QtWidgets import QWidget
 class TrySink:
     """Collects one burst and writes the log lines."""
 
-    def __init__(self, writer: object, view_id: str, source: str) -> None:
+    def __init__(
+        self,
+        writer: object,
+        view_id: str,
+        source: str,
+        names: Optional[Dict[str, str]] = None,
+    ) -> None:
         self._writer = writer
         self._view_id = view_id
         self._source = source
+        self._names = dict(names or ())
         self._counts = step_counts(source)
         self._events: List[TryEvent] = []
         self._asked: set = set()
@@ -47,6 +54,7 @@ class TrySink:
         self._ui = ui
         self.chrome = chrome
         self._values = values
+        chrome.what_ran.set_names(self._names)
         chrome.what_ran.activated.connect(self._open)
         chrome.run_toggled.connect(self._toggle)
         chrome.values.changed.connect(self._value_changed)
@@ -90,7 +98,9 @@ class TrySink:
         self._events = []
         if not events:
             return
-        lines = fold(events, self._counts, _labels(self.chrome))
+        if self.chrome is not None:
+            self.chrome.what_ran.set_names(self._names)
+        lines = fold(events, self._counts, {}, self._names)
         self._publish(lines)
 
     def _schedule(self) -> None:
@@ -337,21 +347,4 @@ def _as_child(widget: QWidget) -> None:
     if flag is not None:
         widget.setWindowFlags(flag)
 
-
-def _labels(chrome: Optional[TryChrome]) -> Dict[str, str]:
-    if chrome is None:
-        return {}
-    found: Dict[str, str] = {}
-    for item in chrome.findChildren(QWidget):
-        name = item.objectName()
-        reader = getattr(item, "text", None)
-        if not name or not callable(reader) or name.startswith("preview."):
-            continue
-        try:
-            value = reader()
-        except Exception:
-            continue
-        if isinstance(value, str) and value:
-            found[name] = value
-    return found
 

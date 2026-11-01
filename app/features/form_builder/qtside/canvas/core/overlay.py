@@ -575,6 +575,51 @@ def _dimmed(items: Sequence[Item]) -> List[Item]:
     return dimmed
 
 
+_REFRESH_LAYERS = frozenset({"feeds", "logic_badges"})
+
+
+def splice_layers(frame: OverlayFrame, static: StaticLayer, inputs: FrameInputs) -> OverlayFrame:
+    """Replace feed and logic-badge marks. The rest of the frame stays.
+
+    Those two layers emit no hit targets, so the previous target list is kept.
+    A target they do emit is prepended, which is where ``build_frame`` puts layer targets.
+    """
+    kept: List[Item] = []
+    insert_at: Optional[int] = None
+    for item in frame.items:
+        if isinstance(item, LayerItem) and item.layer in _REFRESH_LAYERS:
+            if insert_at is None:
+                insert_at = len(kept)
+            continue
+        kept.append(item)
+    fresh: List[Item] = []
+    fresh_targets: List[Tuple[CanvasRect, Target]] = []
+    for layer in inputs.layers:
+        if layer.name not in _REFRESH_LAYERS:
+            continue
+        try:
+            output = layer.build(static, inputs, layer.state)
+        except Exception:
+            logger.exception("canvas layer %s failed", layer.name)
+            continue
+        fresh.extend(output.items)
+        fresh_targets.extend(output.targets)
+    if insert_at is None:
+        insert_at = len(kept)
+        for index, item in enumerate(kept):
+            if isinstance(item, Chip):
+                insert_at = index
+                break
+    kept[insert_at:insert_at] = fresh
+    targets = tuple(fresh_targets) + frame.targets if fresh_targets else frame.targets
+    return replace(
+        frame,
+        basis=replace(frame.basis, epoch=static.epoch),
+        items=tuple(kept),
+        targets=targets,
+    )
+
+
 def _run_layers(
     items: List[Item], static: StaticLayer, inputs: FrameInputs
 ) -> Tuple[Tuple[CanvasRect, Target], ...]:

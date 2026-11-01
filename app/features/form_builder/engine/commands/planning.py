@@ -1171,16 +1171,19 @@ def set_logic(doc: UiDocument, ctx: PlanContext, owner: NodeId, key: str, text: 
                 code="FB401",
             )
         text = canonical.text
-    if text is None:
-        set_property(doc, ctx, owner, key, None, stdset="0", logic_checked=True)
-    else:
-        existing = node.prop(key)
-        if existing is not None and isinstance(existing.value, StringValue) and same_logic(key, existing.value.text, text):
-            # Same meaning as what is stored: keep the stored bytes (CONTRACTS 15.4 rule 7).
-            pass
+    # Formula text is not structure. formula_env and the action memos stay valid;
+    # rule_graph keys on revision because it reads this text.
+    with doc.event_only_edits():
+        if text is None:
+            set_property(doc, ctx, owner, key, None, stdset="0", logic_checked=True)
         else:
-            set_property(doc, ctx, owner, key, StringValue(text, notr=True), stdset="0", logic_checked=True)
-    _sync_logic_marker(doc, ctx)
+            existing = node.prop(key)
+            if existing is not None and isinstance(existing.value, StringValue) and same_logic(key, existing.value.text, text):
+                # Same meaning as what is stored: keep the stored bytes (CONTRACTS 15.4 rule 7).
+                pass
+            else:
+                set_property(doc, ctx, owner, key, StringValue(text, notr=True), stdset="0", logic_checked=True)
+        _sync_logic_marker(doc, ctx)
 
 
 def allocate_spec(ctx: PlanContext, spec: NodeSpec) -> NodeSpec:

@@ -58,6 +58,42 @@ def _fail(text):
     os._exit(1)
 
 
+def _capture_log(window):
+    """Keep logger lines so a declined form tab can be diagnosed on the guest."""
+    import logging
+
+    notes = []
+
+    class _Grab(logging.Handler):
+        def emit(self, record):
+            notes.append(self.format(record))
+
+    handler = _Grab()
+    handler.setFormatter(logging.Formatter("%(name)s %(levelname)s %(message)s"))
+    logging.getLogger().addHandler(handler)
+    logger = getattr(window, "_logger", None)
+    if logger is not None:
+        logger.addHandler(handler)
+    return notes
+
+
+def _bound_surface(window, path):
+    """The form tab, whether the editor stored the path or its resolved form."""
+    registry = window._tab_content_registry
+    asked = str(path)
+    surface = registry.surface_for_path(asked)
+    if surface is not None:
+        return surface
+    resolved = str(Path(asked).resolve())
+    surface = registry.surface_for_path(resolved)
+    if surface is not None:
+        return surface
+    keys = list(registry._surfaces)
+    if len(keys) == 1 and keys[0].endswith(Path(asked).name):
+        return registry.surface_for_path(keys[0])
+    return None
+
+
 def _p(samples, fraction):
     ordered = sorted(samples)
     if not ordered:
@@ -426,16 +462,18 @@ def _run():
         metadata=ProjectMetadata(schema_version=2, name="Shop", default_entry="main.py"),
         entries=[],
     )
+    notes = _capture_log(window)
     if not window._editor_tab_factory.open_file_in_editor(str(order_path)):  # type: ignore[attr-defined]
-        _fail("the reference form did not open")
+        _fail("the reference form did not open\n%s" % "\n".join(notes))
     window._center_stack.setCurrentIndex(1)  # type: ignore[attr-defined]
     window.resize(1400, 900)
     window.show()
     for _ in range(8):
         app.processEvents()
-    surface = window._tab_content_registry.surface_for_path(str(order_path))  # type: ignore[attr-defined]
+    surface = _bound_surface(window, order_path)
     if surface is None:
-        _fail("no form surface for %s" % order_path)
+        keys = list(window._tab_content_registry._surfaces)  # type: ignore[attr-defined]
+        _fail("no form surface for %s\nkeys=%s\n%s" % (order_path, keys, "\n".join(notes)))
     session = surface.session
     doc = session.document
     inspector = surface.workbench.inspector
@@ -757,7 +795,7 @@ def _try_invoice(app, window, invoice_path, evidence):
             raise RuntimeError("the invoice form did not open")
         for _ in range(8):
             app.processEvents()
-        surface = window._tab_content_registry.surface_for_path(str(invoice_path))  # type: ignore[attr-defined]
+        surface = _bound_surface(window, invoice_path)
         if surface is None:
             raise RuntimeError("no invoice surface")
         notices = getattr(surface, "own_class_preview", None)

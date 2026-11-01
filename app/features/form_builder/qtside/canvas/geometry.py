@@ -21,6 +21,7 @@ from app.qt.QtWidgets import (
 from app.qt.qt_compat import enum_value
 from app.features.form_builder.engine.events import ChangeSet
 from app.features.form_builder.engine.ids import NodeId
+from app.features.form_builder.engine.logic.storage import is_logic_key
 from app.features.form_builder.engine.query.direct import (
     LayoutFacts,
     PrimaryFacts,
@@ -694,11 +695,14 @@ class HitIndexInvalidator:
         dirty.update(added)
         rewalk = set()
         for owner, _kind, name in changeset.property_dirty:
+            # A cbcs* edit changes badges, not geometry. currentIndex and visible still rewalk.
+            if is_logic_key(name):
+                continue
             dirty.add(owner)
             if name in ("currentIndex", "visible"):
                 rewalk.add(owner)
         for change in changeset.changes:
-            if change.category == "connection":
+            if change.category in ("connection", "logic"):
                 continue
             for name in ("node", "owner", "parent", "old_parent", "new_parent"):
                 node_id = getattr(change, name, None)

@@ -40,7 +40,10 @@ def _prefixes(row: QWidget) -> None:
     full_place = str(place.property("cbcsFull") or "")
     assert _keeps_prefix(label.text(), full_call), (label.text(), full_call)
     assert _keeps_prefix(place.text(), full_place), (place.text(), full_place)
-    assert label.fontMetrics().horizontalAdvance(label.text()) <= label.width() + 2
+    if label.text() == full_call and label.wordWrap():
+        assert label.height() + 2 >= label.heightForWidth(max(1, label.width()))
+    else:
+        assert label.fontMetrics().horizontalAdvance(label.text()) <= label.width() + 2
     assert place.fontMetrics().horizontalAdvance(place.text()) <= place.width() + 2
 
 

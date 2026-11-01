@@ -282,7 +282,12 @@ class ChildSession:
             if try_message is not None and try_message.show_form:
                 from app.features.form_builder.qtside.preview.child.behavior import TrySink
 
-                sink = TrySink(self._writer, message.view_id, message.module_source or "")
+                sink = TrySink(
+                    self._writer,
+                    message.view_id,
+                    message.module_source or "",
+                    dict(try_message.display_names),
+                )
                 self._materializer.host_factory = make_host_factory(sink, try_message)
             else:
                 self._materializer.host_factory = None

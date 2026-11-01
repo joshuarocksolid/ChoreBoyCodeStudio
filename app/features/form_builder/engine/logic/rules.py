@@ -5,13 +5,16 @@ a widget's Value rule to a rule that reads that widget. Defaults are outside
 the refresh order. A default that reads a calculated field, and every node of
 a cycle, is FB104 and generates nothing.
 
-The graph is cached on ``doc.structure_revision``. A different formula
-environment (another window reading, another kind map) is a different cache key.
+The graph reads formula text, so it is cached on ``doc.revision``. A different
+formula environment (another window reading, another kind map) is a different
+cache key. An older revision is dropped. The structure memo is not used: a
+rule commit does not move ``structure_revision``.
 """
 
 from __future__ import annotations
 
 import keyword
+import weakref
 from dataclasses import dataclass
 from types import MappingProxyType
 from typing import Dict, FrozenSet, List, Mapping, Optional, Sequence, Tuple
@@ -83,10 +86,25 @@ class RuleGraph:
         return self._defaults
 
 
+# doc -> (revision, token -> graph). One revision, every environment used in it.
+_GRAPHS: "weakref.WeakKeyDictionary[UiDocument, Tuple[int, Dict[str, RuleGraph]]]" = (
+    weakref.WeakKeyDictionary()
+)
+
+
 def rule_graph(doc: UiDocument, env: FormulaEnv) -> RuleGraph:
-    """Incremental: the same revision and environment return the same graph."""
-    key = "m7.2a.rule_graph\0%s" % _env_token(env)
-    return doc.structure_memo(key, lambda: _build(doc, env))
+    """One graph per document revision and environment. Later calls in that revision hit."""
+    token = _env_token(env)
+    held = _GRAPHS.get(doc)
+    if held is None or held[0] != doc.revision:
+        held = (doc.revision, {})
+        _GRAPHS[doc] = held
+    found = held[1].get(token)
+    if found is not None:
+        return found
+    built = _build(doc, env)
+    held[1][token] = built
+    return built
 
 
 def _env_token(env: FormulaEnv) -> str:

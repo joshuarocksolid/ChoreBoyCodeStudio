@@ -211,6 +211,9 @@ class TryStart:
     form_methods: Tuple[Tuple[str, int], ...] = ()
     # ``(method, annotation)``. An empty annotation is a text box (ANY).
     window_methods: Tuple[Tuple[str, str], ...] = ()
+    # ``(object name, display name)`` from FormulaEnv. The child keeps object
+    # names in generated code and applies this map when it paints What ran.
+    display_names: Tuple[Tuple[str, str], ...] = ()
 
 
 @dataclass(frozen=True)

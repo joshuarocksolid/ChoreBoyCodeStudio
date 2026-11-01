@@ -7,7 +7,7 @@ import tokenize
 from typing import Optional, Sequence, Tuple
 
 from app.qt.QtCore import QEvent, QPoint, QTimer, Qt
-from app.qt.QtGui import QColor, QSyntaxHighlighter, QTextCharFormat, QTextCursor
+from app.qt.QtGui import QColor, QPalette, QSyntaxHighlighter, QTextCharFormat, QTextCursor
 from app.qt.QtWidgets import (
     QListWidget,
     QListWidgetItem,
@@ -139,6 +139,8 @@ class FormulaEditor(QPlainTextEdit):
         self._rows: Tuple[Completion, ...] = ()
         self._fixes: Tuple[Fix, ...] = ()
         self._floating: Optional[QListWidget] = None
+        self._popup_watched: Optional[QWidget] = None
+        self._raising = False
         self._suppress = False
         self._mode_silent = False
         self._builder_incomplete = False
@@ -146,11 +148,17 @@ class FormulaEditor(QPlainTextEdit):
         self._complete = QListWidget(self)
         self._complete.setObjectName("formBuilder.formula.complete")
         self._complete.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self._complete.setVerticalScrollBarPolicy(hidden)
+        self._complete.setHorizontalScrollBarPolicy(hidden)
         self._complete.hide()
         self._fix_list = QListWidget(self)
         self._fix_list.setObjectName("formBuilder.formula.fixes")
         self._fix_list.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self._fix_list.setVerticalScrollBarPolicy(hidden)
+        self._fix_list.setHorizontalScrollBarPolicy(hidden)
         self._fix_list.hide()
+        _opaque_list(self._complete)
+        _opaque_list(self._fix_list)
         self.textChanged.connect(self._on_text)
         self._fit()
 
@@ -487,7 +495,12 @@ class FormulaEditor(QPlainTextEdit):
             widget.addItem(QListWidgetItem(label))
         if widget.count():
             widget.setCurrentRow(0)
-        widget.setFixedHeight(min(6, max(1, widget.count())) * 22 + 4)
+        widget.setAlternatingRowColors(False)
+        rows = min(6, max(1, widget.count()))
+        row_h = widget.sizeHintForRow(0) if widget.count() else 22
+        if row_h < 1:
+            row_h = 22
+        widget.setFixedHeight(row_h * rows + widget.frameWidth() * 2)
 
     def _move(self, widget: QListWidget, delta: int) -> None:
         row = widget.currentRow() + delta
@@ -539,8 +552,36 @@ class FormulaEditor(QPlainTextEdit):
         finally:
             self._placing = False
 
+    def eventFilter(self, watched: QWidget, event: QEvent) -> bool:  # noqa: N802
+        # The State layout raises its rows on every layout. That covers the
+        # completion list, which is a child and not in the layout. Raise it
+        # again after the layout has finished.
+        if watched is self._popup_watched and enum_value(event.type()) == enum_value(QEvent.Type.LayoutRequest):
+            QTimer.singleShot(0, self._raise_popup)
+        return False
+
+    def _watch_popup_host(self, host: QWidget) -> None:
+        if self._popup_watched is host:
+            return
+        if self._popup_watched is not None:
+            self._popup_watched.removeEventFilter(self)
+        self._popup_watched = host
+        if host is not self:
+            host.installEventFilter(self)
+
+    def _raise_popup(self) -> None:
+        widget = self._floating
+        if widget is None or not widget.isVisible() or self._raising:
+            return
+        self._raising = True
+        try:
+            widget.raise_()
+        finally:
+            self._raising = False
+
     def _place_popup_now(self, widget: QListWidget) -> None:
         host = self._popup_host()
+        self._watch_popup_host(host)
         if widget.parentWidget() is not host:
             widget.setParent(host)
         self._paint_list(widget)
@@ -592,8 +633,9 @@ class FormulaEditor(QPlainTextEdit):
                 top = max(0, below_y)
             point = QPoint(origin_x, top)
         widget.move(point)
-        widget.raise_()
         widget.show()
+        self._raise_popup()
+        QTimer.singleShot(0, self._raise_popup)
 
     def _reflow_block(self) -> None:
         # activate() only packs children into the height already assigned.
@@ -658,9 +700,54 @@ class FormulaEditor(QPlainTextEdit):
         border = chrome.popup_border or chrome.border
         if not panel or not chrome.text:
             return
+        # The list is a child of the State section, not its own window, so a
+        # stylesheet on QListWidget leaves the viewport transparent and the
+        # rows underneath show through. Fill the list and the viewport.
+        selected = chrome.selected or chrome.row_hover or panel
+        on_selected = chrome.text
+        _opaque_list(widget)
+        widget.setProperty("cbcsFill", panel)
+        widget.setProperty("cbcsInk", chrome.text)
+        widget.setProperty("cbcsMark", selected)
+        fill = QColor(panel)
+        ink = QColor(chrome.text)
+        mark = QColor(selected)
+        palette = widget.palette()
+        palette.setColor(QPalette.Base, fill)
+        palette.setColor(QPalette.Window, fill)
+        palette.setColor(QPalette.Text, ink)
+        palette.setColor(QPalette.Highlight, mark)
+        palette.setColor(QPalette.HighlightedText, QColor(on_selected))
+        widget.setPalette(palette)
+        view = widget.viewport()
+        view.setAutoFillBackground(True)
+        view.setPalette(palette)
+        # The inspector styles every QListWidget with the input colour. An id
+        # selector outranks that, so this child keeps the popup fill.
+        safe = (widget.objectName() or "formBuilder.formula.complete").replace("\\", "\\\\").replace(".", "\\.")
         widget.setStyleSheet(
-            "QListWidget { background: %s; color: %s; border: 1px solid %s; }"
-            % (panel, chrome.text, border)
+            "QListWidget#%s { background: %s; color: %s; border: 1px solid %s; }"
+            "QListWidget#%s::viewport { background: %s; }"
+            "QListWidget#%s::item { background: %s; color: %s; }"
+            "QListWidget#%s::item:selected { background: %s; color: %s; }"
+            % (
+                safe,
+                panel,
+                chrome.text,
+                border,
+                safe,
+                panel,
+                safe,
+                panel,
+                chrome.text,
+                safe,
+                selected,
+                on_selected,
+            )
+        )
+        view.setObjectName("formBuilder.formula.completeView")
+        view.setStyleSheet(
+            "QWidget#formBuilder\\.formula\\.completeView { background-color: %s; }" % panel
         )
 
     def resizeEvent(self, event: object) -> None:  # noqa: N802
@@ -687,6 +774,27 @@ class FormulaEditor(QPlainTextEdit):
                 self.setFixedHeight(target)
         finally:
             self._fitting = False
+
+
+def _opaque_list(widget: QListWidget) -> None:
+    """A child list paints its own background. Otherwise the rows under it show through.
+
+    ``WA_OpaquePaintEvent`` skips the erase. The viewport would then keep the
+    State rows that sit under this child. Autofill lets Qt fill first.
+    """
+    widget.setAutoFillBackground(True)
+    widget.setAttribute(_widget_attr("WA_StyledBackground"), True)
+    widget.setAttribute(_widget_attr("WA_OpaquePaintEvent"), False)
+    widget.viewport().setAutoFillBackground(True)
+    widget.viewport().setAttribute(_widget_attr("WA_OpaquePaintEvent"), False)
+    widget.viewport().setAttribute(_widget_attr("WA_StyledBackground"), True)
+
+
+def _widget_attr(name: str) -> object:
+    value = getattr(Qt, name, None)
+    if value is None:
+        value = getattr(Qt.WidgetAttribute, name)
+    return value
 
 
 def _fit_completion(label: str, metrics: object, width: int) -> str:

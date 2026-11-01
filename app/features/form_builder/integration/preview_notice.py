@@ -184,6 +184,9 @@ def build_try_start(
     class_name = window_class_name(scope)
     root_widget = getattr(document, "root", None)
     base = str(getattr(root_widget, "class_name", "") or "QWidget")
+    from app.features.form_builder.qtside.preview.try_log import names_for
+
+    display_names = names_for(document)
     return TryStart(
         request_id=request_id or uuid.uuid4().hex,
         view_id=view_id,
@@ -204,6 +207,7 @@ def build_try_start(
         promoted=promoted_for(document, root),
         form_methods=tuple(sorted(methods.items())),
         window_methods=specs,
+        display_names=display_names,
     )
 
 

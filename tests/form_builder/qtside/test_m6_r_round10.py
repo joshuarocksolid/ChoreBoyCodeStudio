@@ -13,11 +13,14 @@ from typing import Any, List
 
 import pytest
 
-from app.features.form_builder.engine.commands.catalog import Rename
+from app.features.form_builder.engine.commands.catalog import Rename, SetLogic
 from app.features.form_builder.engine.commands.catalog_ext.events import SetEventSteps
 from app.features.form_builder.engine.logic.events_codec import slot_step
+from app.features.form_builder.engine.logic.formula_env import env_for
+from app.features.form_builder.engine.logic.rules import rule_graph
 from app.features.form_builder.engine.project.pictures import picture_uses
 from app.features.form_builder.engine.query.actions import list_actions
+from app.features.form_builder.engine.ui4.defaults import QtClassTable
 from app.features.form_builder.qtside.canvas.layers import logic_badges
 from app.features.form_builder.qtside.canvas.layers.logic_badges import badge_tip, build as build_badges
 from tests.form_builder.engine.commands._support import open_log
@@ -125,6 +128,58 @@ def test_a_step_commit_does_not_move_the_structure_or_repeat_the_walks(monkeypat
     log.undo()
     log.undo()
     assert document.structure_revision > structure
+
+
+def test_a_rule_commit_does_not_move_the_structure_or_repeat_the_walks(monkeypatch: pytest.MonkeyPatch) -> None:
+    log = open_log(form())
+    document = log.document
+    owner = document.by_name("nameEdit")[0]
+    table = QtClassTable.shared()
+    env_for(document, None, table)
+    list_actions(document)
+    walks = {"n": 0}
+    real_preorder = type(document).iter_preorder
+    real_widgets = type(document).iter_widgets
+
+    def _preorder(self: Any, *args: Any, **kwargs: Any) -> Any:
+        walks["n"] += 1
+        return real_preorder(self, *args, **kwargs)
+
+    def _widgets(self: Any, *args: Any, **kwargs: Any) -> Any:
+        walks["n"] += 1
+        return real_widgets(self, *args, **kwargs)
+
+    monkeypatch.setattr(type(document), "iter_preorder", _preorder)
+    monkeypatch.setattr(type(document), "iter_widgets", _widgets)
+    revision = document.revision
+    structure = document.structure_revision
+    log.execute(SetLogic(owner, "cbcsVisibleWhen", "True"))
+    assert document.revision > revision
+    assert document.structure_revision == structure
+    walks["n"] = 0
+    env_for(document, None, table)
+    list_actions(document)
+    assert walks["n"] == 0
+    graph = rule_graph(document, env_for(document, None, table))
+    assert walks["n"] > 0
+    assert any(record.widget == "nameEdit" and record.key == "cbcsVisibleWhen" for record in graph.records.values())
+    walks["n"] = 0
+    assert rule_graph(document, env_for(document, None, table)) is graph
+    assert walks["n"] == 0
+
+    revision = document.revision
+    log.execute(SetLogic(owner, "cbcsVisibleWhen", "False"))
+    assert document.revision > revision
+    assert document.structure_revision == structure
+    walks["n"] = 0
+    env_for(document, None, table)
+    list_actions(document)
+    assert walks["n"] == 0
+
+    log.execute(Rename(owner, "nameField"))
+    assert document.structure_revision > structure
+    list_actions(document)
+    assert walks["n"] > 0
 
 
 def test_the_local_history_connection_is_opened_once_per_thread(tmp_path: Any) -> None:

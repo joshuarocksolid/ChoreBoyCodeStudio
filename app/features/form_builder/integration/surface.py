@@ -698,17 +698,34 @@ class FormSurface(QWidget):
 
     def editor_status_sentence(self) -> str:
         state = self._session.selection.state
-        mixed = mixed_parent_sentence(self._session.document, state.ids)
-        selection = mixed or selection_sentence(self._session.document, state.current, len(state.ids))
+        document = self._session.document
+        # A rule commit moves revision and leaves this key alone, so the walk does not run again.
+        key = (
+            document.structure_revision,
+            state.current,
+            state.ids,
+            self._gesture_sentence,
+            self._overlay_sentence,
+            self._inert_note,
+            self._hover_sentence,
+            self._modes.active,
+        )
+        cached = getattr(self, "_status_sentence", None)
+        if cached is not None and cached[0] == key:
+            return cached[1]
+        mixed = mixed_parent_sentence(document, state.ids)
+        selection = mixed or selection_sentence(document, state.current, len(state.ids))
         # An open overlay speaks first: its instruction is about the next key, not about the last gesture.
         gesture = "" if self._modes.active and self._overlay_sentence else self._gesture_sentence
-        return status_sentence(
+        sentence = status_sentence(
             gesture,
             self._overlay_sentence,
             self._inert_note,
             self._hover_sentence,
             selection,
         )
+        self._status_sentence = (key, sentence)
+        return sentence
 
     def reveal(self, line: int, detail: Optional[Mapping[str, str]]) -> bool:
         if detail and detail.get("fb_code_path") and not detail.get("fb_object"):
@@ -1113,10 +1130,13 @@ class FormSurface(QWidget):
 
     def _on_log(self, change_set: object) -> None:
         self._sync_toast(change_set)
+        hover_before = self._hover_sentence
         self._rewrite_hover()
         if self._source.mode != "visual":
             self._refresh_undo_buttons()
-            self._refresh_shell_status()
+            # The shell's content-source listener already pushed this commit.
+            if self._hover_sentence != hover_before:
+                self._refresh_shell_status()
             return
         current = self._session.selection.state.current
         self._workbench.refresh(current, change=change_set if isinstance(change_set, ChangeSet) else None)
@@ -1125,7 +1145,8 @@ class FormSurface(QWidget):
         self._sync_shell_undo()
         self._refresh_save_state()
         self._rewrite_hover()
-        self._refresh_shell_status()
+        if self._hover_sentence != hover_before:
+            self._refresh_shell_status()
         if self._command_toast.isVisible():
             self._command_toast.place()
 
@@ -1230,8 +1251,13 @@ class FormSurface(QWidget):
 
     def hover_changed(self, node: Optional[NodeId]) -> None:
         self._workbench.outline.set_hover(node)
+        same = node == self._hover_node
         self._hover_node = node
+        before = self._hover_sentence
         self._rewrite_hover()
+        # Chrome refresh during a commit re-enters hover for the widget already under the pointer.
+        if same and self._hover_sentence == before:
+            return
         self._refresh_shell_status()
 
     def _rewrite_hover(self) -> None:
@@ -1512,6 +1538,9 @@ class FormSurface(QWidget):
         return True
 
     def set_overlay_status(self, sentence: str) -> None:
+        # Connection sync announces the same overlay sentence on every commit.
+        if sentence == self._overlay_sentence:
+            return
         self._overlay_sentence = sentence
         self._refresh_shell_status()
 

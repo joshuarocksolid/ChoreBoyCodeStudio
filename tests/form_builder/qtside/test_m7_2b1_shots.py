@@ -172,6 +172,8 @@ def _shoot(qapp: QApplication, folder: Path, scale: str) -> None:
 
 
 def _save(state: QWidget, window: QWidget, folder: Path, slug: str, mode: str, scale: str, qapp: QApplication) -> None:
+    if slug == "fx-complete":
+        _assert_completion_list_opaque(state, qapp)
     _grab(state, folder / ("%s-%s-%s.png" % (slug, mode, scale)))
     _set_inspector_width(window, 236, qapp)
     _grab(state, folder / ("%s-%s-%s-236.png" % (slug, mode, scale)))
@@ -220,3 +222,106 @@ def test_m7_2b1_shots(qapp: QApplication) -> None:
     text = done.stdout + "\n" + done.stderr
     passed = "passed" in text and "failed" not in text
     assert done.returncode == 0 or (done.returncode in (-11, 139) and passed), text
+
+
+def _assert_completion_list_opaque(state: QWidget, qapp: QApplication) -> None:
+    """Pixels inside the completion list are its own fill or its own text.
+
+    The list sits on top of Read-only when, Value, and Format. A transparent
+    popup leaves those colours in the list rect.
+    """
+    from app.qt.QtCore import QPoint
+    from app.qt.QtGui import QColor
+    from app.qt.QtWidgets import QListWidget
+
+    listed = state.findChild(QListWidget, "formBuilder.formula.complete")
+    assert listed is not None and listed.isVisible(), "completion list is not open"
+    listed.hide()
+    state.repaint()
+    qapp.processEvents()
+    under = state.grab().toImage()
+    listed.show()
+    listed.raise_()
+    state.repaint()
+    qapp.processEvents()
+    over = state.grab().toImage()
+    ratio = over.width() / float(max(1, state.width()))
+    if ratio <= 0:
+        ratio = 1.0
+    origin = listed.mapTo(state, QPoint(0, 0))
+    inset = max(3, int(round(4 * ratio)))
+    left = int(round(origin.x() * ratio)) + inset
+    top = int(round(origin.y() * ratio)) + inset
+    right = int(round((origin.x() + listed.width()) * ratio)) - inset
+    bottom = int(round((origin.y() + listed.height()) * ratio)) - inset
+    right = min(right, over.width())
+    bottom = min(bottom, over.height())
+    assert right - left > 4 and bottom - top > 4, (left, top, right, bottom, over.width(), over.height())
+    fill = QColor(str(listed.property("cbcsFill") or "#000000"))
+    ink = QColor(str(listed.property("cbcsInk") or "#000000"))
+    mark = QColor(str(listed.property("cbcsMark") or listed.property("cbcsFill") or "#000000"))
+    # The current row is a selection. Glyph edges blend that fill with the text,
+    # and the row edge blends it with the list fill. The platform highlight is
+    # a different blue, so the colours come from the theme properties.
+    pairs = ((fill, ink), (mark, ink), (fill, mark))
+    foreign = []
+    leaked = 0
+    changed = 0
+    seen = 0
+    for y in range(top, bottom, 2):
+        for x in range(left, min(right, under.width()), 2):
+            if x < 0 or y < 0 or y >= under.height():
+                continue
+            seen += 1
+            pixel = over.pixelColor(x, y)
+            before = under.pixelColor(x, y)
+            if not _list_color(pixel, pairs):
+                foreign.append((x, y, pixel.name()))
+            if not _near(pixel, before, 2):
+                changed += 1
+            elif not _near(pixel, fill, 12):
+                # Same pixels as the rows underneath, and not the list fill.
+                # Grey body text sits near the fill-to-ink blend, so a colour
+                # check alone would accept it.
+                leaked += 1
+    assert seen > 0
+    assert not foreign, foreign[:8]
+    assert changed * 8 > seen, (changed, seen)
+    assert leaked * 12 <= seen, (leaked, seen)
+
+
+def _list_color(pixel: object, pairs: tuple) -> bool:
+    for left, right in pairs:
+        if _segment_distance(pixel, left, right) <= 22:
+            return True
+    return False
+
+
+def _near(pixel: object, other: object, limit: int) -> bool:
+    return _channel_distance(pixel, other) <= limit
+
+
+def _channel_distance(pixel: object, other: object) -> int:
+    return max(
+        abs(pixel.red() - other.red()),  # type: ignore[attr-defined]
+        abs(pixel.green() - other.green()),  # type: ignore[attr-defined]
+        abs(pixel.blue() - other.blue()),  # type: ignore[attr-defined]
+    )
+
+
+def _segment_distance(pixel: object, start: object, end: object) -> float:
+    ax, ay, az = start.red(), start.green(), start.blue()  # type: ignore[attr-defined]
+    bx, by, bz = end.red(), end.green(), end.blue()  # type: ignore[attr-defined]
+    px, py, pz = pixel.red(), pixel.green(), pixel.blue()  # type: ignore[attr-defined]
+    abx, aby, abz = float(bx - ax), float(by - ay), float(bz - az)
+    apx, apy, apz = float(px - ax), float(py - ay), float(pz - az)
+    denom = abx * abx + aby * aby + abz * abz
+    if denom <= 0:
+        return float(_channel_distance(pixel, start))
+    tee = (apx * abx + apy * aby + apz * abz) / denom
+    if tee < 0:
+        tee = 0.0
+    elif tee > 1:
+        tee = 1.0
+    cx, cy, cz = ax + tee * abx, ay + tee * aby, az + tee * abz
+    return ((px - cx) ** 2 + (py - cy) ** 2 + (pz - cz) ** 2) ** 0.5

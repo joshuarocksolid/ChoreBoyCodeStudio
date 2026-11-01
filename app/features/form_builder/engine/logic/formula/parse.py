@@ -121,7 +121,27 @@ def apply_fix(text: str, fix: Fix) -> str:
 
 
 def parse_text(text: str, env: FormulaEnv) -> Parsed:
-    """Guards, fixes, parse, depth, then the allowlist. No check yet."""
+    """Guards, fixes, parse, depth, then the allowlist. No check yet.
+
+    Repeated text on the same environment returns the first parse. A rule commit
+    changes one formula and leaves the other hundred alone. The cache sits on the
+    environment, which is replaced when the form's structure changes.
+    """
+    page = getattr(env, "_parse_cache", None)
+    if not isinstance(page, dict):
+        page = {}
+        object.__setattr__(env, "_parse_cache", page)
+    cached = page.get(text)
+    if cached is not None:
+        return cached
+    parsed = _parse_uncached(text, env)
+    if len(page) > 512:
+        page.clear()
+    page[text] = parsed
+    return parsed
+
+
+def _parse_uncached(text: str, env: FormulaEnv) -> Parsed:
     blocked = _guard(text)
     if blocked is not None:
         return Parsed(None, (blocked,), (), True)

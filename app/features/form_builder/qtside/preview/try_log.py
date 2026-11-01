@@ -76,19 +76,69 @@ _RULE_WORDS = {
 }
 
 
-def source_label(ref: str) -> str:
+def names_from_env(env: object) -> Tuple[Tuple[str, str], ...]:
+    """Object name to FormulaEnv's display. A display equal to the object name is left out."""
+    widgets = getattr(env, "widgets", None) or {}
+    found = []
+    for name, facts in widgets.items():
+        display = getattr(facts, "display", "") or ""
+        if not isinstance(display, str):
+            continue
+        display = display.replace("&", "")
+        if display and display != name:
+            found.append((str(name), display))
+    found.sort()
+    return tuple(found)
+
+
+def names_for(doc: object) -> Tuple[Tuple[str, str], ...]:
+    """Object name to the words the inspector says.
+
+    That is ``spoken_display``: a caption or buddy when the form has one, and
+    the split object name otherwise ("lineTotalLabel" becomes "Line total").
+    Generated code keeps the object name. A name that already reads as itself
+    is left out.
+    """
+    from app.features.form_builder.engine.logic.read_as_text import spoken_display
+    from app.features.form_builder.engine.ui4.document import UiDocument
+
+    if not isinstance(doc, UiDocument):
+        return ()
+    found = []
+    for node in doc.iter_widgets():
+        name = node.object_name or ""
+        if not name:
+            continue
+        shown = spoken_display(doc, name).replace("&", "")
+        if shown and shown != name:
+            found.append((name, shown))
+    found.sort()
+    return tuple(found)
+
+
+def source_label(ref: str, names: Optional[Mapping[str, str]] = None) -> str:
     """The Source column words. The raw key stays on the line for the tooltip and Copy."""
     text = ref or ""
     if ": When " in text:
         widget, _, signal = text.partition(": When ")
-        return "%s · When %s" % (widget.strip(), signal.strip())
+        return "%s · When %s" % (_widget_name(widget, names), signal.strip())
     widget, sep, key = text.partition(":")
     if not sep:
         return text
     words = _RULE_WORDS.get(key.strip(), key.strip())
     if not widget.strip():
         return words
-    return "%s · %s" % (widget.strip(), words)
+    return "%s · %s" % (_widget_name(widget, names), words)
+
+
+def _widget_name(widget: str, names: Optional[Mapping[str, str]]) -> str:
+    text = widget.strip()
+    if not text or not names:
+        return text
+    shown = names.get(text, "")
+    if isinstance(shown, str) and shown:
+        return shown
+    return text
 
 
 def source_of(ref: str, step_index: Optional[int] = None) -> SourceRef:
@@ -110,8 +160,14 @@ def fold(
     events: Sequence[TryEvent],
     counts: Mapping[str, int],
     labels: Mapping[str, str],
+    names: Optional[Mapping[str, str]] = None,
 ) -> Tuple[TryLine, ...]:
-    """The lines for one burst, in the order a person should read them."""
+    """The lines for one burst, in the order a person should read them.
+
+    ``names`` is the FormulaEnv display map. It wins over ``labels``, which used
+    to be widget text read off the form.
+    """
+    labels = _naming(labels, names)
     errors = [item for item in events if item.kind == "error"]
     if errors:
         item = errors[0]
@@ -149,7 +205,7 @@ def fold(
             message = item.value if isinstance(item.value, str) else ""
             if not message:
                 continue
-            widget = item.ref.split(":", 1)[0]
+            widget = _widget_name(item.ref.split(":", 1)[0], labels)
             lines.append(
                 TryLine(
                     sentence="Check %s: %s" % (widget, message),
@@ -189,6 +245,20 @@ def fold(
         if len(group) < expected and "stops here" in words:
             lines.append(_stopped(ref, words, len(group), labels))
     return tuple(lines)
+
+
+def _naming(
+    labels: Mapping[str, str],
+    names: Optional[Mapping[str, str]],
+) -> Dict[str, str]:
+    found: Dict[str, str] = {}
+    if labels:
+        found.update(labels)
+    if names:
+        for key, value in names.items():
+            if value:
+                found[str(key)] = value
+    return found
 
 
 def _stopped(ref: str, words: str, number: int, labels: Mapping[str, str]) -> TryLine:
