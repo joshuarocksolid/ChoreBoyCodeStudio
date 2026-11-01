@@ -8,6 +8,7 @@ sentence, or nothing). Nothing here touches the undo log.
 from __future__ import annotations
 
 import json
+import weakref
 from dataclasses import dataclass, replace
 from typing import Dict, List, Optional, Sequence, Tuple
 
@@ -220,8 +221,13 @@ def project_sender(
     read_only = marker_read_only(doc.root.prop("cbcsLogic"))
     notice = NEWER_NOTICE if read_only else ""
     default = default_event(classes, class_name) or ""
-    cache_key = (id(doc), doc.revision, sender, bool(qt_names))
-    cached = _SENDER_CACHE.get(cache_key)
+    revision = doc.revision
+    bucket = _SENDER_CACHE.get(doc)
+    if bucket is None or bucket[0] != revision:
+        bucket = (revision, {})
+        _SENDER_CACHE[doc] = bucket
+    cache_key = (sender, bool(qt_names))
+    cached = bucket[1].get(cache_key)
     if cached is not None:
         return cached
     events = tuple(
@@ -248,9 +254,7 @@ def project_sender(
         count_events(doc, sender),
         default,
     )
-    if len(_SENDER_CACHE) > 24:
-        _SENDER_CACHE.clear()
-    _SENDER_CACHE[cache_key] = view
+    bucket[1][cache_key] = view
     return view
 
 
@@ -261,12 +265,12 @@ def project_incoming(doc: UiDocument, classes: QtClassTable, target: str) -> Tup
     """
     if not target:
         return ()
-    key = (id(doc), doc.revision)
-    index = _INCOMING_CACHE.get(key)
-    if index is None:
+    held = _INCOMING_CACHE.get(doc)
+    if held is None or held[0] != doc.revision:
         index = _incoming_index(doc, classes)
-        _INCOMING_CACHE.clear()
-        _INCOMING_CACHE[key] = index
+        _INCOMING_CACHE[doc] = (doc.revision, index)
+    else:
+        index = held[1]
     return index.get(target, ())
 
 
@@ -369,8 +373,12 @@ def finish(doc: UiDocument, classes: QtClassTable, key: str, gesture: Gesture) -
     return None
 
 
-_SENDER_CACHE: Dict[Tuple[object, ...], "SenderView"] = {}
-_INCOMING_CACHE: Dict[Tuple[object, ...], Dict[str, Tuple["IncomingRow", ...]]] = {}
+_SENDER_CACHE: "weakref.WeakKeyDictionary[UiDocument, Tuple[int, Dict[Tuple[str, bool], SenderView]]]" = (
+    weakref.WeakKeyDictionary()
+)
+_INCOMING_CACHE: "weakref.WeakKeyDictionary[UiDocument, Tuple[int, Dict[str, Tuple[IncomingRow, ...]]]]" = (
+    weakref.WeakKeyDictionary()
+)
 
 
 def outline_names(doc: UiDocument) -> Tuple[str, ...]:

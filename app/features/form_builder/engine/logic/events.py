@@ -161,7 +161,7 @@ _FULL = object()
 _NARROW_UNSET = object()
 # doc -> _FULL, or [base revision, set of (sender, signal) edited since that revision]
 _TOUCH: weakref.WeakKeyDictionary = weakref.WeakKeyDictionary()
-_SCOPE: Dict[int, Set[Tuple[str, str]]] = {}
+_SCOPE: "weakref.WeakKeyDictionary[UiDocument, Set[Tuple[str, str]]]" = weakref.WeakKeyDictionary()
 # Where each edited event sits after the command, so the splice does not walk the form.
 # (sender, signal, "native", previous key or None) or (sender, signal, "other", None).
 _ANCHORS: weakref.WeakKeyDictionary = weakref.WeakKeyDictionary()
@@ -176,16 +176,16 @@ def event_edits(doc: UiDocument, pairs: Tuple[Tuple[str, str], ...]) -> Iterator
     and moves no widget, layout or action, and it touches no picture.
     """
     _bind_revision(doc)
-    previous = _SCOPE.get(id(doc))
-    _SCOPE[id(doc)] = set(pairs)
+    previous = _SCOPE.get(doc)
+    _SCOPE[doc] = set(pairs)
     try:
         with doc.event_only_edits():
             yield
     finally:
         if previous is None:
-            _SCOPE.pop(id(doc), None)
+            _SCOPE.pop(doc, None)
         else:
-            _SCOPE[id(doc)] = previous
+            _SCOPE[doc] = previous
 
 
 def _bind_revision(doc: UiDocument) -> None:
@@ -203,7 +203,7 @@ def _bind_revision(doc: UiDocument) -> None:
 
 
 def _on_revision(doc: UiDocument) -> None:
-    scope = _SCOPE.get(id(doc))
+    scope = _SCOPE.get(doc)
     current = _TOUCH.get(doc, None)
     if scope is None or current is _FULL:
         _TOUCH[doc] = _FULL

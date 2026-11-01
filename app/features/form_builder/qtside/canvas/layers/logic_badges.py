@@ -87,10 +87,16 @@ class _Basis:
 
 _BASIS: Optional[_Basis] = None
 _MEMO_KEEP = 8
-# Widget names for one structure, and each sender's mark for one logic fingerprint.
-_NAMES: Dict[Tuple[int, int], Tuple[str, ...]] = {}
-_MARKS: Dict[Tuple[int, int], Dict[str, Tuple[str, Optional[Tuple[str, str, int]]]]] = {}
-_LOGIC_TEXT: Dict[Tuple[int, int], Dict[str, str]] = {}
+# One entry per live document. The revision sits in the value.
+_NAMES: "weakref.WeakKeyDictionary[UiDocument, Tuple[int, Tuple[str, ...]]]" = weakref.WeakKeyDictionary()
+_MARKS: "weakref.WeakKeyDictionary[UiDocument, Tuple[int, Dict[str, Tuple[str, Optional[Tuple[str, str, int]]]]]]" = (
+    weakref.WeakKeyDictionary()
+)
+# (structure revision, document revision, page). A formula note keeps the page.
+# Any other revision bump drops it, so undo does not keep the old formula text.
+_LOGIC_TEXT: "weakref.WeakKeyDictionary[UiDocument, Tuple[int, int, Dict[str, str]]]" = (
+    weakref.WeakKeyDictionary()
+)
 
 
 def _basis_for(document: UiDocument, static: object) -> _Basis:
@@ -112,32 +118,32 @@ def forget_badge_memo() -> None:
     _EDITED.clear()
 
 
-def _drop_other_revisions(cache: dict, key: Tuple[int, int]) -> None:
-    stale = [item for item in cache if item[0] == key[0] and item != key]
-    for item in stale:
-        del cache[item]
-    if len(cache) > 4:
-        cache.clear()
-
-
 def _widget_names(document: UiDocument) -> Tuple[str, ...]:
-    key = (id(document), document.structure_revision)
-    cached = _NAMES.get(key)
-    if cached is not None:
-        return cached
+    revision = document.structure_revision
+    cached = _NAMES.get(document)
+    if cached is not None and cached[0] == revision:
+        return cached[1]
     names = tuple(name for name in (node.object_name for node in document.iter_widgets()) if name)
-    _drop_other_revisions(_NAMES, key)
-    _NAMES[key] = names
+    _NAMES[document] = (revision, names)
     return names
 
 
+def _formula_note(document: UiDocument) -> bool:
+    held = getattr(document, "_formula_edits", None)
+    return isinstance(held, tuple) and len(held) == 2 and isinstance(held[1], list) and bool(held[1])
+
+
 def _logic_text(document: UiDocument, sender: str) -> str:
-    key = (id(document), document.structure_revision)
-    page = _LOGIC_TEXT.get(key)
-    if page is None:
-        _drop_other_revisions(_LOGIC_TEXT, key)
-        page = {}
-        _LOGIC_TEXT[key] = page
+    structure = document.structure_revision
+    revision = document.revision
+    held = _LOGIC_TEXT.get(document)
+    if held is None or held[0] != structure or (held[1] != revision and not _formula_note(document)):
+        page: Dict[str, str] = {}
+        _LOGIC_TEXT[document] = (structure, revision, page)
+    else:
+        page = held[2]
+        if held[1] != revision:
+            _LOGIC_TEXT[document] = (structure, revision, page)
     if _formula_touched(document, sender):
         page.pop(sender, None)
     held = page.get(sender)
@@ -159,27 +165,26 @@ def _logic_text(document: UiDocument, sender: str) -> str:
     return joined
 
 
-_EDITED: Dict[Tuple[int, int], set] = {}
+_EDITED: "weakref.WeakKeyDictionary[UiDocument, Tuple[int, set]]" = weakref.WeakKeyDictionary()
 
 
 def _formula_touched(document: UiDocument, sender: str) -> bool:
     """True when this revision rewrote a formula on ``sender``."""
     revision = document.revision
-    key = (id(document), revision)
-    names = _EDITED.get(key)
-    if names is None:
-        names = set()
-        held = getattr(document, "_formula_edits", None)
-        if isinstance(held, tuple) and len(held) == 2 and isinstance(held[1], list):
-            for node_id, _prop in held[1]:
+    held = _EDITED.get(document)
+    if held is None or held[0] != revision:
+        names: set = set()
+        note = getattr(document, "_formula_edits", None)
+        if isinstance(note, tuple) and len(note) == 2 and isinstance(note[1], list):
+            for node_id, _prop in note[1]:
                 if not document.contains(node_id):
                     continue
                 name = getattr(document.node(node_id), "object_name", "") or ""
                 if name:
                     names.add(name)
-        if len(_EDITED) > 4:
-            _EDITED.clear()
-        _EDITED[key] = names
+        _EDITED[document] = (revision, names)
+    else:
+        names = held[1]
     return sender in names
 
 
@@ -195,12 +200,13 @@ def _event_text(states: Sequence[object]) -> str:
 def _cached_mark(
     document: UiDocument, sender: str, states: Sequence[object]
 ) -> Optional[Tuple[str, str, int]]:
-    key = (id(document), document.structure_revision)
-    page = _MARKS.get(key)
-    if page is None:
-        _drop_other_revisions(_MARKS, key)
+    structure = document.structure_revision
+    held_marks = _MARKS.get(document)
+    if held_marks is None or held_marks[0] != structure:
         page = {}
-        _MARKS[key] = page
+        _MARKS[document] = (structure, page)
+    else:
+        page = held_marks[1]
     fingerprint = "%s\0%s" % (_logic_text(document, sender), _event_text(states))
     held = page.get(sender)
     if held is not None and held[0] == fingerprint:

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import weakref
 from dataclasses import dataclass, replace
 from typing import Dict, List, Optional, Sequence, Tuple
 
@@ -53,7 +54,11 @@ class Sentence:
     text: str
 
 
-_PREFERRED: Dict[Tuple[int, int], Dict[str, Tuple[str, bool]]] = {}
+# One page per live document. The revision sits in the value, so a freed
+# document cannot leave its names for the next object that reuses the address.
+_PREFERRED: "weakref.WeakKeyDictionary[UiDocument, Tuple[int, Dict[str, Tuple[str, bool]]]]" = (
+    weakref.WeakKeyDictionary()
+)
 
 
 def widget_name(doc: Optional[UiDocument], name: str, env: object = None) -> str:
@@ -93,11 +98,10 @@ def _preferred(doc: UiDocument) -> Dict[str, Tuple[str, bool]]:
     rule commit (revision moves, structure does not) hits.
     """
     revision = getattr(doc, "structure_revision", None)
-    key = (id(doc), int(revision)) if isinstance(revision, int) else None
-    if key is not None:
-        cached = _PREFERRED.get(key)
-        if cached is not None:
-            return cached
+    if isinstance(revision, int):
+        cached = _PREFERRED.get(doc)
+        if cached is not None and cached[0] == revision:
+            return cached[1]
     captions: Dict[str, str] = {}
     for label_id, field in form_row_pairs(doc):
         if field in captions:
@@ -119,10 +123,8 @@ def _preferred(doc: UiDocument) -> Dict[str, Tuple[str, bool]]:
             found[name] = (captions[name], False)
         else:
             found[name] = (_humanize(name), True)
-    if key is not None:
-        if len(_PREFERRED) > 4:
-            _PREFERRED.clear()
-        _PREFERRED[key] = found
+    if isinstance(revision, int):
+        _PREFERRED[doc] = (revision, found)
     return found
 
 

@@ -7,6 +7,7 @@ A shrunk nested layout stays hittable: its hit rect grows to 24 px.
 
 from __future__ import annotations
 
+import weakref
 from dataclasses import dataclass, replace
 from typing import Dict, FrozenSet, List, Literal, Optional, Sequence, Tuple, Union
 
@@ -279,21 +280,21 @@ def blocked_ids(doc: UiDocument, source_ids: Sequence[NodeId]) -> FrozenSet[Node
     return frozenset(found)
 
 
-_PAINTED_DOC = 0
-_PAINTED: Tuple[Tuple[NodeId, str, Rect], ...] = ()
+_PAINTED: "weakref.WeakKeyDictionary[object, Tuple[Tuple[NodeId, str, Rect], ...]]" = (
+    weakref.WeakKeyDictionary()
+)
 
 
-def note_painted_parts(document_id: int, covers: Sequence[Tuple[NodeId, str, Rect]]) -> None:
-    """The open menus painted on the page. One document at a time."""
-    global _PAINTED_DOC, _PAINTED
-    _PAINTED_DOC = document_id
-    _PAINTED = tuple(covers)
+def note_painted_parts(doc: object, covers: Sequence[Tuple[NodeId, str, Rect]]) -> None:
+    """The open menus painted on this document."""
+    _PAINTED[doc] = tuple(covers)
 
 
-def painted_parts(document_id: int) -> Tuple[Tuple[NodeId, str, Rect], ...]:
-    if document_id != _PAINTED_DOC:
+def painted_parts(doc: object) -> Tuple[Tuple[NodeId, str, Rect], ...]:
+    found = _PAINTED.get(doc)
+    if found is None:
         return ()
-    return _PAINTED
+    return found
 
 
 def cover_parts(host: DropHost, covers: Sequence[Tuple[NodeId, str, Rect]]) -> DropHost:
