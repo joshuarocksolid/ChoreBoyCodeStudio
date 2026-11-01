@@ -590,7 +590,7 @@ class FormSurface(QWidget):
         self._toolbar.apply_theme(tokens)
         self._workbench.apply_theme(tokens)
         self._notice.apply_theme(tokens)
-        # Left sections from the workbench slots get no tokens from the workbench; the Actions section is M5.1's.
+        # The workbench paints left sections that implement apply_theme. Actions still paints here.
         actions = self._workbench.section_widget("actions")
         theme = getattr(actions, "apply_theme", None)
         if callable(theme):
@@ -2029,6 +2029,18 @@ class FormSurface(QWidget):
         from app.features.form_builder.integration.keys_ext.code import go_to_code
 
         go_to_code(self)
+
+    def show_logic_uses(self) -> None:
+        """Shift+F12 while this form is focused. The shell action calls this."""
+        from app.features.form_builder.integration.keys_ext.logic import open_uses
+
+        open_uses(self)
+
+    def logic_window_file(self) -> str:
+        """The window file beside this form. The Logic panel reads it and does not import integration."""
+        from app.features.form_builder.integration.overlay_ext.connections import window_file
+
+        return window_file(self)
 
     def _on_tab_activated(self, _index: int) -> None:
         tab = self._tab_widget

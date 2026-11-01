@@ -515,6 +515,13 @@ class ChecksBody(QWidget):
             return
         self._add.setFocus()
 
+    def focus_check(self, index: int) -> None:
+        for row in self._row_widgets:
+            if row.index == index:
+                row.setFocus()
+                return
+        self.focus_first()
+
     def move_check(self, index: int, delta: int) -> None:
         # ``index`` is the stored position. The row the person sees is run order,
         # and Required stays first because that is where the engine runs it.

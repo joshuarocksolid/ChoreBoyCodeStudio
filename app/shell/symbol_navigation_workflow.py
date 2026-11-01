@@ -186,6 +186,22 @@ class SymbolNavigationWorkflow:
 
     def handle_find_references_action(self) -> None:
         parent = self._host.dialog_parent()
+        finder = getattr(parent, "window", None)
+        window = finder() if callable(finder) else None
+        surface = getattr(window, "_form_undo_surface", None)
+        go = getattr(surface, "go_to_selected_code", None)
+        show = getattr(surface, "show_logic_uses", None)
+        focus = QApplication.focusWidget()
+        inside = getattr(surface, "isAncestorOf", None)
+        if (
+            callable(go)
+            and callable(show)
+            and focus is not None
+            and callable(inside)
+            and inside(focus)
+        ):
+            show()
+            return
         loaded_project = self._host.loaded_project()
         if loaded_project is None:
             QMessageBox.warning(parent, "Find References", "Open a project first.")
