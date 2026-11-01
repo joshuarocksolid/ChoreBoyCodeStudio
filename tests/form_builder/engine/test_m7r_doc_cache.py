@@ -4,11 +4,13 @@
 from __future__ import annotations
 
 import gc
+from typing import Optional
 
 from app.features.form_builder.engine.commands.catalog import SetLogic
 from app.features.form_builder.engine.ids import IdAllocator
 from app.features.form_builder.engine.logic import read_as_text
 from app.features.form_builder.engine.logic.read_as_text import spoken_display
+from app.features.form_builder.engine.ui4.document import UiDocument
 from app.features.form_builder.engine.ui4.reader import read_ui
 from app.features.form_builder.qtside.canvas.layers import logic_badges
 from tests.form_builder.engine.commands._support import open_log
@@ -18,7 +20,7 @@ import pytest
 pytestmark = pytest.mark.unit
 
 
-def _caption_form(caption: str) -> object:
+def _caption_form(caption: str) -> UiDocument:
     text = (
         '<?xml version="1.0" encoding="UTF-8"?>'
         '<ui version="4.0"><class>Alpha</class>'
@@ -40,7 +42,7 @@ def test_spoken_names_do_not_follow_a_reused_document_id() -> None:
     stolen = {"emailEdit": ("Customer", False)}
     del first
     gc.collect()
-    second = None
+    second: Optional[UiDocument] = None
     for _try in range(50):
         candidate = _caption_form("Invoice")
         if id(candidate) == address:
