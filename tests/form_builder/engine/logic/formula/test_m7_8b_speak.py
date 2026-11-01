@@ -34,9 +34,9 @@ def test_a_builder_value_speaks_once(formula: str) -> None:
     assert "`" not in heard
 
 
-def test_a_number_comparison_uses_the_builder_symbol() -> None:
+def test_a_number_comparison_is_spoken_in_words() -> None:
     env = _env()
-    assert speak_text("qtySpin > 2", env, "condition") == "Qty > 2"
+    assert speak_text("qtySpin > 2", env, "condition") == "Qty is more than 2"
 
 
 @pytest.mark.parametrize("kind, formula", _OUTSIDE)

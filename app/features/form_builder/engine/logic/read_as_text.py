@@ -33,7 +33,7 @@ _SUFFIXES = ("Label", "Spin", "Edit", "Button", "Check", "Combo", "Box", "View",
 _WRAPS = {
     "cbcsEnabledWhen": "%s is enabled only when %s.",
     "cbcsVisibleWhen": "%s is visible only when %s.",
-    "cbcsReadOnlyWhen": "%s is read-only only when %s.",
+    "cbcsReadOnlyWhen": "%s is read-only when %s.",
     "cbcsValue": "%s is always %s.",
     "cbcsDefault": "%s starts as %s.",
 }

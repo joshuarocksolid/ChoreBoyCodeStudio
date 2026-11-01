@@ -45,13 +45,13 @@ _ROW = {
     "one_of": "is one of",
 }
 _NUMBER_ROW = {
-    "eq": "=",
-    "ne": "not =",
-    "lt": "<",
-    "le": "<=",
-    "gt": ">",
-    "ge": ">=",
-    "between": "between",
+    "eq": "is",
+    "ne": "is not",
+    "lt": "is less than",
+    "le": "is at most",
+    "gt": "is more than",
+    "ge": "is at least",
+    "between": "is between",
 }
 _CMP = {"==": "eq", "!=": "ne", "<": "lt", "<=": "le", ">": "gt", ">=": "ge"}
 
