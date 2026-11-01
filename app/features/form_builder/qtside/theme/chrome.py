@@ -88,6 +88,14 @@ class FormChrome:
     # ov.layout and ov.gap, as ``#RRGGBB``, for layout and spacer glyphs.
     layout: str = ""
     gap: str = ""
+    syntax_name: str = ""
+    syntax_number: str = ""
+    syntax_string: str = ""
+    syntax_operator: str = ""
+    syntax_function: str = ""
+    syntax_keyword: str = ""
+    warning: str = ""
+    info: str = ""
 
     def __post_init__(self) -> None:
         if not self.search_match_bg:
@@ -515,6 +523,14 @@ def chrome_from_values(
     is_high_contrast: bool = False,
     layout: str = "",
     gap: str = "",
+    syntax_name: str = "",
+    syntax_number: str = "",
+    syntax_string: str = "",
+    syntax_operator: str = "",
+    syntax_function: str = "",
+    syntax_keyword: str = "",
+    warning: str = "",
+    info: str = "",
 ) -> FormChrome:
     return FormChrome(
         window=window,
@@ -538,4 +554,12 @@ def chrome_from_values(
         is_high_contrast=is_high_contrast,
         layout=layout,
         gap=gap,
+        syntax_name=syntax_name,
+        syntax_number=syntax_number,
+        syntax_string=syntax_string,
+        syntax_operator=syntax_operator,
+        syntax_function=syntax_function,
+        syntax_keyword=syntax_keyword,
+        warning=warning,
+        info=info,
     )

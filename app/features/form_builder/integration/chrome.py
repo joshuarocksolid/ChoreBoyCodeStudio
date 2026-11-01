@@ -37,4 +37,12 @@ def chrome_for(tokens: ShellThemeTokens) -> FormChrome:
         is_high_contrast=tokens.is_high_contrast,
         layout=_ink(overlay.layout),
         gap=_ink(overlay.gap),
+        syntax_name=tokens.syntax_semantic_variable,
+        syntax_number=tokens.syntax_number,
+        syntax_string=tokens.syntax_string,
+        syntax_operator=tokens.syntax_operator,
+        syntax_function=tokens.syntax_function,
+        syntax_keyword=tokens.syntax_keyword,
+        warning=tokens.diag_warning_color,
+        info=tokens.diag_info_color,
     )

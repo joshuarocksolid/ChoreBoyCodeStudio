@@ -28,6 +28,7 @@ from app.features.form_builder.qtside.inspector.behavior_ext._rows import (
     TWO_PLACES,
     EventView,
     Gesture,
+    Outcome,
     SenderView,
     StepView,
     finish,
@@ -452,6 +453,8 @@ class EventsBody(QWidget):
             return
         if outcome.command is None:
             _narrate(self, outcome.status)
+            return
+        if _rule_instead(self, outcome):
             return
         self.note_added(outcome.focus_signal, outcome.focus_index)
         result = self._services.execute(outcome.command)
@@ -1265,6 +1268,70 @@ def _qt_names(widget: QWidget) -> bool:
             return bool(visible())
         current = current.parentWidget()
     return False
+
+
+def _rule_instead(body: "EventsBody", outcome: Outcome) -> bool:
+    """A toggled setEnabled or setVisible can become a rule. True skips the slot."""
+    from app.features.form_builder.engine.commands.catalog import SetLogic
+    from app.features.form_builder.engine.commands.catalog_ext.events import SetEventSteps
+    from app.features.form_builder.engine.logic.events import read_event
+    from app.features.form_builder.engine.logic.formula import normalize
+    from app.features.form_builder.engine.logic.formula_env import env_for
+    from app.features.form_builder.engine.logic.intents.m7_rules import steer_for
+    from app.features.form_builder.engine.ui4.nodes import WidgetNode
+    from app.features.form_builder.qtside.formula.steer_ui import ask_steer, steer_sentence
+
+    command = outcome.command
+    if not isinstance(command, SetEventSteps) or command.signal_name != "toggled":
+        return False
+    doc = body._services.session.document
+    old = read_event(doc, command.sender, command.signal_name).steps
+    new = command.steps
+    added = None
+    if len(new) == len(old) + 1 and tuple(new[:-1]) == tuple(old):
+        added = new[-1]
+    elif len(new) == len(old):
+        for left, right in zip(old, new):
+            if left != right:
+                added = right
+                break
+    if added is None or getattr(added, "verb", "") != "slot":
+        return False
+    steer = steer_for(command.signal_name, getattr(added, "slot", "") or "")
+    if steer is None:
+        return False
+    env = env_for(doc, None, QtClassTable.shared())
+    target = getattr(added, "target", "") or ""
+    choice = ask_steer(
+        body,
+        steer_sentence(added.slot, _logic_display(env, target), _logic_display(env, command.sender)),
+    )
+    if choice == "connect":
+        return False
+    if choice != "rule":
+        return True
+    ids = doc.by_name(target)
+    if not ids:
+        return True
+    node = doc.node(ids[0])
+    if not isinstance(node, WidgetNode):
+        return True
+    words = "Visible when" if steer.key == "cbcsVisibleWhen" else "Enabled when"
+    text = normalize(command.sender)
+    if not text:
+        return True
+    body._services.execute_all(
+        "Set %s for %s" % (words, _logic_display(env, target)),
+        [SetLogic(node.id, steer.key, text)],
+    )
+    return True
+
+
+def _logic_display(env: object, name: str) -> str:
+    widgets = getattr(env, "widgets", None)
+    facts = widgets.get(name) if widgets is not None else None
+    display = getattr(facts, "display", "") if facts is not None else ""
+    return display or name
 
 
 def _narrate(widget: QWidget, sentence: str) -> None:

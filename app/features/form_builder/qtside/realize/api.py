@@ -709,6 +709,9 @@ class Realizer(_Structure):
             return
         widget.setBuddy(self._widget_named(text_of(entry.value)))
 
+    def widget_named(self, name: str) -> Optional[QWidget]:
+        return self._widget_named(name)
+
     def _widget_named(self, name: str) -> Optional[QWidget]:
         for node_id in self._session.document.by_name(name):
             widget = self._widgets.get(node_id)
