@@ -93,8 +93,12 @@ def test_the_dialog_lists_the_pair_and_escape_writes_nothing(tmp_path, qapp: QAp
             label = dialog.findChild(QWidget, "formBuilder.repairName.oldName")
             combo = dialog.findChild(QComboBox, "formBuilder.repairChoice.oldName")
             assert label is not None and label.text() == "oldName"  # type: ignore[attr-defined]
+            from app.core.constants import UI_EDITOR_FONT_FAMILY_DEFAULT
+            from app.qt.QtGui import QFont
+
+            assert label.font().family() == UI_EDITOR_FONT_FAMILY_DEFAULT or label.font().styleHint() == QFont.Monospace  # type: ignore[attr-defined]
             assert combo is not None and combo.currentData() == "fresh"
-            assert combo.currentText() == "fresh \u00b7 fresh \u00b7 Line edit"
+            assert combo.currentText() == "fresh \u00b7 Line edit"
             sentence = dialog.findChild(QWidget, "formBuilder.repairSentence")
             uses = dialog.findChild(QWidget, "formBuilder.repairUses.oldName")
             assert sentence is not None and sentence.text() == (  # type: ignore[attr-defined]

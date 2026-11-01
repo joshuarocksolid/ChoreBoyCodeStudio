@@ -16,7 +16,7 @@ from app.features.form_builder.engine.logic.formula import analyze, compile_form
 from app.features.form_builder.engine.logic.formula.env import SlotKind
 from app.features.form_builder.engine.logic.formula.evaluate import EvalBlank
 from app.features.form_builder.engine.logic.formula.runtime import live_helpers
-from app.features.form_builder.engine.logic.formula.types import TEXT, lookup_spec, main_type
+from app.features.form_builder.engine.logic.formula.types import TEXT, lookup_spec, written_type
 from app.features.form_builder.engine.ui4.defaults import QtClassTable
 from app.features.form_builder.engine.ui4.values import (
     BoolValue,
@@ -151,16 +151,15 @@ def _slot(node: object, env: object, key: str) -> SlotKind:
         chain = env.class_chain(facts.class_name)  # type: ignore[attr-defined]
         matched, spec = lookup_spec(facts.class_name, chain)
         if spec is not None and matched is not None:
-            found, _unknown = main_type(
+            target = written_type(
                 spec,
                 matched,
                 kind=facts.kind,
                 prefix=facts.prefix,
                 decimals=facts.decimals,
                 has_items_data=facts.has_items_data,
+                fmt=_format(node),
             )
-            if found is not None:
-                target = found
     if key == "cbcsDefault":
         return SlotKind.default(target)
     return SlotKind.value(target)
@@ -200,12 +199,14 @@ def _written(node: object, class_name: str, write: str, prop_name: str, result: 
     return None
 
 
-def _formatted(node: object, result: object) -> str:
-    fmt = ""
+def _format(node: object) -> str:
     raw = node.value("cbcsFormat") if hasattr(node, "value") else None
     text = getattr(raw, "text", None)
-    if isinstance(text, str):
-        fmt = text
+    return text if isinstance(text, str) else ""
+
+
+def _formatted(node: object, result: object) -> str:
+    fmt = _format(node)
     helpers = live_helpers()
     if fmt == "money":
         shown = helpers["_cbcs_money"](result)

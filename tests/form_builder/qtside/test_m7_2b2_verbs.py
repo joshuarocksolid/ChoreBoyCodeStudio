@@ -122,7 +122,11 @@ def test_the_formula_field_completes_and_underlines_an_error() -> None:
             status = picker.findChild(QWidget, "formBuilder.verbStatus.formula")
             assert status is not None and status.isVisible() and status.text()  # type: ignore[attr-defined]
             labels = [complete.item(index).text() for index in range(complete.count())]
-            assert any("nameEdit" in text for text in labels)
+            assert any(text.startswith("nameEdit  ") and "nameEdit  nameEdit" not in text for text in labels)
+            box = complete.geometry()
+            assert box.left() >= 0 and box.top() >= 0
+            assert box.right() <= picker.width()
+            assert box.bottom() <= picker.height()
             editor.setPlainText("missingField")
             pump()
             assert editor.has_error()

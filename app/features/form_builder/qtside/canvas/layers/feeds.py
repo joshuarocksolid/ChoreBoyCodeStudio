@@ -59,7 +59,9 @@ def build(static: object, inputs: object, state: Hashable) -> LayerOutput:
             pair = (source, owner)
             if pair in seen:
                 continue
-            if state == "selected" and selected not in pair:
+            # Arrows run into the selected widget only. A rule on another
+            # widget that mentions this one is that widget's feed, not this one.
+            if state == "selected" and owner != selected:
                 continue
             origin = _rect(document, placed, source)
             dest = _rect(document, placed, owner)

@@ -21,7 +21,7 @@ from app.qt.qt_compat import enum_value
 from app.features.form_builder.engine.commands.catalog import SetLogic
 from app.features.form_builder.engine.logic.events_catalog import class_chain
 from app.features.form_builder.engine.logic.formula.env import SlotKind
-from app.features.form_builder.engine.logic.formula.types import TEXT, lookup_spec, main_type
+from app.features.form_builder.engine.logic.formula.types import TEXT, lookup_spec, written_type
 from app.features.form_builder.engine.logic.formula_env import env_for
 from app.features.form_builder.engine.ui4.defaults import QtClassTable
 from app.features.form_builder.engine.ui4.nodes import WidgetNode
@@ -648,16 +648,15 @@ def _slot(spec: StateRowSpec, env: object, node: WidgetNode) -> SlotKind:
     matched, value_spec = lookup_spec(facts.class_name, chain)
     target = TEXT
     if value_spec is not None and matched is not None:
-        found, _unknown = main_type(
+        target = written_type(
             value_spec,
             matched,
             kind=facts.kind,
             prefix=facts.prefix,
             decimals=facts.decimals,
             has_items_data=facts.has_items_data,
+            fmt=_stored(node, "cbcsFormat"),
         )
-        if found is not None:
-            target = found
     if spec.slot == "default":
         return SlotKind.default(target)
     return SlotKind.value(target)

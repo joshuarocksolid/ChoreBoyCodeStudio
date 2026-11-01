@@ -4,7 +4,9 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
-from typing import Iterator, Tuple
+from typing import Iterator, Tuple, cast
+
+from app.features.form_builder.engine.ids import NodeId
 
 import pytest
 
@@ -32,6 +34,9 @@ FORM = form(
    </item>
    <item>
     <widget class="QSpinBox" name="qtySpin"/>
+   </item>
+   <item>
+    <widget class="QSpinBox" name="priceSpin"/>
    </item>
    <item>
     <widget class="QLineEdit" name="discountEdit"/>
@@ -156,6 +161,41 @@ def test_a_spin_box_value_rule_shows_the_number_while_the_editor_is_open() -> No
         QTest.keyClick(editor, Qt.Key.Key_Escape)
         pump()
         assert spin.value() == 0
+
+
+def test_qty_times_price_shows_zero_while_the_editor_is_open() -> None:
+    with desk() as (session, pane, realizer):
+        label = realizer.widget_named("totalLabel")
+        assert isinstance(label, QLabel)
+        depth = _depth(session)
+        _select(session, pane, "totalLabel")
+        editor = _open(pane, "cbcsValue")
+        editor.setPlainText("qtySpin.value() * priceSpin.value()")
+        pump()
+        assert label.text() == "0"
+        assert _depth(session) == depth
+        assert not session.log.is_dirty()
+        QTest.keyClick(editor, Qt.Key.Key_Escape)
+        pump()
+        assert label.text() == "Qty"
+        assert _depth(session) == depth
+
+
+def test_a_money_format_shows_the_formatted_zero_while_the_editor_is_open() -> None:
+    from app.features.form_builder.engine.commands.catalog import SetLogic
+
+    with desk() as (session, pane, realizer):
+        label = realizer.widget_named("totalLabel")
+        assert isinstance(label, QLabel)
+        session.log.execute(SetLogic(cast(NodeId, _id(session, "totalLabel")), "cbcsFormat", "money"))
+        _select(session, pane, "totalLabel")
+        editor = _open(pane, "cbcsValue")
+        editor.setPlainText("qtySpin.value() * priceSpin.value()")
+        pump()
+        assert label.text() == "$0.00"
+        QTest.keyClick(editor, Qt.Key.Key_Escape)
+        pump()
+        assert label.text() == "Qty"
 
 
 def test_selection_change_restores_design_values() -> None:

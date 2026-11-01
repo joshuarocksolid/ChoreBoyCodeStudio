@@ -113,7 +113,7 @@ def test_feed_arrows_follow_names_the_selection_reads_and_is_read_by() -> None:
             data = item.data
             assert isinstance(data, tuple) and data[0] == "feed"
             pairs.add((data[1], data[2]))
-        assert pairs == {("qtySpin", "totalLabel"), ("discountCheck", "totalLabel"), ("totalLabel", "qtySpin")}
+        assert pairs == {("qtySpin", "totalLabel"), ("discountCheck", "totalLabel")}
         assert selected.targets == ()
         other = document.by_name("noteEdit")[0]
         _static, quiet = _world(document, other)
@@ -212,6 +212,66 @@ def test_feed_ink_matches_connection_arrows(qapp: QApplication) -> None:
                 )
         assert hits >= 20
         assert strongest >= int(margin * 0.65)
+    finally:
+        session.dispose()
+
+
+def test_a_missing_name_draws_no_arrow_and_feeds_only_enter_the_selection() -> None:
+    source = form(
+        'class="QWidget" name="Form"',
+        """
+  <layout class="QVBoxLayout" name="verticalLayout">
+   <item>
+    <widget class="QSpinBox" name="qtySpin"/>
+   </item>
+   <item>
+    <widget class="QLabel" name="totalLabel">
+     <property name="text"><string>Total</string></property>
+     <property name="cbcsValue"><string>oldName * qtySpin.value()</string></property>
+    </widget>
+   </item>
+   <item>
+    <widget class="QCheckBox" name="discountCheck">
+     <property name="cbcsEnabledWhen"><string>totalLabel</string></property>
+    </widget>
+   </item>
+  </layout>
+""",
+    )
+    session = open_session(source)
+    try:
+        document = session.document
+        current = document.by_name("totalLabel")[0]
+        placed = []
+        x = 40
+        for name in ("Form", "qtySpin", "totalLabel", "discountCheck"):
+            found = document.by_name(name)
+            if found:
+                placed.append(SimpleNamespace(node=found[0], rect=CanvasRect(x, 80, 90, 28)))
+                x += 140
+        static = SimpleNamespace(
+            view=ViewMap(1.0, CanvasPoint(0, 0), Size(800, 600)),
+            placed=tuple(placed),
+            content=(),
+        )
+        inputs = SimpleNamespace(
+            document=document,
+            selection=SimpleNamespace(current=current),
+            viewport=CanvasRect(0, 0, 800, 600),
+            chrome=(),
+            measure=lambda text: len(text) * 7,
+        )
+        selected = build_feeds(static, inputs, "selected")
+        pairs = []
+        for item in selected.items:
+            assert isinstance(item, LayerItem)
+            data = item.data
+            assert isinstance(data, tuple)
+            pairs.append((data[1], data[2]))
+        assert pairs == [("qtySpin", "totalLabel")]
+        every = {(item.data[1], item.data[2]) for item in build_feeds(static, inputs, "all").items}
+        assert ("oldName", "totalLabel") not in every
+        assert ("totalLabel", "discountCheck") in every
     finally:
         session.dispose()
 

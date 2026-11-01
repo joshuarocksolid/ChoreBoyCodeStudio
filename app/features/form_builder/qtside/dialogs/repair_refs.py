@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Dict, List, Mapping, Optional, Sequence, Tuple
 
+from app.core.constants import UI_EDITOR_FONT_FAMILY_DEFAULT
 from app.features.form_builder.engine.logic.repair import RepairFix
 from app.features.form_builder.engine.ui4.document import UiDocument
 from app.qt.QtGui import QFont
@@ -58,6 +59,9 @@ class RepairDialog(QDialog):
             row = QHBoxLayout()
             label = QLabel(missing, self)
             label.setObjectName("formBuilder.repairName.%s" % missing)
+            name_font = QFont(UI_EDITOR_FONT_FAMILY_DEFAULT)
+            name_font.setStyleHint(getattr(QFont, "Monospace"))
+            label.setFont(name_font)
             arrow = QLabel("\u2192", self)
             arrow.setObjectName("formBuilder.repairArrow.%s" % missing)
             combo = QComboBox(self)
@@ -167,9 +171,11 @@ def _choice_label(document: Optional[UiDocument], name: str) -> str:
     class_name = getattr(node, "class_name", "") if node is not None else ""
     if isinstance(class_name, str) and class_name:
         kind = class_words(class_name).friendly
-    if kind:
+    if kind and shown != name:
         return "%s \u00b7 %s \u00b7 %s" % (name, shown, kind)
-    return "%s \u00b7 %s" % (name, shown)
+    if kind:
+        return "%s \u00b7 %s" % (name, kind)
+    return name if shown == name else "%s \u00b7 %s" % (name, shown)
 
 
 def _uses_line(fixes: Sequence[RepairFix], missing: str, document: Optional[UiDocument]) -> str:

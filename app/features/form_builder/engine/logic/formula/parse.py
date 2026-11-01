@@ -827,6 +827,15 @@ class _Lower:
             return WindowCall(self._span(node), ANY, func.attr, tuple(args))
         if isinstance(func, ast.Name):
             return Call(self._span(node), ANY, func.id, tuple(args))
+        # qtySpin.value() is the widget's main value, the same read as the bare name.
+        # The compiler then emits the class's own accessor.
+        if (
+            not args
+            and isinstance(func, ast.Attribute)
+            and isinstance(func.value, ast.Name)
+            and func.attr == "value"
+        ):
+            return Ref(self._span(node), ANY, func.value.id)
         self._reject(node)
         return None
 

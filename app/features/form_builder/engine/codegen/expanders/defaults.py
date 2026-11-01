@@ -28,12 +28,10 @@ from app.features.form_builder.engine.logic.formula.nodes import (
 )
 from app.features.form_builder.engine.logic.formula.types import (
     FKind,
-    MONEY,
-    NUMBER,
     TEXT,
     lookup_spec,
-    main_type,
     unwrap,
+    written_type,
 )
 from app.features.form_builder.engine.logic.rules import RuleRecord
 
@@ -89,33 +87,26 @@ def prepare(record: RuleRecord, env: FormulaEnv, trace: bool) -> Prepared:
 def _slot(record: RuleRecord, facts: WidgetFacts, chain: Tuple[str, ...]) -> SlotKind:
     if record.key in _STATE:
         return SlotKind.condition()
-    target = value_target(facts, chain)
-    fmt = record.fmt or ""
-    if fmt == "money":
-        target = MONEY
-    elif fmt.startswith("number") or fmt.startswith("percent"):
-        target = NUMBER
+    target = value_target(facts, chain, record.fmt or "")
     if record.key == "cbcsDefault":
         return SlotKind.default(target)
     return SlotKind.value(target)
 
 
-def value_target(facts: WidgetFacts, chain: Tuple[str, ...]):
+def value_target(facts: WidgetFacts, chain: Tuple[str, ...], fmt: str = ""):
     """The formula type a widget's value holds (LOGIC 4.3), TEXT when unknown."""
     matched, spec = lookup_spec(facts.class_name, chain)
     if spec is None or matched is None:
         return TEXT
-    found, _unknown = main_type(
+    return written_type(
         spec,
         matched,
         kind=facts.kind,
         prefix=facts.prefix,
         decimals=facts.decimals,
         has_items_data=facts.has_items_data,
+        fmt=fmt,
     )
-    if found is None:
-        return TEXT
-    return found
 
 
 def _error_code(analysis: Analysis) -> Optional[str]:
@@ -213,9 +204,9 @@ def write_value(
             (("decimal", "Decimal"), ("decimal", "ROUND_HALF_UP")),
         )
     if kind == "setText(formatted)":
-        return [assign, 'self.%s.setText("" if _cbcs_value is None else _cbcs_value)' % widget], (), ()
+        return [assign, 'self.%s.setText("" if _cbcs_value is None else str(_cbcs_value))' % widget], (), ()
     if kind == "setPlainText":
-        return [assign, 'self.%s.setPlainText("" if _cbcs_value is None else _cbcs_value)' % widget], (), ()
+        return [assign, 'self.%s.setPlainText("" if _cbcs_value is None else str(_cbcs_value))' % widget], (), ()
     if kind == "setValue":
         return _numeric(widget, "setValue", "int", expr, "minimum"), (), ()
     if kind == "setValue(float(x))":

@@ -23,6 +23,7 @@ from app.features.form_builder.qtside.inspector.api import (
     Unset,
     Written,
     mark,
+    open_state_row,
 )
 from app.qt.QtCore import Qt
 from app.qt.QtWidgets import (
@@ -136,8 +137,6 @@ class CalculatedEditor:
         _activate(self._root)
 
     def _edit(self) -> None:
-        from app.features.form_builder.qtside.inspector.behavior_ext.state import open_state_row
-
         inspector = _inspector(self._root)
         if inspector is not None:
             open_state_row(inspector, "cbcsValue")
@@ -233,8 +232,6 @@ class RuleLinkEditor:
         self._host.commit(BoolValue(bool(checked)))
 
     def _open(self) -> None:
-        from app.features.form_builder.qtside.inspector.behavior_ext.state import open_state_row
-
         key = _WHEN.get(self._host.qt_name, "")
         inspector = _inspector(self._root)
         if key and inspector is not None:

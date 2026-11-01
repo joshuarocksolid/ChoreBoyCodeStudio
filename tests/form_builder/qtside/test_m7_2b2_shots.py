@@ -274,6 +274,8 @@ def _shoot(qapp: QApplication, folder: Path, scale: str) -> None:
                 host.sync()
             open_state_row(inspector, "cbcsValue")
             _pump(qapp)
+            shown = realizer.widget_named("totalLabel")
+            assert shown is not None and shown.text() == "0"  # type: ignore[attr-defined]
             _grab(canvas, folder / ("canvas-live-%s-%s.png" % (mode, scale)))
             editor = inspector.findChild(QWidget, "formBuilder.formula")
             assert editor is not None

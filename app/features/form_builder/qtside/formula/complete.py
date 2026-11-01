@@ -58,7 +58,12 @@ def completions(text: str, cursor: int, env: FormulaEnv, *, forced: bool = False
         display = facts.display or name
         if token and not _prefix(token, name) and not _prefix(token, display):
             continue
-        rows.append(Completion("%s  %s  %s" % (name, display, _kind(env, facts)), name, start))
+        kind = _kind(env, facts)
+        if display == name:
+            label = "%s  %s" % (name, kind)
+        else:
+            label = "%s  %s  %s" % (name, display, kind)
+        rows.append(Completion(label, name, start))
     folded = token.casefold()
     for name, spec in FUNCTIONS.items():
         if folded and not name.casefold().startswith(folded):
