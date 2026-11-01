@@ -970,6 +970,9 @@ class FormSurface(QWidget):
 
     def resizeEvent(self, event: object) -> None:  # noqa: N802
         super().resizeEvent(event)  # type: ignore[arg-type]
+        # Close posts a resize that can land after the session is gone.
+        if self._released or getattr(self._session, "_disposed", False):
+            return
         self._apply_responsive()
         self._command_toast.place()
         self._problem_popover.place()

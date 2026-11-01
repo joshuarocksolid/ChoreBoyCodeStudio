@@ -128,6 +128,9 @@ def install_form_builder(ctx: "ShellCompositionContext") -> None:
         },
     )
     _reset_preview_on_quit()
+    from app.features.form_builder.integration.run_links_ext import install_console_hook
+
+    install_console_hook()
 
 
 def _refresh_shortcut_maps(window: object) -> None:

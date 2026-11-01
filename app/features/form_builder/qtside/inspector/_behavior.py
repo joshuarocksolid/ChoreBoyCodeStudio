@@ -22,6 +22,7 @@ from app.features.form_builder.qtside.inspector.behavior_ext import (
 )
 from app.features.form_builder.qtside.inspector.model import BehaviorView
 from app.features.form_builder.qtside.realize import Realizer
+from app.qt.QtGui import QShowEvent
 from app.qt.QtWidgets import QVBoxLayout, QWidget
 
 logger = logging.getLogger(__name__)
@@ -76,6 +77,14 @@ class BehaviorPage(QWidget):
     def shown_sections(self) -> List[str]:
         return [section_id for section_id, widget in self._widgets.items() if not widget.isHidden()]
 
+    def showEvent(self, event: QShowEvent) -> None:  # noqa: N802
+        super().showEvent(event)
+        # Sections stay hidden until this page is the current tab. A click on
+        # the tab does not flush by itself, so ask the pane to paint now.
+        refresh = self._refresh
+        if refresh is not None and self._widgets:
+            refresh()
+
     def paint(self, view: BehaviorView) -> None:
         inputs = SectionInputs(view, self._services, tuple(self._services.session.selection.state.ids))
         position = 0
@@ -93,7 +102,13 @@ class BehaviorPage(QWidget):
                     self._layout.removeWidget(widget)
                     self._layout.insertWidget(position, widget)
                 position += 1
-                widget.show()
+                # Showing a section under a hidden tab clears focus. The
+                # canvas timer then takes it. Keep the widget until the page
+                # is actually on screen.
+                if self.isVisible():
+                    widget.show()
+                else:
+                    widget.hide()
                 self._call(section, widget, "paint", inputs)
             else:
                 self._layout.removeWidget(widget)
