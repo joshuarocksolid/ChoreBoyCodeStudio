@@ -22,7 +22,7 @@ from app.features.form_builder.integration.provider import FormTabProvider  # no
 from app.features.form_builder.integration.surface import FormSurface  # noqa: E402
 from app.persistence.autosave_store import DraftEntry  # noqa: E402
 from app.persistence.local_history_store import LocalHistoryStore  # noqa: E402
-from app.qt.QtCore import QRect  # noqa: E402
+from app.qt.QtCore import QRect, Qt  # noqa: E402
 from app.qt.QtGui import QPalette  # noqa: E402
 from app.features.form_builder.integration.workbench import FormWorkbench  # noqa: E402
 from app.qt.QtWidgets import (  # noqa: E402
@@ -183,7 +183,8 @@ def test_outline_selection_shows_on_the_inspector(qapp, tmp_path: Path) -> None:
     assert tree is not None
 
     def walk(item):  # type: ignore[no-untyped-def]
-        if "okButton" in item.text(0):
+        caption = str(item.data(0, int(getattr(Qt, "UserRole")) + 1) or "")
+        if "okButton" in item.text(0) or caption == "okButton":
             return item
         for index in range(item.childCount()):
             found = walk(item.child(index))
@@ -909,7 +910,8 @@ def test_insert_rail_opens_the_short_drawer(qapp, tmp_path: Path) -> None:  # ty
     assert tree is not None
 
     def walk(item):  # type: ignore[no-untyped-def]
-        if "okButton" in item.text(0):
+        caption = str(item.data(0, int(getattr(Qt, "UserRole")) + 1) or "")
+        if "okButton" in item.text(0) or caption == "okButton":
             return item
         for index in range(item.childCount()):
             found = walk(item.child(index))

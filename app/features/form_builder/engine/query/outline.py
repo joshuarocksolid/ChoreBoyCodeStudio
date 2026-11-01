@@ -155,6 +155,7 @@ class Row:
     problem: bool
     container: bool
     slot: Slot
+    owner_name: str = ""
 
 
 class OutlineForest:
@@ -884,7 +885,9 @@ def filter_mask(forest: OutlineForest, query: str) -> FilterMask:
     needle = query.casefold()
     matched = set()
     for row in forest.rows:
-        haystack = "\n".join((row.name, row.friendly, row.qt_class, row.visible_text)).casefold()
+        haystack = "\n".join(
+            (row.name, row.owner_name, row.friendly, row.qt_class, row.visible_text)
+        ).casefold()
         if needle in haystack:
             matched.add(row.node)
     ancestors = set()
@@ -925,6 +928,7 @@ def layout_row(
     has_problem: bool,
     caption_px: int = 0,
     name_px: int = 0,
+    caption_elides: bool = False,
 ) -> RowBoxes:
     """24 px row. Glyph 16. Gaps 4. Problem glyph 16 at the right.
 
@@ -952,8 +956,28 @@ def layout_row(
     if has_caption and measured > 0 and named > 0 and named + _GAP + measured <= room:
         name_w = named
         caption = (left + named + _GAP, 4, measured, _GLYPH)
+    elif caption_elides and has_caption and named > 0 and named + _GAP + 8 <= room:
+        # The owner's word stays whole. The object name, in the caption slot, takes the rest.
+        name_w = named
+        caption = (left + named + _GAP, 4, room - named - _GAP, _GLYPH)
     name = (left, 4, name_w, _GLYPH)
     return RowBoxes(glyph, name, caption, problem, named > name_w)
+
+
+def _owner_name(doc: UiDocument, node: Node) -> str:
+    """Spoken name when a caption, buddy, or text differs from the object name.
+
+    A widget with no such name keeps an empty string, and the outline leaves
+    that row as the object name plus the class word.
+    """
+    if not isinstance(node, WidgetNode) or not node.object_name:
+        return ""
+    from app.features.form_builder.engine.logic.read_as_text import spoken_display
+
+    spoken = spoken_display(doc, node.object_name)
+    if not spoken or spoken.casefold() == node.object_name.casefold():
+        return ""
+    return spoken
 
 
 def claims_key(gesture: KeyGesture) -> bool:
@@ -1558,6 +1582,7 @@ def _make_row(
         node.id in problems,
         kind == "layout" or (isinstance(node, WidgetNode) and is_container(doc, node.id)),
         slot,
+        _owner_name(doc, node),
     )
 
 
@@ -1580,6 +1605,7 @@ def _retitle(
         visible_text=visible,
         hidden=_hidden(node),
         problem=node.id in problems,
+        owner_name=_owner_name(doc, node),
     )
 
 

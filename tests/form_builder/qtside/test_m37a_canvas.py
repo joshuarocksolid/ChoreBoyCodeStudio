@@ -840,7 +840,8 @@ def _row(tree: QTreeWidget, text: str) -> object:
 
     def walk(item: object) -> None:
         nonlocal found
-        if item.text(0) == text:  # type: ignore[attr-defined]
+        caption = str(item.data(0, int(Qt.UserRole) + 1) or "")  # type: ignore[attr-defined]
+        if item.text(0) == text or caption == text:  # type: ignore[attr-defined]
             found = item
         for index in range(item.childCount()):  # type: ignore[attr-defined]
             child = item.child(index)  # type: ignore[attr-defined]

@@ -225,7 +225,8 @@ def _go_to_row(tree: QTreeWidget, text: str) -> None:
     for key in (Qt.Key.Key_Down, Qt.Key.Key_Up):
         for _ in range(16):
             item = tree.currentItem()
-            if item is not None and item.text(0) == text:
+            caption = "" if item is None else str(item.data(0, int(Qt.ItemDataRole.UserRole) + 1) or "")
+            if item is not None and (item.text(0) == text or caption == text):
                 return
             QTest.keyClick(tree, key)
             _flush(2)

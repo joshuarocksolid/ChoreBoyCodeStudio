@@ -570,6 +570,8 @@ class StateBody(QWidget):
         pad.hide()
         self._column.removeWidget(pad)
         pad.setParent(self)
+        pad.setMinimumHeight(0)
+        self.setMinimumHeight(0)
         editor._reflow_block()
         if row is not None and row.isVisible():
             row.setFocus()

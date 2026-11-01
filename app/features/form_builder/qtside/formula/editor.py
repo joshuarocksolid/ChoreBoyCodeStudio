@@ -603,6 +603,15 @@ class FormulaEditor(QPlainTextEdit):
                 widget = widget.parentWidget()
             for target in targets:
                 width = target.width()
+                pinned = target.objectName() in ("formBuilder.state.edit", "formBuilder.state")
+                # A previous pin is the floor of heightForWidth, so closing the
+                # builder could never shrink the section. The leftover height
+                # was then shared out as gaps between the STATE rows.
+                if pinned:
+                    target.setMinimumHeight(0)
+                    lay = target.layout()
+                    if lay is not None:
+                        lay.invalidate()
                 if width < 20 or not target.hasHeightForWidth():
                     continue
                 height = int(target.heightForWidth(width))
@@ -611,7 +620,7 @@ class FormulaEditor(QPlainTextEdit):
                 # resize() would pin the width captured before the splitter
                 # finished narrowing. A minimum height grows the block and
                 # still lets that pass own the width.
-                if target.objectName() in ("formBuilder.state.edit", "formBuilder.state"):
+                if pinned:
                     target.setMinimumHeight(height)
                 lay = target.layout()
                 if lay is not None:

@@ -289,7 +289,8 @@ def _text_editor(pane: QWidget) -> QLineEdit:
 
 def _tree_item(tree: QTreeWidget, needle: str) -> QTreeWidgetItem:
     def walk(item: QTreeWidgetItem) -> Optional[QTreeWidgetItem]:
-        if needle in item.text(0):
+        caption = str(item.data(0, int(Qt.UserRole) + 1) or "")
+        if needle in item.text(0) or needle == caption:
             return item
         for index in range(item.childCount()):
             child = item.child(index)
