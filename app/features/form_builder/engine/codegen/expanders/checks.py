@@ -234,6 +234,10 @@ class ChecksExpander:
         closed = close_helpers(helper_ids + [item for body in bodies for item in helpers_in(body)])
         import_pairs = list(imports)
         import_pairs.extend(helper_imports_of(closed, "\n".join(bodies)))
+        # Try mode's _cbcs_trace reads self._form. A check that never mentions the
+        # form still has to publish that pointer, or What ran stays empty.
+        if ctx.trace:
+            needs_form = True
         return Contribution(
             imports=tuple(sorted(set(import_pairs))),
             setup_lines=tuple(setup),

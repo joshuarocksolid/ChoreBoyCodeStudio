@@ -10,7 +10,13 @@ from typing import Iterator
 import pytest
 
 _ROOT = Path(__file__).resolve().parents[3] / "app" / "features" / "form_builder"
-_ALLOWED = frozenset({"Enter a color like #1A2B3C."})
+_ALLOWED = frozenset(
+    {
+        "Enter a color like #1A2B3C.",
+        # The form's invalid-field rule. It is stored on the form, not painted as chrome.
+        '*[cbcsInvalid="true"] { border: 1px solid #c62828; }',
+    }
+)
 
 
 def test_form_builder_hex_literals_stay_in_the_theme_package() -> None:

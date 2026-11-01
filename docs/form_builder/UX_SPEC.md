@@ -2968,6 +2968,42 @@ Every on-screen sentence a lane adds is written in its PR as a row in this table
 | FB120 | "That form isn't in this project's forms folder" |
 | Skipped step comment (generated) | "# step {n} skipped ({code}: see Problems)" |
 | Check messages (M7.3a defaults) | "{Label} is required" · "Enter a number" · "Enter an email address like name@example.com" · "Enter a phone number" · "Enter a ZIP code like 12345" · "{Label} is not in the right format" · "{Label} must be {min} to {max} characters" (and "at least {min}" / "at most {max} characters") · "{Label} must be between {min} and {max}" (and "at least {min}" / "at most {max}") · "{Label} must be one of {values}" |
+| State heading (M7.2b1) | "STATE" |
+| State columns (M7.2b1) | "Kind" · "Format" |
+| State empty (M7.2b1) | "always" · "never" · "typed by the person" · "as designed" |
+| Kind values (M7.2b1) | "Text" · "Whole number" · "Number (places)" · "Money" · "Percent" · "Date" · "Time" |
+| Format codes (M7.2b1) | "money" · "number" · "percent" · "date:short" · "date:long" · "date:iso" · "text:upper" · "text:proper" |
+| Decimal places (M7.2b1) | "Decimal places" |
+| Now line (M7.2b1) | "now: {value}" |
+| Type phrases (M7.2b1) | "text" · "a whole number" · "a number" · "money" · "a yes or no" · "a date" · "a time" · "a date and time" · "a page" · "a window value" · "blank" · "a choice" · "a column" |
+| Live now (M7.2b1) | "yes" · "no" · "blank" |
+| Window value blank (M7.2b1) | "needs a window value" |
+| Completion kinds (M7.2b1) | "Number" · "Yes or no" · "Date and time" · "Page" · "Choice" · "Column" |
+| Rule steer, enable (M7.2b1) | "Enable {target} only when…" |
+| Rule steer, show (M7.2b1) | "Show {target} only when…" |
+| Rule steer, visible (M7.2b1) | "Keep {target} visible only while {sender} is checked? A rule also gets this right when the form opens." |
+| What ran (M7.6) | "What ran" |
+| What ran columns (M7.6) | "Time" · "Source" |
+| Preview buttons (M7.6) | "Clear" · "Copy" · "Run behavior" · "Window values" |
+| Rules ran (M7.6) | "Rules ran ({n})" |
+| Rule count (M7.6) | "{n} rules" |
+| Rule source (M7.6) | "{widget} · {Rule words}" |
+| Check line (M7.6) | "Check {widget}: {message}" |
+| Would call (M7.6) | "Would call {method}()" |
+| Stopped step (M7.6) | "{clause}: stopped at step {n} ({step words})" |
+| When source (M7.6) | "{widget} · When {signal}" |
+| Checks heading (M7.3b) | "CHECKS" |
+| Add check (M7.3b) | "+ Add check ▾" |
+| Check timing (M7.3b) | "Checked when: leaving the field" |
+| Checks manual (M7.3b) | "How checks run" |
+| Check menu (M7.3b) | "Required" · "Between…" · "Length…" · "Email address" · "Phone number" · "US ZIP code" · "Pattern…" · "One of…" · "Formula…" |
+| Native tag (M7.3b) | "Qt" |
+| Outline (M7.3b) | "Add the red outline style" |
+| Outline missing (M7.3b) | "Fields that fail a check get no outline yet." |
+| Check page (M7.3b) | "Commit" · "Cancel" |
+| Check fields (M7.3b) | "Message" · "Minimum" · "Maximum" · "Pattern" · "Values" · "Formula" |
+| Checks badge (M7.3b) | "1 check" · "{n} checks" |
+| Check row (M7.3b) | "Check {n} of {total}, {words}, message {message}" |
 
 Words for the rules: "Enabled when", "Visible when", "Read-only when", "Value", "Default".
 
