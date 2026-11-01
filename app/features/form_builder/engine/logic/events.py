@@ -276,6 +276,15 @@ def read_events(doc: UiDocument) -> Tuple[EventState, ...]:
     cached = _READ.get(doc)
     if cached is not None and cached[0] == doc.revision:
         return cached[1]
+    if (
+        cached is not None
+        and len(cached) >= 6
+        and _formula_revision(doc)
+        and _event_fingerprint(doc) == cached[2]
+    ):
+        # A formula commit moves the document revision and leaves events alone.
+        _READ[doc] = (doc.revision, cached[1], cached[2], cached[3], cached[4], cached[5])
+        return cached[1]
     touch = _TOUCH.get(doc, None)
     result: Optional[Tuple[EventState, ...]] = None
     keys: Optional[Tuple[Tuple[str, str], ...]] = None
@@ -297,6 +306,14 @@ def read_events(doc: UiDocument) -> Tuple[EventState, ...]:
     _ANCHORS.pop(doc, None)
     _READ[doc] = (doc.revision, result, _event_fingerprint(doc), keys, native_count, widget_order)
     return result
+
+
+def _formula_revision(doc: UiDocument) -> bool:
+    """True while a formula write is in progress, or this revision only rewrote formulas."""
+    if getattr(doc, "_formula_pending", False):
+        return True
+    held = getattr(doc, "_formula_edits", None)
+    return isinstance(held, list) and len(held) == 2 and held[0] == doc.revision and bool(held[1])
 
 
 def _event_fingerprint(doc: UiDocument) -> Tuple[object, ...]:

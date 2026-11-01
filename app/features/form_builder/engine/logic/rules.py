@@ -5,10 +5,13 @@ a widget's Value rule to a rule that reads that widget. Defaults are outside
 the refresh order. A default that reads a calculated field, and every node of
 a cycle, is FB104 and generates nothing.
 
-The graph reads formula text, so it is cached on ``doc.revision``. A different
-formula environment (another window reading, another kind map) is a different
-cache key. An older revision is dropped. The structure memo is not used: a
-rule commit does not move ``structure_revision``.
+The graph reads formula text, so a hit in the same revision is reused. A later
+revision that changes formula text but not which widgets those formulas read
+keeps the previous order and only replaces the records. A geometry edit does
+not bump a separate counter: if the widget set and the read sets are unchanged
+the same order is reused, and if a widget moves the graph is built again. A
+different formula environment is a different cache key. The structure memo is
+not used: a rule commit does not move ``structure_revision``.
 """
 
 from __future__ import annotations
@@ -86,24 +89,51 @@ class RuleGraph:
         return self._defaults
 
 
-# doc -> (revision, token -> graph). One revision, every environment used in it.
-_GRAPHS: "weakref.WeakKeyDictionary[UiDocument, Tuple[int, Dict[str, RuleGraph]]]" = (
+# doc -> (revision, token -> (graph, reads)). Reads stay beside the graph so a
+# one-rule edit can keep the order when the read set did not change.
+_GRAPHS: "weakref.WeakKeyDictionary[UiDocument, Tuple[int, Dict[str, Tuple[RuleGraph, Dict[RuleId, FrozenSet[str]]]]]]" = (
     weakref.WeakKeyDictionary()
 )
 
 
+def note_formula_edit(doc: UiDocument, node_id: NodeId, key: str) -> None:
+    """Remember a formula write so the next graph update can skip the other widgets.
+
+    The note is for the revision the write just produced. A later geometry edit
+    moves the revision again and the note no longer applies.
+    """
+    if key not in FORMULA_KEYS:
+        return
+    held = getattr(doc, "_formula_edits", None)
+    if not isinstance(held, list) or held[0] != doc.revision:
+        doc._formula_edits = [doc.revision, [(node_id, key)]]  # type: ignore[attr-defined]
+        return
+    held[1].append((node_id, key))
+
+
 def rule_graph(doc: UiDocument, env: FormulaEnv) -> RuleGraph:
-    """One graph per document revision and environment. Later calls in that revision hit."""
+    """One graph per document revision and environment. Later calls in that revision hit.
+
+    A new revision reuses the previous order when the edit only replaced formula
+    text and the widgets those formulas read stayed the same.
+    """
     token = _env_token(env)
     held = _GRAPHS.get(doc)
-    if held is None or held[0] != doc.revision:
-        held = (doc.revision, {})
-        _GRAPHS[doc] = held
-    found = held[1].get(token)
-    if found is not None:
-        return found
-    built = _build(doc, env)
-    held[1][token] = built
+    if held is not None and held[0] == doc.revision:
+        found = held[1].get(token)
+        if found is not None:
+            return found[0]
+        page = held[1]
+        previous = None
+        previous_reads = None
+    else:
+        page = {}
+        packed = None if held is None else held[1].get(token)
+        previous = None if packed is None else packed[0]
+        previous_reads = None if packed is None else packed[1]
+    built, reads = _assemble(doc, env, previous, previous_reads)
+    page[token] = (built, reads)
+    _GRAPHS[doc] = (doc.revision, page)
     return built
 
 
@@ -115,7 +145,54 @@ def _env_token(env: FormulaEnv) -> str:
     return "\n".join(parts)
 
 
-def _build(doc: UiDocument, env: FormulaEnv) -> RuleGraph:
+def _assemble(
+    doc: UiDocument,
+    env: FormulaEnv,
+    previous: Optional[RuleGraph],
+    previous_reads: Optional[Dict[RuleId, FrozenSet[str]]],
+) -> Tuple[RuleGraph, Dict[RuleId, FrozenSet[str]]]:
+    """Keep the previous order when one rule's text changed and its reads did not."""
+    if previous is None or previous_reads is None:
+        return _build(doc, env)
+    edited = _formula_edits(doc)
+    if edited is not None:
+        patched = _patch_records(doc, previous, edited)
+        by_id = patched if patched is not None else {RuleId(item.widget, item.key): item for item in _collect(doc)}
+    else:
+        by_id = {RuleId(item.widget, item.key): item for item in _collect(doc)}
+    old = previous.records
+    if set(by_id) != set(old):
+        return _build(doc, env)
+    reads = dict(previous_reads)
+    changed = False
+    for rule_id, item in by_id.items():
+        prior = old[rule_id]
+        if item.tree_index != prior.tree_index or item.node_id != prior.node_id:
+            return _build(doc, env)
+        if item.text != prior.text:
+            found = _reads(item.text, env)
+            if found != reads.get(rule_id, frozenset()):
+                return _build(doc, env)
+            reads[rule_id] = found
+            changed = True
+        elif item.fmt != prior.fmt:
+            changed = True
+        elif item != prior:
+            return _build(doc, env)
+    if not changed:
+        return previous, previous_reads
+    graph = RuleGraph(
+        records=MappingProxyType(dict(by_id)),
+        diagnostics=previous.diagnostics,
+        _value_order=previous._value_order,
+        _state_order=previous._state_order,
+        _cycles=previous._cycles,
+        _defaults=previous._defaults,
+    )
+    return graph, reads
+
+
+def _build(doc: UiDocument, env: FormulaEnv) -> Tuple[RuleGraph, Dict[RuleId, FrozenSet[str]]]:
     records = _collect(doc)
     by_id = {RuleId(item.widget, item.key): item for item in records}
     value_of = {item.widget: RuleId(item.widget, _VALUE) for item in records if item.key == _VALUE}
@@ -154,7 +231,7 @@ def _build(doc: UiDocument, env: FormulaEnv) -> RuleGraph:
             key=lambda rule_id: _sort_key(rule_id, by_id),
         )
     )
-    return RuleGraph(
+    graph = RuleGraph(
         records=MappingProxyType(by_id),
         diagnostics=tuple(diagnostics),
         _value_order=tuple(value_order),
@@ -162,6 +239,52 @@ def _build(doc: UiDocument, env: FormulaEnv) -> RuleGraph:
         _cycles=cycles,
         _defaults=default_order,
     )
+    return graph, reads
+
+
+def _formula_edits(doc: UiDocument) -> Optional[List[Tuple[NodeId, str]]]:
+    held = getattr(doc, "_formula_edits", None)
+    if not isinstance(held, list) or len(held) != 2 or held[0] != doc.revision:
+        return None
+    edits = held[1]
+    if not isinstance(edits, list) or not edits:
+        return None
+    return edits
+
+
+def _patch_records(
+    doc: UiDocument,
+    previous: RuleGraph,
+    edits: Sequence[Tuple[NodeId, str]],
+) -> Optional[Dict[RuleId, RuleRecord]]:
+    """Replace the edited formulas. None means the widget set has to be walked."""
+    by_id = dict(previous.records)
+    index_of: Dict[str, int] = {}
+    for record in previous.records.values():
+        index_of[record.widget] = record.tree_index
+    for node_id, key in edits:
+        if key not in FORMULA_KEYS or not doc.contains(node_id):
+            return None
+        node = doc.node(node_id)
+        name = node.object_name or ""
+        if not name or name not in index_of:
+            return None
+        rule_id = RuleId(name, key)
+        text = _stored(node, key)
+        if text is None or not str(text).strip():
+            by_id.pop(rule_id, None)
+            continue
+        prior = by_id.get(rule_id)
+        fmt = prior.fmt if prior is not None else (_stored(node, "cbcsFormat") or "")
+        by_id[rule_id] = RuleRecord(
+            widget=name,
+            key=key,
+            text=text,
+            tree_index=index_of[name],
+            node_id=node_id,
+            fmt=fmt,
+        )
+    return by_id
 
 
 def _collect(doc: UiDocument) -> Tuple[RuleRecord, ...]:

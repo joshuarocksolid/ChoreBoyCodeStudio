@@ -56,6 +56,25 @@ class Sentence:
 _PREFERRED: Dict[Tuple[int, int], Dict[str, Tuple[str, bool]]] = {}
 
 
+def widget_name(doc: Optional[UiDocument], name: str, env: object = None) -> str:
+    """The name the Logic panel row shows for one widget.
+
+    What ran uses this same function. A caption or buddy wins. A humanized
+    object name is used when the form has neither. FormulaEnv's display is
+    only the fallback when the document has no spoken name.
+    """
+    if isinstance(doc, UiDocument):
+        shown = spoken_display(doc, name).replace("&", "")
+        if shown:
+            return shown
+    widgets = getattr(env, "widgets", None) or {}
+    facts = widgets.get(name) if hasattr(widgets, "get") else None
+    display = getattr(facts, "display", "") if facts is not None else ""
+    if isinstance(display, str) and display and display != name:
+        return display.replace("&", "")
+    return name
+
+
 def spoken_display(doc: UiDocument, name: str) -> str:
     """The name a sentence uses. A fallback that collides becomes the split object name."""
     preferred = _preferred(doc)

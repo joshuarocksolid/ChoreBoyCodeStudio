@@ -175,11 +175,45 @@ def test_a_rule_commit_does_not_move_the_structure_or_repeat_the_walks(monkeypat
     env_for(document, None, table)
     list_actions(document)
     assert walks["n"] == 0
+    import app.features.form_builder.engine.logic.rules as rules_mod
+
+    topo_calls = {"n": 0}
+    real_topo = rules_mod._topo
+
+    def _count_topo(*args: Any, **kwargs: Any) -> Any:
+        topo_calls["n"] += 1
+        return real_topo(*args, **kwargs)
+
+    monkeypatch.setattr(rules_mod, "_topo", _count_topo)
+    again = rule_graph(document, env_for(document, None, table))
+    assert topo_calls["n"] == 0
+    assert any(
+        record.widget == "nameEdit" and record.key == "cbcsVisibleWhen" and record.text == "False"
+        for record in again.records.values()
+    )
+    assert [item.widget for item in again.order()] == [item.widget for item in graph.order()]
 
     log.execute(Rename(owner, "nameField"))
     assert document.structure_revision > structure
     list_actions(document)
     assert walks["n"] > 0
+
+
+def test_a_formula_commit_does_not_republish_event_rows(tmp_path: Any) -> None:
+    from app.features.form_builder.engine.project.forms import FormScope
+    from app.features.form_builder.engine.session import FormSession
+
+    text = form()
+    path = tmp_path / "shop.ui"
+    path.write_text(text, encoding="utf-8")
+    scope = FormScope(kind="external", ui_path=str(path))
+    session = FormSession.open(text, path=str(path), scope=scope)
+    events = session.diagnostics.rows("events")
+    owner = session.document.by_name("nameEdit")[0]
+    session.log.execute(SetLogic(owner, "cbcsVisibleWhen", "True"))
+    assert session.diagnostics.rows("events") is events
+    stored = session.document.node(owner).value("cbcsVisibleWhen")
+    assert getattr(stored, "text", "") == "True"
 
 
 def test_the_local_history_connection_is_opened_once_per_thread(tmp_path: Any) -> None:

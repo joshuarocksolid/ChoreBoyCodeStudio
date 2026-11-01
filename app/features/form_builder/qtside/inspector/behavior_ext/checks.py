@@ -63,6 +63,14 @@ _ROW_WORDS = (
 )
 
 
+def _apply_sheet(widget: QWidget, sheet: str) -> None:
+    """Set a row's sheet once. Repeating it on a commit restyles the subtree."""
+    if widget.property("_cbcsSheet") == sheet:
+        return
+    widget.setProperty("_cbcsSheet", sheet)
+    widget.setStyleSheet(sheet)
+
+
 def _wrap(label: QLabel) -> None:
     label.setWordWrap(True)
     label.setMinimumWidth(0)
@@ -387,6 +395,7 @@ class ChecksBody(QWidget):
         self._outline_line.hide()
         self._outline_revision = -1
         self._outline_show = False
+        self._painted_id: object = None
         self._offer.set_handlers(self._accept_label, self._skip_label)
         self._add.clicked.connect(self._open_menu)
         self._prompt_add.clicked.connect(self._add_label_only)
@@ -446,8 +455,16 @@ class ChecksBody(QWidget):
             self._sync_outline()
             self._arm_keys()
             return
-        self._checks = _stored(self._node)
-        self._fill_rows()
+        stored = _stored(self._node)
+        same = (
+            getattr(self._node, "id", None) == self._painted_id
+            and stored == self._checks
+            and bool(self._row_widgets)
+        )
+        self._checks = stored
+        if not same:
+            self._painted_id = getattr(self._node, "id", None)
+            self._fill_rows()
         self._sync_prompt()
         self._sync_outline()
         self._arm_keys()
@@ -727,7 +744,7 @@ class ChecksBody(QWidget):
             row = self._row_widgets[place]
             row.index = stored
             row.words.setFixedWidth(width)
-            row.message.setStyleSheet(muted)
+            _apply_sheet(row.message, muted)
             message = generated_message(
                 self._class_name(),
                 check,
@@ -787,7 +804,7 @@ class ChecksBody(QWidget):
             return
         style = "color: %s; background: transparent;" % self._accent
         for row in self._row_widgets:
-            row.qt.setStyleSheet(style)
+            _apply_sheet(row.qt, style)
 
     def _drafting(self) -> bool:
         page = self._page

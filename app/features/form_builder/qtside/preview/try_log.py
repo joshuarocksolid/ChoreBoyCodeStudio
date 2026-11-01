@@ -92,24 +92,27 @@ def names_from_env(env: object) -> Tuple[Tuple[str, str], ...]:
 
 
 def names_for(doc: object) -> Tuple[Tuple[str, str], ...]:
-    """Object name to the words the inspector says.
+    """Object name to the words the Logic panel row shows.
 
-    That is ``spoken_display``: a caption or buddy when the form has one, and
-    the split object name otherwise ("lineTotalLabel" becomes "Line total").
+    That is ``widget_name``: a caption or buddy when the form has one, and the
+    split object name otherwise ("lineTotalLabel" becomes "Line total").
     Generated code keeps the object name. A name that already reads as itself
     is left out.
     """
-    from app.features.form_builder.engine.logic.read_as_text import spoken_display
+    from app.features.form_builder.engine.logic.formula_env import env_for
+    from app.features.form_builder.engine.logic.read_as_text import widget_name
+    from app.features.form_builder.engine.ui4.defaults import QtClassTable
     from app.features.form_builder.engine.ui4.document import UiDocument
 
     if not isinstance(doc, UiDocument):
         return ()
+    env = env_for(doc, None, QtClassTable.shared())
     found = []
     for node in doc.iter_widgets():
         name = node.object_name or ""
         if not name:
             continue
-        shown = spoken_display(doc, name).replace("&", "")
+        shown = widget_name(doc, name, env)
         if shown and shown != name:
             found.append((name, shown))
     found.sort()

@@ -415,19 +415,10 @@ class LogicPanel(QWidget):
         self._body_layout.addStretch(1)
 
     def _shown(self, name: str) -> str:
-        document = self._session.document if self._session is not None else None
-        if document is not None:
-            from app.features.form_builder.engine.logic.read_as_text import spoken_display
+        from app.features.form_builder.engine.logic.read_as_text import widget_name
 
-            shown = spoken_display(document, name).replace("&", "")
-            if shown:
-                return shown
-        widgets = getattr(self._env, "widgets", None) or {}
-        facts = widgets.get(name)
-        display = getattr(facts, "display", "") if facts is not None else ""
-        if isinstance(display, str) and display and display != name:
-            return display.replace("&", "")
-        return name
+        document = self._session.document if self._session is not None else None
+        return widget_name(document, name, self._env)
 
     def _paint_rows(self) -> None:
         tokens = self._tokens

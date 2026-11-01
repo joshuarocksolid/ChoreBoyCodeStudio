@@ -709,16 +709,19 @@ class HitIndexInvalidator:
                 if node_id is not None:
                     dirty.add(node_id)
         kept = removed
-        self._index.invalidate(
-            "changeset",
-            RefreshScope(
-                dirty=frozenset(node_id for node_id in dirty if node_id not in kept),
-                removed=removed,
-                added=added,
-                structure=frozenset(node_id for node_id in structure if node_id not in kept),
-                rewalk=frozenset(node_id for node_id in rewalk if node_id not in kept),
-            ),
+        scope = RefreshScope(
+            dirty=frozenset(node_id for node_id in dirty if node_id not in kept),
+            removed=removed,
+            added=added,
+            structure=frozenset(node_id for node_id in structure if node_id not in kept),
+            rewalk=frozenset(node_id for node_id in rewalk if node_id not in kept),
         )
+        # A formula commit changes no geometry. Bumping the hit-index epoch
+        # would resurvey the selection on the next frame.
+        if not scope.dirty and not scope.removed and not scope.added and not scope.structure and not scope.rewalk:
+            self._index.note_quiet()
+            return
+        self._index.invalidate("changeset", scope)
 
 
 def _connection_only_ids(changeset: ChangeSet) -> FrozenSet[NodeId]:

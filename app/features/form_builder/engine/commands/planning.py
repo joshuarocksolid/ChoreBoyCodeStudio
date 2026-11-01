@@ -1171,19 +1171,35 @@ def set_logic(doc: UiDocument, ctx: PlanContext, owner: NodeId, key: str, text: 
                 code="FB401",
             )
         text = canonical.text
-    # Formula text is not structure. formula_env and the action memos stay valid;
-    # rule_graph keys on revision because it reads this text.
-    with doc.event_only_edits():
-        if text is None:
-            set_property(doc, ctx, owner, key, None, stdset="0", logic_checked=True)
-        else:
-            existing = node.prop(key)
-            if existing is not None and isinstance(existing.value, StringValue) and same_logic(key, existing.value.text, text):
-                # Same meaning as what is stored: keep the stored bytes (CONTRACTS 15.4 rule 7).
-                pass
+    # Formula text is not structure. formula_env and the action memos stay valid.
+    # rule_graph reuses its order when this write does not change who is read.
+    # Listeners run inside the write, before this function returns, so the
+    # pending flag tells them the events did not change.
+    from app.features.form_builder.engine.logic.storage import FORMULA_KEYS
+
+    before = doc.revision
+    pending = key in FORMULA_KEYS
+    if pending:
+        doc._formula_pending = True  # type: ignore[attr-defined]
+    try:
+        with doc.event_only_edits():
+            if text is None:
+                set_property(doc, ctx, owner, key, None, stdset="0", logic_checked=True)
             else:
-                set_property(doc, ctx, owner, key, StringValue(text, notr=True), stdset="0", logic_checked=True)
-        _sync_logic_marker(doc, ctx)
+                existing = node.prop(key)
+                if existing is not None and isinstance(existing.value, StringValue) and same_logic(key, existing.value.text, text):
+                    # Same meaning as what is stored: keep the stored bytes (CONTRACTS 15.4 rule 7).
+                    pass
+                else:
+                    set_property(doc, ctx, owner, key, StringValue(text, notr=True), stdset="0", logic_checked=True)
+            _sync_logic_marker(doc, ctx)
+    finally:
+        if pending:
+            doc._formula_pending = False  # type: ignore[attr-defined]
+    if pending and doc.revision != before:
+        from app.features.form_builder.engine.logic.rules import note_formula_edit
+
+        note_formula_edit(doc, owner, key)
 
 
 def allocate_spec(ctx: PlanContext, spec: NodeSpec) -> NodeSpec:

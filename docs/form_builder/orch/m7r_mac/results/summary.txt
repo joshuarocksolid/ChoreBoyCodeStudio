@@ -1,21 +1,21 @@
 UX-M7-003 Mac measurement.
 20 samples per row. The first sample is warmup and is left out of p50 and p95.
-One minute load at the start was 3.96 3.94 3.59, so the run did not sleep.
+One minute load at the start was 3.51 3.79 3.88, so the run did not sleep.
 Python /Applications/FreeCAD.app/Contents/Resources/bin/python.
 
-Idle reference. 20 samples, 19 judged after dropping the first. p50 1.768 ms. p95 1.836 ms. Load 3.96 3.94 3.59. Idle reference p95 1.836 ms. The loop added the integers from 0 through 115999. No budget. This is the noise floor.
+Idle reference. 20 samples, 19 judged after dropping the first. p50 1.885 ms. p95 1.936 ms. Load 3.51 3.79 3.88. Idle reference p95 1.936 ms. The loop added the integers from 0 through 115999. No budget. This is the noise floor.
 The idle reference is a fixed loop of 116000 additions and nothing else. Its p95 is the noise floor on this machine at this load. A row whose p95 sits near that number is not a stable reading of the feature.
 
-Analyze plus compile a 200-character formula. 20 samples, 19 judged after dropping the first. p50 0.348 ms. p95 0.402 ms. Load 3.96 3.94 3.59. Idle reference p95 1.836 ms. Mac budget 2.0 ms. Compiled source is 197 characters. Pass.
+Analyze plus compile a 200-character formula. 20 samples, 19 judged after dropping the first. p50 0.376 ms. p95 0.424 ms. Load 3.51 3.79 3.88. Idle reference p95 1.936 ms. Mac budget 2.0 ms. Compiled source is 197 characters. Pass.
 
-Formula-editor keystroke. 20 samples, 19 judged after dropping the first. p50 1.16 ms. p95 1.225 ms. Load 3.96 3.94 3.59. Idle reference p95 1.836 ms. Mac budget 16.0 ms. The status label contained the now mark. Pass.
+Formula-editor keystroke. 20 samples, 19 judged after dropping the first. p50 1.313 ms. p95 1.419 ms. Load 3.51 3.79 3.88. Idle reference p95 1.936 ms. Mac budget 16.0 ms. The status label contained the now mark. Pass.
 
-Behavior tab fill. 20 samples, 19 judged after dropping the first. p50 6.592 ms. p95 7.071 ms. Load 3.8 3.9 3.58. Idle reference p95 1.836 ms. Mac budget 16.0 ms. STATE showed five now lines and CHECKS showed three rows. Pass.
+Behavior tab fill. 20 samples, 19 judged after dropping the first. p50 5.509 ms. p95 6.384 ms. Load 3.71 3.83 3.9. Idle reference p95 1.936 ms. Mac budget 16.0 ms. STATE showed five now lines and CHECKS showed three rows. Pass.
 
-Commit a rule, added. 20 commit samples and 20 bare repaint samples. The first of each was dropped, and 19 paired differences were judged. p50 23.488 ms. p95 28.12 ms. Load 4.46 4.04 3.63. Idle reference p95 1.836 ms. Mac budget 17.0 ms. Paired commit p95 34.539 ms against bare repaint p95 7.018 ms, sample by sample, warmup dropped. Visible when is stored as True and the inspector shows it. Profile hot spot is paint in /Users/local/Projects/ChoreBoyCodeStudio-worktrees/fb-m7.r/app/features/form_builder/qtside/canvas/layers/free_grid.py. Fail.
+Commit a rule, added. 20 commit samples and 20 bare repaint samples. The first of each was dropped, and 19 paired differences were judged. p50 15.232 ms. p95 16.414 ms. Load 3.71 3.83 3.9. Idle reference p95 1.936 ms. Mac budget 17.0 ms. Paired commit p95 22.424 ms against bare repaint p95 7.113 ms, sample by sample, warmup dropped. Visible when is stored as True and the inspector shows it. Pass.
 
-Save with generate. 20 samples, 19 judged after dropping the first. p50 48.512 ms. p95 50.415 ms. Load 3.8 3.9 3.58. Idle reference p95 1.836 ms. Mac budget 80.0 ms. Saved customer.ui and wrote ui_customer.py. The file defines cbcs_refresh. Pass.
+Save with generate. 20 samples, 19 judged after dropping the first. p50 49.488 ms. p95 50.708 ms. Load 3.71 3.83 3.9. Idle reference p95 1.936 ms. Mac budget 80.0 ms. Saved customer.ui and wrote ui_customer.py. The file defines cbcs_refresh. Pass.
 
-Generated cbcs_refresh. 20 samples, 19 judged after dropping the first. p50 0.061 ms. p95 0.089 ms. Load 3.96 3.94 3.59. Idle reference p95 1.836 ms. Mac budget 5.0 ms. cbcs_refresh set the target field to ready. Pass.
+Generated cbcs_refresh. 20 samples, 19 judged after dropping the first. p50 0.078 ms. p95 0.105 ms. Load 3.51 3.79 3.88. Idle reference p95 1.936 ms. Mac budget 5.0 ms. cbcs_refresh set the target field to ready. Pass.
 
-Preview reload after a rule edit. 20 samples, 19 judged after dropping the first. p50 279.512 ms. p95 288.058 ms. Load 4.74 4.1 3.66. Idle reference p95 1.836 ms. Mac budget 500.0 ms. Child pid 6815 wrote a response frame listing the target field. Pass.
+Preview reload after a rule edit. 20 samples, 19 judged after dropping the first. p50 297.321 ms. p95 302.673 ms. Load 4.88 4.06 3.98. Idle reference p95 1.936 ms. Mac budget 500.0 ms. Child pid 74715 wrote a response frame listing the target field. Pass.

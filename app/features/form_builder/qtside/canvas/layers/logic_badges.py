@@ -90,6 +90,7 @@ _MEMO_KEEP = 8
 # Widget names for one structure, and each sender's mark for one logic fingerprint.
 _NAMES: Dict[Tuple[int, int], Tuple[str, ...]] = {}
 _MARKS: Dict[Tuple[int, int], Dict[str, Tuple[str, Optional[Tuple[str, str, int]]]]] = {}
+_LOGIC_TEXT: Dict[Tuple[int, int], Dict[str, str]] = {}
 
 
 def _basis_for(document: UiDocument, static: object) -> _Basis:
@@ -107,6 +108,8 @@ def forget_badge_memo() -> None:
     _BASIS = None
     _NAMES.clear()
     _MARKS.clear()
+    _LOGIC_TEXT.clear()
+    _EDITED.clear()
 
 
 def _drop_other_revisions(cache: dict, key: Tuple[int, int]) -> None:
@@ -129,8 +132,20 @@ def _widget_names(document: UiDocument) -> Tuple[str, ...]:
 
 
 def _logic_text(document: UiDocument, sender: str) -> str:
+    key = (id(document), document.structure_revision)
+    page = _LOGIC_TEXT.get(key)
+    if page is None:
+        _drop_other_revisions(_LOGIC_TEXT, key)
+        page = {}
+        _LOGIC_TEXT[key] = page
+    if _formula_touched(document, sender):
+        page.pop(sender, None)
+    held = page.get(sender)
+    if held is not None:
+        return held
     found = document.by_name(sender)
     if not found:
+        page[sender] = ""
         return ""
     node = document.node(found[0])
     parts = []
@@ -139,7 +154,33 @@ def _logic_text(document: UiDocument, sender: str) -> str:
             continue
         text = getattr(entry.value, "text", "")
         parts.append("%s=%s" % (entry.name, text if isinstance(text, str) else ""))
-    return "\0".join(parts)
+    joined = "\0".join(parts)
+    page[sender] = joined
+    return joined
+
+
+_EDITED: Dict[Tuple[int, int], set] = {}
+
+
+def _formula_touched(document: UiDocument, sender: str) -> bool:
+    """True when this revision rewrote a formula on ``sender``."""
+    revision = document.revision
+    key = (id(document), revision)
+    names = _EDITED.get(key)
+    if names is None:
+        names = set()
+        held = getattr(document, "_formula_edits", None)
+        if isinstance(held, list) and len(held) == 2 and held[0] == revision and isinstance(held[1], list):
+            for node_id, _prop in held[1]:
+                if not document.contains(node_id):
+                    continue
+                name = getattr(document.node(node_id), "object_name", "") or ""
+                if name:
+                    names.add(name)
+        if len(_EDITED) > 4:
+            _EDITED.clear()
+        _EDITED[key] = names
+    return sender in names
 
 
 def _event_text(states: Sequence[object]) -> str:

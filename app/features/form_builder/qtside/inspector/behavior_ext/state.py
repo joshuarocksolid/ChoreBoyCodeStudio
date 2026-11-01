@@ -186,6 +186,9 @@ class StateBody(QWidget):
         self._live_id: object = None
         self._closing = False
         self._filling = False
+        self._filled_id: object = None
+        self._filled_keys: Tuple[str, ...] = ()
+        self._stored_text: Dict[str, str] = {}
         self._rows: Dict[str, _Row] = {}
         self._by_key = {spec.key: spec for spec in _ORDER}
         self._label_width = 0
@@ -215,21 +218,30 @@ class StateBody(QWidget):
         self._status: Optional[QLabel] = None
         self._complete = None
         self._fixes = None
+        chrome = self._services.chrome
+        self._install_sheet(chrome.panel, chrome.text)
 
     def set_refresh(self, refresh: object) -> None:
         self._refresh = refresh
 
     def apply_colors(self, panel: str, text: str) -> None:
         chrome = self._services.chrome
-        self.setStyleSheet(
-            "QWidget#formBuilder\\.state { background: %s; color: %s; }"
-            "QLabel { color: %s; background: transparent; }"
-            "QComboBox, QSpinBox { color: %s; background: %s; }"
-            % (panel, text, text, text, chrome.input)
-        )
+        # One sheet for the section. A row's muted or body ink is a property,
+        # polished on that label, so a rule commit does not restyle the tree.
+        self._install_sheet(panel, text)
         if self._editor is not None:
             self._editor.set_chrome(chrome)
         self._sync_columns()
+
+    def _install_sheet(self, panel: str, text: str) -> None:
+        chrome = self._services.chrome
+        self.setStyleSheet(
+            "QWidget#formBuilder\\.state { background: %s; color: %s; }"
+            "QLabel { color: %s; background: transparent; }"
+            "QLabel[stateInk=\"muted\"] { color: %s; background: transparent; }"
+            "QComboBox, QSpinBox { color: %s; background: %s; }"
+            % (panel, text, text, chrome.muted, text, chrome.input)
+        )
 
     def paint(self, inputs: SectionInputs) -> None:
         self._inputs = inputs
@@ -241,13 +253,22 @@ class StateBody(QWidget):
         self._node = selected
         if self._node is None:
             self._cancel()
+            self._filled_id = None
+            self._filled_keys = ()
+            self._stored_text = {}
             for row in self._rows.values():
                 row.hide()
             return
         self._env = env_for(inputs.session.document, _window_facts(self), QtClassTable.shared())
         shown = _visible(self._node, QtClassTable.shared())
         self._show(shown)
-        self._fill(shown)
+        keys = tuple(spec.key for spec in shown)
+        if self._filled_id == self._node.id and self._filled_keys == keys:
+            self._touch(shown)
+        else:
+            self._fill(shown)
+            self._filled_id = self._node.id
+            self._filled_keys = keys
         if self._open_key and self._open_key not in {spec.key for spec in shown}:
             self._cancel()
         elif self._open_key and not self._closing:
@@ -436,41 +457,75 @@ class StateBody(QWidget):
             places.hide()
         self._write(spec.key, spec.words, code, formula=False)
 
+    def _touch(self, specs: Tuple[StateRowSpec, ...]) -> None:
+        """A rule commit changes one stored formula. Rewrite that row only."""
+        node = self._node
+        env = self._env
+        if node is None or env is None:
+            return
+        self._filling = True
+        try:
+            for spec in specs:
+                stored = _stored(node, spec.key)
+                if stored == self._stored_text.get(spec.key):
+                    continue
+                row = self._rows.get(spec.key)
+                if row is None:
+                    continue
+                if spec.slot in ("kind", "format"):
+                    self._fill_combo(row, stored)
+                else:
+                    self._paint_formula(row, spec, stored, node, env)
+                self._stored_text[spec.key] = stored
+        finally:
+            self._filling = False
+
     def _fill(self, specs: Tuple[StateRowSpec, ...]) -> None:
         node = self._node
         env = self._env
         if node is None or env is None:
             return
-        chrome = self._services.chrome
         self._filling = True
         try:
+            remembered: Dict[str, str] = {}
             for spec in specs:
                 row = self._rows.get(spec.key)
                 if row is None:
                     continue
-                if spec.slot in ("kind", "format"):
-                    self._fill_combo(row, _stored(node, spec.key))
-                    continue
                 stored = _stored(node, spec.key)
-                muted = "color: %s; background: transparent;" % chrome.muted
-                row.now.setStyleSheet(muted)
-                if stored:
-                    spoken = _spoken_formula(stored, spec.slot, env)
-                    row.show_value(spoken or stored, stored if spoken else "")
-                    row.value.setStyleSheet("color: %s; background: transparent;" % chrome.text)
-                    now = _now_of(stored, spec, env, node, self._reader())
-                    row.now.setText("now: %s" % now)
-                    row.now.show()
-                    line = "%s  %s   now: %s" % (spec.words, spoken or stored, now)
-                else:
-                    row.show_value(spec.empty)
-                    row.value.setStyleSheet(muted)
-                    row.now.hide()
-                    line = "%s  %s" % (spec.words, spec.empty) if spec.empty else spec.words
-                row.setAccessibleName(line)
+                remembered[spec.key] = stored
+                if spec.slot in ("kind", "format"):
+                    self._fill_combo(row, stored)
+                    continue
+                self._paint_formula(row, spec, stored, node, env)
+            self._stored_text = remembered
             self._sync_columns()
         finally:
             self._filling = False
+
+    def _paint_formula(
+        self,
+        row: _Row,
+        spec: StateRowSpec,
+        stored: str,
+        node: WidgetNode,
+        env: object,
+    ) -> None:
+        _ink(row.now, muted=True)
+        if stored:
+            spoken = _spoken_formula(stored, spec.slot, env)
+            row.show_value(spoken or stored, stored if spoken else "")
+            _ink(row.value, muted=False)
+            now = _now_of(stored, spec, env, node, self._reader)
+            row.now.setText("now: %s" % now)
+            row.now.show()
+            line = "%s  %s   now: %s" % (spec.words, spoken or stored, now)
+        else:
+            row.show_value(spec.empty)
+            _ink(row.value, muted=True)
+            row.now.hide()
+            line = "%s  %s" % (spec.words, spec.empty) if spec.empty else spec.words
+        row.setAccessibleName(line)
 
     def _fill_combo(self, row: _Row, stored: str) -> None:
         combo = row.combo
@@ -692,6 +747,17 @@ def _slot(spec: StateRowSpec, env: object, node: WidgetNode) -> SlotKind:
     return SlotKind.value(target)
 
 
+def _ink(label: QLabel, muted: bool) -> None:
+    """Mark one label muted or body-colored. The sheet itself is set once."""
+    role = "muted" if muted else "text"
+    if label.property("stateInk") == role:
+        return
+    label.setProperty("stateInk", role)
+    style = label.style()
+    style.unpolish(label)
+    style.polish(label)
+
+
 def _spoken_formula(text: str, slot: str, env: object) -> str:
     kind = _SPEAK.get(slot, "")
     if not kind or env is None:
@@ -719,7 +785,7 @@ def _split_places(stored: str) -> Tuple[str, Optional[int]]:
     return stored, None
 
 
-def _now_of(text: str, spec: StateRowSpec, env: object, node: WidgetNode, reader: SimpleNamespace) -> str:
+def _now_of(text: str, spec: StateRowSpec, env: object, node: WidgetNode, reader_of: object) -> str:
     from app.features.form_builder.engine.logic.formula import analyze
     from app.features.form_builder.qtside.formula.now import now_text
 
@@ -727,6 +793,12 @@ def _now_of(text: str, spec: StateRowSpec, env: object, node: WidgetNode, reader
         found = analyze(text, env, _slot(spec, env, node))  # type: ignore[arg-type]
     except Exception:
         return "blank"
+    # A literal such as True reads no widget. Building a reader walks the form.
+    reads = getattr(found, "reads", ())
+    if reads and callable(reader_of):
+        reader = reader_of()
+    else:
+        reader = SimpleNamespace()
     return now_text(found, env, reader)  # type: ignore[arg-type]
 
 

@@ -12,13 +12,14 @@ from app.features.form_builder.engine.logic.formula.env import FormulaEnv, Widge
 from app.features.form_builder.engine.logic.uses import PanelRow, Use
 from app.features.form_builder.integration.preview_notice import preview_request
 from app.features.form_builder.qtside.inspector.behavior_ext.events import _Row, _elide_place
-from app.features.form_builder.qtside.logic_panel.panel import _face
+from app.features.form_builder.qtside.logic_panel.panel import LogicPanel, _face
 from app.features.form_builder.qtside.logic_panel.rows import LogicRow, break_opportunities
 from app.features.form_builder.qtside.logic_panel.uses_view import UsesDialog
 from app.features.form_builder.qtside.preview.try_log import (
     TryEvent,
     TryLine,
     fold,
+    names_for,
     names_from_env,
     source_label,
     source_of,
@@ -73,6 +74,33 @@ def test_preview_start_carries_the_formula_env_names(tmp_path: Path) -> None:
     assert names["emailEdit"] == "Email"
     # discountCheck already says "Discount", so the edit's fallback is the split name.
     assert names["discountEdit"] == "discount edit"
+
+
+def test_what_ran_uses_the_logic_panel_name_for_every_invoice_widget() -> None:
+    """The invoice reference names one widget once. What ran and the Logic panel agree."""
+    from types import SimpleNamespace
+
+    from app.features.form_builder.engine.ids import IdAllocator
+    from app.features.form_builder.engine.logic.formula_env import env_for
+    from app.features.form_builder.engine.ui4.defaults import QtClassTable
+    from app.features.form_builder.engine.ui4.reader import read_ui
+    from tests.form_builder.engine.logic.test_m7_8a_uses import invoice_text
+
+    document = read_ui(invoice_text(), allocator=IdAllocator()).document
+    env = env_for(document, None, QtClassTable.shared())
+    panel = SimpleNamespace(_session=SimpleNamespace(document=document), _env=env)
+    mapped = dict(names_for(document))
+    compared = 0
+    for node in document.iter_widgets():
+        name = node.object_name or ""
+        if not name:
+            continue
+        face = LogicPanel._shown(panel, name)  # type: ignore[arg-type]
+        assert source_label("%s:cbcsEnabledWhen" % name, mapped) == "%s · Enabled when" % face
+        compared += 1
+    assert compared > 0
+    assert LogicPanel._shown(panel, "discountEdit") == "Discount rate"  # type: ignore[arg-type]
+    assert mapped["discountEdit"] == "Discount rate"
 
 
 def test_identical_rule_rows_collapse_and_other_lines_do_not(qapp: QApplication) -> None:

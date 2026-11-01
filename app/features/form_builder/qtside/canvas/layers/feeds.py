@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import weakref
 from typing import Hashable, List, Optional, Sequence, Tuple
 
 from app.features.form_builder.engine.logic.formula_env import env_for
@@ -25,14 +26,31 @@ def register(registry: object) -> None:
     getattr(registry, "add")(CanvasLayer(NAME, build, paint, order=73))
 
 
+_HAS_RULES: "weakref.WeakKeyDictionary[UiDocument, Tuple[int, int, bool]]" = weakref.WeakKeyDictionary()
+
+
 def form_has_rules(doc: UiDocument) -> bool:
+    """True when any formula text is set.
+
+    A commit that only rewrites a formula keeps the same structure and the same
+    logic-property count, so the answer is reused.
+    """
+    stamp = (doc.structure_revision, doc.logic_property_count())
+    held = _HAS_RULES.get(doc)
+    if held is not None and (held[0], held[1]) == stamp:
+        return held[2]
+    found = False
     for node in doc.iter_widgets():
         for key in FORMULA_KEYS:
             value = node.value(key)
             text = getattr(value, "text", None)
             if isinstance(text, str) and text.strip():
-                return True
-    return False
+                found = True
+                break
+        if found:
+            break
+    _HAS_RULES[doc] = (stamp[0], stamp[1], found)
+    return found
 
 
 def build(static: object, inputs: object, state: Hashable) -> LayerOutput:
