@@ -420,7 +420,8 @@ class ChecksBody(QWidget):
             % (text, chrome.input, edge, focus, chrome.accent)
         )
         link = (
-            "QPushButton { color: %s; background: transparent; border: none; padding: 0; text-align: left; }"
+            "QPushButton { color: %s; background: transparent; border: none; padding: 0; text-align: left;"
+            " text-decoration: underline; }"
             "QPushButton:focus { border: %dpx solid %s; }"
             % (ink, focus, chrome.accent)
         )
