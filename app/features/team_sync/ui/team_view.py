@@ -94,7 +94,9 @@ def _polish(widget: QWidget) -> None:
 
 
 def _delivery_key(state: str) -> str:
-    if state in (DELIVERY_QUEUED, DELIVERY_WAITING_TERMINAL):
+    if state == DELIVERY_WAITING_TERMINAL:
+        return "waiting"
+    if state == DELIVERY_QUEUED:
         return "queued"
     if state == DELIVERY_SENT:
         return "sent"
@@ -440,6 +442,20 @@ class TeamView(QWidget):
 
     def note_text(self) -> str:
         return self._note.text().strip()
+
+    def clear_draft(self) -> None:
+        self._note.clear()
+        self._checks = []
+        while self._file_layout.count():
+            item = self._file_layout.takeAt(0)
+            widget = item.widget()
+            if widget is not None:
+                widget.hide()
+                widget.setParent(None)
+                widget.deleteLater()
+        self._files_button.setText("0 files")
+        self._files_button.setChecked(False)
+        self._file_list.hide()
 
     def _share(self) -> None:
         if self._on_share is not None:

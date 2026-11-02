@@ -60,6 +60,8 @@ class ShareDialog(QDialog):
         on_send: Callable[..., None],
         parent: Optional[QWidget] = None,
         tokens: Optional[ShellThemeTokens] = None,
+        my_name: str = "",
+        my_shop: str = "",
     ) -> None:
         super().__init__(parent)
         self._on_send = on_send
@@ -77,22 +79,33 @@ class ShareDialog(QDialog):
         body_layout = chrome.body.layout()
         if isinstance(body_layout, QVBoxLayout):
             body_layout.addWidget(form_host)
+        self._my_name = QLineEdit(form_host)
+        self._my_name.setObjectName("shell.teamSync.shareMyName")
+        self._my_name.setText(my_name)
+        self._my_shop = QLineEdit(form_host)
+        self._my_shop.setObjectName("shell.teamSync.shareMyShop")
+        self._my_shop.setText(my_shop)
+        self._invite_name = QLineEdit(form_host)
+        self._invite_name.setObjectName("shell.teamSync.shareInviteName")
+        self._invite_shop = QLineEdit(form_host)
+        self._invite_shop.setObjectName("shell.teamSync.shareShop")
         self._email = QLineEdit(form_host)
         self._email.setObjectName("shell.teamSync.shareEmail")
-        self._shop = QLineEdit(form_host)
-        self._shop.setObjectName("shell.teamSync.shareShop")
         self._message = QTextEdit(form_host)
         self._message.setObjectName("shell.teamSync.shareMessage")
         self._message.setFixedHeight(72)
+        form.addRow("Your name", self._my_name)
+        form.addRow("Your shop", self._my_shop)
+        form.addRow("Name", self._invite_name)
+        form.addRow("Shop", self._invite_shop)
         form.addRow("Email", self._email)
-        form.addRow("Shop", self._shop)
         form.addRow("Message", self._message)
         self._error = QLabel("", form_host)
         self._error.setObjectName("shell.teamSync.shareError")
         self._error.setWordWrap(True)
         form.addRow("", self._error)
         if tokens is not None:
-            for field in (self._email, self._shop, self._message):
+            for field in (self._my_name, self._my_shop, self._invite_name, self._invite_shop, self._email, self._message):
                 field.setStyleSheet(field_qss(tokens))
             self._error.setStyleSheet(f"color: {tokens.diag_error_color or '#9C0000'};")
         add_footer_stretch(chrome)
@@ -100,20 +113,31 @@ class ShareDialog(QDialog):
         send = add_footer_button(chrome, "Send Invite", role=FOOTER_ROLE_PRIMARY)
         cancel.clicked.connect(self.reject)
         send.clicked.connect(self._send)
-        self.resize(480, 360)
+        self.resize(480, 460)
 
     def _send(self) -> None:
+        my_name = self._my_name.text().strip()
+        my_shop = self._my_shop.text().strip()
+        if not my_name or not my_shop:
+            self._error.setText("Enter your name and your shop.")
+            return
+        invite_name = self._invite_name.text().strip()
+        invite_shop = self._invite_shop.text().strip()
         email = self._email.text().strip()
-        shop = self._shop.text().strip()
         invites = []
-        if email or shop:
-            invites.append(Invite(name=email.split("@", 1)[0], shop=shop, email=email))
+        if invite_name or invite_shop or email:
+            if not invite_name or not invite_shop or not email:
+                self._error.setText("Enter a name, a shop, and an email for the invite.")
+                return
+            invites.append(Invite(name=invite_name, shop=invite_shop, email=email))
         self._error.setText("")
         self._on_send(
             ShareRequest(
                 project_name=self._project_name,
                 invites=invites,
                 message=self._message.toPlainText().strip(),
+                my_name=my_name,
+                my_shop=my_shop,
             ),
             self.accept,
             self._show_error,
@@ -133,9 +157,13 @@ class InviteDialog(QDialog):
         project_name: str = "Invoice App",
         default_location: str = "",
         author_name: str = "",
+        your_name: str = "",
+        your_shop: str = "",
+        on_decline: Optional[Callable[[str], None]] = None,
     ) -> None:
         super().__init__(parent)
         self._on_open = on_open
+        self._on_decline = on_decline
         self._incoming_id = incoming.id
         if author_name:
             author = first_name(author_name)
@@ -159,6 +187,14 @@ class InviteDialog(QDialog):
         location_row = QWidget(form_host)
         location_layout = QHBoxLayout(location_row)
         location_layout.setContentsMargins(0, 0, 0, 0)
+        self._your_name = QLineEdit(form_host)
+        self._your_name.setObjectName("shell.teamSync.inviteYourName")
+        self._your_name.setText(your_name)
+        self._your_shop = QLineEdit(form_host)
+        self._your_shop.setObjectName("shell.teamSync.inviteYourShop")
+        self._your_shop.setText(your_shop)
+        form.addRow("Your name", self._your_name)
+        form.addRow("Shop", self._your_shop)
         self._location = QLineEdit(location_row)
         self._location.setObjectName("shell.teamSync.inviteLocation")
         self._location.setText(default_location)
@@ -173,14 +209,15 @@ class InviteDialog(QDialog):
         self._error.setWordWrap(True)
         form.addRow("", self._error)
         if tokens is not None:
-            self._location.setStyleSheet(field_qss(tokens))
+            for field in (self._your_name, self._your_shop, self._location):
+                field.setStyleSheet(field_qss(tokens))
             self._error.setStyleSheet(f"color: {tokens.diag_error_color or '#9C0000'};")
         add_footer_stretch(chrome)
         cancel = add_footer_button(chrome, "Cancel", role=FOOTER_ROLE_SECONDARY)
         open_button = add_footer_button(chrome, "Open Project", role=FOOTER_ROLE_PRIMARY)
-        cancel.clicked.connect(self.reject)
+        cancel.clicked.connect(self._decline)
         open_button.clicked.connect(self._open)
-        self.resize(520, 260)
+        self.resize(520, 340)
 
     def _browse(self) -> None:
         folder = QFileDialog.getExistingDirectory(self, "Open Project", self._location.text().strip())
@@ -197,8 +234,18 @@ class InviteDialog(QDialog):
         if folder and _folder_has_files(folder):
             self._error.setText("Choose a new or empty folder. That one already has files.")
             return
+        your_name = self._your_name.text().strip()
+        your_shop = self._your_shop.text().strip()
+        if not your_name or not your_shop:
+            self._error.setText("Enter your name and your shop.")
+            return
         self._error.setText("")
-        self._on_open(self._incoming_id, folder, self.accept, self._show_error)
+        self._on_open(self._incoming_id, folder, your_name, your_shop, self.accept, self._show_error)
+
+    def _decline(self) -> None:
+        if self._on_decline is not None:
+            self._on_decline(self._incoming_id)
+        self.reject()
 
     def _show_error(self, exc: BaseException) -> None:
         self._error.setText(str(exc))

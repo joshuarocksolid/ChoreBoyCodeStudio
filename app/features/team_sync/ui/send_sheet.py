@@ -135,6 +135,15 @@ class SendSheet(QFrame):
         self.move(origin)
         self.show()
 
+    def clear_draft(self) -> None:
+        self._note.clear()
+        self._checks = []
+        while self._file_layout.count():
+            item = self._file_layout.takeAt(0)
+            widget = item.widget()
+            if widget is not None:
+                widget.deleteLater()
+
     def _send_clicked(self) -> None:
         paths = [path for box, path in self._checks if box.isChecked()]
         note = self._note.toPlainText().strip()

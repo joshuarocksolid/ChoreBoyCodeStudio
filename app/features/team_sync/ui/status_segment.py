@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Callable, Optional
 
 from app.qt.QtCore import QSize, Qt
-from app.qt.QtGui import QColor
+from app.qt.QtGui import QColor, QPalette
 from app.qt.QtWidgets import (
     QFrame,
     QGraphicsDropShadowEffect,
@@ -180,6 +180,27 @@ class StatusPopover(QFrame):
 
     def apply_theme(self, tokens: ShellThemeTokens) -> None:
         self._history.setIcon(history_icon(tokens.text_primary))
+        background = tokens.popup_bg or "#FFFFFF"
+        border = tokens.popup_border or tokens.border or "#DEE2E6"
+        text = tokens.text_primary or "#1F2328"
+        self.setAttribute(Qt.WA_TranslucentBackground, False)
+        self.setAutoFillBackground(True)
+        palette = self.palette()
+        palette.setColor(QPalette.Window, QColor(background))
+        palette.setColor(QPalette.WindowText, QColor(text))
+        self.setPalette(palette)
+        self.setStyleSheet(
+            "QFrame#shell\\.teamSync\\.statusPopover {"
+            f"background: {background};"
+            f"color: {text};"
+            f"border: 1px solid {border};"
+            "border-radius: 6px;"
+            "}"
+            "QFrame#shell\\.teamSync\\.statusPopover QLabel {"
+            f"color: {text};"
+            "background: transparent;"
+            "}"
+        )
         shadow = QGraphicsDropShadowEffect(self)
         shadow.setBlurRadius(18)
         shadow.setOffset(0, 4)
@@ -188,6 +209,9 @@ class StatusPopover(QFrame):
         shadow.setColor(color)
         self.setGraphicsEffect(shadow)
         _polish(self)
+        # Polish clears the fill on a Qt.Popup, which left the words on the dark status bar.
+        self.setAttribute(Qt.WA_TranslucentBackground, False)
+        self.setAutoFillBackground(True)
 
     def present(
         self,

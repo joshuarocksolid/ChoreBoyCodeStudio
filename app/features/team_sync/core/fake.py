@@ -349,13 +349,15 @@ class InMemoryTeamSync:
             "sender_name": author,
             "sender_shop": "",
             "sender_email": "",
+            "invitee_name": "",
+            "invitee_shop": "",
         }
 
-    def accept_invite(self, incoming_id: str, folder: str) -> str:
+    def accept_invite(self, incoming_id: str, folder: str, my_name: str = "", my_shop: str = "") -> str:
         self._invites = [item for item in self._invites if item.id != incoming_id]
         self._shared = True
         self._project_name = "Invoice App"
-        self._me = ANA
+        self._me = Member(ANA.id, my_name or ANA.name, my_shop or ANA.shop, ANA.email)
         self._members = [ANA, SAM]
         self._terminal = TERMINAL_OK
         self._emit(EVENT_STATUS)

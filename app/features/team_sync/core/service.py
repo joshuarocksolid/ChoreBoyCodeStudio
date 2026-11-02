@@ -53,7 +53,14 @@ from app.features.team_sync.core.bundles import (
     split_parts,
 )
 from app.features.team_sync.core.combine import CombineSession
+from app.features.team_sync.core.lane import ProjectLane, bind_project_lane
 from app.features.team_sync.core.ledger import Ledger, OutboxRow, iso
+from app.features.team_sync.core.local_state import (
+    local_member_ids,
+    remember_member,
+    remember_sent_bundle,
+    suppressed_invite_ids,
+)
 from app.features.team_sync.core.mailbox import (
     InboundMail,
     MailNotReady,
@@ -137,6 +144,8 @@ class TeamSyncService:
         self._scan: Optional[MailScan] = None
         self._ledger_obj: Optional[Ledger] = None
         self._ledger_at: str = ""
+        self._lane = ProjectLane()
+        bind_project_lane(self)
 
     def status(self) -> TeamStatus:
         team = self._team()
@@ -203,10 +212,11 @@ class TeamSyncService:
         when = self.now()
         member = Member(
             id=new_member_id(),
-            name=request.my_name or _name_from_email(account.email if account else ""),
-            shop=request.my_shop or (account.label if account else self.machine.hostname),
+            name=request.my_name or _account_person(account)[0] or _name_from_email(account.email if account else ""),
+            shop=request.my_shop or _account_person(account)[1] or (account.label if account else self.machine.hostname),
             email=account.email if account else "",
         )
+        remember_member(self.machine, member.id)
         team = TeamFile(
             project_id=new_project_id(),
             name=request.project_name,
@@ -241,8 +251,13 @@ class TeamSyncService:
     def pending_invites(self) -> List[Incoming]:
         invites = []
         team = self._team()
+        hidden = suppressed_invite_ids(self.machine)
+        mine = local_member_ids(self.machine)
         for payload in self._invite_records():
             if team is not None and payload.get("project_id") != team.project_id:
+                continue
+            invite_id = str(payload.get("id", ""))
+            if invite_id in hidden or str(payload.get("from_id", "")) in mine:
                 continue
             invites.append(_incoming_from_invite(payload))
         return invites
@@ -255,6 +270,8 @@ class TeamSyncService:
             "sender_name": str(payload.get("sender_name", "")),
             "sender_shop": str(payload.get("sender_shop", "")),
             "sender_email": str(payload.get("sender_email", "")),
+            "invitee_name": str(payload.get("invitee_name", "")),
+            "invitee_shop": str(payload.get("invitee_shop", "")),
         }
 
     def accept_invite(self, incoming_id: str, folder: str, my_name: str = "", my_shop: str = "") -> str:
@@ -287,12 +304,14 @@ class TeamSyncService:
         account = self._pick_mailbox(None, required=True)
         if account is None:
             raise TeamSyncError("No FaxMail mailbox found.")
+        account_name, account_shop = _account_person(account)
         me = Member(
             id=new_member_id(),
-            name=my_name or _name_from_email(account.email),
-            shop=my_shop or account.label,
+            name=my_name or str(payload.get("invitee_name") or "") or account_name or _name_from_email(account.email),
+            shop=my_shop or str(payload.get("invitee_shop") or "") or account_shop or account.label,
             email=account.email,
         )
+        remember_member(self.machine, me.id)
         when = self.now()
         team = replace_member(imported, me)
         save_team(root, team)
@@ -300,8 +319,9 @@ class TeamSyncService:
         write_key(root, key)
         write_key_checksum(root, key)
         save_me(root, LocalIdentity(me.id, me.name, me.shop, me.email, account.path))
+        joined = f"{me.name} joined from {me.shop}" if me.shop else f"{me.name} joined"
         repo.commit(
-            f"{me.name} joined",
+            joined,
             me.name,
             me.email or "team@localhost",
             me.id,
@@ -323,6 +343,7 @@ class TeamSyncService:
             iso(self.now()),
             "ok",
         )
+        joiner._append_feed(FEED_SYSTEM, joined, me.id)
         joiner._send_join(team, me, sender, tip)
         self._emit(EVENT_INCOMING)
         return str(root)
@@ -844,27 +865,33 @@ class TeamSyncService:
             tip=head,
             changes=str(self._repo.count_since(head, [])),
             key_hex=read_key(Path(self.project_root)).hex(),
+            member_name=name,
+            member_shop=shop,
+            member_email=email,
             sender_name=me.name,
             sender_shop=me.shop,
             sender_email=me.email,
         )
+        remember_sent_bundle(self.machine, bundle_id)
         recipient = Member(id="", name=name, shop=shop, email=email)
         self._publish(envelope, bundle, recipient, change_id=head, tip=head, sign_key=None)
 
     def _send_join(self, team: TeamFile, me: Member, sender: Member, tip: str) -> None:
+        head = self._repo.head_sha() or tip
+        bundle = self._repo.create_bundle(self._repo.branch_name(), [tip] if tip and tip != head else [])
         envelope = self._envelope(
             "join",
             team,
             me.id,
             sender.id,
             bundle_id="j_" + secrets.token_hex(8),
-            tip=tip,
+            tip=head,
             member_id=me.id,
             member_name=me.name,
             member_shop=me.shop,
             member_email=me.email,
         )
-        self._publish(envelope, None, sender, change_id="", tip=tip)
+        self._publish(envelope, bundle, sender, change_id=head, tip=head)
 
     def _publish(
         self,
@@ -1059,7 +1086,7 @@ class TeamSyncService:
                 self._scan.forget(mail.key)
             return
         try:
-            if envelope.verb in {"push", "invite"} or envelope.part_total() > 1:
+            if envelope.verb in {"push", "invite", "join"} or envelope.part_total() > 1:
                 if self._scan is not None:
                     mail = self._scan.load_attachments(mail)
             self._dispatch(envelope, mail)
@@ -1119,7 +1146,7 @@ class TeamSyncService:
         if envelope.verb == "invite":
             self._store_invite(envelope, mail)
         elif envelope.verb == "join":
-            self._apply_join(envelope)
+            self._apply_join(envelope, mail)
         elif envelope.verb == "push":
             self._apply_push(envelope, mail)
         elif envelope.verb == "have":
@@ -1153,6 +1180,8 @@ class TeamSyncService:
             "sender_name": envelope.sender_name,
             "sender_shop": envelope.sender_shop,
             "sender_email": envelope.sender_email,
+            "invitee_name": envelope.member_name,
+            "invitee_shop": envelope.member_shop,
             "key_hex": envelope.key_hex,
             "tip": envelope.tip,
             "bundle_sha256": envelope.bundle_sha256,
@@ -1166,9 +1195,11 @@ class TeamSyncService:
         self._toast(f"{envelope.sender_name} invited you to {envelope.project_name}")
         self._emit(EVENT_INCOMING)
 
-    def _apply_join(self, envelope: Envelope) -> None:
+    def _apply_join(self, envelope: Envelope, mail: InboundMail) -> None:
         team = self._require_team()
         me = self._require_me()
+        if envelope.from_id == me.member_id:
+            return
         member = Member(
             id=envelope.member_id or envelope.from_id,
             name=envelope.member_name,
@@ -1177,20 +1208,31 @@ class TeamSyncService:
         )
         if self._combine_open():
             raise MailNotReady("Finish or cancel combining first.")
-        if member_by_id(team, member.id) is None:
-            save_team(Path(self.project_root), replace_member(team, member))
+        bundle = self._assemble(envelope, mail) if envelope.bundle_sha256 or mail.attachments else None
+        if bundle is not None:
+            if envelope.bundle_sha256 and not digest_equal(sha256_hex(bundle), envelope.bundle_sha256):
+                raise TeamSyncError("The join bundle checksum does not match.")
+            self._repo.import_pack(bundle)
+        tip = envelope.tip
+        head = self._repo.head_sha() or ""
+        if tip and self._repo.has_object(tip) and (not head or head == tip or self._repo.is_ancestor(head, tip)):
+            if head != tip:
+                self._repo.checkout(tip, "main")
+        elif member_by_id(self._require_team(), member.id) is None:
+            save_team(Path(self.project_root), replace_member(self._require_team(), member))
             self._repo.commit(
-                f"{member.name} joined",
+                f"{member.name} joined from {member.shop}" if member.shop else f"{member.name} joined",
                 me.name,
                 me.email or "team@localhost",
                 me.member_id,
                 self.machine.hostname,
                 self.now(),
-                paths=["cbcs/team.json"],
+                paths=[_TEAM_PATH],
             )
-        if envelope.tip and self._repo.has_object(envelope.tip):
-            self._repo.set_ref(f"refs/peers/{member.id}/main", envelope.tip)
-        self._append_feed(FEED_SYSTEM, f"{member.name} joined {team.name}", member.id)
+        if tip and self._repo.has_object(tip):
+            self._repo.set_ref(f"refs/peers/{member.id}/main", tip)
+        line = f"{member.name} joined from {member.shop}" if member.shop else f"{member.name} joined"
+        self._append_feed(FEED_SYSTEM, line, member.id)
         self._emit(EVENT_FEED)
         self._emit(EVENT_STATUS)
 
@@ -2098,6 +2140,12 @@ def _parse_time(text: str) -> datetime:
         return datetime.strptime(text, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
     except ValueError:
         return datetime.now(timezone.utc)
+
+
+def _account_person(account: Optional[Mailbox]) -> Tuple[str, str]:
+    if account is None:
+        return "", ""
+    return account.user_name, account.company_name
 
 
 def _name_from_email(email: str) -> str:

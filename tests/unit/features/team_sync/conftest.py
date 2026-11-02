@@ -19,12 +19,23 @@ def machine(tmp: Path, hostname: str) -> Machine:
     )
 
 
-def write_account(mails: Path, folder: str, email: str, max_size: int = 30000000) -> Path:
+def write_account(
+    mails: Path,
+    folder: str,
+    email: str,
+    max_size: int = 30000000,
+    user_name: str = "",
+    company_name: str = "",
+) -> Path:
     account = mails / folder
     for name in ("out", "sent", "zip_in", "inbox"):
         (account / name).mkdir(parents=True, exist_ok=True)
-    text = f"EmailAddress}}{{{email}\nMaxMsgSize}}{{{max_size}\n"
-    (account / ACCOUNT_CONF).write_text(text, encoding="utf-8")
+    lines = [f"EmailAddress}}{{{email}", f"MaxMsgSize}}{{{max_size}"]
+    if user_name:
+        lines.append(f"UserName}}{{{user_name}")
+    if company_name:
+        lines.append(f"CompanyName}}{{{company_name}")
+    (account / ACCOUNT_CONF).write_text("\n".join(lines) + "\n", encoding="utf-8")
     return account
 
 

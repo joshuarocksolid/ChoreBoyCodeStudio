@@ -158,26 +158,43 @@ def discover_mailboxes(
             if identity in seen:
                 continue
             seen.add(identity)
-            email_address, _size = read_account_settings(conf)
-            found.append(Mailbox(path=identity, email=email_address, label=child.name))
+            email_address, _size, user_name, company_name = read_account_profile(conf)
+            found.append(
+                Mailbox(
+                    path=identity,
+                    email=email_address,
+                    label=child.name,
+                    user_name=user_name,
+                    company_name=company_name,
+                )
+            )
     return found
 
 
 def read_account_settings(path: Path) -> Tuple[str, Optional[int]]:
+    email_address, max_size, _user_name, _company_name = read_account_profile(path)
+    return email_address, max_size
+
+
+def read_account_profile(path: Path) -> Tuple[str, Optional[int], str, str]:
     try:
         text = path.read_text(encoding="utf-8", errors="replace")
     except OSError as exc:
         raise TeamSyncError(f"Could not read the FaxMail account settings: {exc}") from exc
-    email_address = ""
-    max_size: Optional[int] = None
+    email_address = _conf_field(text, "EmailAddress")
+    user_name = _conf_field(text, "UserName")
+    company_name = _conf_field(text, "CompanyName")
+    raw_size = _conf_field(text, "MaxMsgSize")
+    max_size = int(raw_size) if raw_size.isdigit() else None
+    return email_address, max_size, user_name, company_name
+
+
+def _conf_field(text: str, key: str) -> str:
+    prefix = key + "}{"
     for line in text.splitlines():
-        if line.startswith("EmailAddress}{"):
-            email_address = line.split("}{", 1)[1].strip()
-        elif line.startswith("MaxMsgSize}{"):
-            raw = line.split("}{", 1)[1].strip()
-            if raw.isdigit():
-                max_size = int(raw)
-    return email_address, max_size
+        if line.startswith(prefix):
+            return line.split("}{", 1)[1].strip()
+    return ""
 
 
 def terminal_state(

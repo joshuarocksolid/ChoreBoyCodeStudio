@@ -45,7 +45,10 @@ def test_two_shops_share_join_send_clash_and_deliver(tmp_path: Path) -> None:
     ana.accept_invite(invite.id, str(ana_root), my_name="Ana", my_shop="Cedar")
     assert sim.tick() >= 1
     sam.poll()
-    assert any(member.email == "ana@example.test" for member in sam.status().members)
+    assert sam.incoming() == []
+    assert sam.history(limit=1)[0].id == ana.history(limit=1)[0].id
+    assert any(item.text == "Ana joined from Cedar" for item in sam.feed())
+    assert any(member.name == "Ana" and member.shop == "Cedar" for member in sam.status().members)
 
     path = Path(ana.project_root) / "invoice.py"
     path.write_text("def total(x):\n    return x + 1\n", encoding="utf-8")
