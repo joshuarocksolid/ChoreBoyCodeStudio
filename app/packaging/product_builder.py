@@ -65,6 +65,8 @@ VENDOR_ALLOWLIST = (
     "tree_sitter_javascript", "tree_sitter_toml", "tree_sitter_sql",
     # Intelligence (code completion, refactoring)
     "jedi", "parso", "rope", "pytoolconfig",
+    # Team Sync (pure-Python git)
+    "dulwich",
     # Test runner (Test Explorer support on ChoreBoy)
     "pytest", "_pytest", "pluggy", "iniconfig", "exceptiongroup", "py.py",
 )

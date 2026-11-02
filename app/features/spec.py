@@ -44,6 +44,10 @@ FEATURE_SPECS: tuple[FeatureSpec, ...] = (
         ownership_globs=("app/features/shop_sharing/**",),
         install=install_shop_sharing,
     ),
+    FeatureSpec(
+        key="team-sync",
+        ownership_globs=("app/features/team_sync/**",),
+    ),
 )
 
 __all__ = ["FEATURE_SPECS", "FeatureInstall", "FeatureSpec"]

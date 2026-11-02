@@ -57,3 +57,5 @@ owners:
     - app/features/hidden-path-policy/**
   shop-sharing:
     - app/features/shop_sharing/**
+  team-sync:
+    - app/features/team_sync/**
