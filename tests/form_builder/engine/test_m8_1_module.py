@@ -274,7 +274,7 @@ def test_auth_stops_at_the_first_driver_and_import_failure_tries_the_next(tmp_pa
         assert calls == ["psycopg"]
         assert "pg8000" not in str(caught.value)
         calls.clear()
-        sys.modules["psycopg"] = None
+        sys.modules["psycopg"] = None  # type: ignore[assignment]
         opened = module.open_connection("office")
         assert opened is opened_connection
         assert calls == ["pg8000"]
