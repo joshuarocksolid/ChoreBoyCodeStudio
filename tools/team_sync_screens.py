@@ -548,12 +548,9 @@ def _capture_real(app) -> list[str]:  # type: ignore[no-untyped-def]
     from tests.unit.features.team_sync.faxmail_sim import FaxMailSim
 
     missing: list[str] = []
-    root = OUT.parent / "_real_shot_work"
-    if root.exists():
-        import shutil
+    import tempfile
 
-        shutil.rmtree(root)
-    root.mkdir(parents=True)
+    root = Path(tempfile.mkdtemp(prefix="cbcs-team-sync-shots-"))
     mails = root / ".Mails"
     sam_account = write_account(mails, "default", "sam@example.test")
     ana_account = write_account(mails, "cedar", "ana@example.test")
