@@ -67,6 +67,7 @@ def main() -> int:
             except Exception as exc:  # noqa: BLE001 - one shot must not hide the rest
                 missing.append(f"{name}_{theme}.png ({exc})")
                 print("FAIL", name, theme, exc, flush=True)
+    missing.extend(_capture_real(app))
     window.close()
     if missing:
         print("Missing screenshots:")
@@ -523,6 +524,155 @@ _WINDOW_SHOTS = [
     ("window_hover", _window_hover),
     ("window_settings", _settings),
 ]
+
+
+def _capture_real(app) -> list[str]:  # type: ignore[no-untyped-def]
+    """Light and dark grabs of a real two-shop flow. The fake shots stay above."""
+    import logging
+    from types import SimpleNamespace
+
+    from app.features.team_sync.api import RESOLVE_THEIRS, Invite, ShareRequest
+    from app.features.team_sync.core.service import TeamSyncService
+    from app.features.team_sync.ui.combine_tab import CombineTab
+    from app.features.team_sync.ui.controller import TeamSyncController
+    from app.features.team_sync.ui.copy import status_view
+    from app.features.team_sync.ui.dialogs import InviteDialog
+    from app.features.team_sync.ui.ports import SyncPorts
+    from app.features.team_sync.ui.send_sheet import SendToolbarButton
+    from app.features.team_sync.ui.status_segment import TeamStatusSegment
+    from app.features.team_sync.ui.team_view import TeamView
+    from app.qt.QtWidgets import QLabel, QStatusBar, QWidget
+    from app.shell.style_sheet_sections_team_sync import shell_section_team_sync
+    from app.shell.theme_tokens import tokens_from_palette
+    from tests.unit.features.team_sync.conftest import machine, touch_watchdog, write_account
+    from tests.unit.features.team_sync.faxmail_sim import FaxMailSim
+
+    missing: list[str] = []
+    root = OUT.parent / "_real_shot_work"
+    if root.exists():
+        import shutil
+
+        shutil.rmtree(root)
+    root.mkdir(parents=True)
+    mails = root / ".Mails"
+    sam_account = write_account(mails, "default", "sam@example.test")
+    ana_account = write_account(mails, "cedar", "ana@example.test")
+    touch_watchdog(mails, "sam-pc")
+    touch_watchdog(mails, "ana-pc")
+    sam_root = root / "sam"
+    ana_root = root / "ana"
+    sam_root.mkdir()
+    ana_root.mkdir()
+    (sam_root / "invoice.py").write_text("def total(x):\n    return x\n", encoding="utf-8")
+    sam = TeamSyncService(str(sam_root), machine=machine(root / "sam-box", "sam-pc"), mail_roots=[str(sam_account)])
+    ana = TeamSyncService(str(ana_root), machine=machine(root / "ana-box", "ana-pc"), mail_roots=[str(ana_account)])
+    sim = FaxMailSim(mails)
+    host = QWidget()
+    host._status_controller = SimpleNamespace(status_bar=QStatusBar(host))  # type: ignore[attr-defined]
+    host._status_controller.status_bar.addPermanentWidget(QLabel("Python", host))
+    host._activity_bar = SimpleNamespace(set_badge=lambda *_a: None, set_active_view=lambda *_a: None, counts={})  # type: ignore[attr-defined]
+    host._logger = logging.getLogger("cbcs.team_sync.shots")  # type: ignore[attr-defined]
+    sam_view = TeamView()
+    sam_ui = TeamSyncController(host, sam, SyncPorts(), dormant=False)
+    sam_ui._project_root = str(sam_root)
+    sam_ui.attach(sam_view, SendToolbarButton())
+    ana_view = TeamView()
+    ana_ui = TeamSyncController(host, ana, SyncPorts(), dormant=False)
+    ana_ui._project_root = str(ana_root)
+    ana_ui.attach(ana_view, SendToolbarButton())
+    sam.share(
+        ShareRequest(
+            project_name="Invoice",
+            my_name="Sam Brenneman",
+            my_shop="Maple",
+            invites=[Invite("Ana Kurtz", "Cedar", "ana@example.test")],
+            message="Invoice for the shop",
+        )
+    )
+    sam_ui.refresh_status()
+    sim.tick()
+    ana.poll()
+    invite = ana.pending_invites()[0]
+    detail = ana.invite_detail(invite.id)
+    ana.accept_invite(invite.id, str(ana_root), my_name="Ana Kurtz", my_shop="Cedar")
+    sim.tick()
+    sam.poll()
+    (sam_root / "invoice.py").write_text("def total(x):\n    return x + 2\n", encoding="utf-8")
+    sam.save_only("sam total")
+    (ana_root / "invoice.py").write_text("def total(x):\n    return x * 2\n", encoding="utf-8")
+    ana_ui.refresh_status()
+    ana.send("ana total")
+    sim.tick()
+    sam.poll()
+    state = sam.accept(sam.incoming()[0].id)
+    assert state is not None
+
+    def _paint(widget, tokens, name: str, theme: str) -> None:  # type: ignore[no-untyped-def]
+        widget.setStyleSheet(shell_section_team_sync(tokens))
+        if hasattr(widget, "apply_theme"):
+            widget.apply_theme(tokens)
+        widget.resize(widget.sizeHint().expandedTo(widget.size()))
+        widget.show()
+        _pump(app)
+        path = OUT / f"real_{name}_{theme}.png"
+        pixmap = widget.grab()
+        if pixmap.isNull():
+            missing.append(path.name)
+            return
+        pixmap.save(str(path), "PNG")
+        print(path.name, pixmap.width(), pixmap.height(), flush=True)
+        widget.hide()
+
+    for theme in ("light", "dark"):
+        tokens = tokens_from_palette(app.palette(), force_mode=theme)
+        sam_view.apply(sam.status(), sam.feed(), git_names=False, dormant=False, tidy=False)
+        sam_view.apply_theme(tokens)
+        sam_view.resize(420, 640)
+        _paint(sam_view, tokens, "shared", theme)
+        ana_view.apply(ana.status(), ana.feed(), git_names=False, dormant=False, tidy=False)
+        ana_view.apply_theme(tokens)
+        ana_view.resize(420, 640)
+        _paint(ana_view, tokens, "pending", theme)
+        dialog = InviteDialog(
+            invite,
+            lambda *_args: None,
+            project_name=detail.get("project_name") or "Invoice",
+            default_location=str(Path.home() / "Projects" / "Invoice"),
+            author_name=detail.get("sender_name") or "Sam Brenneman",
+            tokens=tokens,
+        )
+        dialog.resize(520, 260)
+        _paint(dialog, tokens, "invite", theme)
+        dialog.deleteLater()
+        segment = TeamStatusSegment()
+        segment.apply(status_view(sam.status(), waiting_name="Ana"), tokens)
+        segment.resize(segment.sizeHint())
+        _paint(segment, tokens, "status", theme)
+        segment.deleteLater()
+        combine = CombineTab()
+        combine.resize(860, 560)
+        ana_me = ana.status().me
+        sam_me = sam.status().me
+        combine.open_state(
+            sam,
+            SyncPorts(),
+            on_finished=lambda: None,
+            on_deleted=lambda _clash: None,
+            tokens=tokens,
+            theirs_label="Ana's",
+            theirs_id=ana_me.id if ana_me is not None else "",
+            theirs_name="Ana Kurtz",
+            mine_name="Sam Brenneman",
+            mine_id=sam_me.id if sam_me is not None else "",
+        )
+        combine.settle(state.clashes[0].id, RESOLVE_THEIRS)
+        _paint(combine, tokens, "combine", theme)
+        combine.deleteLater()
+        _pump(app)
+    sam_view.deleteLater()
+    ana_view.deleteLater()
+    host.deleteLater()
+    return missing
 
 
 if __name__ == "__main__":
