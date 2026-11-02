@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import os
 import subprocess
 import sys
@@ -99,15 +100,21 @@ def runner():
 @pytest.mark.parametrize("driver", ["psycopg", "pg8000"])
 def test_schema_and_test_leave_the_driver_out_of_the_editor(tmp_path, fields, driver, runner) -> None:
     del runner
-    assert "psycopg" not in sys.modules
-    assert "pg8000" not in sys.modules
     _setup(driver)
     os.environ["CBCS_FB_SCHEMA_DRIVER"] = driver
     install_schema_reader(str(tmp_path))
     connection = _connection(fields)
     try:
-        outcome = refresh(str(tmp_path), connection, lambda _item: fields["password"])
-        result = postgres_tester(connection, lambda: fields["password"])
+        with _drivers_blocked():
+            outcome = refresh(str(tmp_path), connection, lambda _item: fields["password"])
+            result = postgres_tester(connection, lambda: fields["password"])
+            probed = probe_select(
+                str(tmp_path),
+                connection,
+                "SELECT id, name FROM customers",
+                lambda _item: fields["password"],
+            )
+            again = postgres_tester(connection, lambda: fields["password"])
         assert outcome.ok and outcome.schema is not None
         tables = {table.name: table for table in outcome.schema.tables}
         assert tables["customers"].key == "id"
@@ -121,19 +128,10 @@ def test_schema_and_test_leave_the_driver_out_of_the_editor(tmp_path, fields, dr
             "tables": len(outcome.schema.tables),
             "driver": driver,
         }
-        probed = probe_select(
-            str(tmp_path),
-            connection,
-            "SELECT id, name FROM customers",
-            lambda _item: fields["password"],
-        )
         assert probed.ok
         assert [column.name for column in probed.columns] == ["id", "name"]
-        again = postgres_tester(connection, lambda: fields["password"])
         assert again["ok"] is True
         assert _count(driver) == 2
-        assert "psycopg" not in sys.modules
-        assert "pg8000" not in sys.modules
     finally:
         os.environ.pop("CBCS_FB_SCHEMA_DRIVER", None)
 
@@ -145,13 +143,40 @@ def test_auth_unreachable_and_missing_database(tmp_path, fields, driver, runner)
     install_schema_reader(str(tmp_path))
     try:
         auth = postgres_tester(_connection(fields), lambda: "not-the-password")
-        assert auth["kind"] == "auth"
+        assert auth["kind"] == "auth", auth
         missed = postgres_tester(_connection(fields, database="cbcs_missing"), lambda: fields["password"])
         assert missed["kind"] == "no_database"
         down = postgres_tester(_connection(fields, host="127.0.0.1", port=1), lambda: fields["password"])
         assert down["kind"] == "unreachable"
     finally:
         os.environ.pop("CBCS_FB_SCHEMA_DRIVER", None)
+
+
+class _DriverImportBlocked(ImportError):
+    pass
+
+
+class _BlockDrivers:
+    """Fails any editor-process import of a PostgreSQL driver, whatever other tests imported."""
+
+    def find_spec(self, name, path=None, target=None):  # noqa: ANN001
+        if name.split(".")[0] in ("psycopg", "pg8000"):
+            raise _DriverImportBlocked("the editor process imported %s" % name)
+        return None
+
+
+@contextlib.contextmanager
+def _drivers_blocked():
+    hidden = {name: module for name, module in sys.modules.items() if name.split(".")[0] in ("psycopg", "pg8000")}
+    for name in hidden:
+        del sys.modules[name]
+    blocker = _BlockDrivers()
+    sys.meta_path.insert(0, blocker)
+    try:
+        yield
+    finally:
+        sys.meta_path.remove(blocker)
+        sys.modules.update(hidden)
 
 
 def _connection(fields: dict, **overrides) -> Connection:
