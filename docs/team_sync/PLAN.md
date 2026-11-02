@@ -152,6 +152,16 @@ signed: `part-sha256` (this part), and on join `member-id`, `member-name`,
 The outbox stores `recipient`, `part_idx`, `part_total`, `change_id`, and `tip`
 next to the columns the spec names, so delivery can be updated per person.
 
+## L1b additions (engine)
+
+`share_experiment(line) -> Change` publishes `exp/<slug>` as its own ref. `send`
+always publishes `main` and refuses while the current line is an experiment.
+
+Owner decisions D1 to D6 are recorded in `SPEC.md` under Rules T3a to T3e and the
+Merge engine and Security sections. The wire gained optional signed fields
+`note`, `removed`, and `line`. `removed` is the member a rekey drops.
+`line` is set only when an experiment is shared.
+
 ## Lanes
 
 | Lane | Branch | Owner | Depends on | Delivers |

@@ -1,7 +1,5 @@
-"""Team Sync budgets. Assertions leave headroom for a busy CI runner.
+"""Team Sync budgets. Assertions use the spec numbers.
 
-The spec numbers are the product budget. The assertion is three times that,
-which still fails a real regression and does not flake on a loaded runner.
 Measured milliseconds are appended to /tmp/team_sync_budgets.json.
 """
 
@@ -15,7 +13,7 @@ import time
 import pytest
 
 from app.features.team_sync.core.merge3way import merge_lines
-from app.features.team_sync.core.mailbox import MailScan, publish_out, render_message
+from app.features.team_sync.core.mailbox import MailScan
 from app.features.team_sync.core.repo import TeamRepo
 from app.features.team_sync.core.service import TeamSyncService
 from app.features.shop_sharing.model import Machine
@@ -24,7 +22,7 @@ from tests.unit.features.team_sync.conftest import write_account
 pytestmark = [pytest.mark.integration, pytest.mark.performance, pytest.mark.timeout(180)]
 
 _RECORD = Path("/tmp/team_sync_budgets.json")
-_HEADROOM = 3
+_HEADROOM = 1
 
 
 def _note(name: str, elapsed_ms: float, budget_ms: float) -> None:
@@ -56,14 +54,101 @@ def test_status_of_500_files(tmp_path: Path) -> None:
 
 
 def test_inbound_scan_with_nothing_new(tmp_path: Path) -> None:
+    import io
+    import zipfile
+
     account = write_account(tmp_path / "Mails", "maple", "sam@example.test")
-    (account / "zip_in" / "19990101010101010!.zip").write_bytes(b"PK\x03\x04not ours")
+    for index in range(50):
+        buffer = io.BytesIO()
+        with zipfile.ZipFile(buffer, "w") as archive:
+            archive.writestr(
+                "m/_headers_",
+                "Subject: CBCS-SYNC/1 note p_aaaaaaaaaaaaaaaa Notes\r\nFrom: A <a@b.test>\r\n\r\n",
+            )
+            archive.writestr("m/textfile0", "CBCS-SYNC/1\nverb: note\n")
+        (account / "zip_in" / f"cbcs_{index:03d}.zip").write_bytes(buffer.getvalue())
+    for index in range(200):
+        (account / "zip_in" / f"other_{index:03d}.txt").write_text("mail\n", encoding="utf-8")
     scan = MailScan(roots=(str(account),))
     scan.scan()
     started = time.perf_counter()
     assert scan.scan() == []
     elapsed = (time.perf_counter() - started) * 1000
     _budget(elapsed, 20, "scan_nothing_new")
+
+
+def test_history_of_210_commits(tmp_path: Path) -> None:
+    root = tmp_path / "proj"
+    root.mkdir()
+    for index in range(500):
+        folder = root / f"mod_{index // 20:02d}"
+        folder.mkdir(exist_ok=True)
+        lines = "\n".join(f"line {index} {row}" for row in range(100)) + "\n"
+        (folder / f"file_{index:03d}.py").write_text(lines, encoding="utf-8")
+    repo = TeamRepo(str(root))
+    repo.init_repo()
+    now = datetime.now(timezone.utc)
+    repo.commit("seed", "Sam", "sam@example.test", "aaaa1111", "pc", now)
+    for index in range(1, 210):
+        for offset in range(3):
+            number = (index * 3 + offset) % 500
+            path = root / f"mod_{number // 20:02d}" / f"file_{number:03d}.py"
+            path.write_text(path.read_text(encoding="utf-8") + f"# {index}\n", encoding="utf-8")
+        repo.commit(str(index), "Sam", "sam@example.test", "aaaa1111", "pc", now)
+    started = time.perf_counter()
+    page = repo.history(limit=200)
+    elapsed = (time.perf_counter() - started) * 1000
+    assert len(page) == 200
+    assert page[0].files
+    _budget(elapsed, 200, "history_210")
+
+
+def test_status_with_three_incoming(tmp_path: Path) -> None:
+    root = tmp_path / "proj"
+    root.mkdir()
+    for index in range(80):
+        (root / f"file_{index:03d}.py").write_text(f"value = {index}\n", encoding="utf-8")
+    mails = tmp_path / "Mails"
+    account = write_account(mails, "maple", "sam@example.test")
+    (mails / ".pc-watchdog").write_text(
+        datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S"), encoding="utf-8"
+    )
+    service = TeamSyncService(
+        str(root),
+        machine=Machine(
+            home=tmp_path / "home",
+            hostname="pc",
+            local_state=tmp_path / "state",
+            default_home=tmp_path / "default",
+        ),
+        mail_roots=[str(account)],
+    )
+    from app.features.team_sync.api import ShareRequest
+
+    service.share(ShareRequest(project_name="Incoming", my_name="Sam", my_shop="Maple"))
+    seed = service._repo.create_bundle("main", [])
+    peer = TeamRepo(str(tmp_path / "peer"))
+    peer.init_repo()
+    refs = peer.import_pack(seed)
+    peer.checkout(refs["refs/heads/main"], "main")
+    previous = refs["refs/heads/main"]
+    for index in range(3):
+        (Path(peer.root) / "file_000.py").write_text(f"peer {index}\n", encoding="utf-8")
+        tip = peer.commit(str(index), "Ana", "ana@example.test", "bbbb2222", "pc", datetime.now(timezone.utc))
+        bundle = peer.create_bundle("main", [previous])
+        service._import_bundle_bytes(
+            bundle,
+            from_id="bbbb2222",
+            bundle_id=f"b_{index:016x}",
+            verified=True,
+        )
+        previous = tip
+    assert len(service.incoming()) == 3
+    started = time.perf_counter()
+    status = service.status()
+    elapsed = (time.perf_counter() - started) * 1000
+    assert status.waiting == 3
+    _budget(elapsed, 150, "status_3_incoming")
 
 
 def test_send_three_files(tmp_path: Path) -> None:
@@ -79,27 +164,29 @@ def test_send_three_files(tmp_path: Path) -> None:
         machine=Machine(home=tmp_path / "home", hostname="pc", local_state=tmp_path / "state", default_home=tmp_path / "default"),
         mail_roots=[str(account)],
     )
-    from app.features.team_sync.api import ShareRequest
+    from app.features.team_sync.api import Member, ShareRequest
+    from app.features.team_sync.core.team import load_team, replace_member, save_team
 
     service.share(ShareRequest(project_name="Three", my_name="Sam", my_shop="Maple"))
+    team = load_team(root)
+    assert team is not None
+    save_team(root, replace_member(team, Member("bbbb2222", "Ana", "Cedar", "ana@example.test")))
+    me = service._require_me()
+    service._repo.commit(
+        "Ana joined",
+        me.name,
+        me.email,
+        me.member_id,
+        "pc",
+        datetime.now(timezone.utc),
+        paths=["cbcs/team.json"],
+    )
     for name in ("a.py", "b.py", "c.py"):
         (root / name).write_text(name + " changed\n", encoding="utf-8")
     started = time.perf_counter()
-    service.save_only("three files")
-    bundle = service._repo.create_bundle("main", [])
-    message = render_message(
-        sender_name="Sam",
-        sender_email="sam@example.test",
-        recipient_name="Ana",
-        recipient_email="ana@example.test",
-        subject="CBCS-SYNC/1 push p_perf Three",
-        body="CBCS-SYNC/1\nverb: push\n",
-        when=datetime.now(timezone.utc),
-        message_id="perf@three",
-    )
-    publish_out(account, "20261102120000099", message, {"Three.cbcsbundle": bundle})
+    service.send("three files")
     elapsed = (time.perf_counter() - started) * 1000
-    assert (account / "out").is_dir()
+    assert any((account / "out").iterdir())
     _budget(elapsed, 1000, "send_3_files")
 
 
@@ -136,25 +223,6 @@ def test_merge_2000_line_file() -> None:
     elapsed = (time.perf_counter() - started) * 1000
     assert merged.merged_lines() is not None
     _budget(elapsed, 150, "merge_2000")
-
-
-def test_history_first_page_of_1000(tmp_path: Path) -> None:
-    root = tmp_path / "proj"
-    root.mkdir()
-    path = root / "only.py"
-    path.write_text("value = 0\n", encoding="utf-8")
-    repo = TeamRepo(str(root))
-    repo.init_repo()
-    now = datetime.now(timezone.utc)
-    repo.commit("0", "Sam", "sam@example.test", "aaaa1111", "pc", now)
-    for index in range(1, 1000):
-        path.write_text(f"value = {index}\n", encoding="utf-8")
-        repo.commit(str(index), "Sam", "sam@example.test", "aaaa1111", "pc", now)
-    started = time.perf_counter()
-    page = repo.history(limit=200)
-    elapsed = (time.perf_counter() - started) * 1000
-    assert len(page) == 200
-    _budget(elapsed, 200, "history_page")
 
 
 def test_blame_2000_lines(tmp_path: Path) -> None:

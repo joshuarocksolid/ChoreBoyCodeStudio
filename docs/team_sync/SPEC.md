@@ -65,6 +65,24 @@ project with real history, using only those.
 - T3. Nothing lost. Incoming work goes to a holding area. Accept, Restore and Undo always
   create a new change. Combine never edits files before Finish. Every Accept leaves a
   restore point (the pre-accept commit, reachable from History).
+- T3a. Work in progress is checkpointed, never stashed behind the user's back. Before
+  Accept, Undo This Change, Copy a change, Bring Experiment In, Bring Back and Restore,
+  if the working tree has changes (tracked or untracked non-ignored), first create a local
+  Save Only change named "Your work before <action>". Then merge commit to commit. Cancel
+  leaves both the tree and HEAD exactly as they were after that checkpoint. Set Aside is
+  the only dulwich stash.
+- T3b. While a combine session is open, Send, Save Only, Restore, Undo, Switch Line,
+  Set Aside, Bring Back and Accept are refused with "Finish or cancel combining first."
+  Polling still runs but does not commit.
+- T3c. Finish verifies HEAD still equals the session's ours. It writes only the paths the
+  merge changed, and only if each path's disk bytes still equal ours. If the user edited a
+  merged path during the session, checkpoint per T3a, re-merge from the new HEAD, re-apply
+  resolutions whose (path, ours, theirs) text is unchanged, and keep the session open if
+  new clashes appear.
+- T3d. `cbcs/team.json` is never line-merged, restored or undone. Merge it as a union of
+  members by id (newest field values win, removals only through remove member or rekey).
+- T3e. Sending always sends `main`. Experiments stay local unless the user picks Share
+  with Team, which sends `exp/<slug>` explicitly.
 - T4. Nothing from outside runs. Bundles are verified (HMAC + sender) before dulwich parses
   them. Imports never execute hooks or code.
 - T5. The FaxMail terminal is not modified. CBCS writes only `out/<id>/` folders it created
@@ -155,9 +173,12 @@ Idempotent: `seen` keys on `(from, bundle, part)`. A duplicate is ignored. A bun
   address and `MaxMsgSize}{…` for the size cap. One account → use it. Several → the user picks
   once (Share dialog), saved in `me.json`. None → Team Sync shows "No FaxMail mailbox found"
   and offers Save to USB.
-- **Send**: build in a temp folder on local disk, then create `out/<id>/` with `.lock`
-  first, copy `message.mail` and `att/`, fsync, remove `.lock`. `<id>` = 17-digit UTC
-  timestamp like FaxMail's own (`YYYYMMDDHHMMSSmmm`), unique per folder. State `queued`.
+- **Send**: build in a temp folder on local disk, then claim `out/<id>/` with `os.mkdir`
+  (no `exist_ok`, no parents). Create `.lock` first, copy `message.mail` and `att/`,
+  fsync, remove `.lock`. `<id>` = 17-digit UTC timestamp like FaxMail's own
+  (`YYYYMMDDHHMMSSmmm`). If the id is taken, try the next one. Record the folder in the
+  ledger when it is claimed. On failure, remove only the folder this call created.
+  State `queued`. A later poll retries a part whose folder never became a complete message.
 - **Sent**: `out/<id>` gone and `sent/<id>/message.mail` present → `sent`.
 - **Delivered**: a verified `have` from that member naming the tip → `delivered`.
 - **Receive**: every 30 s (stat only; full scan when a directory mtime changed) list
@@ -177,11 +198,19 @@ Idempotent: `seen` keys on `(from, bundle, part)`. A duplicate is ignored. A bun
 - Tree cases: added on one side → take it; both added same path, same content → take it,
   different → whole-file clash; deleted vs unchanged → delete; deleted vs edited → **deleted
   clash** (Keep yours / Delete it); renamed files are handled as delete + add.
-- A **combine session** (`combine.json`): `{ours, theirs, base, auto_paths, clashes:[{id, path,
-  kind, resolution: null|"ours"|"theirs"|"both"|{"text": …}}]}`. Nothing is written to the
-  working tree until Finish: Finish writes all merged files atomically, then commits a merge
-  commit with both parents and the note "Combined <name>'s change". Cancel deletes
-  the session. The session survives a restart.
+- Same-point insertions are part of the cluster. Identical insertions merge once. Different
+  insertions at the same point clash, including at the start, middle and end of a file.
+  A trailing newline or separator changed by only one side is kept.
+- `cbcs/team.json` is a union of members by `id`. Newest field values win. A member who is
+  absent from one side was removed, and that removal sticks. It is not a line merge.
+- A **combine session** (`combine.json`) stores ours, theirs, base, clash resolutions, and
+  the sha of each merged blob. The blob bytes live as loose objects in the repo.
+  `status()` reads only that small summary. Nothing is written to the working tree until
+  Finish. Finish commits a merge with both parents and the note "Combined <name>'s change"
+  when the merge changed files. Fast-forward when ours is an ancestor of the tip, and do
+  not create an empty two-parent commit. The feed line can still say "You accepted <name>'s
+  change". Cancel deletes the session. The session survives a restart. Bring Back's finish
+  writes files only and does not commit.
 - "Both" for a single-line clash: ours then theirs, unless one side's line is a prefix
   expression of the other (keep it simple; the user can Edit).
 - Undo this change (revert) and Copy a change (cherry-pick) use the same engine with
@@ -275,7 +304,19 @@ Measured on the Mac dev AppRun and spot-checked on a ChoreBoy; project of 500 fi
 - Every non-invite message: HMAC over canonical header lines + bundle sha256; sender address
   must match the member's email; `from` must be a member. Failures are dropped and listed in
   the popover as "1 message couldn't be verified".
-- dulwich never sees an unverified bundle. Imports run `verify_closure` before any ref moves.
+- dulwich never sees an unverified bundle. Imports run `verify_closure` before any ref moves,
+  and the walk stops at objects that were already in the repo.
+- Wire ids are checked before any path is built. Bundle ids match `b_`/`n_`/`h_`/`j_`/`k_`/`w_`
+  plus 16 hex digits. Member ids are 8 hex digits. Project ids match `p_` plus 16 hex digits.
+  Tips are 40 hex digits. Parts match `digits/digits`. Anything else rejects the whole message.
+  Local files are named from those ids, never from the raw wire string.
+- Save to USB writes a `.cbcsbundle` zip with `envelope.txt` (the signed CBCS-SYNC/1 body)
+  and `bundle`. Open from USB checks the HMAC and the project id before dulwich sees the bytes.
+- Removing a member publishes the rekey first (it names the removed member), then switches
+  the local key. Receivers drop that member and keep the previous key for 7 days. If
+  publishing fails, the local key and team file stay as they were.
+- An invite is accepted only into a new or empty folder. The imported `team.json` is kept.
+  You are added by the join commit.
 
 ## Out of scope for v0.5.0
 
