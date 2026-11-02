@@ -283,6 +283,7 @@ def build_product_artifact(
             payload_dir / "vendor",
             vendor_allowlist=vendor_allowlist,
         )
+        _require_dulwich_license(payload_dir / "vendor")
 
         cp39_cache_dir = output_root / "vendor_cp39_cache"
         staged_vendor = payload_dir / "vendor"
@@ -460,6 +461,17 @@ def _copy_vendor_allowlisted(
         else:
             missing.append(entry_name)
     return missing
+
+
+def _require_dulwich_license(vendor_dir: Path) -> None:
+    """dulwich is Apache-2.0 (or GPL). The product ships the Apache text with the wheel."""
+
+    if not (vendor_dir / "dulwich").is_dir():
+        return
+    if not any(vendor_dir.glob("dulwich-*.dist-info/licenses/COPYING")):
+        raise RuntimeError(
+            "dulwich is staged without dulwich-*.dist-info/licenses/COPYING"
+        )
 
 
 def _expected_tree_sitter_binding_name(
