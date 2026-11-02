@@ -5,7 +5,7 @@ from __future__ import annotations
 import importlib
 import os
 
-from app.features.team_sync.ui.controller import TeamSyncController
+from app.features.team_sync.ui.controller import IdleTeamSync, TeamSyncController
 from app.features.team_sync.ui.ports import SchedulerPorts, SyncPorts
 from app.features.team_sync.ui.send_sheet import SendToolbarButton
 from app.features.team_sync.ui.team_view import TeamView
@@ -20,24 +20,34 @@ def _team_icon(normal: QColor, active: QColor):
     return team_icon(color_normal=normal, color_active=active)
 
 
-def make_team_sync_service() -> tuple[object, bool]:
-    """Return ``(service, dormant)``. The env var selects the fake."""
+def make_team_sync_service() -> tuple[object, bool, bool]:
+    """Return ``(service, dormant, fake)``. The env var selects the fake.
+
+    The real engine is built per open project, not at shell startup.
+    """
     scenario = os.environ.get("CBCS_TEAM_SYNC_FAKE", "").strip()
     if scenario:
         from app.features.team_sync.core.fake import InMemoryTeamSync
 
         service = InMemoryTeamSync()
         service.scenario(scenario)
-        return service, False
+        return service, False, True
     try:
-        module = importlib.import_module("app.features.team_sync.core.service")
+        importlib.import_module("app.features.team_sync.core.service")
     except ImportError:
         from app.features.team_sync.core.fake import InMemoryTeamSync
 
         service = InMemoryTeamSync()
         service.scenario("not_shared")
-        return service, True
-    return module.TeamSyncService(), False
+        return service, True, True
+    return IdleTeamSync(), False, False
+
+
+def _project_service(project_root: str) -> object:
+    from app.features.shop_sharing.model import Machine
+    from app.features.team_sync.core.service import TeamSyncService
+
+    return TeamSyncService(project_root, machine=Machine.current())
 
 
 class TeamSyncShell:
@@ -69,12 +79,20 @@ class TeamSyncShell:
         contributions.settings_group_factories.append(self._settings_group)
 
     def build(self, window: object) -> None:
-        service, dormant = make_team_sync_service()
+        service, dormant, fake = make_team_sync_service()
         if os.environ.get("CBCS_TEAM_SYNC_SHOTS"):
             ports: object = SyncPorts()
         else:
             ports = SchedulerPorts(window._background_tasks)  # type: ignore[attr-defined]
-        self._controller = TeamSyncController(window, service, ports, dormant=dormant)  # type: ignore[arg-type]
+        self._controller = TeamSyncController(  # type: ignore[arg-type]
+            window,
+            service,
+            ports,
+            dormant=dormant,
+            fake=fake,
+            watch_invites=not fake and not dormant,
+            project_factory=None if fake else _project_service,
+        )
         if self._view is None or self._send is None:
             return
         self._controller.attach(self._view, self._send)

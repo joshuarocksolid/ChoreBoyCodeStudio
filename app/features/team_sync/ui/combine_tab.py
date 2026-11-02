@@ -211,6 +211,7 @@ class CombineTab(QWidget):
         theirs_id: str = "",
         mine_name: str = "You",
         mine_id: str = "",
+        theirs_name: str = "",
     ) -> None:
         self._api = api
         self._ports = ports
@@ -223,7 +224,8 @@ class CombineTab(QWidget):
         self._ours["title"].setText("Yours")
         self._ours["avatar"].set_person(mine_id, mine_name or "You", 18)
         self._theirs["title"].setText(self._theirs_label)
-        self._theirs["avatar"].set_person(theirs_id, theirs_label.replace("'s", ""), 18)
+        shown = theirs_name or self._theirs_label.replace("'s", "")
+        self._theirs["avatar"].set_person(theirs_id, shown, 18)
         if tokens is not None:
             self.apply_theme(tokens)
         self.reload()

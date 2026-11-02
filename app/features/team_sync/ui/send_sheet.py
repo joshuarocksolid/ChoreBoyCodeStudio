@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Callable, Optional
 
-from app.qt.QtCore import Qt
+from app.qt.QtCore import QSize, Qt
 from app.qt.QtWidgets import (
     QCheckBox,
     QFrame,
@@ -18,6 +18,7 @@ from app.qt.QtWidgets import (
 )
 
 from app.features.team_sync.api import TeamStatus
+from app.shell.icon_provider import send_icon
 from app.shell.theme_tokens import ShellThemeTokens
 
 
@@ -45,17 +46,34 @@ class SendToolbarButton(QToolButton):
         if self._count:
             self._badge.setText(str(self._count))
             self._badge.adjustSize()
-            self._badge.move(self.width() - 8, 0)
+            self._place_badge()
             self._badge.show()
+            self._badge.raise_()
         else:
             self._badge.hide()
 
     def apply_theme(self, tokens: ShellThemeTokens) -> None:
-        del tokens
+        color = tokens.toolbar_package_fg or tokens.accent or "#2952CC"
+        self.setIcon(send_icon(color))
+        self.setIconSize(QSize(16, 16))
         self.style().unpolish(self)
         self.style().polish(self)
         self._badge.style().unpolish(self._badge)
         self._badge.style().polish(self._badge)
+
+    def resizeEvent(self, event) -> None:  # type: ignore[no-untyped-def]  # noqa: N802
+        super().resizeEvent(event)
+        self._place_badge()
+
+    def showEvent(self, event) -> None:  # type: ignore[no-untyped-def]  # noqa: N802
+        super().showEvent(event)
+        self._place_badge()
+
+    def _place_badge(self) -> None:
+        if not self._count:
+            return
+        self._badge.adjustSize()
+        self._badge.move(max(0, self.width() - self._badge.width() + 2), 0)
 
 
 class SendSheet(QFrame):

@@ -87,10 +87,9 @@ def button_qss(tokens: ShellThemeTokens) -> str:
 
 
 def primary_button_qss(tokens: ShellThemeTokens) -> str:
-    fg = tokens.toolbar_package_fg or "#FFFFFF"
     return (
         "QPushButton {"
-        f" background: {tokens.toolbar_package_bg or tokens.accent}; color: {fg};"
+        f" background: {tokens.accent}; color: #FFFFFF;"
         f" border: none; border-radius: 4px; padding: 4px 12px; font-weight: 600;"
         "}"
         "QPushButton:disabled { background: " + tokens.border + "; color: " + tokens.text_muted + "; }"

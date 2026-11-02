@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from typing import Callable, Optional
 
-from app.qt.QtCore import QSize, Qt
-from app.qt.QtGui import QFont
+from app.qt.QtCore import QPoint, QSize, Qt, QTimer
+from app.qt.QtGui import QColor, QFont, QPainter, QPolygon
 from app.qt.QtWidgets import (
     QCheckBox,
     QFrame,
@@ -36,6 +36,55 @@ from app.features.team_sync.ui.copy import clock, delivery_mark, first_name
 from app.shell.icon_provider import send_icon
 from app.features.team_sync.ui.widgets import Avatar
 from app.shell.theme_tokens import ShellThemeTokens
+
+
+class _ComposerSend(QToolButton):
+    """One 28 px send control. The arrow opens the menu. A long press does too."""
+
+    def __init__(self, parent: Optional[QWidget] = None) -> None:
+        super().__init__(parent)
+        self.setPopupMode(QToolButton.MenuButtonPopup)
+        self._hold = QTimer(self)
+        self._hold.setSingleShot(True)
+        self._hold.setInterval(450)
+        self._hold.timeout.connect(self._open_from_hold)
+        self._held = False
+
+    def mousePressEvent(self, event) -> None:  # type: ignore[no-untyped-def]  # noqa: N802
+        self._held = False
+        self._hold.start()
+        super().mousePressEvent(event)
+
+    def mouseReleaseEvent(self, event) -> None:  # type: ignore[no-untyped-def]  # noqa: N802
+        self._hold.stop()
+        if self._held:
+            self._held = False
+            event.accept()
+            return
+        super().mouseReleaseEvent(event)
+
+    def _open_from_hold(self) -> None:
+        self._held = True
+        self.showMenu()
+
+    def paintEvent(self, event) -> None:  # type: ignore[no-untyped-def]  # noqa: N802
+        super().paintEvent(event)
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing, True)
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(QColor("#FFFFFF"))
+        right = self.width() - 4
+        bottom = self.height() - 4
+        painter.drawPolygon(
+            QPolygon(
+                [
+                    QPoint(right - 7, bottom - 4),
+                    QPoint(right, bottom - 4),
+                    QPoint(right - 3, bottom),
+                ]
+            )
+        )
+        painter.end()
 
 
 def _polish(widget: QWidget) -> None:
@@ -160,12 +209,11 @@ class TeamView(QWidget):
         self._note.setPlaceholderText("Message")
         self._note.setFixedHeight(28)
         send_row.addWidget(self._note, 1)
-        self._send = QToolButton(composer)
+        self._send = _ComposerSend(composer)
         self._send.setObjectName("shell.teamSync.composerSend")
         self._send.setFixedSize(28, 28)
         self._send.setIconSize(QSize(14, 14))
         self._send.setToolTip("Send")
-        self._send.setPopupMode(QToolButton.DelayedPopup)
         self._send.clicked.connect(self._send_clicked)
         menu = QMenu(self._send)
         menu.setObjectName("shell.teamSync.composerMenu")
@@ -180,6 +228,7 @@ class TeamView(QWidget):
         root.addWidget(composer)
         self._composer = composer
         self._shared = False
+        self._me_name = ""
 
     def bind(
         self,
@@ -202,8 +251,7 @@ class TeamView(QWidget):
 
     def apply_theme(self, tokens: ShellThemeTokens) -> None:
         self._tokens = tokens
-        color = tokens.toolbar_package_fg or "#FFFFFF"
-        self._send.setIcon(send_icon(color))
+        self._send.setIcon(send_icon("#FFFFFF"))
         _polish(self)
 
     def apply(
@@ -217,11 +265,19 @@ class TeamView(QWidget):
     ) -> None:
         self._git_names = git_names
         self._shared = status.shared
+        self._me_name = status.me.name if status.me is not None else ""
         self._tidy_action.setVisible(tidy)
         self._empty.setVisible(not status.shared)
         self._scroll.setVisible(status.shared)
         self._composer.setVisible(status.shared)
         self._share_button.setEnabled(status.shared is False and not dormant)
+        busy = status.combine is not None and not status.combine.done
+        self._send.setEnabled(not busy)
+        self._bring_back.setEnabled(not busy)
+        menu = self._send.menu()
+        if menu is not None:
+            for action in menu.actions():
+                action.setEnabled(not busy)
         self._fill_avatars(status)
         self._fill_feed(feed, status)
         self._fill_files(status)
@@ -272,7 +328,11 @@ class TeamView(QWidget):
         layout.setContentsMargins(8, 8, 8, 8) if incoming else layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(8)
         author = self._author_name(entry, me_id)
-        layout.addWidget(Avatar(entry.author_id or "", author, row, size=20), 0, Qt.AlignTop)
+        layout.addWidget(
+            Avatar(entry.author_id or "", self._avatar_name(entry, me_id), row, size=20),
+            0,
+            Qt.AlignTop,
+        )
         body = QVBoxLayout()
         body.setSpacing(2)
         body.setContentsMargins(0, 0, 0, 0)
@@ -337,6 +397,15 @@ class TeamView(QWidget):
             return first_name(entry.change.author_name)
         if entry.incoming is not None and entry.incoming.changes:
             return first_name(entry.incoming.changes[0].author_name)
+        return "Team"
+
+    def _avatar_name(self, entry: FeedItem, me_id: str) -> str:
+        if entry.author_id and entry.author_id == me_id:
+            return self._me_name or "You"
+        if entry.change is not None and entry.change.author_name:
+            return entry.change.author_name
+        if entry.incoming is not None and entry.incoming.changes:
+            return entry.incoming.changes[0].author_name
         return "Team"
 
     def _fill_files(self, status: TeamStatus) -> None:

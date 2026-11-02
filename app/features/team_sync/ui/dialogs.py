@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from pathlib import Path
 from typing import Callable, Optional
 
 from app.qt.QtCore import Qt
@@ -56,7 +57,7 @@ class ShareDialog(QDialog):
         self,
         status: TeamStatus,
         chip: str,
-        on_send: Callable[[ShareRequest], None],
+        on_send: Callable[..., None],
         parent: Optional[QWidget] = None,
         tokens: Optional[ShellThemeTokens] = None,
     ) -> None:
@@ -86,9 +87,14 @@ class ShareDialog(QDialog):
         form.addRow("Email", self._email)
         form.addRow("Shop", self._shop)
         form.addRow("Message", self._message)
+        self._error = QLabel("", form_host)
+        self._error.setObjectName("shell.teamSync.shareError")
+        self._error.setWordWrap(True)
+        form.addRow("", self._error)
         if tokens is not None:
             for field in (self._email, self._shop, self._message):
                 field.setStyleSheet(field_qss(tokens))
+            self._error.setStyleSheet(f"color: {tokens.diag_error_color or '#9C0000'};")
         add_footer_stretch(chrome)
         cancel = add_footer_button(chrome, "Cancel", role=FOOTER_ROLE_SECONDARY)
         send = add_footer_button(chrome, "Send Invite", role=FOOTER_ROLE_PRIMARY)
@@ -102,32 +108,45 @@ class ShareDialog(QDialog):
         invites = []
         if email or shop:
             invites.append(Invite(name=email.split("@", 1)[0], shop=shop, email=email))
+        self._error.setText("")
         self._on_send(
             ShareRequest(
                 project_name=self._project_name,
                 invites=invites,
                 message=self._message.toPlainText().strip(),
-            )
+            ),
+            self.accept,
+            self._show_error,
         )
-        self.accept()
+
+    def _show_error(self, exc: BaseException) -> None:
+        self._error.setText(str(exc))
 
 
 class InviteDialog(QDialog):
     def __init__(
         self,
         incoming: Incoming,
-        on_open: Callable[[str, str], None],
+        on_open: Callable[..., None],
         parent: Optional[QWidget] = None,
         tokens: Optional[ShellThemeTokens] = None,
+        project_name: str = "Invoice App",
+        default_location: str = "",
+        author_name: str = "",
     ) -> None:
         super().__init__(parent)
         self._on_open = on_open
         self._incoming_id = incoming.id
-        author = first_name(incoming.changes[0].author_name) if incoming.changes else "Someone"
+        if author_name:
+            author = first_name(author_name)
+        elif incoming.changes:
+            author = first_name(incoming.changes[0].author_name)
+        else:
+            author = "Someone"
         self.setObjectName("shell.teamSync.inviteDialog")
         chrome = build_dialog_chrome(
             self,
-            title=f"{author} invited you to Invoice App",
+            title=f"{author} invited you to {project_name}",
             object_name="shell.teamSync.inviteDialog",
         )
         if incoming.verified:
@@ -137,21 +156,52 @@ class InviteDialog(QDialog):
         body_layout = chrome.body.layout()
         if isinstance(body_layout, QVBoxLayout):
             body_layout.addWidget(form_host)
-        self._location = QLineEdit(form_host)
+        location_row = QWidget(form_host)
+        location_layout = QHBoxLayout(location_row)
+        location_layout.setContentsMargins(0, 0, 0, 0)
+        self._location = QLineEdit(location_row)
         self._location.setObjectName("shell.teamSync.inviteLocation")
-        form.addRow("Location", self._location)
+        self._location.setText(default_location)
+        browse = QPushButton("Browse…", location_row)
+        browse.setObjectName("shell.teamSync.inviteBrowse")
+        browse.clicked.connect(self._browse)
+        location_layout.addWidget(self._location, 1)
+        location_layout.addWidget(browse)
+        form.addRow("Location", location_row)
+        self._error = QLabel("", form_host)
+        self._error.setObjectName("shell.teamSync.inviteError")
+        self._error.setWordWrap(True)
+        form.addRow("", self._error)
         if tokens is not None:
             self._location.setStyleSheet(field_qss(tokens))
+            self._error.setStyleSheet(f"color: {tokens.diag_error_color or '#9C0000'};")
         add_footer_stretch(chrome)
         cancel = add_footer_button(chrome, "Cancel", role=FOOTER_ROLE_SECONDARY)
         open_button = add_footer_button(chrome, "Open Project", role=FOOTER_ROLE_PRIMARY)
         cancel.clicked.connect(self.reject)
         open_button.clicked.connect(self._open)
-        self.resize(480, 240)
+        self.resize(520, 260)
+
+    def _browse(self) -> None:
+        folder = QFileDialog.getExistingDirectory(self, "Open Project", self._location.text().strip())
+        if not folder:
+            return
+        if _folder_has_files(folder):
+            self._error.setText("Choose a new or empty folder. That one already has files.")
+            return
+        self._error.setText("")
+        self._location.setText(folder)
 
     def _open(self) -> None:
-        self._on_open(self._incoming_id, self._location.text().strip())
-        self.accept()
+        folder = self._location.text().strip()
+        if folder and _folder_has_files(folder):
+            self._error.setText("Choose a new or empty folder. That one already has files.")
+            return
+        self._error.setText("")
+        self._on_open(self._incoming_id, folder, self.accept, self._show_error)
+
+    def _show_error(self, exc: BaseException) -> None:
+        self._error.setText(str(exc))
 
 
 class MembersDialog(QDialog):
@@ -195,10 +245,16 @@ class MembersDialog(QDialog):
             self._list.takeItem(row)
 
 
+def _folder_has_files(folder: str) -> bool:
+    root = Path(folder)
+    return root.exists() and (not root.is_dir() or any(root.iterdir()))
+
+
 class DeletedClashDialog(QDialog):
     def __init__(
         self,
         path: str,
+        chip: str,
         on_choice: Callable[[str], None],
         parent: Optional[QWidget] = None,
     ) -> None:
@@ -211,11 +267,7 @@ class DeletedClashDialog(QDialog):
             subtitle="",
             object_name="shell.teamSync.deletedClashDialog",
         )
-        label = QLabel(f"{path} was deleted on one side.", chrome.body)
-        label.setWordWrap(True)
-        layout = chrome.body.layout()
-        if isinstance(layout, QVBoxLayout):
-            layout.addWidget(label)
+        add_meta_chip(chrome.meta_row, chip)
         add_footer_stretch(chrome)
         keep = add_footer_button(chrome, "Keep your version", role=FOOTER_ROLE_SECONDARY)
         delete = add_footer_button(chrome, "Delete it", role=FOOTER_ROLE_PRIMARY)

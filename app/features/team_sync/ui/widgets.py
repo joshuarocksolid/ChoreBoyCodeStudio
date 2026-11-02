@@ -5,15 +5,20 @@ from __future__ import annotations
 from app.qt.QtCore import Qt
 from app.qt.QtWidgets import QLabel
 
+# Saturated fills with white initials. Teal is Sam, orange is Ana, matching the prototype.
+_PINNED = {
+    "e5f6a7b8": "#0F766E",
+    "a1b2c3d4": "#C2410C",
+}
 _PALETTE = (
-    "#1F4E3D",
-    "#1E3A5F",
-    "#6B3A2A",
-    "#4A3560",
-    "#0F4C5C",
-    "#6B4E16",
-    "#6B2D2D",
-    "#243E2F",
+    "#0F766E",
+    "#C2410C",
+    "#1D4ED8",
+    "#7E22CE",
+    "#0E7490",
+    "#B45309",
+    "#BE123C",
+    "#047857",
 )
 
 
@@ -27,6 +32,9 @@ def initials(name: str) -> str:
 
 
 def avatar_color(member_id: str) -> str:
+    pinned = _PINNED.get(member_id)
+    if pinned is not None:
+        return pinned
     total = 0
     for character in member_id:
         total = (total * 33 + ord(character)) % 997

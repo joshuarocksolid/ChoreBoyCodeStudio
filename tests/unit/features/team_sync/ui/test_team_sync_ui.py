@@ -164,3 +164,48 @@ def test_intelligence_hover_still_fires_over_code_in_a_team_project(qapp) -> Non
     assert calls[0][1] == 1
     editor.hide()
     editor.deleteLater()
+
+
+@pytest.mark.unit
+def test_avatar_initials_and_stable_colors() -> None:
+    from app.features.team_sync.core.fake import ANA, SAM
+    from app.features.team_sync.ui.widgets import avatar_color, initials
+
+    assert initials("Sam Brenneman") == "SB"
+    assert initials("Ana Kurtz") == "AK"
+    assert initials("You") == "YO"
+    assert avatar_color(SAM.id) == "#0F766E"
+    assert avatar_color(ANA.id) == "#C2410C"
+    assert avatar_color(SAM.id) != avatar_color(ANA.id)
+    assert avatar_color("m-other") == avatar_color("m-other")
+
+
+@pytest.mark.unit
+def test_deleted_clash_names_who_did_what() -> None:
+    from app.features.team_sync.api import CLASH_DELETED, Clash
+    from app.features.team_sync.ui.copy import deleted_clash_copy
+
+    title, chip = deleted_clash_copy(
+        "old_statement.py",
+        Clash(id="k", path="old_statement.py", kind=CLASH_DELETED, line=0, ours=("edited\n",), theirs=()),
+        "Sam Brenneman",
+    )
+    assert title == "old_statement.py"
+    assert chip == "Sam deleted it · you edited it"
+
+
+@pytest.mark.unit
+def test_share_experiment_follows_the_contract() -> None:
+    from app.features.team_sync.core import TeamSyncError
+    from app.features.team_sync.core.fake import InMemoryTeamSync
+
+    service = InMemoryTeamSync()
+    service.scenario("experiments")
+    try:
+        service.share_experiment("main")
+    except TeamSyncError as exc:
+        assert "not an experiment" in str(exc)
+    else:
+        raise AssertionError("main is not an experiment")
+    change = service.share_experiment(service.status().line)
+    assert change.line == "exp/rounding"

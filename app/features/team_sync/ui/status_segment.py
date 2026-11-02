@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Callable, Optional
 
-from app.qt.QtCore import Qt
+from app.qt.QtCore import QSize, Qt
 from app.qt.QtGui import QColor
 from app.qt.QtWidgets import (
     QFrame,
@@ -58,19 +58,44 @@ class TeamStatusSegment(QWidget):
         self._dot.setObjectName("shell.teamSync.statusDot")
         self._label = QLabel("Team: Up to date", self)
         self._label.setObjectName("shell.teamSync.statusLabel")
+        self._full_text = "Team: Up to date"
         row.addWidget(self._dot)
         row.addWidget(self._label)
         self._view = StatusView("Team: Up to date", "ok", False)
         self.setCursor(Qt.PointingHandCursor)
+        self.setMinimumWidth(72)
+
+    def sizeHint(self) -> QSize:  # noqa: N802
+        hint = super().sizeHint()
+        width = self._label.fontMetrics().horizontalAdvance(self._full_text) + 28
+        return QSize(max(hint.width(), width), hint.height())
 
     def apply(self, view: StatusView, tokens: Optional[ShellThemeTokens]) -> None:
         del tokens
         self._view = view
+        self._full_text = view.text
+        self._label.setToolTip(view.text)
+        self.setToolTip(view.text)
         self._label.setText(view.text)
+        self.updateGeometry()
+        self._elide()
         self.setVisible(view.visible)
         self._dot.setProperty("level", view.level)
         _polish(self._dot)
         _polish(self)
+
+    def resizeEvent(self, event) -> None:  # type: ignore[no-untyped-def]  # noqa: N802
+        super().resizeEvent(event)
+        self._elide()
+
+    def _elide(self) -> None:
+        metrics = self._label.fontMetrics()
+        needed = metrics.horizontalAdvance(self._full_text)
+        available = self.width() - 28
+        if available < 24 or available >= needed:
+            self._label.setText(self._full_text)
+            return
+        self._label.setText(metrics.elidedText(self._full_text, Qt.ElideRight, available))
 
     def mousePressEvent(self, event) -> None:  # type: ignore[no-untyped-def]  # noqa: N802
         self.clicked()
