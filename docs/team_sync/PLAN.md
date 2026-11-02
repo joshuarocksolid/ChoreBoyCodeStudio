@@ -168,6 +168,19 @@ Merge engine and Security sections. The wire gained optional signed fields
 `note`, `removed`, and `line`. `removed` is the member a rekey drops.
 `line` is set only when an experiment is shared.
 
+## L3 additions (wiring)
+
+`history()` returns each `Change` with `files=()`. The History list never shows
+paths. Selecting a row loads them from `change_diff()`. `feed()` still carries
+file counts. Those paths are computed once per commit sha and stored in the
+ledger table `commit_files`, because a commit does not change.
+
+No new protocol method. An invite that arrives while no team project is open is
+found by `poll()` and `pending_invites()` on a `TeamSyncService` whose root is
+`machine.local_state/team_sync/invite_watch`. The UI binds a project service
+with `Machine.current()` when a project opens and drops it when the project
+changes.
+
 ## Lanes
 
 | Lane | Branch | Owner | Depends on | Delivers |

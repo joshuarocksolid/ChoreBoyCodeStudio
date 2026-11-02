@@ -26,7 +26,14 @@ from app.features.team_sync.api import (
 )
 from app.features.team_sync.ui.blame import BlameCard, LineSummary
 from app.features.team_sync.ui.combine_tab import CombineTab
-from app.features.team_sync.ui.copy import badge_count, explorer_letters, first_name, status_view
+from app.features.team_sync.core import TeamSyncError
+from app.features.team_sync.ui.copy import (
+    badge_count,
+    deleted_clash_copy,
+    explorer_letters,
+    first_name,
+    status_view,
+)
 from app.features.team_sync.ui.dialogs import (
     choose_usb_open,
     choose_usb_save,
@@ -55,6 +62,8 @@ from app.qt.qt_compat import exec_qt
 from app.shell.theme_tokens import ShellThemeTokens
 from app.shell.toast import show_toast
 
+_BUSY = "Finish or cancel combining first."
+
 
 class TeamSyncController(QObject):
     """Holds the latest snapshot and tells each surface what changed."""
@@ -66,12 +75,21 @@ class TeamSyncController(QObject):
         ports: object,
         *,
         dormant: bool,
+        fake: bool = False,
+        watch_invites: bool = False,
+        project_factory: Optional[Callable[[str], object]] = None,
     ) -> None:
         super().__init__(window)
         self._window = window
         self._service = service
         self._ports = ports
         self._dormant = dormant
+        self._fake = fake
+        self._watch_invites = watch_invites
+        self._project_factory = project_factory
+        self._invite_service: object = None
+        self._invite_source: object = None
+        self._seen_invites: set[str] = set()
         self._settings = TeamUiSettings()
         self._letters = ExplorerLetterCache()
         self._status = TeamStatus(shared=False, project_name="")
@@ -101,8 +119,14 @@ class TeamSyncController(QObject):
         self._poll = QTimer(self)
         self._poll.setInterval(30_000)
         self._poll.timeout.connect(self._poll_once)
+        self._invite_timer = QTimer(self)
+        self._invite_timer.setInterval(30_000)
+        self._invite_timer.timeout.connect(self._poll_invites)
         unsubscribe = service.subscribe(self._on_service_event)  # type: ignore[attr-defined]
         self._unsubscribe = unsubscribe
+        if watch_invites and not os.environ.get("CBCS_DISABLE_BACKGROUND_RUNTIME"):
+            self._invite_timer.start()
+            QTimer.singleShot(0, self._poll_invites)
 
     @property
     def letters(self) -> ExplorerLetterCache:
@@ -166,8 +190,49 @@ class TeamSyncController(QObject):
 
     def on_project_opened(self, project_root: str, project_name: str) -> None:
         del project_name
+        if self._fake or self._project_factory is None:
+            self._project_root = project_root
+            self.request_status()
+            if not self._fake:
+                self._poll_after_open()
+            return
+        if not project_root:
+            self.close_project()
+            return
+        if project_root == self._project_root and not isinstance(self._service, IdleTeamSync):
+            self.request_status()
+            self._poll_after_open()
+            return
+        self.use_service(self._project_factory(project_root), project_root)
+
+    def use_service(self, service: object, project_root: str) -> None:
+        """Point the open project at one engine. The previous engine is dropped."""
+        self._drop_service()
+        self._service = service
         self._project_root = project_root
-        self.request_status()
+        self._unsubscribe = service.subscribe(self._on_service_event)  # type: ignore[attr-defined]
+        self.refresh_status()
+        self._run("team-sync-feed", lambda: self._service.feed(), self._apply_feed)  # type: ignore[attr-defined]
+        self._run("team-sync-incoming", lambda: self._service.incoming(), self._apply_incoming)  # type: ignore[attr-defined]
+        self._poll_after_open()
+
+    def close_project(self) -> None:
+        self._drop_service()
+        self._project_root = ""
+        self._poll.stop()
+        self._service = IdleTeamSync()
+        self._unsubscribe = self._service.subscribe(self._on_service_event)
+        self._apply_status(TeamStatus(shared=False, project_name=""))
+
+    def _drop_service(self) -> None:
+        if self._unsubscribe is not None:
+            self._unsubscribe()
+            self._unsubscribe = None
+        if self._fake:
+            return
+        closer = getattr(self._service, "close", None)
+        if callable(closer):
+            closer()
 
     def on_file_saved(self, path: str) -> None:
         del path
@@ -191,9 +256,26 @@ class TeamSyncController(QObject):
         show_share(
             self._status,
             chip,
-            lambda request: self._run("team-sync-share", lambda: self._service.share(request), lambda _r: self.refresh_status()),  # type: ignore[attr-defined]
+            self.submit_share,
             self._window,
             self._tokens,
+        )
+
+    def submit_share(self, request: object, on_ok: Optional[Callable[[], None]] = None, on_err: Optional[Callable[[BaseException], None]] = None) -> None:
+        def done(_result: object) -> None:
+            activity = getattr(self._window, "_activity_bar", None)
+            if activity is not None and hasattr(activity, "set_active_view"):
+                activity.set_active_view("team")
+            self.refresh_status()
+            self._run("team-sync-feed", lambda: self._service.feed(), self._apply_feed)  # type: ignore[attr-defined]
+            if on_ok is not None:
+                on_ok()
+
+        self._ports.run(  # type: ignore[attr-defined]
+            "team-sync-share",
+            lambda: self._service.share(request),  # type: ignore[attr-defined]
+            done,
+            lambda exc: self._route_error(exc, on_err),
         )
 
     def open_send_sheet(self) -> None:
@@ -230,8 +312,18 @@ class TeamSyncController(QObject):
         current = self._status.line
         if current != MAIN_LINE:
             menu.addAction("Bring into Main…", lambda: self._bring_experiment(current))
-            menu.addAction("Share with Team…", self.open_send_sheet)
-            menu.addAction("Delete Experiment…", lambda: self._run_void(lambda: self._service.delete_experiment(current)))  # type: ignore[attr-defined]
+            menu.addAction(
+                "Share with Team…",
+                lambda line=current: self._run(
+                    "team-sync-share-exp",
+                    lambda: self._service.share_experiment(line),  # type: ignore[attr-defined]
+                    lambda _change: self.refresh_status(),
+                ),
+            )
+            menu.addAction(
+                "Delete Experiment…",
+                lambda: self._run_void(lambda: self._service.delete_experiment(current), key="team-sync-delete-exp"),  # type: ignore[attr-defined]
+            )
         menu.addAction("New Experiment…", self._new_experiment)
         point = self._experiment.mapToGlobal(self._experiment.rect().bottomLeft())
         if os.environ.get("CBCS_TEAM_SYNC_SHOTS"):
@@ -279,18 +371,60 @@ class TeamSyncController(QObject):
         )
 
     def open_invite(self) -> None:
-        invites = self._service.pending_invites()  # type: ignore[attr-defined]
-        if not invites:
-            return
-        show_invite(
-            invites[0],
-            lambda ident, folder: self._run(
-                "team-sync-invite",
-                lambda: self._service.accept_invite(ident, folder or self._project_root or "."),  # type: ignore[attr-defined]
-                lambda _path: self.refresh_status(),
-            ),
-            self._window,
-            self._tokens,
+        service = self._service
+        if isinstance(service, IdleTeamSync) or not self._project_root:
+            watched = self._ensure_invite_service()
+            if watched is not None:
+                service = watched
+        self._invite_source = service
+
+        def task() -> object:
+            invites = service.pending_invites()  # type: ignore[attr-defined]
+            if not invites:
+                return None
+            detail: dict[str, str] = {}
+            reader = getattr(service, "invite_detail", None)
+            if callable(reader):
+                try:
+                    loaded = reader(invites[0].id)
+                except TeamSyncError:
+                    loaded = {}
+                if isinstance(loaded, dict):
+                    detail = {str(key): str(value) for key, value in loaded.items()}
+            return (invites[0], detail)
+
+        self._run("team-sync-pending-invites", task, self._present_invite_payload)
+
+    def submit_accept_invite(
+        self,
+        incoming_id: str,
+        folder: str,
+        on_ok: Optional[Callable[[], None]] = None,
+        on_err: Optional[Callable[[BaseException], None]] = None,
+    ) -> None:
+        def done(path: object) -> None:
+            opened = str(path or folder or "")
+            opener = getattr(self._window, "_file_project_commands_workflow", None)
+            if opened and opened != self._project_root and not self._fake:
+                if opener is not None and hasattr(opener, "open_project_by_path"):
+                    opener.open_project_by_path(opened)
+                elif self._project_factory is not None:
+                    self.use_service(self._project_factory(opened), opened)
+                else:
+                    self._project_root = opened
+                    self.refresh_status()
+            else:
+                self.refresh_status()
+                self._run("team-sync-feed", lambda: self._service.feed(), self._apply_feed)  # type: ignore[attr-defined]
+            if on_ok is not None:
+                on_ok()
+
+        service = self._invite_source or self._service
+        self._ports.run(  # type: ignore[attr-defined]
+            "team-sync-invite",
+            lambda: service.accept_invite(incoming_id, folder or self._project_root or "."),  # type: ignore[attr-defined]
+            done,
+            lambda exc: self._route_error(exc, on_err),
         )
 
     def save_to_usb(self) -> None:
@@ -364,8 +498,8 @@ class TeamSyncController(QObject):
         self._popover = StatusPopover(self._window)
         self._segment.clicked = self.open_status_popover  # type: ignore[method-assign]
         self._experiment.clicked = self.open_experiment_menu  # type: ignore[method-assign]
-        status_bar.addPermanentWidget(self._experiment, 0)
-        status_bar.addPermanentWidget(self._segment, 0)
+        status_bar.insertPermanentWidget(1, self._segment, 0)
+        status_bar.insertPermanentWidget(2, self._experiment, 0)
 
     def _on_service_event(self, event: str) -> None:
         dispatcher = getattr(self._window, "_main_thread_dispatcher", None)
@@ -395,6 +529,11 @@ class TeamSyncController(QObject):
             self._experiment.apply(status, tokens)
         if self._send_button is not None:
             self._send_button.apply_status(status)
+            busy = status.combine is not None and not status.combine.done
+            self._send_button.setEnabled(status.shared and not busy)
+        if self._review is not None:
+            busy = status.combine is not None and not status.combine.done
+            self._review._accept.setEnabled(not busy)
         if self._team_view is not None:
             self._team_view.apply(status, self._feed, git_names=self._settings.git_names, dormant=self._dormant, tidy=self._settings.tidy_before_send)
         activity = getattr(self._window, "_activity_bar", None)
@@ -466,6 +605,10 @@ class TeamSyncController(QObject):
         tab = self._ensure_combine()
         theirs_label, theirs_id = self._theirs_identity(state)
         mine = self._status.me
+        theirs_name = ""
+        for member in self._status.members:
+            if member.id == state.theirs_from:
+                theirs_name = member.name
         tab.open_state(
             self._service,
             self._ports,
@@ -474,14 +617,22 @@ class TeamSyncController(QObject):
             tokens=self._tokens,
             theirs_label=theirs_label,
             theirs_id=theirs_id,
-            mine_name=first_name(mine.name) if mine is not None else "You",
+            theirs_name=theirs_name,
+            mine_name=mine.name if mine is not None else "You",
             mine_id=mine.id if mine is not None else "",
         )
         self._show_tab(tab, "Combine")
 
     def _deleted_dialog(self, clash: Clash) -> None:
+        theirs_name = "Someone"
+        if self._status.combine is not None:
+            for member in self._status.members:
+                if member.id == self._status.combine.theirs_from:
+                    theirs_name = member.name
+        title, chip = deleted_clash_copy(clash.path, clash, theirs_name)
         show_deleted(
-            clash.path,
+            title,
+            chip,
             lambda resolution: self._combine.settle(clash.id, resolution) if self._combine is not None else None,
             self._window,
         )
@@ -719,8 +870,96 @@ class TeamSyncController(QObject):
 
     def _poll_once(self) -> None:
         if not self._project_root or not self._status.shared:
+            self._poll_invites()
             return
-        self._run_void(lambda: self._service.poll())  # type: ignore[attr-defined]
+        self._run("team-sync-poll", lambda: self._service.poll(), lambda _result: self.refresh_status())  # type: ignore[attr-defined]
+
+    def _poll_after_open(self) -> None:
+        if not self._project_root or self._dormant:
+            return
+        self._run("team-sync-poll", lambda: self._service.poll(), lambda _result: self.refresh_status())  # type: ignore[attr-defined]
+
+    def _poll_invites(self) -> None:
+        if self._fake or not self._watch_invites:
+            return
+        if self._project_root and self._status.shared:
+            return
+        service = self._ensure_invite_service()
+        if service is None:
+            return
+        seen = set(self._seen_invites)
+
+        def task() -> object:
+            service.poll()  # type: ignore[attr-defined]
+            invites = list(service.pending_invites())  # type: ignore[attr-defined]
+            fresh = [item for item in invites if str(getattr(item, "id", "")) not in seen]
+            if not fresh:
+                return None
+            detail: dict[str, str] = {}
+            reader = getattr(service, "invite_detail", None)
+            if callable(reader):
+                try:
+                    loaded = reader(fresh[0].id)
+                except TeamSyncError:
+                    loaded = {}
+                if isinstance(loaded, dict):
+                    detail = {str(key): str(value) for key, value in loaded.items()}
+            return (fresh[0], detail)
+
+        def done(payload: object) -> None:
+            if not isinstance(payload, tuple):
+                return
+            item = payload[0]
+            ident = str(getattr(item, "id", ""))
+            if not ident or ident in self._seen_invites:
+                return
+            self._seen_invites.add(ident)
+            self._invite_source = service
+            self._present_invite_payload(payload, announce=True)
+
+        self._ports.run("team-sync-invite-poll", task, done, self._on_error)  # type: ignore[attr-defined]
+
+    def _ensure_invite_service(self) -> object:
+        if self._invite_service is not None:
+            return self._invite_service
+        if self._project_factory is None:
+            return None
+        from app.features.shop_sharing.model import Machine
+
+        machine = Machine.current()
+        root = Path(machine.local_state) / "team_sync" / "invite_watch"
+        root.mkdir(parents=True, exist_ok=True)
+        self._invite_service = self._project_factory(str(root))
+        return self._invite_service
+
+    def _present_invite_payload(self, payload: object, announce: bool = False) -> None:
+        if not isinstance(payload, tuple) or len(payload) != 2:
+            return
+        incoming, detail = payload
+        if not isinstance(incoming, Incoming):
+            return
+        info = detail if isinstance(detail, dict) else {}
+        project_name = str(info.get("project_name") or "Invoice App")
+        safe = "".join(ch if ch.isalnum() or ch in " -_" else "_" for ch in project_name).strip() or "Project"
+        default_location = str(Path.home() / "Projects" / safe)
+        sender = str(info.get("sender_name") or "")
+        if sender:
+            author = first_name(sender)
+        elif incoming.changes:
+            author = first_name(incoming.changes[0].author_name)
+        else:
+            author = "Someone"
+        if announce:
+            self._toast(f"{author} invited you to {project_name}")
+        show_invite(
+            incoming,
+            self.submit_accept_invite,
+            self._window,
+            self._tokens,
+            project_name=project_name,
+            default_location=default_location,
+            author_name=sender,
+        )
 
     def _ensure_poll(self) -> None:
         if self._status.shared and self._project_root and not self._poll.isActive():
@@ -796,13 +1035,69 @@ class TeamSyncController(QObject):
     def _run(self, key: str, fn: Callable[[], object], on_success: Callable[[object], None]) -> None:
         self._ports.run(key, fn, on_success, self._on_error)  # type: ignore[attr-defined]
 
-    def _run_void(self, fn: Callable[[], object]) -> None:
-        self._run("team-sync", fn, lambda _result: self.refresh_status())
+    def _run_void(self, fn: Callable[[], object], key: str = "team-sync") -> None:
+        self._run(key, fn, lambda _result: self.refresh_status())
 
-    def _on_error(self, exc: Exception) -> None:
+    def _route_error(self, exc: BaseException, inline: Optional[Callable[[BaseException], None]] = None) -> None:
+        if str(exc) == _BUSY:
+            self.refresh_status()
+            return
+        if inline is not None:
+            inline(exc)
+            return
+        if isinstance(exc, TeamSyncError):
+            self._toast(str(exc))
+            return
         logger = getattr(self._window, "_logger", None)
         if logger is not None:
             logger.warning("Team Sync: %s", exc)
 
+    def _on_error(self, exc: Exception) -> None:
+        logger = getattr(self._window, "_logger", None)
+        if logger is not None and str(exc) != _BUSY:
+            logger.warning("Team Sync: %s", exc)
+        self._route_error(exc)
 
-__all__ = ["TeamSyncController"]
+
+class IdleTeamSync:
+    """No project is open. The thread shows Not shared and nothing touches a repo."""
+
+    def __init__(self) -> None:
+        self._subscribers: list[Callable[[str], None]] = []
+
+    def status(self) -> TeamStatus:
+        return TeamStatus(shared=False, project_name="")
+
+    def feed(self, limit: int = 200) -> list:
+        del limit
+        return []
+
+    def incoming(self) -> list:
+        return []
+
+    def pending_invites(self) -> list:
+        return []
+
+    def poll(self) -> None:
+        return None
+
+    def subscribe(self, callback: Callable[[str], None]) -> Callable[[], None]:
+        self._subscribers.append(callback)
+
+        def unsubscribe() -> None:
+            if callback in self._subscribers:
+                self._subscribers.remove(callback)
+
+        return unsubscribe
+
+    def close(self) -> None:
+        self._subscribers.clear()
+
+    def __getattr__(self, name: str) -> Callable[..., None]:
+        def missing(*_args: object, **_kwargs: object) -> None:
+            raise TeamSyncError("Open a project first.")
+
+        return missing
+
+
+__all__ = ["IdleTeamSync", "TeamSyncController"]

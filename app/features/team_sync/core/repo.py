@@ -177,7 +177,7 @@ class TeamRepo:
         milestones = self._milestones()
         selected = self._select_commits(path, query, offset, limit, all_lines)
         return [
-            self._change(sha, milestones, line)
+            self._change(sha, milestones, line, with_files=False)
             for sha, line in selected
         ]
 
@@ -741,15 +741,26 @@ class TeamRepo:
         # keep the current line label when they are also on it.
         return matched[offset : offset + limit]
 
-    def _change(self, sha: str, milestones: Dict[str, str], line: str) -> Change:
+    def changed_files(self, sha: str) -> List[FileChange]:
+        """Names and kinds for one commit. Callers that list history skip this."""
+        commit = self._as_commit(sha)
+        parent_tree = None
+        if commit.parents:
+            parent_tree = self._as_commit(commit.parents[0].decode("ascii")).tree
+        return self._changed_files(parent_tree, commit.tree)
+
+    def _change(
+        self,
+        sha: str,
+        milestones: Dict[str, str],
+        line: str,
+        *,
+        with_files: bool = True,
+    ) -> Change:
         commit = self._as_commit(sha)
         note, shop, _station = _split_message(commit.message or b"")
         author_name, _email = _split_author(commit.author or b"")
-        parent_tree = None
-        if commit.parents:
-            parent = self._as_commit(commit.parents[0].decode("ascii"))
-            parent_tree = parent.tree
-        files = self._changed_files(parent_tree, commit.tree)
+        files = self.changed_files(sha) if with_files else []
         return Change(
             id=sha,
             parents=tuple(parent.decode("ascii") for parent in commit.parents),

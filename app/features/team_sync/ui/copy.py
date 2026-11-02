@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Optional
 
 from app.features.team_sync.api import (
@@ -12,6 +13,7 @@ from app.features.team_sync.api import (
     DELIVERY_SENT,
     DELIVERY_WAITING_TERMINAL,
     TERMINAL_OFFLINE,
+    Clash,
     TeamStatus,
 )
 
@@ -26,6 +28,17 @@ class StatusView:
 def first_name(full_name: str) -> str:
     parts = full_name.split()
     return parts[0] if parts else full_name
+
+
+def deleted_clash_copy(path: str, clash: Clash, theirs_name: str) -> tuple[str, str]:
+    """Dialog title and chip. The title is the file. The chip names who deleted and who edited."""
+    title = Path(path).name or path
+    them = first_name(theirs_name) or "They"
+    ours_gone = not any(line.strip() for line in clash.ours)
+    theirs_gone = not any(line.strip() for line in clash.theirs)
+    if ours_gone and not theirs_gone:
+        return title, f"You deleted it · {them} edited it"
+    return title, f"{them} deleted it · you edited it"
 
 
 def delivery_mark(state: str, *, git_names: bool) -> tuple[str, str]:
@@ -118,6 +131,7 @@ def short_date(when: object) -> str:
 __all__ = [
     "StatusView",
     "badge_count",
+    "deleted_clash_copy",
     "clock",
     "delivery_mark",
     "explorer_letters",

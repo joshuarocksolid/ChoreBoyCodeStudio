@@ -99,8 +99,62 @@ def test_history_of_210_commits(tmp_path: Path) -> None:
     page = repo.history(limit=200)
     elapsed = (time.perf_counter() - started) * 1000
     assert len(page) == 200
-    assert page[0].files
+    assert page[0].files == ()
     _budget(elapsed, 200, "history_210")
+
+
+def test_history_flat_directory_and_first_paint(tmp_path: Path, qapp: object) -> None:
+    """500 files in one directory used to make history walk every tree. The list must not."""
+    del qapp
+    root = tmp_path / "flat"
+    root.mkdir()
+    for index in range(500):
+        (root / f"file_{index:03d}.py").write_text(f"value = {index}\n", encoding="utf-8")
+    repo = TeamRepo(str(root))
+    repo.init_repo()
+    now = datetime.now(timezone.utc)
+    repo.commit("seed", "Sam", "sam@example.test", "aaaa1111", "pc", now)
+    for index in range(1, 210):
+        for offset in range(3):
+            number = (index * 3 + offset) % 500
+            path = root / f"file_{number:03d}.py"
+            path.write_text(path.read_text(encoding="utf-8") + f"# {index}\n", encoding="utf-8")
+        repo.commit(str(index), "Sam", "sam@example.test", "aaaa1111", "pc", now)
+    started = time.perf_counter()
+    page = repo.history(limit=200)
+    elapsed = (time.perf_counter() - started) * 1000
+    assert len(page) == 200
+    assert page[0].files == ()
+    _budget(elapsed, 200, "history_flat_210")
+
+    from app.features.team_sync.ui.history_tab import HistoryTab
+    from app.features.team_sync.ui.ports import SyncPorts
+    from app.qt.QtWidgets import QApplication
+
+    class _HistoryApi:
+        def history(self, **kwargs: object) -> object:
+            return repo.history(**kwargs)  # type: ignore[arg-type]
+
+        def change_diff(self, change_id: str, against: object = None) -> object:
+            return repo.diff_commits(change_id, against if isinstance(against, str) else None)
+
+    tab = HistoryTab()
+    started = time.perf_counter()
+    tab.open_history(
+        _HistoryApi(),
+        SyncPorts(),
+        show_lanes=False,
+        show_ids=False,
+        advanced=False,
+        on_action=lambda _key, _change: None,
+    )
+    elapsed = (time.perf_counter() - started) * 1000
+    assert tab._list.count() == 200
+    _budget(elapsed, 200, "history_tab_paint")
+    app = QApplication.instance()
+    if app is not None:
+        app.processEvents()
+    tab.deleteLater()
 
 
 def test_status_with_three_incoming(tmp_path: Path) -> None:

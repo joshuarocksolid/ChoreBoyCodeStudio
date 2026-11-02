@@ -113,7 +113,7 @@ QPushButton#shell\\.teamSync\\.combineFinish,
 QPushButton#shell\\.teamSync\\.shareButton,
 QPushButton#shell\\.teamSync\\.sendSheetSend {{
     background: {accent};
-    color: {fg};
+    color: #FFFFFF;
     border: none;
     border-radius: 4px;
     padding: 0 10px;
@@ -166,7 +166,7 @@ QTextEdit#shell\\.teamSync\\.sendSheetNote {{
 }}
 QToolButton#shell\\.teamSync\\.composerSend {{
     background: {accent};
-    color: {fg};
+    color: #FFFFFF;
     border: none;
     border-radius: 4px;
     padding: 0;
@@ -470,7 +470,7 @@ QComboBox#shell\\.teamSync\\.historyFilter {{
 QFrame#shell\\.toast QPushButton,
 QFrame#shell\\.teamSync\\.toast QPushButton {{
     background: {accent};
-    color: {fg};
+    color: #FFFFFF;
     border: none;
     border-radius: 4px;
     padding: 4px 10px;

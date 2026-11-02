@@ -6,6 +6,7 @@ import json
 import secrets
 import zipfile
 import zlib
+from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Callable, Dict, List, Optional, Sequence, Tuple
@@ -33,6 +34,7 @@ from app.features.team_sync.api import (
     CombineState,
     Delivery,
     FeedItem,
+    FileChange,
     FileDiff,
     Incoming,
     Mailbox,
@@ -163,15 +165,16 @@ class TeamSyncService:
         items.extend(self._read_feed())
         if self._repo.exists() and self._repo.head_sha():
             for change in self._repo.history(limit=limit):
+                counted = replace(change, files=self._cached_files(change.id))
                 items.append(
                     FeedItem(
                         kind=FEED_CHANGE,
-                        id=change.id,
-                        when=change.when,
-                        text=change.note,
-                        author_id=change.author_id or None,
-                        change=change,
-                        delivery=self._delivery_for(change.id),
+                        id=counted.id,
+                        when=counted.when,
+                        text=counted.note,
+                        author_id=counted.author_id or None,
+                        change=counted,
+                        delivery=self._delivery_for(counted.id),
                     )
                 )
         for item in self.incoming():
@@ -761,6 +764,12 @@ class TeamSyncService:
                 self._subscribers.remove(callback)
 
         return unsubscribe
+
+    def close(self) -> None:
+        if self._ledger_obj is not None:
+            self._ledger_obj.close()
+            self._ledger_obj = None
+        self._subscribers.clear()
 
     def now(self) -> datetime:
         when = self._clock()
@@ -1800,6 +1809,14 @@ class TeamSyncService:
         if self._repo.exists():
             return Path(self.project_root) / ".git" / "cbcs" / "ledger.sqlite"
         return self.machine.local_state / "team_sync" / "pending" / "ledger.sqlite"
+
+    def _cached_files(self, sha: str) -> Tuple[FileChange, ...]:
+        cached = self._ledger().commit_files(sha)
+        if cached is not None:
+            return tuple(FileChange(path, kind) for path, kind in cached)
+        files = tuple(self._repo.changed_files(sha))
+        self._ledger().remember_commit_files(sha, [(item.path, item.kind) for item in files])
+        return files
 
     def _ledger(self) -> Ledger:
         path = self._ledger_path()
