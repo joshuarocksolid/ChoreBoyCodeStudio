@@ -6,7 +6,7 @@ import os
 import signal
 import time
 
-_RUNTIME_CHILD_MARKERS = ("run_plugin_host.py", "run_runner.py", "run_form_preview.py")
+_RUNTIME_CHILD_MARKERS = ("run_plugin_host.py", "run_runner.py", "run_form_preview.py", "run_schema_helper.py")
 _PROC_CACHE_TTL_SECONDS = 0.5
 
 _children_map_cache: dict[int, list[int]] | None = None

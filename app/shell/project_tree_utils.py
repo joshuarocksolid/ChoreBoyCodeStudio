@@ -15,6 +15,7 @@ PROJECT_TREE_SIGNATURE_IGNORED_PREFIXES: tuple[str, ...] = (
     f"{constants.PROJECT_META_DIRNAME}/{constants.PROJECT_RUNS_DIRNAME}/",
     f"{constants.PROJECT_META_DIRNAME}/{constants.PROJECT_LOGS_DIRNAME}/",
     f"{constants.PROJECT_META_DIRNAME}/{constants.PROJECT_CACHE_DIRNAME}/",
+    f"{constants.PROJECT_META_DIRNAME}/{constants.PROJECT_SCHEMA_DIRNAME}/",
 )
 
 

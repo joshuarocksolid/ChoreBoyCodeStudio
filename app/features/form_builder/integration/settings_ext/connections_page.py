@@ -50,7 +50,9 @@ from app.features.form_builder.integration.connection_paths import (
     project_slug,
     rename_project_entry,
 )
+from app.features.form_builder.engine.data.schema_cache import cancel_schema_work, install_schema_reader
 from app.features.form_builder.engine.data.tester import connection_tester, probe_sqlite
+from app.features.form_builder.qtside.schema_prompt import ask_connection_secret, install_secret_marshal
 from app.features.form_builder.engine.project.closed_forms import (
     forms_using_connection,
     rename_connection,
@@ -708,6 +710,8 @@ class ConnectionsPage(QWidget):
             self._test_button.setText("Test")
             self._test_button.setEnabled(True)
             return
+        if connection.engine == "postgres":
+            install_secret_marshal()
         self._start(lambda connection=connection: self._run_test(connection))
 
     def _run_test(self, connection: Connection) -> dict:
@@ -716,8 +720,9 @@ class ConnectionsPage(QWidget):
         tester = connection_tester()
         if tester is None:
             return {"text": POSTGRES_PLACEHOLDER}
+        install_schema_reader(self._root)
         try:
-            result = tester(connection, lambda: "")
+            result = tester(connection, lambda: ask_connection_secret(self._root, connection))
         except Exception as exc:
             lines = str(exc).splitlines()
             return {"text": lines[0] if lines else "Can't connect."}
@@ -775,6 +780,7 @@ class ConnectionsPage(QWidget):
     def _cancel_test(self) -> None:
         if not self._testing:
             return
+        cancel_schema_work()
         self._generation += 1
         self._testing = False
         self._drop_filter()

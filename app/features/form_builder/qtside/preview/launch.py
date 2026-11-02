@@ -46,25 +46,26 @@ def current_runtime_python() -> str:
     return sys.executable
 
 
-def python_preview_command(python: str, root: str) -> List[str]:
+def python_preview_command(python: str, root: str, script: str = _PREVIEW_SCRIPT) -> List[str]:
     """A child on an already-warm interpreter. Unit tests use this."""
-    return [python, os.path.join(root, _PREVIEW_SCRIPT)]
+    return [python, os.path.join(root, script)]
 
 
-def preview_command(root: str) -> List[str]:
+def preview_command(root: str, script: str = _PREVIEW_SCRIPT) -> List[str]:
     """The preview child command.
 
     ChoreBoy uses AppRun when that file exists. A machine without it starts
     the child on the interpreter that is already running the editor.
+    ``script`` is a repo-root filename. The schema helper uses the same builder.
     """
     apprun = default_apprun()
     if os.path.isfile(apprun):
-        return apprun_preview_command(apprun, root)
-    return python_preview_command(current_runtime_python(), root)
+        return apprun_preview_command(apprun, root, script)
+    return python_preview_command(current_runtime_python(), root, script)
 
 
-def apprun_preview_command(apprun: str, root: str) -> List[str]:
+def apprun_preview_command(apprun: str, root: str, script: str = _PREVIEW_SCRIPT) -> List[str]:
     """The ChoreBoy command. AppRun ``-c`` stays short via the runpy bootstrap."""
-    script = os.path.join(root, _PREVIEW_SCRIPT)
-    payload = build_runpy_bootstrap_payload(script_path=script, path_entries=(root,))
+    script_path = os.path.join(root, script)
+    payload = build_runpy_bootstrap_payload(script_path=script_path, path_entries=(root,))
     return [apprun, "-c", payload]

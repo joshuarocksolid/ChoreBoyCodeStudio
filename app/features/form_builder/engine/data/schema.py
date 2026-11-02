@@ -1,25 +1,26 @@
 """Schema cache model (CONTRACTS.md section 19.6).
 
 M8.0s owns the model, the canonical read and write, and the staleness rule.
-M8.6 adds the readers. The cache reader installed here returns None until then.
-Results are cached on the document object, never on ``id(doc)``.
+``schema_for`` calls the installed reader on every lookup. That reader caches
+on the document object, never on ``id(doc)``, and re-reads when the file changes.
+``set_schema_reader(None)`` restores the reader that returns None.
 """
 
 from __future__ import annotations
 
 import datetime
-import weakref
 from dataclasses import dataclass
-from typing import Callable, Dict, Optional, Tuple
+from typing import Callable, Optional, Tuple
 
 from app.features.form_builder.engine.logic.codec import JsonObject, parse_json, write_json
 
 STALE_AFTER = datetime.timedelta(days=7)
+#: Stored row count when the capped probe hits its limit. It means more than 100000.
+ROW_PROBE_LIMIT = 100001
 
 Reader = Callable[[object, str], Optional["Schema"]]
 
 _READER: Reader = lambda _doc, _name: None
-_CACHE: "weakref.WeakKeyDictionary[object, Dict[str, Optional[Schema]]]" = weakref.WeakKeyDictionary()
 
 
 @dataclass(frozen=True)
@@ -63,22 +64,12 @@ def set_schema_reader(reader: Optional[Reader]) -> None:
 
     global _READER
     _READER = reader if reader is not None else (lambda _doc, _name: None)
-    _CACHE.clear()
 
 
 def schema_for(doc: object, connection: str) -> Optional[Schema]:
-    """The cached schema for ``connection``, or None when nobody has read it."""
+    """The schema for ``connection``. The installed reader owns the cache."""
 
-    try:
-        bucket = _CACHE.get(doc)
-    except TypeError:
-        return _READER(doc, connection)
-    if bucket is None:
-        bucket = {}
-        _CACHE[doc] = bucket
-    if connection not in bucket:
-        bucket[connection] = _READER(doc, connection)
-    return bucket[connection]
+    return _READER(doc, connection)
 
 
 def is_stale(schema: Schema, now: datetime.datetime) -> bool:
@@ -237,6 +228,7 @@ def _column_object(column: Column) -> JsonObject:
 
 
 __all__ = [
+    "ROW_PROBE_LIMIT",
     "Column",
     "Reference",
     "Schema",

@@ -15,6 +15,7 @@ class DataPanel(QWidget):
 
     connect_requested = Signal()
     add_connection_requested = Signal()
+    schema_changed = Signal(str)
 
     def __init__(self, workbench: Any) -> None:
         super().__init__(workbench)
@@ -50,7 +51,8 @@ class DataPanel(QWidget):
         width = int(getattr(tokens, "focus_border_width", 0) or 1)
         self.setStyleSheet(
             "QWidget#formBuilder\\.dataPanel { background: %s; color: %s; }"
-            "QLabel#formBuilder\\.data\\.sentence { color: %s; background: transparent; }"
+            "QLabel#formBuilder\\.data\\.sentence, QLabel#formBuilder\\.data\\.schemaSentence { color: %s; background: transparent; }"
+            "QLabel#formBuilder\\.data\\.stale { color: %s; background: transparent; }"
             "QPushButton { color: %s; background: %s; border: 1px solid %s; padding: 4px 8px; }"
             "QPushButton:disabled { color: %s; }"
             "QPushButton:focus { border: %dpx solid %s; }"
@@ -58,6 +60,7 @@ class DataPanel(QWidget):
                 tokens.panel_bg,  # type: ignore[attr-defined]
                 tokens.text_primary,  # type: ignore[attr-defined]
                 tokens.text_primary,  # type: ignore[attr-defined]
+                tokens.diag_warning_color,  # type: ignore[attr-defined]
                 tokens.text_primary,  # type: ignore[attr-defined]
                 tokens.input_bg,  # type: ignore[attr-defined]
                 tokens.border,  # type: ignore[attr-defined]

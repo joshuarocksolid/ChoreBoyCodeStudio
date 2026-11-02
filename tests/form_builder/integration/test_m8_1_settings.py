@@ -172,6 +172,7 @@ def test_postgres_tester_result_is_shown_and_the_placeholder_does_not_need_one(q
     page._host.setText("192.168.1.20")
     page._database.setText("shop")
     page._user.setText("clerk")
+    page._password.setCurrentIndex(page._password.findData("none"))
     seen = []
 
     def fake(connection, password):

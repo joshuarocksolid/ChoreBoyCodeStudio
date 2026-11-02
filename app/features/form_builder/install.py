@@ -128,6 +128,7 @@ def install_form_builder(ctx: "ShellCompositionContext") -> None:
         },
     )
     _reset_preview_on_quit()
+    _register_schema_services()
     from app.features.form_builder.integration.run_links_ext import install_console_hook
 
     install_console_hook()
@@ -152,6 +153,20 @@ def _refresh_shortcut_maps(window: object) -> None:
     overrides = parse_shortcut_overrides(load_global())
     setattr(window, "_shortcut_overrides", overrides)
     setattr(window, "_effective_shortcuts", build_effective_shortcut_map(overrides))
+
+
+def _register_schema_services() -> None:
+    """The editor learns the helper and the PostgreSQL tester at the same startup."""
+
+    if getattr(_register_schema_services, "done", False):
+        return
+    from app.features.form_builder.engine.data.schema_cache import postgres_tester
+    from app.features.form_builder.engine.data.tester import set_connection_tester
+    from app.features.form_builder.qtside.schema_runner import register_schema_runner
+
+    register_schema_runner()
+    set_connection_tester(postgres_tester)
+    _register_schema_services.done = True  # type: ignore[attr-defined]
 
 
 def _reset_preview_on_quit() -> None:

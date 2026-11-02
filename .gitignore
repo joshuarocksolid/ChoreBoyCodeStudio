@@ -44,6 +44,7 @@ choreboy_code_studio_state/
 **/cbcs/runs/
 **/cbcs/logs/
 **/cbcs/cache/
+**/cbcs/schema/
 
 # Generated icon intermediates (regenerate from SVG via scripts/generate_icon_pngs.py)
 app/ui/icons/app_icon_*.png

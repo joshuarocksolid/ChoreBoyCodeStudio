@@ -530,6 +530,9 @@ def _pytest_in_runtime(
         if vendor_first
         else str(REPO_ROOT)
     )
+    if extra_paths:
+        # Child processes the tests start (the schema helper) need these too.
+        pythonpath = os.pathsep.join([pythonpath] + [str(path) for path in extra_paths])
     env = _child_env({"PYTHONPATH": pythonpath})
     if extra_env:
         env.update(extra_env)
