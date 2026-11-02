@@ -1027,8 +1027,8 @@ def _file_diff(path: str, old: Optional[bytes], new: Optional[bytes]) -> Optiona
         return FileDiff(path, kind, (), False, True)
     old_lines = inspect_text(old)[0] if old is not None else ()
     new_lines = inspect_text(new)[0] if new is not None else ()
-    old_text = old.decode("utf-8", "replace") if form and old is not None else None
-    new_text = new.decode("utf-8", "replace") if form and new is not None else None
+    old_text = old.decode("utf-8", "replace") if old is not None else None
+    new_text = new.decode("utf-8", "replace") if new is not None else None
     return FileDiff(
         path,
         kind,

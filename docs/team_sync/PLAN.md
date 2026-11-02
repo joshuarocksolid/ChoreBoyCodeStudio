@@ -148,8 +148,14 @@ project root.
 current line (cherry-pick through the merge engine).
 
 `invite_detail(incoming_id) -> dict` returns `project_id`, `project_name`,
-`sender_name`, `sender_shop`, and `sender_email` for an invite. `Incoming` is
-unchanged.
+`sender_name`, `sender_shop`, `sender_email`, `invitee_name`, and `invitee_shop`
+for an invite. `Incoming` is unchanged. `Mailbox` grows optional `user_name`
+and `company_name` from `account_settings_v2.conf`.
+
+A `join` message carries the joiner's signed pack. The inviter fast-forwards
+`main` when the new tip is a descendant of HEAD. Membership is the team.json
+union. That path writes no merge commit and no Review item. Both stations
+share one `main` sha.
 
 Wire additions beyond the spec's sample body, all signed when the message is
 signed: `part-sha256` (this part), and on join `member-id`, `member-name`,

@@ -212,6 +212,8 @@ class Mailbox:
     path: str  # absolute path of .Mails/<account>
     email: str
     label: str  # account folder name
+    user_name: str = ""
+    company_name: str = ""
 
 
 @dataclass(frozen=True)
@@ -247,7 +249,7 @@ class TeamSyncApi(Protocol):
 
     def pending_invites(self) -> List[Incoming]: ...
 
-    def accept_invite(self, incoming_id: str, folder: str) -> str: ...
+    def accept_invite(self, incoming_id: str, folder: str, my_name: str = "", my_shop: str = "") -> str: ...
 
     def send(self, note: str, paths: Optional[List[str]] = None) -> Change: ...
 
