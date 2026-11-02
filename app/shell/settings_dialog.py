@@ -100,6 +100,14 @@ from app.features.shop_sharing.settings_group import ShopSharingGroup
 from app.ui.segmented_control import SegmentedControl
 
 
+def _contribution_settings_groups(parent: object) -> list[QWidget]:
+    contributions = getattr(parent, "_shell_contributions", None)
+    if contributions is None:
+        return []
+    host = parent if isinstance(parent, QWidget) else None
+    return [factory(host) for factory in contributions.settings_group_factories]
+
+
 class SettingsDialog(SettingsDialogHandlersMixin, QDialog):
     """Simple settings editor for core editor/intelligence preferences."""
 
@@ -230,6 +238,7 @@ class SettingsDialog(SettingsDialogHandlersMixin, QDialog):
             python_tooling_config_text=python_tooling_config_text,
             python_tooling_config_details=python_tooling_config_details,
             shop_sharing_group=shop_sharing_group,
+            extra_groups=_contribution_settings_groups(parent),
         )
         build_keybindings_tab(self, tabs, snapshot)
         build_syntax_tab(self, tabs)

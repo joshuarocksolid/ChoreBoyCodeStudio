@@ -123,6 +123,10 @@ class EditorTabFactory:
         )
 
         page = self.build_tab_page(tab_content, opened_result.tab.buffer_id)
+        contributions = getattr(window, "_shell_contributions", None)
+        if contributions is not None:
+            for hook in contributions.editor_page_hooks:
+                hook(page, tab_file_path)
         tab_index = window._editor_tabs_widget.addTab(page, opened_result.tab.display_name)
         window._editor_tabs_coordinator.present_tab_at(tab_index, opened_result.tab)
         window._editor_tabs_widget.setCurrentIndex(tab_index)

@@ -227,6 +227,70 @@ class DiffView(QWidget):
         self._after_label = after_label
         self._render()
 
+    def emphasize_changed_words(self, *, limit: int = 250) -> None:
+        """Overlay intra-line highlights. ``set_texts`` stays unchanged for existing callers."""
+        from difflib import SequenceMatcher
+
+        from app.qt.QtGui import QTextCharFormat, QTextCursor
+        from app.qt.QtWidgets import QTextEdit
+
+        def paint(editor: QPlainTextEdit, pairs: list[tuple[int, int, int]]) -> None:
+            selections = []
+            strong = QTextCharFormat()
+            strong.setFontWeight(QFont.Bold)
+            strong.setBackground(QColor(self._tokens.search_current_match_bg or self._tokens.accent))
+            for block_no, start, end in pairs:
+                if end <= start:
+                    continue
+                block = editor.document().findBlockByNumber(block_no)
+                if not block.isValid():
+                    continue
+                cursor = QTextCursor(block)
+                cursor.setPosition(block.position() + start)
+                cursor.setPosition(block.position() + end, QTextCursor.KeepAnchor)
+                selection = QTextEdit.ExtraSelection()
+                selection.cursor = cursor
+                selection.format = strong
+                selections.append(selection)
+            editor.setExtraSelections(selections)
+
+        inline_pairs: list[tuple[int, int, int]] = []
+        lines = self._inline_editor.toPlainText().splitlines()
+        used = 0
+        index = 0
+        while index < len(lines) - 1 and used < limit:
+            left = lines[index]
+            right = lines[index + 1]
+            if left.startswith("-") and right.startswith("+") and not left.startswith("---"):
+                matcher = SequenceMatcher(a=left[1:], b=right[1:])
+                for tag, i1, i2, j1, j2 in matcher.get_opcodes():
+                    if tag == "equal":
+                        continue
+                    inline_pairs.append((index, i1 + 1, i2 + 1))
+                    inline_pairs.append((index + 1, j1 + 1, j2 + 1))
+                used += 1
+                index += 2
+                continue
+            index += 1
+        paint(self._inline_editor, inline_pairs)
+
+        before_pairs: list[tuple[int, int, int]] = []
+        after_pairs: list[tuple[int, int, int]] = []
+        before_lines = self._before_pane.toPlainText().splitlines()
+        after_lines = self._after_pane.toPlainText().splitlines()
+        span = min(len(before_lines), len(after_lines), limit)
+        for row in range(span):
+            if before_lines[row] == after_lines[row]:
+                continue
+            matcher = SequenceMatcher(a=before_lines[row], b=after_lines[row])
+            for tag, i1, i2, j1, j2 in matcher.get_opcodes():
+                if tag == "equal":
+                    continue
+                before_pairs.append((row, i1, i2))
+                after_pairs.append((row, j1, j2))
+        paint(self._before_pane, before_pairs)
+        paint(self._after_pane, after_pairs)
+
     def set_mode(self, mode: str) -> None:
         if mode not in (DIFF_VIEW_MODE_INLINE, DIFF_VIEW_MODE_SIDE_BY_SIDE):
             raise ValueError(f"Unknown diff view mode: {mode!r}")

@@ -127,6 +127,12 @@ class TeamSyncApi(Protocol):
 
 The contract may grow only by adding optional parameters or new methods, recorded here.
 
+### L2 UI additions (not protocol members)
+
+`InMemoryTeamSync.scenario(name)`, `share_summary() -> tuple[int, str]`, and `project_files() -> dict`
+exist on the fake so the UI and the screenshot script can jump states. `TeamSyncApi` is unchanged.
+The UI reads `share_summary` with `getattr` and falls back when a service does not provide it.
+
 ## Lanes
 
 | Lane | Branch | Owner | Depends on | Delivers |

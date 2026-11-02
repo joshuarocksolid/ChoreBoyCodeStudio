@@ -127,6 +127,10 @@ class CodeEditorDiagnosticsMixin(_CodeEditorDiagnosticsBase):
                 if start <= cursor_pos < end:
                     QToolTip.showText(e.globalPos(), tooltip, self)  # type: ignore[union-attr]
                     return True
+            line_hover = getattr(self, "_line_hover_callback", None)
+            if line_hover is not None:
+                line_hover(cursor.blockNumber() + 1, QPoint(e.globalPos()))  # type: ignore[union-attr]
+                return True
             if not self._hover_tooltip_enabled:
                 QToolTip.hideText()
                 return True

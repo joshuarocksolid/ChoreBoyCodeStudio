@@ -184,6 +184,7 @@ def show_single_item_tree_context_menu(
                 status_tip="Use this folder as a project source root.",
             )
     local_history_action = None
+    contributed_actions: list[tuple[Any, Any]] = []
     if not is_directory:
         local_history_action = _add_menu_action(
             menu,
@@ -191,6 +192,11 @@ def show_single_item_tree_context_menu(
             "Local History…",
             status_tip="Review saved local-history entries for this file.",
         )
+        contributions = getattr(window, "_shell_contributions", None)
+        if contributions is not None:
+            for spec in contributions.explorer_menu_actions:
+                action = _add_menu_action(menu, icons["history"], spec.label)
+                contributed_actions.append((action, spec))
     run_file_action = None
     run_file_with_args_action = None
     set_entry_point_action = None
@@ -256,6 +262,11 @@ def show_single_item_tree_context_menu(
         workflow.reveal_path_in_file_manager(absolute_path)
     elif not is_directory and local_history_action is not None and chosen == local_history_action:
         window._local_history_workflow.show_local_history_for_path(absolute_path)
+    elif any(chosen == action for action, _spec in contributed_actions):
+        for action, spec in contributed_actions:
+            if chosen == action:
+                spec.on_trigger(relative_path)
+                break
     elif run_file_action is not None and chosen == run_file_action:
         window._run_launch_workflow.handle_tree_run_file(absolute_path)
     elif run_file_with_args_action is not None and chosen == run_file_with_args_action:

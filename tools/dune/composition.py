@@ -168,6 +168,7 @@ _COMMITTED_WINDOW_FIELDS = frozenset(
         "_semantic_session",
         "_settings_apply_workflow",
         "_settings_service",
+        "_shell_contributions",
         "_shell_layout_workflow",
         "_shell_preferences_runtime",
         "_shell_theme_workflow",

@@ -145,3 +145,27 @@ def test_icon(
     cn = color_normal or QColor("#ADB5BD")
     ca = color_active or QColor("#E9ECEF")
     return _build_icon(_draw_test_flask, size, cn, ca)
+
+
+def _draw_team(painter: QPainter, size: int, color: QColor) -> None:
+    """Two heads, same stroke weight as the other activity-bar glyphs."""
+    pen = QPen(color, 1.4)
+    pen.setCapStyle(Qt.RoundCap)
+    pen.setJoinStyle(Qt.RoundJoin)
+    painter.setPen(pen)
+    painter.setBrush(Qt.NoBrush)
+    painter.drawEllipse(QRectF(size * 0.08, size * 0.16, size * 0.34, size * 0.34))
+    painter.drawEllipse(QRectF(size * 0.46, size * 0.12, size * 0.38, size * 0.38))
+    painter.drawArc(QRectF(size * 0.02, size * 0.48, size * 0.46, size * 0.46), 20 * 16, 140 * 16)
+    painter.drawArc(QRectF(size * 0.40, size * 0.50, size * 0.56, size * 0.50), 20 * 16, 140 * 16)
+
+
+def team_icon(
+    size: int = 20,
+    *,
+    color_normal: QColor | None = None,
+    color_active: QColor | None = None,
+) -> QIcon:
+    cn = color_normal or QColor("#ADB5BD")
+    ca = color_active or QColor("#E9ECEF")
+    return _build_icon(_draw_team, size, cn, ca)
