@@ -29,10 +29,10 @@ QUICK_SKIP = frozenset({"unit-py39-pyside6", "pyright"})
 # The repo fast shard is minutes, so the default table lists it and does not run it.
 FULL_ONLY = frozenset({"fast-shard-regression"})
 # n=15 across 300, 600 and 1000 widgets. The default table lists it and does not run it.
-OPT_IN = frozenset({"speed"})
+OPT_IN = frozenset({"speed", "pg93"})
 PERF_GATE_TIMEOUT_SECONDS = 30
 
-UNIT_MARKER = "not oracle and not perf and not performance and not soak"
+UNIT_MARKER = "not oracle and not perf and not performance and not soak and not pg93"
 # Form-builder tests that live with the shell and feature unit suites. The
 # fast shard needs /opt/freecad/AppRun, so these would otherwise never run here.
 TEST_PATHS = (
@@ -151,7 +151,7 @@ def _plan(
     rows: list[tuple[str, str | None]] = []
     for name in _GATE_RUNNERS:
         if name in OPT_IN:
-            rows.append((name, "skipped: opt-in --only speed"))
+            rows.append((name, "skipped: opt-in --only %s" % name))
             continue
         if name in FULL_ONLY and not run_full:
             rows.append((name, "skipped: opt-in --full"))
@@ -416,7 +416,14 @@ def _pytest_counts(text: str) -> tuple[str, dict[str, int]]:
     return last, counts
 
 
-def _pytest_payload(vendor: Path, marker: str, *, vendor_first: bool, pin_vendor: bool = False) -> str:
+def _pytest_payload(
+    vendor: Path,
+    marker: str,
+    *,
+    vendor_first: bool,
+    pin_vendor: bool = False,
+    extra_paths: Sequence[Path] = (),
+) -> str:
     # os._exit skips the Shiboken destructor, which segfaults if Python
     # wrappers outlive Qt. Flush first so a captured pipe keeps the summary.
     args = ["-q", "--tb=line", *TEST_PATHS, "-m", marker]
@@ -441,6 +448,8 @@ def _pytest_payload(vendor: Path, marker: str, *, vendor_first: bool, pin_vendor
             " return _PinPath(t)\n"
             "_vp.ensure_vendor_path_on_sys_path=_pin_vendor\n"
         )
+    # Paths are rendered before ``str.format`` so a brace in a path cannot rewrite the payload.
+    extra = "".join("sys.path.insert(0, %r);" % str(path) for path in extra_paths)
     # FreeCAD 1.0 installs a meta-path finder without find_spec. Pytest's
     # importlib mode calls find_spec directly, so give those finders the
     # legacy find_module wrapper before collection starts.
@@ -453,6 +462,7 @@ def _pytest_payload(vendor: Path, marker: str, *, vendor_first: bool, pin_vendor
         " if not hasattr(_finder, 'find_spec'):\n"
         "  _finder.find_spec=_legacy_find_spec.__get__(_finder)\n"
         + path_setup
+        + extra
         + pin
         + "os.chdir({repo!r})\n"
         "code=int(__import__('pytest').main({args!r}))\n"
@@ -501,6 +511,8 @@ def _pytest_in_runtime(
     marker: str,
     timeout: float = PYTEST_TIMEOUT_SECONDS,
     pin_vendor: bool = False,
+    extra_paths: Sequence[Path] = (),
+    extra_env: dict[str, str] | None = None,
 ) -> CommandResult:
     if not _is_runtime(runtime):
         return CommandResult(code=127, seconds=0.0, stdout="", stderr="runtime missing: %s" % runtime)
@@ -519,6 +531,8 @@ def _pytest_in_runtime(
         else str(REPO_ROOT)
     )
     env = _child_env({"PYTHONPATH": pythonpath})
+    if extra_env:
+        env.update(extra_env)
     return _run_command(
         [
             str(runtime),
@@ -528,6 +542,7 @@ def _pytest_in_runtime(
                 marker,
                 vendor_first=vendor_first,
                 pin_vendor=pin_vendor and vendor_first,
+                extra_paths=extra_paths,
             ),
         ],
         env=env,
@@ -847,6 +862,107 @@ def gate_perf() -> GateResult:
     return GateResult(judged.name, judged.status, judged.seconds, detail, judged.log)
 
 
+def _pgtest_vendor() -> Path:
+    for candidate in _vendor_candidates("vendor_pgtest"):
+        if candidate.is_dir():
+            return candidate
+    return REPO_ROOT.parent / "ChoreBoyCodeStudio_artifacts" / "vendor_pgtest"
+
+
+def _wait_pg_isready(container: str) -> str | None:
+    """Wait until the entrypoint has created the database.
+
+    ``pg_isready`` succeeds on the temporary server initdb starts, before
+    ``POSTGRES_DB`` exists. A query against that database is the ready check.
+    """
+
+    deadline = time.monotonic() + 90
+    last = ""
+    while time.monotonic() < deadline:
+        result = _run_command(
+            ["docker", "exec", container, "psql", "-U", "cbcs", "-d", "cbcs", "-c", "SELECT 1"],
+            timeout=20,
+        )
+        if result.code == 0:
+            return None
+        last = (result.stdout + "\n" + result.stderr).strip()
+        time.sleep(1)
+    return "pg_isready did not succeed (%s)" % (last or "no output")
+
+
+def _published_port(container: str) -> str | None:
+    result = _run_command(["docker", "port", container, "5432"], timeout=20)
+    if result.code != 0:
+        return None
+    text = result.stdout.strip().splitlines()
+    if not text or ":" not in text[0]:
+        return None
+    return text[0].rsplit(":", 1)[-1].strip() or None
+
+
+def gate_pg93() -> GateResult:
+    """Start one labeled Postgres 9.3 container, run the pg93 tests, then remove that container."""
+
+    name = "pg93"
+    runtime = _runtime("CBCS_FORM_BUILDER_PY311", PY311_DEFAULT)
+    if not _is_runtime(runtime):
+        return _skip(name, "skipped: runtime not found at %s" % runtime)
+    started = time.monotonic()
+    container = ""
+    try:
+        launched = _run_command(
+            [
+                "docker",
+                "run",
+                "--rm",
+                "-d",
+                "--label",
+                "dev.lease=run",
+                "--label",
+                "dev.checkout=%s" % REPO_ROOT,
+                "--label",
+                "dev.owner=grok/m8.1",
+                "--label",
+                "dev.purpose=pg93 tests",
+                "--tmpfs",
+                "/var/lib/postgresql/data",
+                "-e",
+                "POSTGRES_PASSWORD=cbcs-test",
+                "-e",
+                "POSTGRES_USER=cbcs",
+                "-e",
+                "POSTGRES_DB=cbcs",
+                "-p",
+                "127.0.0.1::5432",
+                "postgres:9.3",
+            ],
+            timeout=180,
+        )
+        if launched.code != 0:
+            return _fail(name, launched.seconds, "docker run failed", _command_log(launched))
+        container = launched.stdout.strip().splitlines()[-1].strip() if launched.stdout.strip() else ""
+        if not container:
+            return _fail(name, launched.seconds, "docker run returned no container id", _command_log(launched))
+        ready = _wait_pg_isready(container)
+        if ready is not None:
+            return _fail(name, time.monotonic() - started, ready)
+        port = _published_port(container)
+        if port is None:
+            return _fail(name, time.monotonic() - started, "docker port did not publish 5432")
+        dsn = "host=127.0.0.1 port=%s user=cbcs password=cbcs-test dbname=cbcs" % port
+        result = _pytest_in_runtime(
+            runtime,
+            "py311",
+            "pg93",
+            extra_paths=(_pgtest_vendor(),),
+            extra_env={"CBCS_PG93_DSN": dsn},
+        )
+        return _judge_pytest(name, result, require_pass=True)
+    finally:
+        if container:
+            _run_command(["docker", "rm", "-fv", container], timeout=60)
+
+
 def gate_speed() -> GateResult:
     name = "speed"
     runtime = _runtime("CBCS_FORM_BUILDER_PY311", PY311_DEFAULT)
@@ -889,6 +1005,7 @@ _GATE_RUNNERS: dict[str, Callable[[], GateResult]] = {
     "oracle": gate_oracle,
     "perf": gate_perf,
     "speed": gate_speed,
+    "pg93": gate_pg93,
 }
 
 

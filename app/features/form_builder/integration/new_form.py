@@ -27,6 +27,7 @@ from app.features.form_builder.engine.project.template_use import create_from_te
 from app.features.form_builder.engine.project.templates import first_useful_widget
 from app.features.form_builder.engine.project.written_files import note_written_files
 from app.features.form_builder.integration import settings_page, template_store
+from app.features.form_builder.integration.settings_ext import connections_page as connections_settings
 from app.features.form_builder.integration.chrome import chrome_for
 from app.features.form_builder.integration.provider import FormTabProvider
 from app.features.form_builder.qtside.dialogs.from_table import FromTableDialog, locale_date_format
@@ -207,6 +208,7 @@ def attach_new_form(window: object) -> None:
         open_new_form_tab(window, directory)
 
     settings_page.install()
+    connections_settings.install()
     window._open_new_form = open_new_form  # type: ignore[attr-defined]
     window._open_new_form_card = lambda key: open_window_kind(window, key)  # type: ignore[attr-defined]
 
