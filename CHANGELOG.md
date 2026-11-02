@@ -6,6 +6,23 @@ Release tags: `v0.1`, `v0.2`, `v0.4.5`, `v0.4.9`, `v0.4.10`, `v0.4.11`, `v0.4.12
 
 LibrePy list mail-outs: v0.4.5 on 2026-06-27, v0.4.7 on 2026-06-30, v0.4.8 on 2026-08-24, v0.4.9 on 2026-08-31, v0.4.13 on 2026-10-21, v0.4.14 on 2026-10-26.
 
+## [Unreleased]
+
+Team Sync: work on one project with another shop, using the FaxMail terminal you already have.
+
+### Added
+
+- A Team view in the activity bar. Share Project invites another shop by email. They open the project from the invite, and from then on changes travel through both shops' FaxMail terminals, usually within a few minutes by day.
+- Send (in the Team view or the toolbar) saves a change with a note and sends it. Each change shows Queued, then ✓ when FaxMail sent it, then ✓✓ when the other shop has it. Save Only keeps a checkpoint without sending.
+- Incoming changes never touch your files until you press Accept. A toast, the Team badge, the status bar and a bar on any open file it touches tell you something arrived. Review opens as a tab: inline or side by side, with changed words highlighted, and forms compared as pictures.
+- When both shops changed the same lines, the Combine tab shows yours and theirs side by side over the result. Nothing is written until Finish, and Cancel puts everything back. Forms are chosen whole. A file one shop deleted and the other edited asks which to keep.
+- History of every change from both shops, with Restore, Undo This Change, compare, and who changed a line (hover in the editor). Set Aside parks unfinished work. Package Project can mark the version in history. Experiments let you try an idea separately.
+- Settings › Team: the who-changed summary, and advanced options for people who know git.
+
+### Security
+
+- Every change is signed with the project's key and checked before it is read. Messages from anyone else are ignored and counted in the Team popover. Code Studio only writes its own outgoing folders in the FaxMail mail tree and never moves or deletes your mail.
+
 ## [0.4.14] - 2026-10-26
 
 Shop settings sharing is now set up from inside Code Studio (Clair Nolt). No pointer file, link or text editing.

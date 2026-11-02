@@ -892,6 +892,18 @@ in `source_roots` and reloads the tree with a `[source root]` label.
 
 ---
 
+## 12.13 `features/team_sync`
+
+Team Sync shares a project between ChoreBoy shops through each shop's FaxMail terminal, with real git history. Product behaviour is in `docs/team_sync/SPEC.md`; the delivery plan and the engine/UI contract are in `docs/team_sync/PLAN.md`.
+
+- `api.py` is the only contract between engine and UI (`TeamSyncApi` plus frozen dataclasses). The UI never imports the engine's internals.
+- `core/` is pure Python with no Qt. `core/repo.py` is the only module that imports dulwich (vendored 0.24.10, pure-Python wheel, Apache-2.0 option). `core/merge3way.py` is CBCS's own three-way merge on `difflib`, because dulwich's merge helpers need the GPL `merge3` package. `core/mailbox.py` is the FaxMail adapter: it only creates and writes its own `.Mails/<account>/out/<id>/` folders (claimed exclusively, `.lock` first) and reads `zip_in/`, `inbox/` and `sent/` read-only. `core/service.py` (`TeamSyncService`) implements the contract; every call for one project runs on one ordered lane.
+- `ui/` builds the Thread view, toolbar Send, the Team status segment and popover, editor info bars, toasts, explorer letters, and the Review, Combine and History tabs. All engine calls go through `GeneralTaskScheduler`; nothing touches git on the GUI thread.
+- Storage: history in `<project>/.git`; `cbcs/team.json` (committed, no absolute paths, no secrets); the project key and ledger under `.git/cbcs/` (the ledger moves to local state when the project is on a share, so SQLite never sits on a share).
+- Safety rules: wire identifiers are validated before any path is built; bundles are verified (HMAC and sender) before dulwich parses them and imported with `object_store.add_thin_pack` plus a closure check; work in progress is saved as a visible local change before Accept, Undo, Copy, Restore or Bring In; Combine writes nothing until Finish and Finish re-checks HEAD.
+- Platform extension points added for it, usable by any feature: `app/shell/contributions.py` (sidebar views, a toolbar slot left of Package Project, finalize hooks, editor page hooks, file-saved notifications), `app/shell/explorer_decorations.py` (row letters from a cache, never disk at paint time), `app/shell/toast.py`, and notice bars on `EditorTabPage`.
+- Local history (section 16.2) stays independent of git.
+
 ## 13. Runner Contract
 
 The runner contract is one of the most important parts of the system.

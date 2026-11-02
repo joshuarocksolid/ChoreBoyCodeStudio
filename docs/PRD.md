@@ -33,7 +33,7 @@ You’ve discovered a new capability: launch standalone Qt (PySide2) apps using 
 
 ## 3) Non-goals (v1)
 
-- Full VSCode/IntelliJ parity (LSP breadth, advanced refactors, remote debugging, git integrations).
+- Full VSCode/IntelliJ parity (LSP breadth, advanced refactors, remote debugging, a general-purpose git client). Team Sync (`docs/team_sync/SPEC.md`) is the in-scope exception: git-backed collaboration between shops through the FaxMail terminal, in plain words.
 - Installing packages system-wide, or depending on OS packages not shipped with FreeCAD.
 - Internet-based workflows (ChoreBoy is LAN-only; no general internet). 
 - Internet marketplace and publisher-signing dependency for plugin installation.
