@@ -477,8 +477,8 @@ M7.6 and M7.R run the §13.4.10 facts on the ChoreBoy VM, using the M6.R probe m
 
 | WP | Work | Who | Done when |
 | --- | --- | --- | --- |
-| M8.0 | Data UX spec refresh: the Data panel, connections manager screen, navigation toolbar and list screens | O-spec | Approved |
-| M8.1 | Connections manager: project settings screen, Test button, generated `cbcs_connections.py`, password policies (ask, remember on this machine, none), `on_connect` hook, and driver probing (`cb_psycopg`, `psycopg`, `pg8000`; vendors pure-Python pg8000 + scramp + asn1crypto if the M0.7 probe finds no driver) | G, O-logic + O-UX | Tests against SQLite and a leased Postgres 9.3 container. **VM** |
+| M8.0 | Data UX spec refresh: the Data panel, connections manager screen, navigation toolbar and list screens. UX_SPEC §13.5 and CONTRACTS §19 (2026-11-02) | O-spec | Approved |
+| M8.1 | Connections manager: project settings screen, Test button, generated `cbcs_connections.py`, password policies (ask, remember on this machine, none), `on_connect` hook, and driver probing (`psycopg`, then `pg8000`, both shipped in FreeCAD 1.1, PLAN Appendix A; no vendoring) | G, O-logic + O-UX | Tests against SQLite and a leased Postgres 9.3 container. **VM** |
 | M8.2 | Form data source and field bindings: the key-list loading model, one record at a time, dirty tracking, close guard, conflict detection, PostgreSQL 9.3-safe SQL | G, O-logic | Scenarios 5–6 pass on SQLite and PostgreSQL 9.3 |
 | M8.3a | Lookups (foreign key → combo) | G, O-UX + O-logic | Scenario 5 on SQLite and PG 9.3 |
 | M8.3b | Master-detail line items | G, O-UX + O-logic | Scenario 6 on SQLite and PG 9.3 |
@@ -487,6 +487,23 @@ M7.6 and M7.R run the §13.4.10 facts on the ChoreBoy VM, using the M6.R probe m
 | M8.4 | Try mode for data: SQLite on a scratch copy; Postgres write then roll back, with a banner, statement and lock timeouts, side-effect warning (sequences, NOTIFY), and a per-connection read-only "Would run" option | G, O-logic | Tests prove the rollback and that the user's data is unchanged |
 | M8.5 | Eject to code: turns the data layer into plain user-owned methods, and documents the `self.ui.cbcs_*` API | G, O-logic | The ejected form behaves identically, proven by a test |
 | M8.6 | Schema helper process and the `cbcs/schema/*.json` cache (§5.1, §2.6) | G, O-logic | Schema refresh works offline and is cached |
+
+**M8 lanes.** M8 runs in waves. Lanes never edit each other's files: data sections, verbs, codes, settings pages and keys all register from each lane's own files (CONTRACTS §19.1).
+
+| Wave | Lanes | Notes |
+| --- | --- | --- |
+| 0 | M8.0s seams | The registries, both Data tab shells, `types.py`, `source.py`, the FB3xx module, data names in `FormulaEnv`, and the M8 verbs as read-only entries. Merges before any other M8 code |
+| 1 | M8.1 connections, M8.6 schema helper and cache | M8.1's Test button uses M8.6's `test` request. M8.1 owns `connections*.py`, the settings page and the closed-form `.ui` writer (UX-CONN-004); M8.6 owns `schema.py`, `helper/` and the Refresh UI. M8.1 also leases the PostgreSQL 9.3 container recipe and records driver versions on the VM |
+| 2 | M8.2 data source, bindings and record verbs | The record expander, `sql.py`, the Data tab body and the inspector binding section |
+| 3 | M8.3a lookups, M8.3b lines, M8.3c list screens | In parallel, each with its own expander and Data sections |
+| 4 | M8.3d form from table, M8.4 Try with data, M8.5 eject | In parallel. M8.5 also takes M7R-11 (closed forms on method rename), reusing M8.1's closed-form writer |
+| 5 | M8.7 persona walkthroughs, then M8.R | As M7.7 and M7.R |
+
+| WP | Work | Who | Done when |
+| --- | --- | --- | --- |
+| M8.0s | Seams for M8 (above, and CONTRACTS §19.1's list: close-guard hook, setup-line order, model change signals, settings-page project scope) | G, O-logic | Empty sections register. A form with no data generates byte-identical to M7 |
+| M8.7 | Persona walkthroughs (UX §13.5.10): the shop owner and the Qt developer, keys-only, through Form from a table, lookups, lines, Try and the running app | G, O-UX | Findings fixed or ledgered, with walk shots |
+| M8.R | Review of M8: heuristic pass, K31–K34 together, UX-M8-003 speed rows on the Mac and the VM, the invoice demo on the VM against PostgreSQL 9.3, fix lanes. Carries M7.R's notes (`orch/m7r_notes.md`, "Carried to M8") | G, O-UX + O-logic | APPROVE. Ledger: every M8 row done |
 
 ### M9. Hardening and polish
 

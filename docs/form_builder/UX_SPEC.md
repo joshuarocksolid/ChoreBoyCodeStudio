@@ -407,7 +407,7 @@ Clicking a card, or pressing Enter on a focused card, creates the files with the
 - dates in the preview use the project locale with a four-digit year (spike shows "1/1/00");
 - the primary button says what it does: "Create form with 6 fields"; disabled with the reason when 0 columns are included ("Include at least one column").
 
-**UX-TABLE-002** `M8.3d` `[S]` From M8 the source is a named connection, and the created form is bound. Until then it lays out unbound fields from a SQLite file.
+**UX-TABLE-002** `M8.3d` `[S]` From M8 the source is a named connection, and the created form is bound, as UX F13 (§13.5.1) describes. Until then it lays out unbound fields from a SQLite file.
 
 ### 4.3 Workbench layout
 
@@ -897,7 +897,7 @@ The curated rows per class come from a registry (M3.1b) so M4 adds rows without 
 
 **UX-INSP-014** `M6.0` `[S]` From M6 the Behavior tab follows LOGIC_DESIGN §2.1: sections State, Checks, Events in that fixed order, with the Connections list becoming the Events list. The layout reserves this order already: the M3 Connections list sits where Events will go (bottom), so muscle memory carries over.
 
-**UX-INSP-015** `M8.0` `[S]` From M8 the Data tab follows LOGIC_DESIGN §2.6.
+**UX-INSP-015** `M8.0` `[S]` From M8 the Data tab is UX-BIND-001 (§13.5.4).
 
 ---
 
@@ -3056,6 +3056,284 @@ Words for the rules: "Enabled when", "Visible when", "Read-only when", "Value", 
 - **M7.6**: Preview with behavior opens and reloads within UX-M7-003's VM rows.
 - **M7.2a and M7.3a**: a generated module with 100 rules and 60 checks runs under FreeCAD 1.1's PySide6 on the VM within the refresh row. The `Decimal` and `re` helpers behave the same as on the Mac (the conformance subset runs there).
 - **M7.1**: the conformance suite's Python 3.9 subset passes in the 3.9 AppRun lane.
+
+### 13.5 M8: data (logic level 4)
+
+Version 1 (work package M8.0, 2026-11-02). Binding for M8. It is the on-screen half of LOGIC_DESIGN §2.6, §2.10–2.11 (data rows) and §5, with the owner decisions of 2026-10-20 applied, and it builds on §13.3 (M6) and §13.4 (M7). The engine contracts are CONTRACTS §19. The changes this version makes to LOGIC_DESIGN are listed at its end ("Changes recorded by M8.0").
+
+**Scope.** Level 4:
+- named connections, managed by Code Studio, with a Test button and a generated `cbcs_connections.py`;
+- one data source per record form, with field bindings;
+- the record verbs and the record toolbar;
+- lookups;
+- one lines grid per form;
+- list and search screens;
+- form-from-table producing bound forms;
+- Try with data;
+- Eject to code;
+- the schema cache and the schema helper process.
+
+Out of scope, as LOGIC §8 lists: query builders, upserts, more than one lines grid, record locks, Qt SQL models, and database access inside formulas.
+
+**Words.** These add to §13.4's words.
+- A **connection** is a named way to reach one database ("Shop database").
+- A **table** is a database table. A **column** is one of its columns. The person never sees "field" used for a column: a **field** is a widget on the form.
+- A **record** is one row of the form's table.
+- A form is **bound** to a table when it has a data source. A field is **bound** to a column.
+- A **lookup** is a combo box filled from another table.
+- **Lines** are the rows of a lines grid (invoice lines).
+- A **list screen** is a form that lists records and opens one.
+
+On screen these words are never used: "query" (except a list screen's own SQL), "row" (say "record" or "line"), "null" (say "blank"), "foreign key" (say "points to {table}"), "transaction" (say "saved together"), "cursor", "commit".
+
+#### 13.5.1 Decisions
+
+| # | Question | Decision | Why |
+| --- | --- | --- | --- |
+| F1 | Who owns connections | Code Studio. Owner decision 1. Connections are a project setting with their own page: Settings › Connections, project scope. They are stored in `connections.json` at the project root, which is shipped and holds no secrets. Code Studio **generates** `cbcs_connections.py` from that file, with a do-not-edit header like `ui_*.py`. It is regenerated whenever a connection changes and on every save of a bound form whose copy is out of date (FB305) | One definition used by form-from-table, the Data panel, Try and the running app |
+| F2 | Passwords | Each PostgreSQL connection picks a policy. **Ask when the app starts** is the default: one hidden-echo prompt per app session, kept in memory. **Remember on this machine** stores the password in the machine file of CONTRACTS §19.3: outside the project, mode 0600, never packaged. **No password** is for trust and peer auth. SQLite has no policy row. The editor keeps its own copy in memory for the session, and offers "Remember on this machine" from the Test prompt | Owner decision 1. Passwords never touch the project, `.ui` or `ui_*.py` |
+| F3 | Custom setup | A connection may name a **setup function**. "Create setup function" writes `connection_setup.py` (user-owned, created once, never overwritten) with `def on_connect(name, connection):` and stores `"setup": "on_connect"` on that connection. The generated module calls it after each connect. Nothing is called unless the connection names it (P7) | Owner decision 1's escape hatch, without magic names |
+| F4 | Drivers | PostgreSQL drivers are tried in order **psycopg, then pg8000**, both shipped in FreeCAD 1.1 (PLAN Appendix A). The order is a constant in `cbcs_connections.py`. M8.1 confirms both against PostgreSQL 9.3 (§13.5.11). If psycopg 3 refuses 9.3, the order flips and this row is amended | Probe facts. No vendoring |
+| F5 | Where data lives in the workbench | Two places. (a) A **Data** tab in the left pane, beside Outline, Insert and Logic: the form's source, its columns (drag onto the canvas), its lines and the SQL. (b) A **Data** tab in the inspector (UX-INSP-015) for the selected widget: its column, a lookup for a combo, the columns of a lines grid. With the form root selected, the inspector Data tab shows the source settings | The form's source is form-wide (left pane, like Logic). A binding belongs to its widget (Decision 6), so it is edited where the widget is |
+| F6 | Data names in formulas | `form.position`, `form.count`, `form.isNew`, `form.isDirty`, `form.isFiltered`; `record.{column}` (the loaded value, for any column of the table, bound or not); a lookup's `also` columns as `{combo}.{column}`; grid aggregates `sum({grid}.{column})`, `count({grid})`; in a grid column's formula, the row's other columns by name. They are typed from the schema cache by `types.py` (CONTRACTS §19.5 type table). Columns no field can hold without loss (uuid, json, bytea, arrays, intervals) are typed text and read-only | LOGIC §5.2–5.6. Typed names keep M7's checks working on data |
+| F7 | Record steps and events | The step picker gains a **Records** group: New record, Save record, Delete record (the verb asks "Delete this {record}?" itself, so the toolbar adds no Ask step), Undo changes, First, Previous, Next, Last, Find, Show all, Reload lookups, Add a line, Delete the line, and Open record form (new or selected, on list screens). The form gains the record events **When a record is shown**, **When a new record starts**, **Before saving** (can stop the save), **After saving**, and **Before deleting** (can stop the delete), listed after M7's two form events | LOGIC §4.12 and §6.1 (`cbcsOnRecordLoaded`, `cbcsOnNewRecord`, `cbcsOnBeforeSave`, `cbcsOnAfterSave`, `cbcsOnBeforeDelete`) |
+| F8 | The record toolbar | "Add record toolbar" inserts the ordinary widgets of LOGIC §5.5 in one undo step, at the top of the form's main layout, or at the bottom when the form already ends with a button row. It is never a special widget. Its keys are the buttons' own `shortcut` properties | Decision 11 |
+| F9 | Unsaved changes | Dirty means the values differ from the snapshot taken at load (LOGIC §5.5). Typing a change back is not dirty. The running app asks "Save changes to this {record word}?" with [Save] [Discard] [Cancel] before navigating, New, Close and the window's close button. `{record word}` is the form's **record word**, a source setting that defaults to the table name in the singular ("invoices" → "invoice") | Never lose typing, and never prompt falsely |
+| F10 | Conflicts | Check by default: an update compares the loaded values (LOGIC §5.5). On a conflict: "Someone else changed this invoice since you opened it." [Reload their version] [Keep mine and save] [Cancel]. "Keep mine and save" is shown only when the source allows overwrite; otherwise it is absent | LOGIC §2.11, plus the honest third choice where the developer allowed it |
+| F11 | Try with data | Owner decision 2. **SQLite**: a scratch copy, made when Try starts and dropped when it closes. **PostgreSQL**: each verb's statements run in one transaction that is rolled back as soon as the verb finishes. The form then shows the values the database returned inside that transaction. A banner across the top of the Try window: "Try: changes to {connection} are rolled back. While a save runs, other people using it may wait up to 2 seconds." (owner decision 2's lock warning) Statement timeout 5 s and lock timeout 2 s (`SET LOCAL`). A per-connection setting **In Try, only show the SQL** turns writes into "Would run" lines. What ran shows every statement with its values. A record created in Try stays new after its save: the form shows it as saved, says "rolled back" in What ran, and leaving it discards it. Try refuses data when the source uses your own connection hook (the `connection` hook, UX-DATA-007 and LOGIC §5.9), and runs that form with data steps as "Would run" only, saying why When a write used a sequence (`nextval`), or the table has triggers, What ran adds the side-effect warning of §13.5.9 | Realistic writes with no lasting change, and locks held for milliseconds |
+| F12 | Schema | SQLite is read in the editor with the standard `sqlite3` in read-only mode (`mode=ro`). PostgreSQL is read by the schema helper, a short-lived AppRun child (CONTRACTS §19.7). The editor process never imports a PostgreSQL driver. The result is cached in `cbcs/schema/{connection}.json`. Every data screen shows "Columns read {date, time}" with [Refresh]. A cache older than 7 days says "(may be out of date)" in `fb.warning` | Offline design, and native libraries stay out of the editor |
+| F13 | Form from table | The Start screen's "Form from a table" (UX-TABLE-002) starts from a connection, not a file: "Connection [Shop database ▾] [Add connection…]". It gains "Make" with three choices: **Record form** (default), **List screen**, and **List screen and record form**. A record form can include its lines when another table points to this one ("Include lines from invoice_lines"). The result is bound, has the record toolbar, and opens with the Data tab showing | One path from a database to a working app |
+| F14 | Eject | Data tab ⋯ › "Eject to code…" opens a dialog listing what will change: the methods added to the window file, the properties removed, and the steps rewired. [Eject] [Cancel]. It is one undo step in the form and one in the window file. Undo restores both while both files are open in this session | Decision 12 |
+| F15 | Keys | Ctrl+Shift+D: the Data tab with its column list focused. Alt+D in the inspector: the Data tab. In the column list, Enter inserts a new bound field after the canvas selection, and focus stays in the list so the next Enter inserts the next one. Shift+Enter binds the column to the selected field instead. Keys in the running app are the toolbar buttons' own shortcuts (Ctrl+N, Ctrl+S, PgUp, PgDown, Ctrl+Home, Ctrl+End, Ctrl+F) | Builds on UX-KEY-004 with no rebinding. Alt+D is unused in the inspector |
+
+#### 13.5.2 Connections (CONN)
+
+**UX-CONN-001** `M8.1` `[S K]` Settings › Connections is a page in the CBCS settings dialog, project scope only. Without an open project it reads "Open a project to manage its connections." The page has a list on the left (name, then the engine in `fb.faint`: "SQLite · data/shop.db", "PostgreSQL · clerk@192.168.1.20/shop"), [+ Add] [Duplicate] [Remove] under it, and the editor on the right. An empty list reads "No connections yet. Add one to bind forms to a database." with [+ Add SQLite file] and [+ Add PostgreSQL].
+
+**UX-CONN-002** `M8.1` `[S]` The editor's rows:
+- **Name.** The on-screen name, such as "Shop database". Its code name (`shop`), shown under it in `fb.faint`, is derived from the name and editable. It must match `^[a-z_][a-z0-9_]*$`.
+- **SQLite:** File, with [Choose…]. It is stored relative to the project. A file outside the project is refused with "Keep the database inside the project so it is packaged with the app."
+- **PostgreSQL:** Host, Port (5432), Database, User, Schema (`public`), Password (Ask when the app starts / Remember on this machine / No password).
+- Setup function: "none" with [Create setup function], or `on_connect` as a link to `connection_setup.py`.
+- In Try, only show the SQL (unticked).
+
+**UX-CONN-003** `M8.1` `[S T]` [Test] runs the schema helper's `test` request (CONTRACTS §19.7) and shows the result in place:
+- success: "Connected · PostgreSQL 9.3.25 · 14 tables · psycopg" with a ✓;
+- failure: the first line of the driver's message, plus a sentence from §13.5.9 when the cause is known (wrong password, host not reachable, database missing, no driver).
+
+A password the policy needs is asked once per editor session: "Password for clerk on shop", hidden echo, with "Remember on this machine" (unticked). Test never blocks the dialog. While it runs, the button reads "Testing…", and Esc cancels the test, not the dialog.
+
+**UX-CONN-004** `M8.1` `[S]` Renaming a connection's code name moves its entry in this machine's password file (other machines ask again), and offers to update every form that uses it: "3 forms use shop. Update them?" [Update] [Cancel]. The update is one undo step per open form. Closed forms are rewritten with the `.ui` writer, with the closed-form writer M8.1 builds. M8.5 reuses it for M7R-11 (method rename in closed forms). Removing a connection that forms use is refused with the list of forms.
+
+**UX-CONN-005** `M8.1` `[S]` Saving the page writes `connections.json` (canonical, CONTRACTS §19.2) and regenerates `cbcs_connections.py`. The project tree shows both files. `cbcs_connections.py` gets the generated-file treatment of UX §3.3. The Package wizard ships `connections.json`, `cbcs_connections.py` and `connection_setup.py`, and never the machine file. A test proves the machine file is not in the package. A SQLite file is packaged as **seed data**: the installed app copies it to its own data folder on first run and never overwrites it on update (CONTRACTS §19.4), so updating an app never replaces a customer's records.
+
+#### 13.5.3 The Data tab in the left pane (DATA)
+
+**UX-DATA-001** `M8.2` `[S E]` Empty state for a form with no source: "This form isn't connected to a database." Then [Connect to a table…] and, when the project has no connection, [Add a connection…], which opens UX-CONN-001.
+
+**UX-DATA-002** `M8.2` `[S]` Connect to a table: a small sheet with these rows.
+- Connection.
+- Table, a list with a filter.
+- Key: the primary key, read from the schema. A table with no single-column key is listed but disabled, with "{table} has no single key column. Record forms need one."
+- Order: the key ascending by default; up to three columns.
+- Opens at: First / Last / A new record / Nothing (your code calls `cbcs_open`).
+- Record word: the singular of the table name, editable.
+
+[Connect] writes `cbcsData` in one undo step.
+
+**UX-DATA-003** `M8.2` `[S A]` A connected form's Data tab, top to bottom:
+1. **Source line:** "invoices in Shop database", with [Change…] and ⋯ (Show SQL, Python hooks…, Eject to code…, Disconnect…).
+2. **Columns:** one 24 px row per column. Each row reads the column name, its type in words ("whole number", "money", "date", "text up to 40", "yes/no", "points to customers"), and its badges ("key", "required", "unique"). At the right: the bound field's display name as a link that selects it, "(not bound)" in `fb.faint`, or for a lines table "lines → linesView".
+3. **Lines:** "Lines from invoice_lines → linesView" with [Edit…], or [Add lines…] when another table points to this one.
+4. **Buttons:** [Bind fields by name] [Add record toolbar].
+5. **Footer:** "Columns read 2 Nov 14:02 [Refresh]".
+
+At 184 px the type words wrap under the column name. The column name never elides.
+
+**UX-DATA-004** `M8.2` `[S T]` Dragging a column onto the canvas inserts a labelled field of the suggested class (LOGIC §5.3 table) and kind. Its object name is the column name, and it is bound, all in one undo step. A column that points to another table inserts a lookup combo (§13.5.5). Enter and Shift+Enter do the same from the keyboard (F15). Dropping a column onto an existing compatible field binds it instead, and the drop hint reads "Bind to invoice_date". An incompatible field shows the not-allowed drop with "A date column can't be shown in a check box."
+
+**UX-DATA-005** `M8.2` `[S T]` Bind fields by name previews a list: "invoiceDateEdit → invoice_date", "notesEdit → notes", with a tick each, and [Bind {n}] [Cancel]. Matching is exact first, then by stem, as LOGIC §2.6 describes. One undo step.
+
+**UX-DATA-006** `M8.2` `[S]` Show SQL opens a read-only panel listing every statement the form runs: select keys, load one, insert, update, delete, lookups, lines. Each statement has its placeholders and a caption ("Load one invoice"). [Copy all]. The SQL is the generator's own text (CONTRACTS §19.5), never a separate rendering.
+
+**UX-DATA-007** `M8.2` `[S]` Python hooks…: one row per hook (After a record is shown, Before saving, After saving, Before deleting, After deleting, When a new record starts, Connection), each with "none [create]" or a method link, as M6's call steps work (UX-CODE-003). Creating writes the stub through the M6 window-file path.
+
+#### 13.5.4 Bindings in the inspector (BIND)
+
+**UX-BIND-001** `M8.2` `[S K]` With a widget selected, the inspector's Data tab shows:
+- "Column [invoice_date ▾]", or "Not bound [Bind ▾]";
+- for a bound field, the column's type in words and "Only show, never save" (`cbcsBindMode = readOnly`);
+- for a combo, the Lookup section (§13.5.5);
+- for a table view, the Lines section (§13.5.6).
+
+With nothing bindable selected (a label or a layout), it reads "Labels and layouts aren't bound. Select a field." On the form root it shows the source settings of UX-DATA-002.
+
+**UX-BIND-002** `M8.2` `[S T]` A binding that doesn't fit the column's type gets a problem badge on the row and on the canvas field. Examples: text into a spin box, a date column on a line edit without the date kind, a column that isn't in the schema. Each is an FB3xx Warning or Error from §13.5.9, with Ctrl+. fixes: "Change to a date edit", "Set kind to date", "Pick another column".
+
+**UX-BIND-003** `M8.2` `[S]` The canvas shows a bound field's column as a small chip under the field while the Data tab (either one) is current, or with Show all on. The chip text is the column name in `fb.faint` (§5.4 placement rules). With the Data tabs closed, there is no chip. The Logic panel lists bindings in a DATA group after Events.
+
+#### 13.5.5 Lookups (LKP)
+
+**UX-LKP-001** `M8.3a` `[S K]` A combo's Data tab, Lookup section:
+- "Fill from [customers ▾]";
+- "Show [name ▾]";
+- "Save [id ▾]" (the key);
+- "Order by [name ▾]";
+- "Also carry [terms_days ×] [+]";
+- "First item [(choose a customer)]" with a tick to turn it off;
+- "Let people type to search" (makes the combo editable, LOGIC §5.4).
+
+A lookup over a table with more than 2,000 rows shows "customers has 12,480 rows. A search screen opens faster than a long list. [Use a search screen instead]". Above the cap of CONTRACTS §19.6 the count reads "more than 100,000 rows".
+
+**UX-LKP-002** `M8.3a` `[S]` Inserting a column that points to another table makes the lookup with these defaults: show the first text column named `name`, `title` or `description`, else the first text column; order by the shown column; and a first item "(choose a {singular})". The Data tab opens on the new combo with "Show" focused, so a wrong guess is one keystroke from fixed.
+
+**UX-LKP-003** `M8.3a` `[S T]` In the running app, a saved key that isn't in the list shows as "(unknown #17)" and stays selected (LOGIC §5.4). Try's What ran says "Lookup customerCombo: key 17 isn't in customers" once.
+
+#### 13.5.6 Lines grids (LINES)
+
+**UX-LINES-001** `M8.3b` `[S K]` [Add lines…] (from the Data tab or a table view's Data tab) opens a sheet with these rows.
+- "Lines from [invoice_lines ▾]", listing tables that point to this one.
+- "Linked by [invoice_id]", read from the schema.
+- "Order by [line_no ▾]".
+- "Number lines in [line_no ▾ / none]".
+- A column list: Include, Column, Header, Kind, Default, Lookup, Read-only.
+- "+ Calculated column", which adds a name, a header and a formula.
+
+[Add lines] inserts a `QTableView` named `{table}View`, or binds the selected table view, with Add line and Delete line buttons under it. The buttons carry the steps "Add a line" and "Delete the line" (two new Records verbs). One undo step.
+
+**UX-LINES-002** `M8.3b` `[S]` In the running app, Ctrl+Insert adds a line and Ctrl+Delete asks "Delete line 3?" Calculated columns are read-only and grey. A failed column check marks the cell red with the message as its tooltip. Check all fields reports "Line 3: Qty is required" and selects the cell.
+
+**UX-LINES-003** `M8.3b` `[S]` A second lines grid on one form is refused at design time with FB320: "A form has one lines grid in this version. Use a method for more." Nested grids are refused the same way.
+
+#### 13.5.7 List screens (LIST)
+
+**UX-LIST-001** `M8.3c` `[S]` A list screen is a form whose source has `mode: list`. Its Data tab shows:
+- "List of customers in Shop database";
+- "Columns shown", reorderable;
+- "Search in" (default: every text column shown);
+- "Search box [searchEdit ▾]";
+- "Filters" (a widget and a column; blank means any);
+- "Order by";
+- "At most [500] records";
+- "Opens [customer.ui ▾] in a dialog", keyed by `id`.
+
+A fixed SQL source is offered under ⋯ › "Use my own SQL…". It accepts a single `SELECT` and runs it once through the schema helper to read its columns. Anything else is refused with "Only a single SELECT can be a list's source."
+
+**UX-LIST-002** `M8.3c` `[S]` In the running app, typing re-searches after 250 ms of quiet. A cut-off result shows "Showing the first 500 of 1,284. Type more to narrow the list." directly above the table, never in a tooltip (P8). Enter or a double-click opens the record form. When the dialog closes, the list re-runs and keeps the selection.
+
+**UX-LIST-003** `M8.3c` `[S]` A list screen made from Form from a table gets a search box with the placeholder "Search customers", the table, and [New] and [Open] buttons with the steps "Open record form (new)" and "Open record form (selected)".
+
+#### 13.5.8 Try with data, Eject and schema (TRYD, EJECT, SCH)
+
+**UX-TRYD-001** `M8.4` `[S T]` A bound form in Try shows a strip under Window values:
+- SQLite: "Data: scratch copy of data/shop.db [Reset data]";
+- PostgreSQL: "Data: Shop database. Changes are rolled back." with the banner of F11 at the top of the window in `fb.warning` fill.
+
+What ran logs each statement as "Ran: UPDATE "invoices" SET … (3 values)". The statement is expandable to show its values. With "only show the SQL", the line reads "Would run: …".
+
+**UX-TRYD-002** `M8.4` `[T]` Tests prove the user's data is unchanged after a Try session of New, Save, Delete and line edits, on SQLite (file hash) and on PostgreSQL 9.3 (row count and an `md5` of the table, before and after). A test holds a row lock in another session and proves Try's save stops at the 2 s lock timeout with the §13.5.9 sentence, not a hang.
+
+**UX-EJECT-001** `M8.5` `[S T]` Eject to code (F14). The dialog lists:
+- "Adds {n} methods to invoice_window.py: load_record, save_record, …";
+- "Removes the data settings from invoice.ui";
+- "Save, Delete and the toolbar buttons will call your methods".
+
+After ejecting, the Data tab reads "This form's data code is in invoice_window.py." with a link to the first method. A test proves the ejected form behaves identically: the same SQL, the same field values after load, save and delete, on SQLite and PostgreSQL.
+
+**UX-SCH-001** `M8.6` `[S T]` Refresh shows "Reading columns…" with Esc to cancel. When it completes, the Data tab updates in place and keeps scroll and selection. The editor stays responsive during a PostgreSQL refresh, because the helper is a separate process. If the database can't be reached, the cached columns stay in use, with the note "Using columns read 2 Nov. Can't reach Shop database: {reason}". Bindings to columns that disappeared get FB303 on Refresh, never silently removed.
+
+#### 13.5.9 Copy
+
+Sentences, en_US, following UX-M6-001 and UX-M7-001. `{record}` is the record word.
+
+| Where | Text |
+| --- | --- |
+| Test, wrong password | "The password for {user} was not accepted." |
+| Test, host down | "Can't reach {host}:{port}. Check the address and that the database server is running." |
+| Test, no database | "{host} has no database named {database}." |
+| Test, no driver | "No PostgreSQL driver could be loaded (tried psycopg, pg8000)." |
+| App, can't connect on open | "Can't open {connection}: {reason}." [Retry] [Close] |
+| App, unsaved | "Save changes to this {record}?" [Save] [Discard] [Cancel] |
+| App, delete | "Delete this {record}?" [Delete] [Cancel] |
+| App, conflict | "Someone else changed this {record} since you opened it." [Reload their version] [Keep mine and save]* [Cancel] |
+| App, deleted by someone else | "This {record} was deleted by someone else." [Close] |
+| App, unique | "Another {record} already uses this {field display name}." (under the field) |
+| App, not null | "{field display name} is required." (under the field) |
+| App, points to | "{field display name} must be one of the {table} records." |
+| App, position | "Record {n} of {count}" / "New {record}" |
+| App, find narrowed | "Showing {n} matches. [Show all]" |
+| List, cut off | "Showing the first {limit} of {count}. Type more to narrow the list." |
+| Try, banner | "Try: changes to {connection} are rolled back. While a save runs, other people using it may wait up to 2 seconds." |
+| Try, own connection | "This form uses your own connection method, so Try only shows what it would run." |
+| App, password prompt | "Password for {user} on {connection}" with "Remember on this machine" when the policy allows it |
+| Try, lock timeout | "Another user is editing this {record}. Try stopped waiting after 2 seconds." |
+| Try, sequence | "Try used number {n} from {sequence}. Rolled-back numbers are skipped, so the next real {record} gets a later number." |
+| Try, triggers | "{table} has triggers. Anything they do outside the database isn't rolled back." |
+| Schema, stale | "Columns read {date} (may be out of date)" |
+| Schema, unreachable | "Using columns read {date}. Can't reach {connection}: {reason}" |
+| Bind, type | "A {type words} column can't be shown in a {class words}." |
+| Bind, missing | "{table} has no column named {column}." |
+
+\* only when the source allows overwrite.
+
+FB301–FB3xx are declared in `diagnostic_codes/fb3xx_data.py` (CONTRACTS §19.8). Each has one of the sentences above, or its own.
+
+#### 13.5.10 Shared rules, speed and evidence
+
+**UX-M8-001** `all M8` `[C]` §13.5's words. Every sentence a lane adds is a §13.5.9 row.
+
+**UX-M8-002** `all M8` `[T]` Every M8 edit is one undo step with a name: "Connect to invoices", "Bind invoice_date", "Add lookup", "Add lines", "Add record toolbar", "Eject to code". Settings › Connections edits are not form undo steps; they are saved with the dialog.
+
+**UX-M8-003** `all M8` `[A]` Speed, CPU p95, M6.R method. The reference is a SQLite `shop.db` with 100,000 invoices, 400,000 lines, 2,000 customers and 5,000 products, and the same schema in PostgreSQL 9.3.
+
+| Path | Mac | VM |
+| --- | --- | --- |
+| Data tab fill for a 40-column table, cached schema | ≤ 16 ms | ≤ 60 ms |
+| Open a bound form, SQLite: load 100,000 keys, both lookups (2,000 customers, 5,000 products) and record 1 with 20 lines | ≤ 200 ms | ≤ 800 ms |
+| Show another record with 20 lines | ≤ 16 ms | ≤ 60 ms |
+| Dirty check on a keystroke | ≤ 1 ms | ≤ 4 ms |
+| Save a record with 20 lines, SQLite | ≤ 40 ms | ≤ 160 ms |
+| Load a 2,000-row lookup | ≤ 30 ms | ≤ 120 ms |
+| List search, 2,000 customers, limit 500 | ≤ 50 ms | ≤ 200 ms |
+
+VM limits are 4× the Mac's, the low end of PLAN Appendix A's measured pure-Python gap; where a VM row misses and its Mac row passes, the lane profiles before asking for a budget change. The schema helper's refresh time (30 tables) and every PostgreSQL row are recorded on both machines, not budgeted: network latency isn't ours. The editor must stay responsive during a refresh (a test).
+
+**UX-M8-004** `all M8` `[A K]` Keys register from lane files in `integration/keys_ext/`. Accessible names read as sentences: "invoice_date, date, bound to Invoice date"; "Lookup, fill from customers, show name"; "Record 3 of 120".
+
+**Keyboard scripts.**
+- **K31** (M8.1): Settings › Connections › Add PostgreSQL, fill in the rows, Test, read the result. No mouse.
+- **K32** (M8.2): Ctrl+Shift+D, connect to invoices, Enter on four columns to insert four bound fields, Shift+Enter to bind a fifth column to an existing field, then Add record toolbar.
+- **K33** (M8.3a, M8.3b): Enter on customer_id makes a lookup and fixes Show. Then Add lines with a calculated column.
+- **K34** (M8.4): Ctrl+Shift+R, PgDown twice, change a field, Ctrl+S, read What ran and the banner.
+
+**Screenshots** (light, dark and both high contrast; 100% and 200%; the inspector also at 236 px; the left Data tab also at 184 px):
+- Settings › Connections empty, filled, and with a Test success and a failure;
+- the Data tab empty, connected, and with a stale schema;
+- Connect to a table;
+- Show SQL;
+- the inspector Data tab for a field, a combo lookup and a lines grid;
+- Add lines;
+- a list screen's Data tab;
+- Form from a table with Make;
+- Try with the PostgreSQL banner and What ran statements;
+- the Eject dialog;
+- the running app with an unsaved prompt and a conflict.
+
+**Personas (M8.7).**
+- The shop owner makes an invoice app from Form from a table (record form plus list screen), fixes a lookup's Show, adds lines with a total, tries it, and saves a record in the running app.
+- The Qt developer adds a `before_save` hook, reads Show SQL, writes a setup function that sets `search_path`, and ejects one form.
+
+Each walkthrough records step counts and confusion points, as M7.7 did.
+
+#### 13.5.11 Facts M8 lanes check on the ChoreBoy VM
+
+- **M8.1**:
+  - psycopg and pg8000 both connect to PostgreSQL 9.3 from the AppRun runtime: md5 auth, `SET client_encoding`, `RETURNING`.
+  - The machine file's folder under the CBCS state root is writable from a packaged app run, and `chmod 0600` sticks.
+- **M8.2**: a generated bound form opens, saves and navigates under FreeCAD 1.1 within UX-M8-003's VM rows.
+- **M8.3d**: the invoice end-to-end demo (PLAN M8.3d) runs on the VM against a PostgreSQL 9.3 server reachable from the VM.
+- **M8.4**: Try rollback on the VM leaves the table's `md5` unchanged.
+- **M8.6**: the helper's cold start on the VM, recorded.
 
 ---
 
