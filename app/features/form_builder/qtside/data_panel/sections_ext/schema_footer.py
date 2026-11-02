@@ -50,18 +50,20 @@ class _Footer(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 8, 0, 0)
         row = QHBoxLayout()
+        layout.addLayout(row)
+        self._row = row
         self._sentence = QLabel(self)
         self._sentence.setObjectName("formBuilder.data.schemaSentence")
-        self._sentence.setWordWrap(True)
-        row.addWidget(self._sentence, 1)
+        row.addWidget(self._sentence)
+        # UX §13.5.9: "Columns read {date} (may be out of date)" is one line.
+        self._stale = QLabel("(may be out of date)", self)
+        self._stale.setObjectName("formBuilder.data.stale")
+        row.addWidget(self._stale)
+        row.addStretch(1)
         self._refresh = QPushButton("Refresh", self)
         self._refresh.setObjectName("formBuilder.data.schemaRefresh")
         self._refresh.clicked.connect(self._on_refresh)
-        row.addWidget(self._refresh)
-        layout.addLayout(row)
-        self._stale = QLabel("(may be out of date)", self)
-        self._stale.setObjectName("formBuilder.data.stale")
-        layout.addWidget(self._stale)
+        row.addWidget(self._refresh, 0)
         root = _project_root(host)
         if root:
             install_schema_reader(root)
@@ -87,7 +89,7 @@ class _Footer(QWidget):
         self._generation += 1
         generation = self._generation
         self._busy = True
-        self._sentence.setText(footer_text(None, busy=True))
+        self._set_sentence(footer_text(None, busy=True), wrap=False)
         self._stale.hide()
         self._install_filter()
         install_secret_marshal()
@@ -155,7 +157,7 @@ class _Footer(QWidget):
 
     def _show_idle(self) -> None:
         schema = self._cached()
-        self._sentence.setText(footer_text(schema))
+        self._set_sentence(footer_text(schema), wrap=False)
         stale = schema is not None and bool(schema.read_at) and is_stale(schema, datetime.datetime.now())
         self._stale.setVisible(stale)
 
@@ -163,8 +165,16 @@ class _Footer(QWidget):
         if schema is None:
             schema = self._cached()
         title = connection.title if connection is not None else ""
-        self._sentence.setText(footer_text(schema, failed=True, title=title, reason=reason))
+        self._set_sentence(footer_text(schema, failed=True, title=title, reason=reason), wrap=True)
         self._stale.hide()
+
+    def _set_sentence(self, text: str, wrap: bool) -> None:
+        # Only the can't-reach sentence is long. A wrapped label sizes narrow, which would
+        # break "Columns read 2 Nov 14:02" and push "(may be out of date)" off its line.
+        self._sentence.setWordWrap(wrap)
+        self._row.setStretch(0, 1 if wrap else 0)
+        self._row.setStretch(2, 0 if wrap else 1)
+        self._sentence.setText(text)
 
     def _cached(self) -> object:
         doc = _document(self._host)
