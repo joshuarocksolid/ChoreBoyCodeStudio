@@ -4,12 +4,25 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import threading
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import List, Optional, Sequence, Tuple
 
 from app.features.team_sync.core import TeamSyncError
+
+
+def _guard(method):  # type: ignore[no-untyped-def]
+    """One connection serves the shell thread pool. Hold the lock for the whole call."""
+
+    def wrapped(self, *args, **kwargs):  # type: ignore[no-untyped-def]
+        with self._lock:
+            return method(self, *args, **kwargs)
+
+    wrapped.__name__ = method.__name__
+    wrapped.__doc__ = method.__doc__
+    return wrapped
 
 
 @dataclass(frozen=True)
@@ -42,14 +55,17 @@ class Ledger:
     def __init__(self, path: Path) -> None:
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        self._db = sqlite3.connect(str(self.path))
+        self._lock = threading.RLock()
+        self._db = sqlite3.connect(str(self.path), check_same_thread=False)
         self._db.row_factory = sqlite3.Row
         self._db.execute("PRAGMA journal_mode=DELETE")
         self._create()
 
+    @_guard
     def close(self) -> None:
         self._db.close()
 
+    @_guard
     def add_outbox(
         self,
         *,
@@ -86,6 +102,7 @@ class Ledger:
         )
         self._db.commit()
 
+    @_guard
     def set_state(
         self,
         bundle_id: str,
@@ -118,6 +135,7 @@ class Ledger:
         )
         self._db.commit()
 
+    @_guard
     def rows(self, states: Optional[List[str]] = None) -> List[OutboxRow]:
         if states:
             marks = ",".join("?" for _ in states)
@@ -129,6 +147,7 @@ class Ledger:
             cursor = self._db.execute("SELECT * FROM outbox ORDER BY created_at")
         return [_row(item) for item in cursor.fetchall()]
 
+    @_guard
     def for_change(self, change_id: str) -> List[OutboxRow]:
         cursor = self._db.execute(
             "SELECT * FROM outbox WHERE change_id = ? ORDER BY recipient, part_idx",
@@ -136,9 +155,11 @@ class Ledger:
         )
         return [_row(item) for item in cursor.fetchall()]
 
+    @_guard
     def outbox_part(self, bundle_id: str, recipient: str, part_idx: int) -> Optional[OutboxRow]:
         return self._one(bundle_id, recipient, part_idx)
 
+    @_guard
     def for_tip(self, recipient: str, tip: str) -> List[OutboxRow]:
         cursor = self._db.execute(
             "SELECT * FROM outbox WHERE recipient = ? AND tip = ? ORDER BY part_idx",
@@ -146,6 +167,7 @@ class Ledger:
         )
         return [_row(item) for item in cursor.fetchall()]
 
+    @_guard
     def latest(self) -> Optional[OutboxRow]:
         cursor = self._db.execute(
             "SELECT * FROM outbox WHERE verb = 'push' ORDER BY created_at DESC LIMIT 1"
@@ -153,6 +175,7 @@ class Ledger:
         row = cursor.fetchone()
         return _row(row) if row is not None else None
 
+    @_guard
     def mark_seen(self, message_key: str, seen_at: str, result: str) -> None:
         self._db.execute(
             "INSERT OR REPLACE INTO seen (message_key, seen_at, result) VALUES (?, ?, ?)",
@@ -160,12 +183,14 @@ class Ledger:
         )
         self._db.commit()
 
+    @_guard
     def has_seen(self, message_key: str) -> bool:
         cursor = self._db.execute(
             "SELECT 1 FROM seen WHERE message_key = ? LIMIT 1", (message_key,)
         )
         return cursor.fetchone() is not None
 
+    @_guard
     def bump_retry(self, message_key: str) -> int:
         cursor = self._db.execute(
             "SELECT attempts FROM retries WHERE message_key = ?", (message_key,)
@@ -179,6 +204,7 @@ class Ledger:
         self._db.commit()
         return attempts
 
+    @_guard
     def delete_outbox(self, bundle_id: str, recipient: str, part_idx: int) -> None:
         self._db.execute(
             "DELETE FROM outbox WHERE bundle_id = ? AND recipient = ? AND part_idx = ?",
@@ -186,6 +212,7 @@ class Ledger:
         )
         self._db.commit()
 
+    @_guard
     def set_folder(self, bundle_id: str, recipient: str, part_idx: int, out_folder: str) -> None:
         self._db.execute(
             """
@@ -196,6 +223,7 @@ class Ledger:
         )
         self._db.commit()
 
+    @_guard
     def commit_files(self, sha: str) -> Optional[List[Tuple[str, str]]]:
         """Cached changed paths for one immutable commit. ``None`` means not stored yet."""
         cursor = self._db.execute("SELECT payload FROM commit_files WHERE sha = ?", (sha,))
@@ -205,6 +233,7 @@ class Ledger:
         payload = json.loads(str(row["payload"]))
         return [(str(item[0]), str(item[1])) for item in payload]
 
+    @_guard
     def remember_commit_files(self, sha: str, files: Sequence[Tuple[str, str]]) -> None:
         payload = json.dumps([[path, kind] for path, kind in files])
         self._db.execute(
@@ -213,6 +242,7 @@ class Ledger:
         )
         self._db.commit()
 
+    @_guard
     def unverified_count(self) -> int:
         cursor = self._db.execute(
             "SELECT COUNT(*) FROM seen WHERE result = 'unverified'"
@@ -220,6 +250,7 @@ class Ledger:
         row = cursor.fetchone()
         return int(row[0] if row is not None else 0)
 
+    @_guard
     def add_part(self, bundle_id: str, idx: int, total: int, sha256: str, path: str) -> None:
         self._db.execute(
             """
@@ -230,6 +261,7 @@ class Ledger:
         )
         self._db.commit()
 
+    @_guard
     def parts_for(self, bundle_id: str) -> List[PartRow]:
         cursor = self._db.execute(
             "SELECT * FROM parts WHERE bundle_id = ? ORDER BY idx", (bundle_id,)
