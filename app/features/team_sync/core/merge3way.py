@@ -359,24 +359,35 @@ def _materialize(
     start: int,
     end: int,
 ) -> List[str]:
+    """Replay hunks across ``[start, end)``.
+
+    A zero-width span is the insertion point itself, so an insertion at
+    ``start == end`` belongs in the cluster. An insertion at the end of a
+    non-empty span is the next region and stays outside.
+    """
+
     lines: List[str] = []
     pos = start
     for hunk_start, hunk_end, hunk_lines in hunks:
-        if hunk_end < start or (hunk_start == hunk_end and hunk_start < start):
+        if hunk_start == hunk_end:
+            if start == end:
+                if hunk_start == start:
+                    lines.extend(hunk_lines)
+                continue
+            if hunk_start < start or hunk_start >= end:
+                continue
+            if hunk_start > pos:
+                lines.extend(base[pos:hunk_start])
+                pos = hunk_start
+            lines.extend(hunk_lines)
             continue
-        if hunk_start > end or (hunk_start == hunk_end and hunk_start >= end):
-            continue
-        if hunk_start >= end:
+        if hunk_end <= start or hunk_start >= end:
             continue
         if hunk_start > pos:
             lines.extend(base[pos:min(hunk_start, end)])
             pos = min(hunk_start, end)
-        if hunk_start == hunk_end:
-            if start <= hunk_start < end:
-                lines.extend(hunk_lines)
-            continue
         lines.extend(hunk_lines)
-        pos = hunk_end
+        pos = max(pos, hunk_end)
     if pos < end:
         lines.extend(base[pos:end])
     return lines
@@ -395,13 +406,31 @@ def _style_of(data: Optional[bytes], fallback: bytes) -> Tuple[str, bool]:
     return sep, trailing
 
 
+def _pick_side(base: object, ours: object, theirs: object) -> Optional[object]:
+    """Take the side that changed. A disagreement between two changes is None."""
+
+    ours_changed = ours != base
+    theirs_changed = theirs != base
+    if ours_changed and theirs_changed and ours != theirs:
+        return None
+    if theirs_changed and not ours_changed:
+        return theirs
+    return ours
+
+
 def _merge_text_file(
     path: str, base: bytes, ours: bytes, theirs: bytes
 ) -> Union[bytes, List[TreeClash]]:
-    base_lines, _base_sep, _base_trailing = inspect_text(base)
-    ours_lines, sep, trailing = inspect_text(ours)
-    theirs_lines, _sep, _trailing = inspect_text(theirs)
+    base_lines, base_sep, base_trailing = inspect_text(base)
+    ours_lines, ours_sep, ours_trailing = inspect_text(ours)
+    theirs_lines, theirs_sep, theirs_trailing = inspect_text(theirs)
+    sep = _pick_side(base_sep, ours_sep, theirs_sep)
+    trailing = _pick_side(base_trailing, ours_trailing, theirs_trailing)
     merged = merge_lines(base_lines, ours_lines, theirs_lines)
+    if sep is None or trailing is None:
+        return [_whole_clash(path, "lines", ours, theirs)]
+    chosen_sep = str(sep)
+    chosen_trailing = bool(trailing)
     if merged.clashes:
         clashes: List[TreeClash] = []
         for clash in merged.clashes:
@@ -420,13 +449,13 @@ def _merge_text_file(
                     theirs_present=True,
                     ours_bytes=ours,
                     theirs_bytes=theirs,
-                    sep=sep,
-                    trailing=trailing,
+                    sep=chosen_sep,
+                    trailing=chosen_trailing,
                 )
             )
         return clashes
     lines = merged.merged_lines() or ()
-    return join_lines(lines, sep, trailing)
+    return join_lines(lines, chosen_sep, chosen_trailing)
 
 
 def _text_lines(data: Optional[bytes]) -> Tuple[str, ...]:

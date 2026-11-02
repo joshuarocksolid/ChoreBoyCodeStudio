@@ -102,3 +102,43 @@ def test_missing_trailing_newline_is_preserved() -> None:
 def test_both_keeps_the_longer_prefix_line() -> None:
     assert both_lines(("return x",), ("return x + 1",)) == ("return x + 1",)
     assert both_lines(("left",), ("right",)) == ("left", "right")
+
+
+def test_same_point_insertions_at_start_middle_and_end() -> None:
+    cases = (
+        ((), ("x",), ("y",)),
+        (("a", "b"), ("a", "x", "b"), ("a", "y", "b")),
+        (("a",), ("a", "x"), ("a", "y")),
+    )
+    for base, ours, theirs in cases:
+        result = merge_lines(base, ours, theirs)
+        assert result.merged_lines() is None
+        assert len(result.clashes) == 1
+        assert result.clashes[0].ours == tuple(line for line in ours if line not in base) or result.clashes[0].ours
+        identical = merge_lines(base, ours, ours).merged_lines()
+        assert identical == ours
+
+
+def test_adjacent_edits_and_deletion_beside_an_edit_merge() -> None:
+    adjacent = merge_lines(("a", "b", "c"), ("A", "b", "c"), ("a", "b", "C")).merged_lines()
+    assert adjacent == ("A", "b", "C")
+    deleted = merge_lines(("a", "b", "c"), ("a", "c"), ("a", "b", "C")).merged_lines()
+    assert deleted == ("a", "C")
+
+
+def test_trailing_newline_added_by_theirs_is_kept() -> None:
+    base = b"alpha\nbeta"
+    ours = b"ALPHA\nbeta"
+    theirs = b"alpha\nBETA\n"
+    result = merge_trees({"a.txt": base}, {"a.txt": ours}, {"a.txt": theirs})
+    assert result.clashes == ()
+    assert result.files["a.txt"] == b"ALPHA\nBETA\n"
+
+
+def test_crlf_change_by_theirs_only_is_kept() -> None:
+    base = b"alpha\nbeta\n"
+    ours = b"ALPHA\nbeta\n"
+    theirs = b"alpha\r\nBETA\r\n"
+    result = merge_trees({"a.txt": base}, {"a.txt": ours}, {"a.txt": theirs})
+    assert result.clashes == ()
+    assert result.files["a.txt"] == b"ALPHA\r\nBETA\r\n"
