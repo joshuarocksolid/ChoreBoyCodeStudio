@@ -135,6 +135,9 @@ class Ledger:
         )
         return [_row(item) for item in cursor.fetchall()]
 
+    def outbox_part(self, bundle_id: str, recipient: str, part_idx: int) -> Optional[OutboxRow]:
+        return self._one(bundle_id, recipient, part_idx)
+
     def for_tip(self, recipient: str, tip: str) -> List[OutboxRow]:
         cursor = self._db.execute(
             "SELECT * FROM outbox WHERE recipient = ? AND tip = ? ORDER BY part_idx",
@@ -161,6 +164,36 @@ class Ledger:
             "SELECT 1 FROM seen WHERE message_key = ? LIMIT 1", (message_key,)
         )
         return cursor.fetchone() is not None
+
+    def bump_retry(self, message_key: str) -> int:
+        cursor = self._db.execute(
+            "SELECT attempts FROM retries WHERE message_key = ?", (message_key,)
+        )
+        row = cursor.fetchone()
+        attempts = int(row[0]) + 1 if row is not None else 1
+        self._db.execute(
+            "INSERT OR REPLACE INTO retries (message_key, attempts) VALUES (?, ?)",
+            (message_key, attempts),
+        )
+        self._db.commit()
+        return attempts
+
+    def delete_outbox(self, bundle_id: str, recipient: str, part_idx: int) -> None:
+        self._db.execute(
+            "DELETE FROM outbox WHERE bundle_id = ? AND recipient = ? AND part_idx = ?",
+            (bundle_id, recipient, part_idx),
+        )
+        self._db.commit()
+
+    def set_folder(self, bundle_id: str, recipient: str, part_idx: int, out_folder: str) -> None:
+        self._db.execute(
+            """
+            UPDATE outbox SET out_folder = ?
+             WHERE bundle_id = ? AND recipient = ? AND part_idx = ?
+            """,
+            (out_folder, bundle_id, recipient, part_idx),
+        )
+        self._db.commit()
 
     def unverified_count(self) -> int:
         cursor = self._db.execute(
@@ -234,6 +267,10 @@ class Ledger:
                     sha256 TEXT NOT NULL,
                     path TEXT NOT NULL,
                     PRIMARY KEY (bundle_id, idx)
+                );
+                CREATE TABLE IF NOT EXISTS retries (
+                    message_key TEXT PRIMARY KEY,
+                    attempts INTEGER NOT NULL
                 );
                 """
             )
