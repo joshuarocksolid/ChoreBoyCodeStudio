@@ -4,11 +4,23 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import re
 from dataclasses import dataclass
 from typing import Dict, List, Optional
 
+from app.features.team_sync.core import TeamSyncError
+
 SYNC_PREFIX = "CBCS-SYNC/1"
 VERBS = ("invite", "join", "push", "have", "want", "note", "rekey")
+_MEMBER_ID = re.compile(r"^[0-9a-f]{8}$")
+_PROJECT_ID = re.compile(r"^p_[0-9a-f]{16}$")
+_BUNDLE_ID = re.compile(r"^[bhjnkw]_[0-9a-f]{16}$")
+_SHA = re.compile(r"^[0-9a-f]{40}$")
+_SHA256 = re.compile(r"^[0-9a-f]{64}$")
+_PART = re.compile(r"^(\d+)/(\d+)$")
+_CHANGES = re.compile(r"^\d+$")
+_LINE = re.compile(r"^exp/[a-z0-9]+(?:-[a-z0-9]+)*$")
+_MAX_PARTS = 4096
 
 # Signature is over these lines, in this order. Invite leaves `key` out of the
 # HMAC because the invite is unsigned and the key travels in the body.
@@ -32,6 +44,9 @@ _CANONICAL_KEYS = (
     "sender-shop",
     "sender-email",
     "accepted",
+    "note",
+    "removed",
+    "line",
     "key",
 )
 _ALWAYS = (
@@ -72,6 +87,9 @@ class Envelope:
     sender_shop: str = ""
     sender_email: str = ""
     accepted: str = ""
+    note: str = ""
+    removed: str = ""
+    line: str = ""
 
     def part_index(self) -> int:
         return _part_numbers(self.part)[0]
@@ -168,7 +186,63 @@ def envelope_from_message(subject: str, body: str) -> Optional[Envelope]:
         sender_shop=fields.get("sender-shop", ""),
         sender_email=fields.get("sender-email", ""),
         accepted=fields.get("accepted", ""),
+        note=fields.get("note", ""),
+        removed=fields.get("removed", ""),
+        line=fields.get("line", ""),
     )
+
+
+def require_bundle_id(value: str) -> str:
+    if not _BUNDLE_ID.match(value or ""):
+        raise TeamSyncError("That bundle id is not one Team Sync accepts.")
+    return value
+
+
+def validate_envelope(envelope: Envelope) -> None:
+    """Reject a message whose ids could be used as path parts.
+
+    Local files are named only from ids that match these patterns.
+    """
+
+    if envelope.verb not in VERBS:
+        raise TeamSyncError("That team message is not one Team Sync accepts.")
+    if not _PROJECT_ID.match(envelope.project_id):
+        raise TeamSyncError("That project id is not one Team Sync accepts.")
+    if not _MEMBER_ID.match(envelope.from_id):
+        raise TeamSyncError("That member id is not one Team Sync accepts.")
+    if envelope.to_id and not _MEMBER_ID.match(envelope.to_id):
+        raise TeamSyncError("That member id is not one Team Sync accepts.")
+    if not _BUNDLE_ID.match(envelope.bundle_id):
+        raise TeamSyncError("That bundle id is not one Team Sync accepts.")
+    if envelope.tip and not _SHA.match(envelope.tip):
+        raise TeamSyncError("That change id is not one Team Sync accepts.")
+    if envelope.needs:
+        for item in envelope.needs.split(","):
+            if not _SHA.match(item):
+                raise TeamSyncError("That change id is not one Team Sync accepts.")
+    if not _CHANGES.match(envelope.changes or "0"):
+        raise TeamSyncError("That team message is not one Team Sync accepts.")
+    match = _PART.match(envelope.part or "")
+    if match is None:
+        raise TeamSyncError("That part number is not one Team Sync accepts.")
+    index = int(match.group(1))
+    total = int(match.group(2))
+    if total < 1 or total > _MAX_PARTS or index < 1 or index > total:
+        raise TeamSyncError("That part number is not one Team Sync accepts.")
+    if envelope.bundle_sha256 and not _SHA256.match(envelope.bundle_sha256):
+        raise TeamSyncError("That bundle checksum is not one Team Sync accepts.")
+    if envelope.part_sha256 and not _SHA256.match(envelope.part_sha256):
+        raise TeamSyncError("That bundle checksum is not one Team Sync accepts.")
+    if envelope.member_id and not _MEMBER_ID.match(envelope.member_id):
+        raise TeamSyncError("That member id is not one Team Sync accepts.")
+    if envelope.removed and not _MEMBER_ID.match(envelope.removed):
+        raise TeamSyncError("That member id is not one Team Sync accepts.")
+    if envelope.line and not _LINE.match(envelope.line):
+        raise TeamSyncError("That line name is not one Team Sync accepts.")
+    if envelope.key_hex and not _SHA256.match(envelope.key_hex):
+        raise TeamSyncError("That project key is not one Team Sync accepts.")
+    if envelope.verb == "invite" and not _SHA256.match(envelope.key_hex):
+        raise TeamSyncError("That project key is not one Team Sync accepts.")
 
 
 def canonical_bytes(fields: Dict[str, str]) -> bytes:
@@ -228,6 +302,9 @@ def _fields(envelope: Envelope) -> Dict[str, str]:
         "sender-shop": envelope.sender_shop,
         "sender-email": envelope.sender_email,
         "accepted": envelope.accepted,
+        "note": envelope.note,
+        "removed": envelope.removed,
+        "line": envelope.line,
     }
     for key, value in optional.items():
         if value:

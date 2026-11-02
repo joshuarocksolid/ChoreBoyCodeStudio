@@ -8,7 +8,7 @@ import secrets
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 from app.features.team_sync.api import Member
 from app.features.team_sync.core import TeamSyncError
@@ -226,3 +226,155 @@ def replace_member(team: TeamFile, member: Member) -> TeamFile:
 def without_member(team: TeamFile, member_id: str) -> TeamFile:
     kept = tuple(item for item in team.members if item.id != member_id)
     return TeamFile(team.project_id, team.name, kept, team.created_at)
+
+
+def merge_team_bytes(
+    base: Optional[bytes],
+    ours: Optional[bytes],
+    theirs: Optional[bytes],
+    *,
+    ours_newer: bool,
+) -> Optional[bytes]:
+    """Union members by id. A missing member is a removal. Newer field values win."""
+
+    if ours is None and theirs is None:
+        return None
+    base_payload = _team_payload(base)
+    ours_payload = _team_payload(ours)
+    theirs_payload = _team_payload(theirs)
+    if ours_payload is None and theirs_payload is None:
+        return ours if ours is not None else theirs
+    base_members = _member_map(base_payload)
+    ours_members = _member_map(ours_payload)
+    theirs_members = _member_map(theirs_payload)
+    removed = set()
+    if ours is not None:
+        removed |= set(base_members) - set(ours_members)
+    if theirs is not None:
+        removed |= set(base_members) - set(theirs_members)
+    merged = []
+    for member_id in sorted((set(base_members) | set(ours_members) | set(theirs_members)) - removed):
+        left = ours_members.get(member_id)
+        right = theirs_members.get(member_id)
+        if left is None:
+            merged.append(right)
+            continue
+        if right is None:
+            merged.append(left)
+            continue
+        merged.append(
+            _merge_member(base_members.get(member_id, {}), left, right, ours_newer=ours_newer)
+        )
+    source = base_payload or ours_payload or theirs_payload or {}
+    created = str(source.get("created_at", ""))
+    if base_payload is not None and base_payload.get("created_at"):
+        created = str(base_payload["created_at"])
+    payload = {
+        "schema_version": SCHEMA_VERSION,
+        "project_id": _merge_field(base_payload, ours_payload, theirs_payload, "project_id", ours_newer),
+        "name": _merge_field(base_payload, ours_payload, theirs_payload, "name", ours_newer),
+        "members": merged,
+        "created_at": created,
+    }
+    return (json.dumps(payload, indent=2, sort_keys=True) + "\n").encode("utf-8")
+
+
+def remember_previous_key(project_root: Path, key: bytes, until: str) -> None:
+    """Keep a retired key until ``until`` so mail already in flight still verifies."""
+
+    path = state_dir(project_root) / "previous_keys.json"
+    rows: List[dict] = []
+    if path.is_file():
+        try:
+            loaded = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            loaded = []
+        if isinstance(loaded, list):
+            rows = [item for item in loaded if isinstance(item, dict)]
+    rows.append({"key_hex": key.hex(), "until": until})
+    atomic_write_bytes(path, (json.dumps(rows, indent=2, sort_keys=True) + "\n").encode("utf-8"), mode=0o600)
+
+
+def verification_keys(project_root: Path, now_stamp: str) -> List[bytes]:
+    """Current key, then previous keys whose grace window is still open."""
+
+    found = [read_key(project_root)]
+    path = state_dir(project_root) / "previous_keys.json"
+    if not path.is_file():
+        return found
+    try:
+        loaded = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return found
+    if not isinstance(loaded, list):
+        return found
+    for item in loaded:
+        if not isinstance(item, dict):
+            continue
+        until = str(item.get("until", ""))
+        if until and until < now_stamp:
+            continue
+        try:
+            key = bytes.fromhex(str(item.get("key_hex", "")))
+        except ValueError:
+            continue
+        if len(key) == 32 and key not in found:
+            found.append(key)
+    return found
+
+
+def _team_payload(data: Optional[bytes]) -> Optional[dict]:
+    if not data:
+        return None
+    try:
+        payload = json.loads(data.decode("utf-8"))
+    except (UnicodeError, ValueError):
+        return None
+    if not isinstance(payload, dict):
+        return None
+    return payload
+
+
+def _member_map(payload: Optional[dict]) -> Dict[str, dict]:
+    found: Dict[str, dict] = {}
+    if payload is None:
+        return found
+    for raw in payload.get("members") or []:
+        if not isinstance(raw, dict) or not raw.get("id"):
+            continue
+        member_id = str(raw.get("id"))
+        found[member_id] = {
+            "id": member_id,
+            "name": str(raw.get("name", "")),
+            "shop": str(raw.get("shop", "")),
+            "email": str(raw.get("email", "")),
+        }
+    return found
+
+
+def _merge_member(base: dict, ours: dict, theirs: dict, *, ours_newer: bool) -> dict:
+    merged = {"id": str(ours.get("id") or theirs.get("id"))}
+    for key in ("name", "shop", "email"):
+        merged[key] = _pick_field(str(base.get(key, "")), str(ours.get(key, "")), str(theirs.get(key, "")), ours_newer)
+    return merged
+
+
+def _merge_field(
+    base: Optional[dict],
+    ours: Optional[dict],
+    theirs: Optional[dict],
+    key: str,
+    ours_newer: bool,
+) -> str:
+    base_value = str((base or {}).get(key, ""))
+    ours_value = str((ours or {}).get(key, base_value))
+    theirs_value = str((theirs or {}).get(key, base_value))
+    return _pick_field(base_value, ours_value, theirs_value, ours_newer)
+
+
+def _pick_field(base: str, ours: str, theirs: str, ours_newer: bool) -> str:
+    if ours != base and theirs != base and ours != theirs:
+        return ours if ours_newer else theirs
+    if theirs != base and ours == base:
+        return theirs
+    return ours

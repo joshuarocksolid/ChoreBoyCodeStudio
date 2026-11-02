@@ -13,6 +13,8 @@ from app.features.team_sync.core import TeamSyncError
 from app.features.team_sync.core.protocol import digest_equal, sha256_hex
 
 PART_LIMIT = 10 * 1024 * 1024
+_SIZE_CAP = 36 * 1024 * 1024
+_HEADER_BUDGET = 8192
 
 
 def new_bundle_id() -> str:
@@ -49,10 +51,32 @@ def attachment_name(project_name: str, bundle_id: str, part: int, total: int) ->
     return f"{base}.part-{part:02d}-of-{total:02d}"
 
 
-def part_limit_for(max_message_bytes: int) -> int:
-    """Fit a part under the terminal cap after base64 growth and headers."""
+def wrapped_base64_length(raw_bytes: int) -> int:
+    """Base64 growth plus a CRLF after every 76 encoded columns."""
 
-    if max_message_bytes <= 0:
-        return PART_LIMIT
-    raw_budget = max(1024, ((max_message_bytes - 4096) * 3) // 4)
-    return min(PART_LIMIT, raw_budget)
+    encoded = 4 * ((raw_bytes + 2) // 3)
+    breaks = 2 * ((encoded + 75) // 76)
+    return encoded + breaks
+
+
+def part_limit_for(max_message_bytes: int) -> int:
+    """Largest raw part whose wrapped base64 plus headers stays under the cap.
+
+    The cap is the account MaxMsgSize and the 36 MB SIZE, whichever is smaller.
+    """
+
+    cap = _SIZE_CAP if max_message_bytes <= 0 else min(max_message_bytes, _SIZE_CAP)
+    budget = cap - _HEADER_BUDGET
+    if budget < 4:
+        return 1024
+    lo = 1
+    hi = min(PART_LIMIT, budget)
+    best = 1
+    while lo <= hi:
+        mid = (lo + hi) // 2
+        if wrapped_base64_length(mid) <= budget:
+            best = mid
+            lo = mid + 1
+        else:
+            hi = mid - 1
+    return min(PART_LIMIT, best)
