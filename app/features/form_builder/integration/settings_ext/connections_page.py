@@ -346,10 +346,6 @@ class ConnectionsPage(QWidget):
 
     def showEvent(self, event: object) -> None:  # noqa: N802
         super().showEvent(event)  # type: ignore[arg-type]
-        application = QApplication.instance()
-        if application is not None and not self._filtered:
-            application.installEventFilter(self)
-            self._filtered = True
         window = self.window()
         self.apply_theme(getattr(window, "_tokens", None) or tokens_from_palette(self.palette()))
 
@@ -737,6 +733,11 @@ class ConnectionsPage(QWidget):
         self._generation += 1
         generation = self._generation
         self._testing = True
+        # Esc must reach us before the dialog does. Watch the application only while a test runs.
+        application = QApplication.instance()
+        if application is not None and not self._filtered:
+            application.installEventFilter(self)
+            self._filtered = True
         self._test_button.setText("Testing\u2026")
         self._test_button.setEnabled(False)
         self._result.setText("Testing\u2026")
@@ -763,6 +764,7 @@ class ConnectionsPage(QWidget):
 
     def _show_test_result(self, payload: object) -> None:
         self._testing = False
+        self._drop_filter()
         self._test_button.setText("Test")
         self._test_button.setEnabled(True)
         text = ""
@@ -775,6 +777,7 @@ class ConnectionsPage(QWidget):
             return
         self._generation += 1
         self._testing = False
+        self._drop_filter()
         self._test_button.setText("Test")
         self._test_button.setEnabled(True)
         self._result.setText("")
