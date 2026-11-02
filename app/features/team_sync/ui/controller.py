@@ -22,11 +22,13 @@ from app.features.team_sync.api import (
     Clash,
     CombineState,
     Incoming,
+    ShareRequest,
     TeamStatus,
 )
 from app.features.team_sync.ui.blame import BlameCard, LineSummary
 from app.features.team_sync.ui.combine_tab import CombineTab
 from app.features.team_sync.core import TeamSyncError
+from app.features.team_sync.core.local_state import remember_decision, suppressed_invite_ids
 from app.features.team_sync.ui.copy import (
     badge_count,
     deleted_clash_copy,
@@ -247,22 +249,43 @@ class TeamSyncController(QObject):
     def open_share(self) -> None:
         if self._dormant:
             return
-        summary = getattr(self._service, "share_summary", None)
-        chip = f"{len(self._status.pending)} files"
-        if callable(summary):
-            result = summary()
-            if isinstance(result, tuple) and len(result) == 2:
-                chip = f"{result[0]} files · {result[1]}"
-        show_share(
-            self._status,
-            chip,
-            self.submit_share,
-            self._window,
-            self._tokens,
-        )
+        remembered_name, remembered_shop = self._remembered_identity()
+
+        def task() -> object:
+            boxes = list(self._service.mailboxes())  # type: ignore[attr-defined]
+            summary = getattr(self._service, "share_summary", None)
+            chip = ""
+            if callable(summary):
+                result = summary()
+                if isinstance(result, tuple) and len(result) == 2:
+                    chip = f"{result[0]} files · {result[1]}"
+            return (boxes, chip)
+
+        def show(payload: object) -> None:
+            boxes, chip = payload if isinstance(payload, tuple) else ([], "")
+            name = remembered_name
+            shop = remembered_shop
+            if boxes:
+                name = name or str(getattr(boxes[0], "user_name", "") or "")
+                shop = shop or str(getattr(boxes[0], "company_name", "") or "")
+            if not chip:
+                chip = f"{len(self._status.pending)} files"
+            show_share(
+                self._status,
+                str(chip),
+                self.submit_share,
+                self._window,
+                self._tokens,
+                my_name=name,
+                my_shop=shop,
+            )
+
+        self._run("team-sync-share-defaults", task, show)
 
     def submit_share(self, request: object, on_ok: Optional[Callable[[], None]] = None, on_err: Optional[Callable[[BaseException], None]] = None) -> None:
         def done(_result: object) -> None:
+            if isinstance(request, ShareRequest):
+                self._remember_identity(request.my_name, request.my_shop)
             activity = getattr(self._window, "_activity_bar", None)
             if activity is not None and hasattr(activity, "set_active_view"):
                 activity.set_active_view("team")
@@ -399,6 +422,8 @@ class TeamSyncController(QObject):
         self,
         incoming_id: str,
         folder: str,
+        my_name: str = "",
+        my_shop: str = "",
         on_ok: Optional[Callable[[], None]] = None,
         on_err: Optional[Callable[[BaseException], None]] = None,
     ) -> None:
@@ -422,7 +447,12 @@ class TeamSyncController(QObject):
         service = self._invite_source or self._service
         self._ports.run(  # type: ignore[attr-defined]
             "team-sync-invite",
-            lambda: service.accept_invite(incoming_id, folder or self._project_root or "."),  # type: ignore[attr-defined]
+            lambda: service.accept_invite(  # type: ignore[attr-defined]
+                incoming_id,
+                folder or self._project_root or ".",
+                my_name,
+                my_shop,
+            ),
             done,
             lambda exc: self._route_error(exc, on_err),
         )
@@ -643,10 +673,16 @@ class TeamSyncController(QObject):
         self.refresh_status()
 
     def _send(self, note: str, paths: list[str]) -> None:
-        self._run("team-sync-send", lambda: self._service.send(note, paths or None), lambda _change: None)  # type: ignore[attr-defined]
+        self._run("team-sync-send", lambda: self._service.send(note, paths or None), lambda _change: self._clear_draft())  # type: ignore[attr-defined]
 
     def _save_only(self, note: str, paths: list[str]) -> None:
-        self._run("team-sync-save", lambda: self._service.save_only(note, paths or None), lambda _change: None)  # type: ignore[attr-defined]
+        self._run("team-sync-save", lambda: self._service.save_only(note, paths or None), lambda _change: self._clear_draft())  # type: ignore[attr-defined]
+
+    def _clear_draft(self) -> None:
+        if self._team_view is not None:
+            self._team_view.clear_draft()
+        if self._send_sheet is not None:
+            self._send_sheet.clear_draft()
 
     def _set_aside(self, name: str) -> None:
         self._run_void(lambda: self._service.set_aside(name))  # type: ignore[attr-defined]
@@ -887,6 +923,7 @@ class TeamSyncController(QObject):
         service = self._ensure_invite_service()
         if service is None:
             return
+        self._load_seen(service)
         seen = set(self._seen_invites)
 
         def task() -> object:
@@ -913,7 +950,7 @@ class TeamSyncController(QObject):
             ident = str(getattr(item, "id", ""))
             if not ident or ident in self._seen_invites:
                 return
-            self._seen_invites.add(ident)
+            self._mark_invite(service, ident, "seen")
             self._invite_source = service
             self._present_invite_payload(payload, announce=True)
 
@@ -959,7 +996,50 @@ class TeamSyncController(QObject):
             project_name=project_name,
             default_location=default_location,
             author_name=sender,
+            your_name=str(info.get("invitee_name") or ""),
+            your_shop=str(info.get("invitee_shop") or ""),
+            on_decline=lambda ident, source=self._invite_source: self._mark_invite(source, ident, "declined"),
         )
+
+    def _remembered_identity(self) -> tuple[str, str]:
+        service = getattr(self._window, "_settings_service", None)
+        loader = getattr(service, "load_global", None)
+        if not callable(loader):
+            return "", ""
+        payload = loader()
+        block = payload.get("team_sync") if isinstance(payload, dict) else None
+        if not isinstance(block, dict):
+            return "", ""
+        return str(block.get("my_name") or ""), str(block.get("my_shop") or "")
+
+    def _remember_identity(self, name: str, shop: str) -> None:
+        if not name and not shop:
+            return
+        service = getattr(self._window, "_settings_service", None)
+        updater = getattr(service, "update_global", None)
+        if not callable(updater):
+            return
+
+        def merge(payload: dict) -> dict:
+            updated = dict(payload)
+            updated["team_sync"] = {"my_name": name, "my_shop": shop}
+            return updated
+
+        updater(merge)
+
+    def _load_seen(self, service: object) -> None:
+        machine = getattr(service, "machine", None)
+        if machine is None:
+            return
+        self._seen_invites.update(suppressed_invite_ids(machine))
+
+    def _mark_invite(self, service: object, invite_id: str, decision: str) -> None:
+        if not invite_id:
+            return
+        self._seen_invites.add(invite_id)
+        machine = getattr(service, "machine", None)
+        if machine is not None:
+            remember_decision(machine, invite_id, decision)
 
     def _ensure_poll(self) -> None:
         if self._status.shared and self._project_root and not self._poll.isActive():

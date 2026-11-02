@@ -98,6 +98,12 @@ QLabel#shell\\.teamSync\\.feedMark[delivery="queued"] {{
     background: transparent;
     font-size: 12px;
 }}
+QLabel#shell\\.teamSync\\.feedMark[delivery="waiting"] {{
+    color: {warn};
+    background: transparent;
+    font-size: 12px;
+    font-weight: 700;
+}}
 QLabel#shell\\.teamSync\\.feedMark[delivery="sent"],
 QLabel#shell\\.teamSync\\.feedMark[delivery="delivered"] {{
     color: {ok};

@@ -233,7 +233,11 @@ class CombineTab(QWidget):
     def reload(self) -> None:
         if self._api is None:
             return
-        self.show_state(self._api.combine_state())  # type: ignore[attr-defined]
+
+        def task() -> object:
+            return self._api.combine_state()  # type: ignore[attr-defined]
+
+        self._ports.run("team-sync-combine", task, self.show_state)  # type: ignore[attr-defined]
 
     def show_state(self, state: Optional[CombineState]) -> None:
         self._state = state

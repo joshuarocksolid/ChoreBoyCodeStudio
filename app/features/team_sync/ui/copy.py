@@ -53,7 +53,9 @@ def delivery_mark(state: str, *, git_names: bool) -> tuple[str, str]:
     tooltip = tooltips.get(state, state)
     if git_names:
         return (tooltip, tooltip)
-    if state in (DELIVERY_QUEUED, DELIVERY_WAITING_TERMINAL):
+    if state == DELIVERY_WAITING_TERMINAL:
+        return ("Waiting", tooltip)
+    if state == DELIVERY_QUEUED:
         return ("Queued", tooltip)
     if state == DELIVERY_SENT:
         return ("✓", tooltip)
