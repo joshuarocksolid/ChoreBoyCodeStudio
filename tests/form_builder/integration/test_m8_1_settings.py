@@ -4,12 +4,15 @@
 from __future__ import annotations
 
 import os
+import threading
 import time
 
 import pytest
 
 pytest.importorskip("app.qt.QtWidgets", exc_type=ImportError)
 
+from app.qt.QtCore import QEvent, Qt
+from app.qt.QtGui import QKeyEvent
 from app.qt.QtWidgets import QDialog, QPushButton, QWidget
 from app.qt.qt_compat import enum_value
 
@@ -199,13 +202,45 @@ def test_sqlite_probe_reports_success_and_a_missing_file(qapp, tmp_path) -> None
     page._file.setText("data/shop.db")
     set_connection_tester(None)
     page._test_button.click()
-    _until(qapp, lambda: page._result.text().startswith("Connected"))
-    assert page._result.text() == "Connected · SQLite · 4 tables"
+    _until(qapp, lambda: "Connected" in page._result.text())
+    assert page._result.text() == "\u2713 Connected · SQLite · 4 tables"
     page._file.setText("data/missing.db")
     page._test_button.click()
     _until(qapp, lambda: page._test_button.isEnabled() and not page._result.text().startswith("Testing"))
     assert "Connected" not in page._result.text()
     assert page._result.text()
+
+
+def test_escape_cancels_a_sqlite_test_and_leaves_the_page_open(qapp, tmp_path, monkeypatch) -> None:
+    started = threading.Event()
+    release = threading.Event()
+
+    def slow(_path: str) -> str:
+        started.set()
+        release.wait(2)
+        return "late"
+
+    monkeypatch.setattr(connections_page, "probe_sqlite", slow)
+    page = ConnectionsPage(None, str(tmp_path))
+    page.show()
+    qapp.processEvents()
+    page.findChild(QPushButton, "formBuilder.connections.addSqlite").click()
+    page._file.setText("data/shop.db")
+    page._test_button.click()
+    try:
+        _until(qapp, lambda: page._test_button.text().startswith("Testing"))
+        assert started.wait(2)
+        event = QKeyEvent(QEvent.Type.KeyPress, Qt.Key.Key_Escape, Qt.KeyboardModifier.NoModifier)
+        qapp.sendEvent(page.window(), event)
+        qapp.processEvents()
+        assert page._test_button.text() == "Test"
+        assert page._test_button.isEnabled()
+        assert page._result.text() == ""
+        assert page.isVisible()
+        release.set()
+        _until(qapp, lambda: not page._workers)
+    finally:
+        release.set()
 
 
 def test_add_connection_opens_the_connections_page(qapp, tmp_path) -> None:

@@ -1,7 +1,7 @@
 """Render ``cbcs_connections.py`` from a connection set (CONTRACTS.md section 19.4).
 
-The rendered module ships alone. It imports FreeCAD's PySide shim and nothing
-from Code Studio. ``_ask_password`` is the dialog; tests replace that name.
+The rendered module ships alone. It imports PySide6 and nothing from Code
+Studio. ``_ask_password`` is the dialog; tests replace that name.
 """
 
 from __future__ import annotations
@@ -30,6 +30,7 @@ _HEAD = '''from __future__ import annotations
 import json
 import os
 import shutil
+import socket
 import sqlite3
 import sys
 from contextlib import contextmanager
@@ -182,12 +183,15 @@ def _open_postgres(spec):
     errors = []
     connection = None
     for driver in _CBCS_DRIVERS:
-        connection, error = _try_driver(driver, host, port, database, user, password)
-        if error:
-            errors.append(error)
-            connection = None
-            continue
-        break
+        found, error, kind = _try_driver(driver, host, port, database, user, password)
+        if found is not None:
+            connection = found
+            break
+        # A wrong password, a down host, or a missing database is this server.
+        # Trying the other driver would count a second failed login.
+        if kind in ("auth", "unreachable", "no_database"):
+            raise CbcsConnectionError("Can't open %s. %s" % (spec.get("name"), error))
+        errors.append(error)
     if connection is None:
         raise CbcsConnectionError("Can't open %s. %s" % (spec.get("name"), "; ".join(errors)))
     try:
@@ -210,7 +214,7 @@ def _try_driver(driver, host, port, database, user, password):
         else:
             module = __import__(driver)
     except Exception as exc:
-        return None, "%s: %s" % (driver, _safe(exc, password))
+        return None, "%s: %s" % (driver, _safe(exc, password)), "no_driver"
     try:
         if driver == "psycopg":
             connection = module.connect(
@@ -221,7 +225,7 @@ def _try_driver(driver, host, port, database, user, password):
                 password=password,
             )
             connection.autocommit = False
-            return connection, None
+            return connection, None, None
         if driver == "pg8000":
             return module.connect(
                 user=user,
@@ -229,13 +233,58 @@ def _try_driver(driver, host, port, database, user, password):
                 database=database,
                 port=port,
                 password=password,
-            ), None
+            ), None, None
         opener = getattr(module, "connect", None)
         if opener is None:
-            return None, "%s: no connect" % driver
-        return opener(host=host, port=port, user=user, password=password, database=database), None
+            return None, "%s: no connect" % driver, "no_driver"
+        return opener(host=host, port=port, user=user, password=password, database=database), None, None
     except Exception as exc:
-        return None, "%s: %s" % (driver, _safe(exc, password))
+        return None, "%s: %s" % (driver, _safe(exc, password)), _failure_kind(exc)
+
+
+def _failure_kind(exc):
+    """Same kinds as engine.data.tester.classify_connect_error."""
+
+    state = ""
+    for attr in ("sqlstate", "pgcode"):
+        value = getattr(exc, attr, None)
+        if isinstance(value, str) and value:
+            state = value.upper()
+            break
+    if not state:
+        for arg in getattr(exc, "args", ()):
+            if isinstance(arg, dict):
+                code = arg.get("C") or arg.get("code") or ""
+                if isinstance(code, str) and code:
+                    state = code.upper()
+                    break
+    if not state:
+        upper = str(exc).upper()
+        for code in ("28P01", "28000", "3D000"):
+            if code in upper:
+                state = code
+                break
+    if state in ("28P01", "28000"):
+        return "auth"
+    if state == "3D000":
+        return "no_database"
+    if isinstance(exc, ImportError):
+        return "no_driver"
+    if isinstance(exc, (TimeoutError, ConnectionError, socket.timeout, socket.gaierror)):
+        return "unreachable"
+    low = str(exc).lower()
+    if "password authentication failed" in low or "authentication failed" in low:
+        return "auth"
+    if (
+        "timeout" in low
+        or "timed out" in low
+        or "could not connect" in low
+        or "connection refused" in low
+        or "name or service not known" in low
+        or "no route to host" in low
+    ):
+        return "unreachable"
+    return "other"
 
 
 def _prepare(connection, spec):
@@ -317,7 +366,7 @@ def _answer(answer, default_remember):
 def _ask_password(name, user, database, policy):
     """Hidden-echo prompt. Tests replace this function. Returns ``(password, remember)`` or None."""
 
-    from PySide.QtWidgets import (
+    from PySide6.QtWidgets import (
         QApplication,
         QCheckBox,
         QDialog,
@@ -334,24 +383,20 @@ def _ask_password(name, user, database, policy):
     layout = QVBoxLayout(dialog)
     layout.addWidget(QLabel("Password for %s on %s" % (user or name, database or name)))
     field = QLineEdit(dialog)
-    echo = getattr(QLineEdit, "EchoMode", QLineEdit)
-    field.setEchoMode(echo.Password)
+    field.setEchoMode(QLineEdit.EchoMode.Password)
     layout.addWidget(field)
     remember_box = None
     if policy == "machine":
         remember_box = QCheckBox("Remember on this machine", dialog)
-        remember_box.setChecked(True)
         layout.addWidget(remember_box)
-    buttons = getattr(QDialogButtonBox, "StandardButton", QDialogButtonBox)
-    box = QDialogButtonBox(buttons.Ok | buttons.Cancel, parent=dialog)
+    box = QDialogButtonBox(
+        QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel,
+        parent=dialog,
+    )
     box.accepted.connect(dialog.accept)
     box.rejected.connect(dialog.reject)
     layout.addWidget(box)
-    runner = getattr(dialog, "exec", None)
-    if runner is None:
-        runner = dialog.exec_
-    accepted = getattr(getattr(QDialog, "DialogCode", QDialog), "Accepted")
-    if runner() != accepted:
+    if dialog.exec() != QDialog.DialogCode.Accepted:
         return None
     remember = bool(remember_box is not None and remember_box.isChecked())
     return field.text(), remember

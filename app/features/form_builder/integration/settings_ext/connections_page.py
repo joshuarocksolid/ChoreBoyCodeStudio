@@ -9,6 +9,7 @@ from typing import Any, Dict, List, Optional
 from app.qt.QtCore import QEvent, QThread, Qt, QTimer
 from app.qt.QtWidgets import (
     QCheckBox,
+    QApplication,
     QComboBox,
     QDialog,
     QFileDialog,
@@ -26,7 +27,8 @@ from app.qt.QtWidgets import (
 )
 from app.qt.qt_compat import enum_value, exec_qt
 from app.shell.settings_pages import SCOPE_PROJECT, SettingsPage, SettingsRefusal, register_settings_page
-from app.shell.theme_tokens import tokens_from_palette
+from app.shell.style_sheet_sections_controls import shell_section_checkbox_indicators
+from app.shell.theme_tokens import ShellThemeTokens, tokens_from_palette
 
 from app.features.form_builder.engine.data.connections import (
     ILLEGAL_NAME_SENTENCE,
@@ -243,6 +245,7 @@ class ConnectionsPage(QWidget):
         self._editor.setObjectName("formBuilder.connections.editor")
         form = QFormLayout(self._editor)
         form.setSpacing(8)
+        self._form = form
         self._title = QLineEdit(self._editor)
         self._title.setObjectName("formBuilder.connections.title")
         self._code = QLineEdit(self._editor)
@@ -254,37 +257,31 @@ class ConnectionsPage(QWidget):
         form.addRow("Name", self._title)
         form.addRow("Code", self._code)
 
-        self._sqlite_box = QWidget(self._editor)
-        sqlite_form = QFormLayout(self._sqlite_box)
-        sqlite_form.setContentsMargins(0, 0, 0, 0)
         file_row = QHBoxLayout()
-        self._file = QLineEdit(self._sqlite_box)
+        self._file = QLineEdit(self._editor)
         self._file.setObjectName("formBuilder.connections.file")
-        self._choose = QPushButton("Choose\u2026", self._sqlite_box)
+        self._choose = QPushButton("Choose\u2026", self._editor)
         self._choose.setObjectName("formBuilder.connections.choose")
         self._choose.clicked.connect(self._choose_file)
         self._file.editingFinished.connect(self._on_field)
         file_row.addWidget(self._file, 1)
         file_row.addWidget(self._choose)
-        sqlite_form.addRow("File", file_row)
-        form.addRow(self._sqlite_box)
+        self._file_row = file_row
+        form.addRow("File", file_row)
 
-        self._postgres_box = QWidget(self._editor)
-        postgres = QFormLayout(self._postgres_box)
-        postgres.setContentsMargins(0, 0, 0, 0)
-        self._host = QLineEdit(self._postgres_box)
+        self._host = QLineEdit(self._editor)
         self._host.setObjectName("formBuilder.connections.host")
-        self._port = QSpinBox(self._postgres_box)
+        self._port = QSpinBox(self._editor)
         self._port.setObjectName("formBuilder.connections.port")
         self._port.setRange(1, 65535)
         self._port.setValue(5432)
-        self._database = QLineEdit(self._postgres_box)
+        self._database = QLineEdit(self._editor)
         self._database.setObjectName("formBuilder.connections.database")
-        self._user = QLineEdit(self._postgres_box)
+        self._user = QLineEdit(self._editor)
         self._user.setObjectName("formBuilder.connections.user")
-        self._schema = QLineEdit(self._postgres_box)
+        self._schema = QLineEdit(self._editor)
         self._schema.setObjectName("formBuilder.connections.schema")
-        self._password = QComboBox(self._postgres_box)
+        self._password = QComboBox(self._editor)
         self._password.setObjectName("formBuilder.connections.password")
         self._password.addItem("Ask when the app starts", "ask")
         self._password.addItem("Remember on this machine", "machine")
@@ -293,13 +290,29 @@ class ConnectionsPage(QWidget):
             widget.editingFinished.connect(self._on_field)
         self._port.editingFinished.connect(self._on_field)
         self._password.currentIndexChanged.connect(self._on_field)
-        postgres.addRow("Host", self._host)
-        postgres.addRow("Port", self._port)
-        postgres.addRow("Database", self._database)
-        postgres.addRow("User", self._user)
-        postgres.addRow("Schema", self._schema)
-        postgres.addRow("Password", self._password)
-        form.addRow(self._postgres_box)
+        form.addRow("Host", self._host)
+        form.addRow("Port", self._port)
+        form.addRow("Database", self._database)
+        form.addRow("User", self._user)
+        form.addRow("Schema", self._schema)
+        form.addRow("Password", self._password)
+        self._postgres_fields = (
+            self._host,
+            self._port,
+            self._database,
+            self._user,
+            self._schema,
+            self._password,
+        )
+
+        # One label column width for both engines, so every field starts at the same x.
+        label_width = max(
+            self.fontMetrics().horizontalAdvance(text) for text in ("Name", "Code", "File", "Host", "Port", "Database", "User", "Schema", "Password", "Setup")
+        )
+        for field in (self._title, self._code, self._file_row, self._host, self._port, self._database, self._user, self._schema, self._password):
+            label = form.labelForField(field)
+            if label is not None:
+                label.setMinimumWidth(label_width)
 
         setup_row = QHBoxLayout()
         self._setup = QLabel("none", self._editor)
@@ -315,7 +328,7 @@ class ConnectionsPage(QWidget):
         self._try_sql = QCheckBox("In Try, only show the SQL", self._editor)
         self._try_sql.setObjectName("formBuilder.connections.trySql")
         self._try_sql.toggled.connect(self._on_field)
-        form.addRow(self._try_sql)
+        form.addRow("", self._try_sql)
 
         test_row = QHBoxLayout()
         self._test_button = QPushButton("Test", self._editor)
@@ -326,18 +339,29 @@ class ConnectionsPage(QWidget):
         self._result.setWordWrap(True)
         test_row.addWidget(self._test_button)
         test_row.addWidget(self._result, 1)
-        form.addRow(test_row)
+        form.addRow("", test_row)
         body.addWidget(self._editor, 2)
         column.addLayout(body, 1)
         self._load()
 
     def showEvent(self, event: object) -> None:  # noqa: N802
         super().showEvent(event)  # type: ignore[arg-type]
-        window = self.window()
-        if window is not None and not self._filtered:
-            window.installEventFilter(self)
+        application = QApplication.instance()
+        if application is not None and not self._filtered:
+            application.installEventFilter(self)
             self._filtered = True
+        window = self.window()
         self.apply_theme(getattr(window, "_tokens", None) or tokens_from_palette(self.palette()))
+
+    def hideEvent(self, event: object) -> None:  # noqa: N802
+        self._drop_filter()
+        super().hideEvent(event)  # type: ignore[arg-type]
+
+    def _drop_filter(self) -> None:
+        application = QApplication.instance()
+        if application is not None and self._filtered:
+            application.removeEventFilter(self)
+            self._filtered = False
 
     def eventFilter(self, watched: object, event: object) -> bool:  # noqa: N802
         press = getattr(getattr(QEvent, "Type", QEvent), "KeyPress", None)
@@ -353,7 +377,10 @@ class ConnectionsPage(QWidget):
 
     def apply_theme(self, tokens: object) -> None:
         self._tokens = tokens
-        self.setStyleSheet(_style(tokens))
+        sheet = _style(tokens)
+        if isinstance(tokens, ShellThemeTokens):
+            sheet += shell_section_checkbox_indicators(tokens)
+        self.setStyleSheet(sheet)
 
     def commit(self, project_root: str) -> Optional[SettingsRefusal]:
         self._pull(commit_code=True)
@@ -422,8 +449,7 @@ class ConnectionsPage(QWidget):
             self._title.setText(item.title)
             self._code.setText(item.name)
             sqlite = item.engine == "sqlite"
-            self._sqlite_box.setVisible(sqlite)
-            self._postgres_box.setVisible(not sqlite)
+            self._show_engine(sqlite)
             self._file.setText(item.file or "")
             self._host.setText(item.host or "")
             self._port.setValue(item.port or 5432)
@@ -438,6 +464,26 @@ class ConnectionsPage(QWidget):
         finally:
             self._loading = False
         self._sync_mode()
+
+    def _show_engine(self, sqlite: bool) -> None:
+        self._row_visible(self._file_row, sqlite)
+        for field in self._postgres_fields:
+            self._row_visible(field, not sqlite)
+
+    def _row_visible(self, field: object, visible: bool) -> None:
+        label = self._form.labelForField(field)  # type: ignore[arg-type]
+        if label is not None:
+            label.setVisible(visible)
+        if isinstance(field, QWidget):
+            field.setVisible(visible)
+        elif isinstance(field, QHBoxLayout):
+            for index in range(field.count()):
+                child = field.itemAt(index).widget()
+                if child is not None:
+                    child.setVisible(visible)
+        setter = getattr(self._form, "setRowVisible", None)
+        if setter is not None:
+            setter(field, visible)
 
     def _pull(self, *, commit_code: bool) -> None:
         index = self._index
@@ -742,7 +788,7 @@ def _format_probe(result: object) -> str:
     if not isinstance(result, dict):
         return str(result)
     if result.get("ok"):
-        return "Connected · %s · %s tables · %s" % (
+        return "\u2713 Connected · %s · %s tables · %s" % (
             result.get("server", ""),
             result.get("tables", 0),
             result.get("driver", ""),
@@ -762,7 +808,7 @@ def _style(tokens: object) -> str:
         "QLabel#formBuilder\\.connections\\.refusal, QLabel#formBuilder\\.connections\\.machineWarning { color: %s; }"
         "QLineEdit, QComboBox, QSpinBox, QListWidget { color: %s; background: %s; border: 1px solid %s; padding: 2px 4px; }"
         "QPushButton { color: %s; background: %s; border: 1px solid %s; padding: 4px 8px; }"
-        "QCheckBox { color: %s; background: transparent; }"
+        "QCheckBox { color: %s; background: transparent; spacing: 6px; }"
         "QLineEdit:focus, QComboBox:focus, QSpinBox:focus, QListWidget:focus, QPushButton:focus, QCheckBox:focus {"
         " border: %dpx solid %s; }"
         % (

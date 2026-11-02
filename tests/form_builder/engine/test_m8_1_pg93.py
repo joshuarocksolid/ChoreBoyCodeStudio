@@ -5,12 +5,10 @@ from __future__ import annotations
 
 import os
 import uuid
-from typing import Any, cast
 
 import pytest
 
 from app.features.form_builder.engine.data.connections import Connection, ConnectionSet
-from app.features.form_builder.engine.data.connections_module import render_connections_module
 from app.features.form_builder.engine.data.tester import classify_connect_error
 
 pytestmark = pytest.mark.pg93
@@ -34,7 +32,7 @@ def _fields(dsn: str) -> dict:
     return found
 
 
-def _module(tmp_path, fields, driver):
+def _module(tmp_path, fields, driver, connections_module):
     port = int(fields.get("port") or "5432")
     value = ConnectionSet(
         (
@@ -50,15 +48,7 @@ def _module(tmp_path, fields, driver):
             ),
         )
     )
-    text = render_connections_module(value, project_slug="pg93")
-    path = tmp_path / "cbcs_connections.py"
-    path.write_text(text, encoding="utf-8")
-    import importlib.util
-
-    spec = importlib.util.spec_from_file_location("cbcs_connections_pg93_%s" % uuid.uuid4().hex, str(path))
-    assert spec is not None and spec.loader is not None
-    module = cast(Any, importlib.util.module_from_spec(spec))
-    getattr(spec.loader, "exec_module")(module)
+    module, _text = connections_module(tmp_path, value, "pg93")
     module._CBCS_DRIVERS = (driver,)
     module.set_password("office", fields["password"])
     return module
@@ -72,9 +62,9 @@ def _import_driver(driver: str) -> None:
 
 
 @pytest.mark.parametrize("driver", ["psycopg", "pg8000"])
-def test_open_connection(tmp_path, pg93_dsn: str, driver: str) -> None:
+def test_open_connection(tmp_path, pg93_dsn: str, driver: str, connections_module) -> None:
     _import_driver(driver)
-    module = _module(tmp_path, _fields(pg93_dsn), driver)
+    module = _module(tmp_path, _fields(pg93_dsn), driver, connections_module)
     try:
         connection = module.open_connection("office")
         cursor = connection.cursor()
@@ -86,9 +76,9 @@ def test_open_connection(tmp_path, pg93_dsn: str, driver: str) -> None:
 
 
 @pytest.mark.parametrize("driver", ["psycopg", "pg8000"])
-def test_work_commits_an_insert(tmp_path, pg93_dsn: str, driver: str) -> None:
+def test_work_commits_an_insert(tmp_path, pg93_dsn: str, driver: str, connections_module) -> None:
     _import_driver(driver)
-    module = _module(tmp_path, _fields(pg93_dsn), driver)
+    module = _module(tmp_path, _fields(pg93_dsn), driver, connections_module)
     table = "t_%s" % uuid.uuid4().hex
     try:
         with module.work("office") as connection:
@@ -110,9 +100,9 @@ def test_work_commits_an_insert(tmp_path, pg93_dsn: str, driver: str) -> None:
 
 
 @pytest.mark.parametrize("driver", ["psycopg", "pg8000"])
-def test_work_rolls_back_an_exception(tmp_path, pg93_dsn: str, driver: str) -> None:
+def test_work_rolls_back_an_exception(tmp_path, pg93_dsn: str, driver: str, connections_module) -> None:
     _import_driver(driver)
-    module = _module(tmp_path, _fields(pg93_dsn), driver)
+    module = _module(tmp_path, _fields(pg93_dsn), driver, connections_module)
     table = "t_%s" % uuid.uuid4().hex
     try:
         with module.work("office") as connection:

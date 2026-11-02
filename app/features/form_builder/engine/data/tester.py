@@ -31,7 +31,7 @@ def connection_tester() -> Optional[Tester]:
 
 
 def probe_sqlite(path: str) -> str:
-    """``Connected · SQLite · {n} tables``, or the first line of the error. A missing file fails."""
+    """``✓ Connected · SQLite · {n} tables``, or the first line of the error. A missing file fails."""
 
     try:
         connection = sqlite3.connect("file:" + path + "?mode=ro", uri=True)
@@ -45,7 +45,7 @@ def probe_sqlite(path: str) -> str:
     except Exception as exc:
         text = str(exc).strip().splitlines()
         return text[0] if text else "Can't open the database."
-    return "Connected · SQLite · %d tables" % count
+    return "\u2713 Connected · SQLite · %d tables" % count
 
 
 def classify_connect_error(exc: BaseException) -> str:

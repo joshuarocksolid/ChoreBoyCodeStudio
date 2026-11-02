@@ -90,3 +90,42 @@ def qapp():  # type: ignore[no-untyped-def]
     clipboard = app.clipboard()
     if clipboard is not None:
         clipboard.clear()
+
+
+@pytest.fixture
+def connections_module():
+    """Load a rendered ``cbcs_connections`` module and close its databases afterwards.
+
+    The module is registered on ``sys.modules`` for the test and removed in
+    teardown, after ``close_all()``. A test that fails mid-way still releases
+    the SQLite connection it opened.
+    """
+    import importlib.util
+    import sys
+    import uuid
+    from typing import Any, cast
+
+    from app.features.form_builder.engine.data.connections_module import render_connections_module
+
+    loaded = []
+
+    def load(directory, connection_set, slug):
+        text = render_connections_module(connection_set, project_slug=slug)
+        path = os.path.join(str(directory), "cbcs_connections.py")
+        with open(path, "w", encoding="utf-8") as handle:
+            handle.write(text)
+        name = "cbcs_connections_%s" % uuid.uuid4().hex
+        spec = importlib.util.spec_from_file_location(name, path)
+        assert spec is not None and spec.loader is not None
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[name] = module
+        loaded.append(name)
+        getattr(spec.loader, "exec_module")(module)
+        return cast(Any, module), text
+
+    yield load
+    for name in loaded:
+        module = sys.modules.pop(name, None)
+        closer = getattr(module, "close_all", None)
+        if closer is not None:
+            closer()
