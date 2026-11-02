@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import json
 import secrets
-from datetime import datetime, timezone
+import zipfile
+import zlib
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Callable, Dict, List, Optional, Sequence
+from typing import Callable, Dict, List, Optional, Sequence, Tuple
 
 from app.features.shop_sharing.model import Machine
 from app.features.shop_sharing.storage import logical_path, share_roots
@@ -52,6 +54,7 @@ from app.features.team_sync.core.combine import CombineSession
 from app.features.team_sync.core.ledger import Ledger, OutboxRow, iso
 from app.features.team_sync.core.mailbox import (
     InboundMail,
+    MailNotReady,
     MailScan,
     address_of,
     atomic_write_bytes,
@@ -68,8 +71,11 @@ from app.features.team_sync.core.protocol import (
     body_for,
     digest_equal,
     envelope_from_message,
+    parse_body,
+    require_bundle_id,
     sha256_hex,
     subject_for,
+    validate_envelope,
     verify_signature,
 )
 from app.features.team_sync.core.repo import TeamRepo
@@ -81,18 +87,25 @@ from app.features.team_sync.core.team import (
     load_team,
     member_by_email,
     member_by_id,
+    merge_team_bytes,
     new_key,
     new_member_id,
     new_project_id,
     read_key,
+    remember_previous_key,
     replace_member,
     save_me,
     save_team,
     utc_stamp,
+    verification_keys,
     without_member,
     write_key,
     write_key_checksum,
 )
+
+_BUSY = "Finish or cancel combining first."
+_TEAM_PATH = "cbcs/team.json"
+_RETRY_LIMIT = 5
 
 _RANK = {
     DELIVERY_WAITING_TERMINAL: 0,
@@ -242,12 +255,11 @@ class TeamSyncService:
         }
 
     def accept_invite(self, incoming_id: str, folder: str, my_name: str = "", my_shop: str = "") -> str:
+        _require_empty_folder(Path(folder))
         payload = self._invite(incoming_id)
-        root = Path(folder)
-        root.mkdir(parents=True, exist_ok=True)
-        if (root / ".git").is_dir() and load_team(root) is not None:
-            raise TeamSyncError("That folder is already a team project.")
-        bundle = (self._invite_dir() / f"{incoming_id}.bundle").read_bytes()
+        root = _empty_project_folder(Path(folder))
+        bundle_name = require_bundle_id(str(payload.get("id", incoming_id)))
+        bundle = (self._invite_dir() / f"{bundle_name}.bundle").read_bytes()
         claimed = str(payload.get("bundle_sha256", ""))
         if claimed and not digest_equal(sha256_hex(bundle), claimed):
             raise TeamSyncError("The invite bundle no longer matches its checksum.")
@@ -261,12 +273,14 @@ class TeamSyncService:
                 branch = name[len("refs/heads/") :]
                 break
         repo.checkout(tip, branch)
-        sender = Member(
-            id=str(payload.get("from_id", "")),
-            name=str(payload.get("sender_name", "")),
-            shop=str(payload.get("sender_shop", "")),
-            email=str(payload.get("sender_email", "")),
-        )
+        imported = load_team(root)
+        if imported is None:
+            raise TeamSyncError("The invite did not include a team.")
+        sender = member_by_id(imported, str(payload.get("from_id", "")))
+        if sender is None and imported.members:
+            sender = imported.members[0]
+        if sender is None:
+            raise TeamSyncError("The invite did not include a team.")
         account = self._pick_mailbox(None, required=True)
         if account is None:
             raise TeamSyncError("No FaxMail mailbox found.")
@@ -277,39 +291,73 @@ class TeamSyncService:
             email=account.email,
         )
         when = self.now()
-        team = TeamFile(
-            project_id=str(payload["project_id"]),
-            name=str(payload.get("project_name", root.name)),
-            members=(sender, me),
-            created_at=str(payload.get("created_at") or utc_stamp(when)),
-        )
+        team = replace_member(imported, me)
         save_team(root, team)
         key = bytes.fromhex(str(payload["key_hex"]))
         write_key(root, key)
         write_key_checksum(root, key)
         save_me(root, LocalIdentity(me.id, me.name, me.shop, me.email, account.path))
+        repo.commit(
+            f"{me.name} joined",
+            me.name,
+            me.email or "team@localhost",
+            me.id,
+            self.machine.hostname,
+            when,
+            paths=[_TEAM_PATH],
+        )
         repo.set_ref(f"refs/peers/{sender.id}/main", tip)
-        self._mark_seen_on(root, _seen_key(payload["project_id"], sender.id, incoming_id, "1"))
-        self._delete_invite(incoming_id)
+        self._delete_invite(bundle_name)
         joiner = TeamSyncService(
             str(root),
             machine=self.machine,
             clock=self._clock,
             mail_roots=self._mail_roots,
         )
+        part = str(payload.get("part") or "1/1")
+        joiner._ledger().mark_seen(
+            _seen_key(imported.project_id, sender.id, bundle_name, part),
+            iso(self.now()),
+            "ok",
+        )
         joiner._send_join(team, me, sender, tip)
         self._emit(EVENT_INCOMING)
         return str(root)
 
     def send(self, note: str, paths: Optional[List[str]] = None) -> Change:
+        self._require_idle()
+        if self._repo.branch_name() != "main":
+            raise TeamSyncError(
+                "Sending shares main. Share this line with the team if it should leave the shop."
+            )
         change = self._commit_change(note, paths)
-        self._push_change(change)
+        self._push_change(change, ref="main")
+        self._emit(EVENT_STATUS)
+        self._emit(EVENT_FEED)
+        self._emit(EVENT_HISTORY)
+        return change
+
+    def share_experiment(self, line: str) -> Change:
+        self._require_idle()
+        if not line.startswith("exp/"):
+            raise TeamSyncError("That line is not an experiment.")
+        if self._repo.branch_name() != line:
+            raise TeamSyncError("Switch to that line before sharing it.")
+        if self._repo.dirty():
+            change = self._commit_change(f"Shared {line}", None)
+        else:
+            head = self._repo.head_sha()
+            if not head:
+                raise TeamSyncError("Save a change before sharing this line.")
+            change = self._repo.change(head)
+        self._push_change(change, ref=line)
         self._emit(EVENT_STATUS)
         self._emit(EVENT_FEED)
         self._emit(EVENT_HISTORY)
         return change
 
     def save_only(self, note: str, paths: Optional[List[str]] = None) -> Change:
+        self._require_idle()
         change = self._commit_change(note, paths)
         self._emit(EVENT_STATUS)
         self._emit(EVENT_HISTORY)
@@ -319,7 +367,14 @@ class TeamSyncService:
         me = self._require_me()
         team = self._require_team()
         self._append_feed(FEED_NOTE, text, me.member_id)
-        envelope = self._envelope("note", team, me.member_id, "", bundle_id="n_" + secrets.token_hex(8))
+        envelope = self._envelope(
+            "note",
+            team,
+            me.member_id,
+            "",
+            bundle_id="n_" + secrets.token_hex(8),
+            note=text,
+        )
         for member in team.members:
             if member.id == me.member_id:
                 continue
@@ -381,37 +436,58 @@ class TeamSyncService:
         session = CombineSession(self.project_root)
         meta = session.meta()
         files = session.finish_files()
-        self._repo.replace_worktree(files)
+        if not self._finish_still_matches(meta, files):
+            self._checkpoint("finishing a combine")
+            head = self._repo.head_sha() or str(meta["ours"])
+            base = str(meta.get("base") or "")
+            if meta["kind"] in {"merge", "experiment"}:
+                base = self._repo.merge_base(head, str(meta["theirs"])) or base
+            merge = self._merged(base, head, str(meta["theirs"]), keep_team=meta["kind"] == "revert")
+            state = session.remerge(
+                ours=head,
+                base=base,
+                merge=merge,
+                modes=self._modes_for(merge, head, str(meta["theirs"])),
+            )
+            if not state.done:
+                raise TeamSyncError("A file changed during the combine. The new clashes are waiting.")
+            meta = session.meta()
+            files = session.finish_files()
+        modes = session.file_modes()
+        ours_files = self._repo.tree_files(str(meta["ours"]))
+        changed = {
+            path: data for path, data in files.items() if ours_files.get(path) != data
+        }
+        self._repo.replace_worktree(changed, modes, only_listed=True)
         me = self._require_me()
+        aside_index = meta.get("aside_index")
+        if meta["kind"] == "aside":
+            if isinstance(aside_index, int):
+                self._repo.drop_aside(aside_index)
+            session.clear()
+            self._emit(EVENT_COMBINE)
+            self._emit(EVENT_STATUS)
+            head = self._repo.head_sha() or ""
+            return self._repo.change(head)
         extra: List[str] = []
         if meta["kind"] in {"merge", "experiment"} and meta.get("theirs"):
             extra = [str(meta["theirs"])]
-        change_id = self._repo.commit(
-            str(meta["note"]),
-            me.name,
-            me.email or "team@localhost",
-            me.member_id,
-            self.machine.hostname,
-            self.now(),
-            extra_parents=extra or None,
-        )
-        incoming_id = str(meta.get("incoming_id") or "")
-        if incoming_id:
-            try:
-                payload = self._incoming_record(incoming_id)
-            except TeamSyncError:
-                payload = None
-            if payload is not None:
-                self._repo.delete_ref(f"refs/incoming/{payload['from_id']}/{incoming_id}")
-                self._save_incoming(
-                    [item for item in self._incoming_records() if item.get("id") != incoming_id]
-                )
-                self._enqueue_have(str(payload["from_id"]), str(payload["tip"]))
-        aside_index = meta.get("aside_index")
-        if meta["kind"] == "aside" and isinstance(aside_index, int):
-            self._repo.drop_aside(aside_index)
+        if not self._repo.dirty():
+            change_id = self._repo.head_sha() or ""
+        else:
+            change_id = self._repo.commit(
+                str(meta.get("commit_note") or meta["note"]),
+                me.name,
+                me.email or "team@localhost",
+                me.member_id,
+                self.machine.hostname,
+                self.now(),
+                paths=list(changed),
+                extra_parents=extra or None,
+            )
+        self._close_incoming(str(meta.get("incoming_id") or ""))
         session.clear()
-        self._append_feed(FEED_SYSTEM, str(meta["note"]), me.member_id)
+        self._append_feed(FEED_SYSTEM, str(meta.get("feed") or meta["note"]), me.member_id)
         self._emit(EVENT_COMBINE)
         self._emit(EVENT_HISTORY)
         self._emit(EVENT_STATUS)
@@ -444,14 +520,19 @@ class TeamSyncService:
         return self._repo.blame(path)
 
     def restore(self, change_id: str) -> Change:
+        self._require_idle()
+        self._checkpoint("restoring a change")
         me = self._require_me()
         head = self._repo.head_sha()
         wanted = self._repo.tree_files(change_id)
         current = self._repo.tree_files(head) if head else {}
         files: Dict[str, Optional[bytes]] = {}
         for path in set(wanted) | set(current):
+            if path == _TEAM_PATH:
+                files[path] = current.get(path)
+                continue
             files[path] = wanted.get(path)
-        self._repo.replace_worktree(files)
+        self._repo.replace_worktree(files, self._repo.tree_modes(change_id))
         note = self._repo.change(change_id).note
         change_id_new = self._repo.commit(
             f"Restored {note}" if note else "Restored an earlier change",
@@ -493,13 +574,13 @@ class TeamSyncService:
         )
 
     def set_aside(self, name: str) -> None:
+        self._require_idle()
         me = self._require_me()
         self._repo.set_aside(name, me.name, me.email or "team@localhost")
         self._emit(EVENT_STATUS)
 
     def bring_back(self, index: int) -> Optional[CombineState]:
-        if self._repo.dirty():
-            raise TeamSyncError("Set this work aside before bringing another change back.")
+        self._require_idle()
         stash_sha, base_sha, stash_name = self._repo.aside_trees(index)
         state = self._merge_tip(
             tip=stash_sha,
@@ -533,6 +614,7 @@ class TeamSyncService:
         self._emit(EVENT_STATUS)
 
     def switch_line(self, line: str) -> None:
+        self._require_idle()
         self._repo.switch(line)
         self._emit(EVENT_STATUS)
 
@@ -553,6 +635,7 @@ class TeamSyncService:
         self._emit(EVENT_STATUS)
 
     def remove_member(self, member_id: str) -> None:
+        self._require_idle()
         me = self._require_me()
         team = self._require_team()
         if member_id == me.member_id:
@@ -561,8 +644,23 @@ class TeamSyncService:
             raise TeamSyncError("That person is not on this project.")
         old_key = read_key(Path(self.project_root))
         updated = without_member(team, member_id)
-        save_team(Path(self.project_root), updated)
         new = new_key()
+        for member in updated.members:
+            if member.id == me.member_id:
+                continue
+            envelope = self._envelope(
+                "rekey",
+                team,
+                me.member_id,
+                member.id,
+                bundle_id="k_" + secrets.token_hex(8),
+                key_hex=new.hex(),
+                removed=member_id,
+            )
+            self._publish(envelope, None, member, change_id="", tip="", sign_key=old_key)
+        save_team(Path(self.project_root), updated)
+        until = utc_stamp(self.now() + timedelta(days=7))
+        remember_previous_key(Path(self.project_root), old_key, until)
         write_key(Path(self.project_root), new)
         write_key_checksum(Path(self.project_root), new)
         self._repo.commit(
@@ -572,32 +670,82 @@ class TeamSyncService:
             me.member_id,
             self.machine.hostname,
             self.now(),
-            paths=["cbcs/team.json"],
+            paths=[_TEAM_PATH],
         )
-        for member in updated.members:
-            if member.id == me.member_id:
-                continue
-            envelope = self._envelope(
-                "rekey",
-                updated,
-                me.member_id,
-                member.id,
-                bundle_id="k_" + secrets.token_hex(8),
-                key_hex=new.hex(),
-            )
-            self._publish(envelope, None, member, change_id="", tip="", sign_key=old_key)
         self._append_feed(FEED_SYSTEM, "A team member was removed and the key changed.", me.member_id)
         self._emit(EVENT_STATUS)
 
     def export_bundle(self, dest_path: str) -> None:
-        if not self._repo.head_sha():
+        if not self._repo.get_ref("refs/heads/main"):
             raise TeamSyncError("Save a change before exporting a bundle.")
-        data = self._repo.create_bundle(self._repo.branch_name(), [])
-        atomic_write_bytes(Path(dest_path), data)
+        team = self._require_team()
+        me = self._require_me()
+        data = self._repo.create_bundle("main", [])
+        bundle_id = new_bundle_id()
+        tip = self._repo.get_ref("refs/heads/main") or ""
+        envelope = self._envelope(
+            "push",
+            team,
+            me.member_id,
+            me.member_id,
+            bundle_id=bundle_id,
+            tip=tip,
+            changes="1",
+        )
+        signed = Envelope(
+            verb=envelope.verb,
+            project_id=envelope.project_id,
+            project_name=envelope.project_name,
+            from_id=envelope.from_id,
+            to_id=envelope.to_id,
+            bundle_id=envelope.bundle_id,
+            tip=envelope.tip,
+            changes=envelope.changes,
+            part="1/1",
+            bundle_sha256=sha256_hex(data),
+            part_sha256=sha256_hex(data),
+        )
+        body = body_for(signed, sign_key=read_key(Path(self.project_root)))
+        payload = _usb_zip(body, data)
+        atomic_write_bytes(Path(dest_path), payload)
 
     def import_bundle(self, src_path: str) -> Optional[Incoming]:
-        data = Path(src_path).read_bytes()
-        return self._import_bundle_bytes(data, from_id="usb", bundle_id=new_bundle_id(), verified=True)
+        raw = Path(src_path).read_bytes()
+        body, bundle = _read_usb(raw)
+        fields = parse_body(body)
+        envelope = Envelope(
+            verb=fields.get("verb", ""),
+            project_id=fields.get("project", ""),
+            project_name=self._require_team().name,
+            from_id=fields.get("from", ""),
+            to_id=fields.get("to", ""),
+            bundle_id=fields.get("bundle", ""),
+            tip=fields.get("tip", ""),
+            needs=fields.get("needs", ""),
+            changes=fields.get("changes", "0"),
+            part=fields.get("part", "1/1"),
+            bundle_sha256=fields.get("bundle-sha256", ""),
+            part_sha256=fields.get("part-sha256", ""),
+            signature=fields.get("signature", ""),
+            line=fields.get("line", ""),
+        )
+        validate_envelope(envelope)
+        team = self._require_team()
+        if envelope.project_id != team.project_id:
+            raise TeamSyncError("That bundle is for a different project.")
+        if not digest_equal(sha256_hex(bundle), envelope.bundle_sha256):
+            raise TeamSyncError("The bundle checksum does not match.")
+        canonical = _canonical_fields(envelope)
+        keys = verification_keys(Path(self.project_root), iso(self.now()))
+        if not any(verify_signature(key, canonical, envelope.signature) for key in keys):
+            raise TeamSyncError("That USB bundle could not be verified.")
+        return self._import_bundle_bytes(
+            bundle,
+            from_id=envelope.from_id,
+            bundle_id=envelope.bundle_id,
+            verified=True,
+            line=envelope.line,
+        )
 
     def poll(self) -> None:
         self._refresh_outbound()
@@ -633,23 +781,22 @@ class TeamSyncService:
         )
         return self._repo.change(change_id)
 
-    def _push_change(self, change: Change) -> None:
+    def _push_change(self, change: Change, ref: str = "main") -> None:
         team = self._require_team()
         me = self._require_me()
+        line = ref if ref.startswith("exp/") else ""
+        peer_ref = f"refs/peers/{{member}}/{ref}" if line else "refs/peers/{member}/main"
         for member in team.members:
             if member.id == me.member_id:
                 continue
-            peer = self._repo.get_ref(f"refs/peers/{member.id}/main")
+            peer = self._repo.get_ref(peer_ref.format(member=member.id))
             prereq = ""
             if peer and self._repo.has_object(peer):
                 base = self._repo.merge_base(change.id, peer)
                 if base:
                     prereq = base
             bundle_id = new_bundle_id()
-            bundle = self._repo.create_bundle(
-                self._repo.branch_name(),
-                [prereq] if prereq else [],
-            )
+            bundle = self._repo.create_bundle(ref, [prereq] if prereq else [])
             envelope = self._envelope(
                 "push",
                 team,
@@ -659,6 +806,7 @@ class TeamSyncService:
                 tip=change.id,
                 needs=prereq,
                 changes=str(self._repo.count_since(change.id, [prereq] if prereq else [])),
+                line=line,
             )
             self._publish(envelope, bundle, member, change_id=change.id, tip=change.id)
 
@@ -755,6 +903,9 @@ class TeamSyncService:
                 sender_shop=envelope.sender_shop,
                 sender_email=envelope.sender_email,
                 accepted=envelope.accepted,
+                note=envelope.note,
+                removed=envelope.removed,
+                line=envelope.line,
             )
             body = body_for(piece, sign_key=key)
             raw = render_message(
@@ -767,24 +918,41 @@ class TeamSyncService:
                 when=self.now(),
                 message_id=f"{envelope.bundle_id}.{index}@{envelope.project_id}",
             )
+            recipient_key = recipient.id or recipient.email
+            existing = self._ledger().outbox_part(envelope.bundle_id, recipient_key, index)
+            if existing and self._out_live(account.path, existing.out_folder):
+                continue
+            held = self._part_dir(envelope.bundle_id)
+            atomic_write_bytes(held / f"out-{index}.mail", raw)
             attachments = {}
             if bundle:
-                attachments[attachment_name(envelope.project_name, envelope.bundle_id, index, total)] = part
-                part_path = self._part_dir(envelope.bundle_id) / f"out-{index}"
+                filename = attachment_name(envelope.project_name, envelope.bundle_id, index, total)
+                attachments[filename] = part
+                part_path = held / f"out-{index}"
                 atomic_write_bytes(part_path, part)
+                atomic_write_bytes(held / f"out-{index}.name", filename.encode("utf-8"))
                 self._ledger().add_part(envelope.bundle_id, index, total, part_sha, str(part_path))
-            folder = publish_out(Path(account.path), self._mail_id(), raw, attachments)
-            self._ledger().add_outbox(
-                bundle_id=envelope.bundle_id,
-                recipient=recipient.id or recipient.email,
-                part_idx=index,
-                part_total=total,
-                verb=envelope.verb,
-                change_id=change_id,
-                tip=tip,
-                created_at=created,
-                out_folder=folder,
-                state=state,
+
+            def _claimed(folder_id: str, _index: int = index, _key: str = recipient_key) -> None:
+                self._ledger().add_outbox(
+                    bundle_id=envelope.bundle_id,
+                    recipient=_key,
+                    part_idx=_index,
+                    part_total=total,
+                    verb=envelope.verb,
+                    change_id=change_id,
+                    tip=tip,
+                    created_at=created,
+                    out_folder=folder_id,
+                    state=state,
+                )
+
+            publish_out(
+                Path(account.path),
+                self._mail_id(),
+                raw,
+                attachments,
+                on_claimed=_claimed,
             )
 
     def _envelope(self, verb: str, team: TeamFile, from_id: str, to_id: str, **fields: str) -> Envelope:
@@ -803,6 +971,9 @@ class TeamSyncService:
             member_name=str(fields.get("member_name", "")),
             member_shop=str(fields.get("member_shop", "")),
             member_email=str(fields.get("member_email", "")),
+            note=str(fields.get("note", "")),
+            removed=str(fields.get("removed", "")),
+            line=str(fields.get("line", "")),
         )
 
     def _refresh_outbound(self) -> None:
@@ -828,32 +999,91 @@ class TeamSyncService:
             return
         if self._scan is None or self._scan.roots != tuple(accounts):
             self._scan = MailScan(roots=tuple(accounts))
-        for mail in self._scan.scan():
-            self._handle_mail(mail)
+        self._resume_unpublished()
+        try:
+            mails = self._scan.scan()
+        except OSError:
+            self._scan.invalidate()
+            return
+        for mail in mails:
+            try:
+                self._handle_mail(mail)
+            except MailNotReady:
+                self._scan.invalidate()
+            except (OSError, ValueError, zipfile.BadZipFile, zlib.error):
+                self._scan.invalidate()
 
     def _handle_mail(self, mail: InboundMail) -> None:
         envelope = envelope_from_message(mail.subject, mail.body)
         if envelope is None:
+            if self._scan is not None:
+                self._scan.remember(mail.key, "skip")
+            return
+        try:
+            validate_envelope(envelope)
+        except TeamSyncError:
+            self._reject_unverified(mail, envelope)
             return
         team = self._team()
         if team is not None and envelope.project_id != team.project_id and envelope.verb != "invite":
+            if self._scan is not None:
+                self._scan.remember(mail.key, "skip")
             return
         if team is None and envelope.verb != "invite":
+            if self._scan is not None:
+                self._scan.remember(mail.key, "skip")
             return
-        key = _seen_key(envelope.project_id, envelope.from_id, envelope.bundle_id or sha256_hex(mail.body.encode())[:16], envelope.part)
+        key = _seen_key(envelope.project_id, envelope.from_id, envelope.bundle_id, envelope.part)
         if self._ledger().has_seen(key):
+            if self._scan is not None:
+                self._scan.remember(mail.key, "done")
             return
         if not self._trusted(envelope, mail):
-            self._ledger().mark_seen(key, iso(self.now()), "unverified")
-            self._emit(EVENT_STATUS)
+            self._reject_unverified(mail, envelope)
+            return
+        if self._combine_open() and envelope.verb in {"join", "rekey"}:
+            self._retry_later(key)
+            if self._scan is not None:
+                self._scan.forget(mail.key)
             return
         try:
+            if envelope.verb in {"push", "invite"} or envelope.part_total() > 1:
+                if self._scan is not None:
+                    mail = self._scan.load_attachments(mail)
             self._dispatch(envelope, mail)
-        except TeamSyncError:
-            self._ledger().mark_seen(key, iso(self.now()), "unverified")
-            self._emit(EVENT_STATUS)
+        except MailNotReady:
+            self._retry_later(key)
+            if self._scan is not None:
+                self._scan.forget(mail.key)
+            return
+        except TeamSyncError as exc:
+            if _permanent_failure(str(exc)):
+                self._reject_unverified(mail, envelope)
+            else:
+                self._retry_later(key)
+                if self._scan is not None:
+                    self._scan.forget(mail.key)
+            return
+        except (OSError, ValueError, zipfile.BadZipFile, zlib.error):
+            self._retry_later(key)
+            if self._scan is not None:
+                self._scan.forget(mail.key)
             return
         self._ledger().mark_seen(key, iso(self.now()), "ok")
+        if self._scan is not None:
+            self._scan.remember(mail.key, "done")
+
+    def _reject_unverified(self, mail: InboundMail, envelope: Envelope) -> None:
+        key = _seen_key(envelope.project_id, envelope.from_id, envelope.bundle_id, envelope.part or "1/1")
+        self._ledger().mark_seen(key, iso(self.now()), "unverified")
+        if self._scan is not None:
+            self._scan.remember(mail.key, "done")
+        self._emit(EVENT_STATUS)
+
+    def _retry_later(self, key: str) -> None:
+        if self._ledger().bump_retry(key) >= _RETRY_LIMIT:
+            self._ledger().mark_seen(key, iso(self.now()), "unverified")
+            self._emit(EVENT_STATUS)
 
     def _trusted(self, envelope: Envelope, mail: InboundMail) -> bool:
         sender = address_of(mail.from_header)
@@ -863,14 +1093,15 @@ class TeamSyncService:
         if team is None:
             return False
         fields = _canonical_fields(envelope)
+        keys = verification_keys(Path(self.project_root), iso(self.now()))
         if envelope.verb == "join":
             if sender != envelope.member_email.strip().lower():
                 return False
-            return verify_signature(read_key(Path(self.project_root)), fields, envelope.signature)
+            return any(verify_signature(key, fields, envelope.signature) for key in keys)
         member = member_by_id(team, envelope.from_id)
         if member is None or sender != member.email.strip().lower():
             return False
-        return verify_signature(read_key(Path(self.project_root)), fields, envelope.signature)
+        return any(verify_signature(key, fields, envelope.signature) for key in keys)
 
     def _dispatch(self, envelope: Envelope, mail: InboundMail) -> None:
         if envelope.verb == "invite":
@@ -884,7 +1115,8 @@ class TeamSyncService:
         elif envelope.verb == "want":
             self._apply_want(envelope)
         elif envelope.verb == "note":
-            self._append_feed(FEED_NOTE, _note_text(mail.body), envelope.from_id)
+            text = envelope.note or _note_text(mail.body)
+            self._append_feed(FEED_NOTE, text, envelope.from_id)
             self._emit(EVENT_FEED)
         elif envelope.verb == "rekey":
             self._apply_rekey(envelope)
@@ -897,9 +1129,10 @@ class TeamSyncService:
             return
         if envelope.bundle_sha256 and not digest_equal(sha256_hex(bundle), envelope.bundle_sha256):
             raise TeamSyncError("The invite bundle checksum does not match.")
+        bundle_id = require_bundle_id(envelope.bundle_id)
         directory = self._invite_dir()
         directory.mkdir(parents=True, exist_ok=True)
-        atomic_write_bytes(directory / f"{envelope.bundle_id}.bundle", bundle)
+        atomic_write_bytes(directory / f"{bundle_id}.bundle", bundle)
         payload = {
             "id": envelope.bundle_id,
             "project_id": envelope.project_id,
@@ -911,10 +1144,11 @@ class TeamSyncService:
             "key_hex": envelope.key_hex,
             "tip": envelope.tip,
             "bundle_sha256": envelope.bundle_sha256,
+            "part": envelope.part or "1/1",
             "arrived": iso(self.now()),
         }
         atomic_write_bytes(
-            directory / f"{envelope.bundle_id}.json",
+            directory / f"{bundle_id}.json",
             (json.dumps(payload, indent=2, sort_keys=True) + "\n").encode("utf-8"),
         )
         self._toast(f"{envelope.sender_name} invited you to {envelope.project_name}")
@@ -929,6 +1163,8 @@ class TeamSyncService:
             shop=envelope.member_shop,
             email=envelope.member_email,
         )
+        if self._combine_open():
+            raise MailNotReady("Finish or cancel combining first.")
         if member_by_id(team, member.id) is None:
             save_team(Path(self.project_root), replace_member(team, member))
             self._repo.commit(
@@ -962,6 +1198,7 @@ class TeamSyncService:
             from_id=envelope.from_id,
             bundle_id=envelope.bundle_id,
             verified=True,
+            line=envelope.line,
         )
 
     def _apply_have(self, envelope: Envelope) -> None:
@@ -988,8 +1225,8 @@ class TeamSyncService:
         if member is None or not self._repo.head_sha():
             return
         bundle_id = new_bundle_id()
-        bundle = self._repo.create_bundle(self._repo.branch_name(), [])
-        head = self._repo.head_sha() or ""
+        bundle = self._repo.create_bundle("main", [])
+        head = self._repo.get_ref("refs/heads/main") or ""
         reply = self._envelope(
             "push",
             team,
@@ -1002,11 +1239,36 @@ class TeamSyncService:
         self._publish(reply, bundle, member, change_id=head, tip=head)
 
     def _apply_rekey(self, envelope: Envelope) -> None:
+        if self._combine_open():
+            raise MailNotReady("Finish or cancel combining first.")
         if not envelope.key_hex:
             raise TeamSyncError("The rekey message has no key.")
-        key = bytes.fromhex(envelope.key_hex)
-        write_key(Path(self.project_root), key)
-        write_key_checksum(Path(self.project_root), key)
+        try:
+            key = bytes.fromhex(envelope.key_hex)
+        except ValueError as exc:
+            raise TeamSyncError("The rekey message has no key.") from exc
+        if len(key) != 32:
+            raise TeamSyncError("The rekey message has no key.")
+        root = Path(self.project_root)
+        team = self._require_team()
+        me = self._require_me()
+        if envelope.removed and member_by_id(team, envelope.removed) is not None:
+            team = without_member(team, envelope.removed)
+            save_team(root, team)
+            self._repo.commit(
+                "Removed a team member",
+                me.name,
+                me.email or "team@localhost",
+                me.member_id,
+                self.machine.hostname,
+                self.now(),
+                paths=[_TEAM_PATH],
+            )
+        old = read_key(root)
+        if old != key:
+            remember_previous_key(root, old, utc_stamp(self.now() + timedelta(days=7)))
+            write_key(root, key)
+            write_key_checksum(root, key)
         self._append_feed(FEED_SYSTEM, "The project key changed.", envelope.from_id)
         self._emit(EVENT_FEED)
 
@@ -1032,9 +1294,10 @@ class TeamSyncService:
         atomic_write_bytes(flag, b"wanted\n")
 
     def _hold(self, envelope: Envelope, bundle: bytes, needs: List[str]) -> None:
+        bundle_id = require_bundle_id(envelope.bundle_id)
         directory = self._hold_dir()
         directory.mkdir(parents=True, exist_ok=True)
-        atomic_write_bytes(directory / f"{envelope.bundle_id}.bundle", bundle)
+        atomic_write_bytes(directory / f"{bundle_id}.bundle", bundle)
         payload = {
             "id": envelope.bundle_id,
             "from_id": envelope.from_id,
@@ -1043,7 +1306,7 @@ class TeamSyncService:
             "sha256": envelope.bundle_sha256,
         }
         atomic_write_bytes(
-            directory / f"{envelope.bundle_id}.json",
+            directory / f"{bundle_id}.json",
             (json.dumps(payload, indent=2, sort_keys=True) + "\n").encode("utf-8"),
         )
 
@@ -1059,7 +1322,11 @@ class TeamSyncService:
             needs = [item for item in payload.get("needs") or [] if item]
             if any(not self._repo.has_object(sha) for sha in needs):
                 continue
-            bundle_path = directory / f"{payload['id']}.bundle"
+            try:
+                held_id = require_bundle_id(str(payload.get("id", "")))
+            except TeamSyncError:
+                continue
+            bundle_path = directory / f"{held_id}.bundle"
             try:
                 data = bundle_path.read_bytes()
             except OSError:
@@ -1070,7 +1337,7 @@ class TeamSyncService:
             self._import_bundle_bytes(
                 data,
                 from_id=str(payload.get("from_id", "")),
-                bundle_id=str(payload.get("id", "")),
+                bundle_id=held_id,
                 verified=True,
             )
             path.unlink(missing_ok=True)
@@ -1083,6 +1350,7 @@ class TeamSyncService:
         from_id: str,
         bundle_id: str,
         verified: bool,
+        line: str = "",
     ) -> Optional[Incoming]:
         if not self._repo.exists():
             self._repo.init_repo()
@@ -1096,7 +1364,8 @@ class TeamSyncService:
             return None
         self._repo.set_ref(f"refs/incoming/{from_id}/{bundle_id}", tip)
         if from_id and from_id != "usb":
-            self._repo.set_ref(f"refs/peers/{from_id}/main", tip)
+            peer = f"refs/peers/{from_id}/{line}" if line.startswith("exp/") else f"refs/peers/{from_id}/main"
+            self._repo.set_ref(peer, tip)
         arrived = iso(self.now())
         records = [item for item in self._incoming_records() if item.get("id") != bundle_id]
         records.append(
@@ -1124,12 +1393,9 @@ class TeamSyncService:
         )
 
     def _assemble(self, envelope: Envelope, mail: InboundMail) -> Optional[bytes]:
-        if not envelope.bundle_id or envelope.part_total() <= 1 and not mail.attachments:
-            if envelope.verb in {"note", "have", "want", "join", "rekey"}:
-                return b""
-        payload = b""
-        if mail.attachments:
-            payload = next(iter(mail.attachments.values()))
+        if envelope.verb in {"note", "have", "want", "join", "rekey"} and not mail.attachments:
+            return b""
+        payload = _bundle_attachment(envelope, mail)
         if envelope.part_sha256 and payload and not digest_equal(sha256_hex(payload), envelope.part_sha256):
             raise TeamSyncError("A bundle part failed its checksum.")
         directory = self._part_dir(envelope.bundle_id)
@@ -1162,23 +1428,24 @@ class TeamSyncService:
         aside_index: Optional[int] = None,
         commit_when_clean: bool = True,
     ) -> Optional[CombineState]:
-        if CombineSession(self.project_root).load() is not None:
-            raise TeamSyncError("Finish or cancel the combine already open.")
+        self._require_idle()
+        self._checkpoint(_checkpoint_phrase(kind, self._person(theirs_from)))
         me = self._require_me()
-        if self._repo.dirty() and kind != "aside":
-            self._repo.set_aside("Before accepting", me.name, me.email or "team@localhost")
         ours = self._repo.head_sha()
         if not ours:
             raise TeamSyncError("Save a change before combining.")
+        if kind == "merge" and self._repo.is_ancestor(ours, tip):
+            self._repo.checkout(tip, self._repo.branch_name())
+            self._finish_fast(incoming_id, theirs_from, tip)
+            return None
         if kind == "merge" and self._repo.is_ancestor(tip, ours):
             self._finish_fast(incoming_id, theirs_from, tip)
             return None
         base = base_override if base_override is not None else (self._repo.merge_base(ours, tip) or "")
-        merge = merge_trees(
-            self._repo.tree_files(base) if base else {},
-            self._repo.tree_files(ours),
-            self._repo.tree_files(tip),
-        )
+        merge = self._merged(base, ours, tip, keep_team=kind == "revert")
+        commit_note = self._combined_note(theirs_from) if kind == "merge" else note
+        feed = self._accept_note(theirs_from) if kind == "merge" else note
+        modes = self._modes_for(merge, ours, tip)
         if merge.clashes:
             state = CombineSession(self.project_root).start(
                 session_id="k_" + secrets.token_hex(4),
@@ -1191,25 +1458,45 @@ class TeamSyncService:
                 incoming_id=incoming_id,
                 merge=merge,
                 aside_index=aside_index,
+                modes=modes,
+                feed=feed,
+                commit_note=commit_note,
             )
             self._emit(EVENT_COMBINE)
             return state
         if not commit_when_clean:
-            self._repo.replace_worktree(merge.files)
+            self._write_merge(merge, ours, modes)
             return None
         try:
-            self._commit_merge(merge, note, me, tip if kind in {"merge", "experiment"} else "")
+            self._commit_merge(
+                merge,
+                commit_note,
+                me,
+                tip if kind in {"merge", "experiment"} else "",
+                modes,
+            )
         except TeamSyncError as exc:
             if str(exc) != "Nothing to save.":
                 raise
         if incoming_id:
             self._finish_fast(incoming_id, theirs_from, tip)
-        elif kind in {"revert", "cherry"}:
+        elif kind in {"revert", "cherry", "experiment"}:
+            self._append_feed(FEED_SYSTEM, feed, me.member_id)
             self._emit(EVENT_HISTORY)
         return None
 
-    def _commit_merge(self, merge: TreeMerge, note: str, me: LocalIdentity, extra_parent: str) -> str:
-        self._repo.replace_worktree(merge.files)
+    def _commit_merge(
+        self,
+        merge: TreeMerge,
+        note: str,
+        me: LocalIdentity,
+        extra_parent: str,
+        modes: Optional[Dict[str, int]] = None,
+    ) -> str:
+        head = self._repo.head_sha() or ""
+        self._write_merge(merge, head, modes or {})
+        if not self._repo.dirty():
+            return head
         return self._repo.commit(
             note,
             me.name,
@@ -1219,6 +1506,145 @@ class TeamSyncService:
             self.now(),
             extra_parents=[extra_parent] if extra_parent else None,
         )
+
+    def _write_merge(self, merge: TreeMerge, ours_sha: str, modes: Dict[str, int]) -> None:
+        ours_files = self._repo.tree_files(ours_sha)
+        changed = {
+            path: data for path, data in merge.files.items() if ours_files.get(path) != data
+        }
+        self._repo.replace_worktree(changed, modes, only_listed=True)
+
+    def _merged(
+        self,
+        base_sha: str,
+        ours_sha: str,
+        theirs_sha: str,
+        *,
+        keep_team: bool,
+    ) -> TreeMerge:
+        base = self._repo.tree_files(base_sha) if base_sha else {}
+        ours = self._repo.tree_files(ours_sha)
+        theirs = self._repo.tree_files(theirs_sha)
+        result = merge_trees(base, ours, theirs)
+        if _TEAM_PATH in base or _TEAM_PATH in ours or _TEAM_PATH in theirs:
+            merged = merge_team_bytes(
+                base.get(_TEAM_PATH),
+                ours.get(_TEAM_PATH),
+                theirs.get(_TEAM_PATH),
+                ours_newer=self._repo.commit_time(ours_sha) >= self._repo.commit_time(theirs_sha),
+            )
+            files = dict(result.files)
+            files[_TEAM_PATH] = merged
+            clashes = tuple(clash for clash in result.clashes if clash.path != _TEAM_PATH)
+            result = TreeMerge(files=files, clashes=clashes)
+        if keep_team:
+            files = dict(result.files)
+            files[_TEAM_PATH] = ours.get(_TEAM_PATH)
+            clashes = tuple(clash for clash in result.clashes if clash.path != _TEAM_PATH)
+            result = TreeMerge(files=files, clashes=clashes)
+        return result
+
+    def _modes_for(self, merge: TreeMerge, ours_sha: str, theirs_sha: str) -> Dict[str, int]:
+        ours_modes = self._repo.tree_modes(ours_sha)
+        theirs_modes = self._repo.tree_modes(theirs_sha)
+        ours_files = self._repo.tree_files(ours_sha)
+        theirs_files = self._repo.tree_files(theirs_sha)
+        modes: Dict[str, int] = {}
+        for path, data in merge.files.items():
+            if data is None:
+                continue
+            if data == theirs_files.get(path) and path in theirs_modes:
+                modes[path] = theirs_modes[path]
+            elif path in ours_modes:
+                modes[path] = ours_modes[path]
+            else:
+                modes[path] = theirs_modes.get(path, 0o100644)
+        return modes
+
+    def _finish_still_matches(self, meta: Dict[str, object], files: Dict[str, Optional[bytes]]) -> bool:
+        ours = str(meta.get("ours") or "")
+        if self._repo.head_sha() != ours or self._repo.dirty():
+            return False
+        ours_files = self._repo.tree_files(ours)
+        for path in files:
+            if self._repo.work_bytes(path) != ours_files.get(path):
+                return False
+        return True
+
+    def _close_incoming(self, incoming_id: str) -> None:
+        if not incoming_id:
+            return
+        try:
+            payload = self._incoming_record(incoming_id)
+        except TeamSyncError:
+            return
+        self._repo.delete_ref(f"refs/incoming/{payload['from_id']}/{incoming_id}")
+        self._save_incoming(
+            [item for item in self._incoming_records() if item.get("id") != incoming_id]
+        )
+        self._enqueue_have(str(payload["from_id"]), str(payload["tip"]))
+
+    def _checkpoint(self, action: str) -> None:
+        if self._repo.exists() and self._repo.dirty():
+            self._commit_change(f"Your work before {action}", None)
+
+    def _require_idle(self) -> None:
+        if self._combine_open():
+            raise TeamSyncError(_BUSY)
+
+    def _combine_open(self) -> bool:
+        return bool(self._repo.exists() and CombineSession(self.project_root).load() is not None)
+
+    def _person(self, from_id: str) -> str:
+        team = self._team()
+        member = member_by_id(team, from_id) if team is not None else None
+        return member.name if member is not None else from_id
+
+    def _combined_note(self, from_id: str) -> str:
+        return f"Combined {self._person(from_id)}'s change"
+
+    def _out_live(self, account: str, folder_id: str) -> bool:
+        if not folder_id:
+            return False
+        if is_sent(Path(account), folder_id):
+            return True
+        folder = Path(account) / "out" / folder_id
+        return (folder / "message.mail").is_file() and not (folder / ".lock").exists()
+
+    def _resume_unpublished(self) -> None:
+        account = self._account()
+        if account is None:
+            return
+        for row in self._ledger().rows([DELIVERY_QUEUED, DELIVERY_WAITING_TERMINAL]):
+            if self._out_live(account.path, row.out_folder):
+                continue
+            part = next(
+                (item for item in self._ledger().parts_for(row.bundle_id) if item.idx == row.part_idx),
+                None,
+            )
+            if part is None:
+                continue
+            mail_path = Path(part.path).with_name(f"out-{row.part_idx}.mail")
+            name_path = Path(part.path).with_name(f"out-{row.part_idx}.name")
+            if not mail_path.is_file() or not Path(part.path).is_file() or not name_path.is_file():
+                continue
+            filename = name_path.read_text(encoding="utf-8")
+            message = mail_path.read_bytes()
+            payload = Path(part.path).read_bytes()
+
+            def _claimed(folder_id: str, _row: OutboxRow = row) -> None:
+                self._ledger().set_folder(_row.bundle_id, _row.recipient, _row.part_idx, folder_id)
+
+            try:
+                publish_out(
+                    Path(account.path),
+                    self._mail_id(),
+                    message,
+                    {filename: payload},
+                    on_claimed=_claimed,
+                )
+            except (OSError, TeamSyncError):
+                continue
 
     def _finish_fast(self, incoming_id: str, from_id: str, tip: str) -> None:
         if incoming_id:
@@ -1384,14 +1810,6 @@ class TeamSyncService:
             self._ledger_at = str(path)
         return self._ledger_obj
 
-    def _mark_seen_on(self, root: Path, key: str) -> None:
-        path = root / ".git" / "cbcs" / "ledger.sqlite"
-        ledger = Ledger(path)
-        try:
-            ledger.mark_seen(key, iso(self.now()), "ok")
-        finally:
-            ledger.close()
-
     def _invite_dir(self) -> Path:
         return self.machine.local_state / "team_sync" / "invites"
 
@@ -1416,10 +1834,11 @@ class TeamSyncService:
         raise TeamSyncError("That invite is no longer waiting.")
 
     def _delete_invite(self, incoming_id: str) -> None:
+        bundle_id = require_bundle_id(incoming_id)
         directory = self._invite_dir()
         for suffix in (".json", ".bundle"):
             try:
-                (directory / f"{incoming_id}{suffix}").unlink()
+                (directory / f"{bundle_id}{suffix}").unlink()
             except FileNotFoundError:
                 continue
 
@@ -1452,7 +1871,7 @@ class TeamSyncService:
         raise TeamSyncError("That incoming change is no longer waiting.")
 
     def _part_dir(self, bundle_id: str) -> Path:
-        return self.machine.local_state / "team_sync" / "parts" / (bundle_id or "none")
+        return self.machine.local_state / "team_sync" / "parts" / require_bundle_id(bundle_id)
 
     def _hold_dir(self) -> Path:
         if self._repo.exists():
@@ -1516,6 +1935,78 @@ class TeamSyncService:
             callback(event)
 
 
+def _require_empty_folder(root: Path) -> None:
+    if root.exists() and (not root.is_dir() or any(root.iterdir())):
+        raise TeamSyncError("Choose a new or empty folder. That one already has files.")
+
+
+def _empty_project_folder(root: Path) -> Path:
+    _require_empty_folder(root)
+    if not root.exists():
+        root.mkdir(parents=True)
+    return root
+
+
+def _checkpoint_phrase(kind: str, name: str) -> str:
+    phrases = {
+        "merge": f"accepting {name}'s change",
+        "revert": "undoing a change",
+        "cherry": "copying a change",
+        "experiment": "bringing an experiment in",
+        "aside": "bringing a change back",
+    }
+    return phrases.get(kind, "combining")
+
+
+def _permanent_failure(message: str) -> bool:
+    text = message.lower()
+    return "checksum" in text or "damaged" in text or "not one team sync" in text
+
+
+def _bundle_attachment(envelope: Envelope, mail: InboundMail) -> bytes:
+    index = envelope.part_index()
+    total = envelope.part_total()
+    marker = f".part-{index:02d}-of-{total:02d}"
+    chosen: Optional[bytes] = None
+    for name, payload in mail.attachments.items():
+        lower = name.lower()
+        if ".cbcsbundle" not in lower:
+            continue
+        if total > 1 and marker not in lower:
+            continue
+        chosen = payload
+        break
+    if chosen is None:
+        raise TeamSyncError("The bundle attachment is missing.")
+    return chosen
+
+
+def _usb_zip(body: str, bundle: bytes) -> bytes:
+    import io
+
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive:
+        archive.writestr("envelope.txt", body)
+        archive.writestr("bundle", bundle)
+    return buffer.getvalue()
+
+
+def _read_usb(raw: bytes) -> Tuple[str, bytes]:
+    import io
+
+    try:
+        archive = zipfile.ZipFile(io.BytesIO(raw))
+    except (zipfile.BadZipFile, ValueError) as exc:
+        raise TeamSyncError("That USB bundle is not a signed ChoreBoy bundle.") from exc
+    with archive:
+        names = set(archive.namelist())
+        if "envelope.txt" not in names or "bundle" not in names:
+            raise TeamSyncError("That USB bundle is not a signed ChoreBoy bundle.")
+        body = archive.read("envelope.txt").decode("utf-8")
+        bundle = archive.read("bundle")
+    return body, bundle
+
+
 def _member(identity: LocalIdentity) -> Member:
     return Member(identity.member_id, identity.name, identity.shop, identity.email)
 
@@ -1547,6 +2038,9 @@ def _canonical_fields(envelope: Envelope) -> Dict[str, str]:
         "sender-shop": envelope.sender_shop,
         "sender-email": envelope.sender_email,
         "accepted": envelope.accepted,
+        "note": envelope.note,
+        "removed": envelope.removed,
+        "line": envelope.line,
         "key": envelope.key_hex if envelope.verb == "rekey" else "",
     }
     for key, value in optional.items():
