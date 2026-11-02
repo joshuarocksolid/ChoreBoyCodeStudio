@@ -327,7 +327,7 @@ def test_window_sentence() -> None:
 
 def test_data_sentence() -> None:
     got = analyze("form.isNew", ENV, SLOTS["cond"])
-    assert got.problems[0].message == "Connect this form to a table first (coming with data forms)."
+    assert got.problems[0].message == "Connect this form to a table first."
 
 
 def test_column_outside_aggregate_when_data_is_connected() -> None:

@@ -89,8 +89,20 @@ def is_reserved_word(name: str, reserved: frozenset) -> bool:
 
 
 @dataclass(frozen=True)
+class DataFacts:
+    """Names a bound form adds. ``FormulaEnv.data`` stays None until the form has a source.
+
+    ``record`` maps a column name to its formula type. ``grids`` maps a table
+    view's object name to its column names.
+    """
+
+    record: Mapping[str, FType] = field(default_factory=dict)
+    grids: Mapping[str, Tuple[str, ...]] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
 class FormulaEnv:
-    """Widgets, window methods, and the class-chain function. ``data`` is None until M8.
+    """Widgets, window methods, and the class-chain function. ``data`` is None until the form has a source.
 
     ``returns`` holds each method's return annotation as source text (``bool``,
     ``int``, ``Decimal``, ``float``, ``str``, ``date``). ``MethodFacts`` does not

@@ -23,16 +23,26 @@ CHANGE_SIGNALS = {
     "QDateEdit": "dateChanged",
     "QTimeEdit": "timeChanged",
     "QDateTimeEdit": "dateTimeChanged",
+    # The lines model is not a widget. M8.3b connects these three. A tuple is
+    # not a widget signal, so change_signal skips it.
+    "QStandardItemModel": ("dataChanged", "rowsInserted", "rowsRemoved"),
 }
 
 
 def change_signal(class_name: str, bases: Sequence[str]) -> Optional[str]:
     """``class_name`` first, then ``bases``, first hit. Nearest base."""
-    found = CHANGE_SIGNALS.get(class_name)
+    found = _one(class_name)
     if found is not None:
         return found
     for name in bases:
-        found = CHANGE_SIGNALS.get(name)
+        found = _one(name)
         if found is not None:
             return found
+    return None
+
+
+def _one(class_name: str) -> Optional[str]:
+    found = CHANGE_SIGNALS.get(class_name)
+    if isinstance(found, str):
+        return found
     return None

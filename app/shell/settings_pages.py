@@ -24,14 +24,24 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, List, Mapping, Tuple
+from typing import Any, Callable, Dict, List, Mapping, Optional, Tuple
 
 from app.qt.QtWidgets import QTabWidget, QWidget
 
 _LOGGER = logging.getLogger(__name__)
 
-BuildPage = Callable[[QWidget, Mapping[str, Any]], QWidget]
-ApplyPage = Callable[[QWidget, Dict[str, Any]], Mapping[str, Any]]
+BuildPage = Callable[..., QWidget]
+ApplyPage = Callable[..., Any]
+
+SCOPE_GLOBAL = "global"
+SCOPE_PROJECT = "project"
+
+
+@dataclass(frozen=True)
+class SettingsRefusal:
+    """``apply`` returns this to keep Settings open and show ``sentence``."""
+
+    sentence: str
 
 
 @dataclass(frozen=True)
@@ -40,6 +50,7 @@ class SettingsPage:
     title: str
     build: BuildPage
     apply: ApplyPage
+    scope: str = SCOPE_GLOBAL
 
 
 _PAGES: Dict[str, SettingsPage] = {}
@@ -57,12 +68,25 @@ def registered_settings_pages() -> Tuple[SettingsPage, ...]:
     return tuple(_PAGES.values())
 
 
-def build_registered_pages(tabs: QTabWidget, payload: Mapping[str, Any]) -> List[Tuple[SettingsPage, QWidget]]:
-    """Add a tab for every registered page; returns the pages that built."""
+def build_registered_pages(
+    tabs: QTabWidget,
+    payload: Mapping[str, Any],
+    project_root: Optional[str] = None,
+) -> List[Tuple[SettingsPage, QWidget]]:
+    """Add a tab for every registered page the open scope can show.
+
+    A project-scope page is left out when no project is open. Its ``build`` is
+    called with the project root as a third argument.
+    """
     built: List[Tuple[SettingsPage, QWidget]] = []
     for page in registered_settings_pages():
+        if page.scope == SCOPE_PROJECT and not project_root:
+            continue
         try:
-            widget = page.build(tabs, dict(payload))
+            if page.scope == SCOPE_PROJECT:
+                widget = page.build(tabs, dict(payload), project_root)
+            else:
+                widget = page.build(tabs, dict(payload))
         except Exception:  # noqa: BLE001 - a feature page must never stop Settings from opening
             _LOGGER.exception("Settings page %r could not be built", page.key)
             continue
@@ -71,14 +95,35 @@ def build_registered_pages(tabs: QTabWidget, payload: Mapping[str, Any]) -> List
     return built
 
 
+def project_page_refusal(built: List[Tuple[SettingsPage, QWidget]], payload: Mapping[str, Any]) -> str:
+    """The sentence a project-scope page refused with, or an empty string."""
+
+    for page, widget in built:
+        if page.scope != SCOPE_PROJECT:
+            continue
+        try:
+            result = page.apply(widget, dict(payload))
+        except Exception:  # noqa: BLE001
+            _LOGGER.exception("Settings page %r could not be checked", page.key)
+            continue
+        if isinstance(result, SettingsRefusal) and result.sentence:
+            return result.sentence
+    return ""
+
+
 def apply_built_pages(built: List[Tuple[SettingsPage, QWidget]], payload: Mapping[str, Any]) -> Dict[str, Any]:
     """``payload`` with every built page's keys written, in tab order."""
     result: Dict[str, Any] = dict(payload)
     for page, widget in built:
         try:
-            result = dict(page.apply(widget, dict(result)))
+            written = page.apply(widget, dict(result))
         except Exception:  # noqa: BLE001 - a feature page must never stop the shell's save
             _LOGGER.exception("Settings page %r could not be applied", page.key)
+            continue
+        if isinstance(written, SettingsRefusal):
+            _LOGGER.error("Settings page %r refused after the dialog closed: %s", page.key, written.sentence)
+            continue
+        result = dict(written)
     return result
 
 
@@ -86,8 +131,12 @@ __all__ = [
     "ApplyPage",
     "BuildPage",
     "SettingsPage",
+    "SettingsRefusal",
+    "SCOPE_GLOBAL",
+    "SCOPE_PROJECT",
     "apply_built_pages",
     "build_registered_pages",
+    "project_page_refusal",
     "register_settings_page",
     "registered_settings_pages",
     "unregister_settings_page",

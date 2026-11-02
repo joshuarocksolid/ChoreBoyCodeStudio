@@ -15,6 +15,15 @@ _ = _formula_codes
 from app.features.form_builder.engine.logic.formula.library import FUNCTIONS
 from app.features.form_builder.engine.logic.formula.runtime import HELPERS
 
+_FORM_READS = {
+    "position": "_cbcs_form_position",
+    "count": "_cbcs_form_count",
+    "isNew": "_cbcs_form_is_new",
+    "isDirty": "_cbcs_form_is_dirty",
+    "isFiltered": "_cbcs_form_is_filtered",
+}
+_RECORD_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*\Z")
+
 _NEVER_BLANK_FUNCS = {
     "is_blank",
     "contains",
@@ -58,7 +67,7 @@ PREC_UNARY = 8
 PREC_ATOM = 9
 
 _LEFT_ASSOC = {PREC_ADD, PREC_MUL, PREC_AND, PREC_OR}
-_HELPER_RE = re.compile(r"\b(_cbcs_[A-Za-z0-9_]*)\b")
+_HELPER_RE = re.compile(r"(?<!\.)(_cbcs_[A-Za-z0-9_]*)\b")
 _HELPER_ORDER = [helper_id for helper_id, _source in HELPERS]
 _HELPER_SET = set(_HELPER_ORDER)
 _IMPORT_NAMES = {
@@ -335,8 +344,17 @@ def _emit_attr(node: Any, self_name: str) -> _Piece:
     else:
         raise ValueError("attribute base is not a widget")
     _reject_hidden_name(widget)
-    target = "%s.%s" % (self_name, widget)
     name = node.name
+    if widget == "form":
+        method = _FORM_READS.get(name)
+        if method is None:
+            raise ValueError("unknown form attribute %s" % name)
+        return _Piece("%s.%s()" % (self_name, method), PREC_ATOM, False)
+    if widget == "record":
+        if not _RECORD_NAME.match(name):
+            raise ValueError("record column is not a name")
+        return _Piece('%s._cbcs_record.get("%s")' % (self_name, name), PREC_ATOM, True)
+    target = "%s.%s" % (self_name, widget)
     table = {
         "text": ("_cbcs_read_shown", True),
         "enabled": ("_cbcs_read_enabled", False),

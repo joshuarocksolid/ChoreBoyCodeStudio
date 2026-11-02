@@ -2733,7 +2733,7 @@ class FormWorkbench(QWidget):
         self.inspector = InspectorPane(
             session,
             realizer,
-            data_tab=os.environ.get("CBCS_FB_DEV") == "1",
+            data_tab=True,
             on_leave=self.canvas.setFocus,
             parent=self._right_stack,
         )

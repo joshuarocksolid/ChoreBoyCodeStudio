@@ -43,7 +43,7 @@ from app.shell.settings_dialog_general import (
 )
 from app.shell.settings_dialog_handlers import SettingsDialogHandlersMixin
 from app.shell.settings_dialog_state import GeneralTabState
-from app.shell.settings_pages import apply_built_pages, build_registered_pages
+from app.shell.settings_pages import apply_built_pages, build_registered_pages, project_page_refusal
 from app.shell.settings_dialog_tables import (
     finalize_keybindings_columns,
     finalize_linter_columns,
@@ -118,12 +118,15 @@ class SettingsDialog(SettingsDialogHandlersMixin, QDialog):
         python_tooling_config_text: str = UNKNOWN_SETTINGS_COPY.config_text,
         python_tooling_config_details: str = UNKNOWN_SETTINGS_COPY.config_details,
         global_settings_payload: Mapping[str, Any] | None = None,
+        project_root: str | None = None,
     ) -> None:  # type: ignore[no-untyped-def]
         super().__init__(parent)
         self.setWindowTitle("Settings")
         self.setModal(True)
         self.resize(860, 640)
         self.setObjectName("shell.settingsDialog")
+        self._project_root = project_root
+        self._feature_payload = dict(global_settings_payload) if global_settings_payload is not None else {}
         if tokens is None:
             tokens = tokens_from_palette(self.palette())
         self._tokens = tokens
@@ -237,7 +240,9 @@ class SettingsDialog(SettingsDialogHandlersMixin, QDialog):
         # Feature pages need the real payload to fill from; without one they are left out
         # rather than shown with defaults that OK would then save over the user's values.
         self._feature_pages = (
-            build_registered_pages(tabs, global_settings_payload) if global_settings_payload is not None else []
+            build_registered_pages(tabs, global_settings_payload, project_root=self._project_root)
+            if global_settings_payload is not None
+            else []
         )
 
         self._validation_banner_label = QLabel(self)
@@ -248,6 +253,14 @@ class SettingsDialog(SettingsDialogHandlersMixin, QDialog):
 
         build_buttons_row(self, layout)
         apply_initial_scope(self, initial_scope)
+
+    def accept(self) -> None:  # noqa: D102
+        sentence = project_page_refusal(self._feature_pages, self._feature_payload)
+        if sentence:
+            self._validation_banner_label.setText(sentence)
+            self._validation_banner_label.setVisible(True)
+            return
+        super().accept()
 
     def apply_feature_pages(self, global_payload: Mapping[str, Any]) -> dict[str, Any]:
         """``global_payload`` with the keys of the pages features registered (``app.shell.settings_pages``)."""

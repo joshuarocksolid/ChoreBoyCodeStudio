@@ -492,6 +492,7 @@ class FileProjectCommandsWorkflow:
             python_tooling_config_text=python_tooling_copy.config_text,
             python_tooling_config_details=python_tooling_copy.config_details,
             global_settings_payload=global_settings_payload,
+            project_root=project_root,
             initial_scope=(
                 SETTINGS_SCOPE_PROJECT
                 if focus_completion_mode
