@@ -1,5 +1,7 @@
 # Team Sync shop day 2 (euf8)
 
+> Screenshots referenced below live on the throwaway branch `prototype/team-sync` under `docs/team_sync/evidence/screens/` (kept off main).
+
 Drove the same nine steps on cbfarm shop `euf8` after the L3c fixes. net1 was Sam Brenneman (Maple Ridge). net2 was Ana Kurtz (Cedar Hollow). Both used the twin account `rocksolid@upwardmail.com`. net15 was the FaxMail twin. Disposable homes were `/home/default/cbcs-team-net1` and `/home/default/cbcs-team-net2`. CBCS ran from source at `/mnt/cbprobe/incoming/cbcs/team-sync-final` with the cp39 vendor bundle. `CBCS_FAULT_LOG` was `/home/default/cbcs-team-net1/fault.log` and `/home/default/cbcs-team-net2/fault.log`. Both files were 0 bytes at the end. Project id `p_2c6975cbba117673`. Screenshots are in `docs/team_sync/screens/final/`.
 
 The twin account folder did not already contain `account_settings_v2.conf`. Setup wrote `EmailAddress}{rocksolid@upwardmail.com`, `UserName}{Sam Brenneman`, `CompanyName}{Maple Ridge`, `MaxMsgSize}{30000000` under `/home/default/share/PDF/.Mails/default/`.

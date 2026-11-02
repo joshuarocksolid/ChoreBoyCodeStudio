@@ -1,5 +1,7 @@
 # Team Sync shop day (esm4)
 
+> Screenshots referenced below live on the throwaway branch `prototype/team-sync` under `docs/team_sync/evidence/screens/` (kept off main).
+
 Drove one day on cbfarm shop `esm4`. net1 was Sam, net2 was Ana, net15 was the FaxMail twin. Both stations used `rocksolid@upwardmail.com`. Disposable homes were `/home/default/cbcs-team-net1` and `/home/default/cbcs-team-net2`. Project id `p_5fc9ae42e8d4facc`. Screenshots are in `docs/team_sync/screens/shopday/`.
 
 The twin account folder did not already contain `account_settings_v2.conf`. A real terminal always has that file, and the address and size cap live in it, so discovery still requires it. The day created a realistic conf on the twin as test setup (`EmailAddress}{rocksolid@upwardmail.com`, `UserName}{RockSolid`, `CompanyName}{Cedar Hollow`, `MaxMsgSize}{30000000`).
