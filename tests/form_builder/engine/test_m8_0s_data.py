@@ -307,6 +307,38 @@ def test_env_for_types_a_bound_form_and_keeps_fb115_on_an_unbound_one() -> None:
     assert same.problems[0].message == got.problems[0].message
 
 
+def test_a_missing_schema_cache_does_not_reject_record_columns() -> None:
+    data = write_data(RecordSource("shop", "invoices", "id"))
+    document = read_ui(_bound_form(data, "{}", "{}"), allocator=IdAllocator()).document
+    set_schema_reader(None)
+    env = env_for(document, None, QtClassTable.shared())
+    assert env.data is not None and env.data.record_known is False
+    got = analyze("record.invoice_no", env, SLOTS["text"])
+    assert [problem.code for problem in got.problems] == []
+    set_schema_reader(
+        lambda _doc, name: Schema(
+            "shop",
+            "sqlite",
+            "",
+            "2026-01-01T00:00:00",
+            "sqlite3",
+            (Table("invoices", (Column("invoice_no", "TEXT", True),), key="id"),),
+        )
+        if name == "shop"
+        else None
+    )
+    try:
+        known = env_for(
+            read_ui(_bound_form(data, "{}", "{}"), allocator=IdAllocator()).document,
+            None,
+            QtClassTable.shared(),
+        )
+        missed = analyze("record.invoiceNo", known, SLOTS["text"])
+        assert any(problem.code == "FB114" for problem in missed.problems)
+    finally:
+        set_schema_reader(None)
+
+
 def test_designer_resave_keeps_the_five_data_properties() -> None:
     data = write_data(RecordSource("shop", "invoices", "id", record_word="invoice"))
     bind = write_bind(Bind("invoice_no"))

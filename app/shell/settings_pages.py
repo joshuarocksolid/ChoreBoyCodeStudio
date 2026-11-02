@@ -6,14 +6,18 @@ A feature registers a page once (at import or install time)::
                                         build=make_page, apply=write_page))
 
 The dialog adds one tab per registered page, in registration order, after its
-own tabs.
+own tabs. ``scope`` is ``"global"`` unless the page says ``"project"``. A
+project page is left out when no project is open, and its ``build`` receives
+the project root as a third argument.
 
-* ``build(parent, payload)`` returns the page widget, filled from ``payload``:
-  the global settings payload the dialog was opened with.
-* ``apply(page, payload)`` is called after OK with the global payload the shell
-  is about to save (re-read from disk and already holding the dialog's own
-  values). It returns that payload with the page's keys written. The shell
-  saves the result once, so a page never races the shell's own save.
+* A global page's ``apply(page, payload)`` runs once, after OK, with the
+  global payload the shell is about to save. It returns that payload with the
+  page's keys written. The shell saves the result once.
+* A project page's ``apply(widget, project_root)`` runs once, inside OK,
+  before the dialog closes. It writes its own project files and returns None,
+  or ``SettingsRefusal`` to keep the dialog open and show the sentence.
+  Nothing is written for the project pages after a refusal. Project pages
+  never touch the global payload, and they are not applied again after OK.
 
 A page whose ``build`` or ``apply`` raises is logged and skipped: it never stops
 the dialog from opening or the shell's settings from saving. Registering the
@@ -95,16 +99,19 @@ def build_registered_pages(
     return built
 
 
-def project_page_refusal(built: List[Tuple[SettingsPage, QWidget]], payload: Mapping[str, Any]) -> str:
-    """The sentence a project-scope page refused with, or an empty string."""
+def apply_project_pages(built: List[Tuple[SettingsPage, QWidget]], project_root: str) -> str:
+    """Write each project page once. The sentence of the first refusal, or ``""``.
+
+    Pages after a refusal are not called.
+    """
 
     for page, widget in built:
         if page.scope != SCOPE_PROJECT:
             continue
         try:
-            result = page.apply(widget, dict(payload))
+            result = page.apply(widget, project_root)
         except Exception:  # noqa: BLE001
-            _LOGGER.exception("Settings page %r could not be checked", page.key)
+            _LOGGER.exception("Settings page %r could not be applied", page.key)
             continue
         if isinstance(result, SettingsRefusal) and result.sentence:
             return result.sentence
@@ -112,9 +119,14 @@ def project_page_refusal(built: List[Tuple[SettingsPage, QWidget]], payload: Map
 
 
 def apply_built_pages(built: List[Tuple[SettingsPage, QWidget]], payload: Mapping[str, Any]) -> Dict[str, Any]:
-    """``payload`` with every built page's keys written, in tab order."""
+    """``payload`` with every global page's keys written, in tab order.
+
+    Project-scope pages are skipped. They already ran inside the dialog.
+    """
     result: Dict[str, Any] = dict(payload)
     for page, widget in built:
+        if page.scope == SCOPE_PROJECT:
+            continue
         try:
             written = page.apply(widget, dict(result))
         except Exception:  # noqa: BLE001 - a feature page must never stop the shell's save
@@ -135,8 +147,8 @@ __all__ = [
     "SCOPE_GLOBAL",
     "SCOPE_PROJECT",
     "apply_built_pages",
+    "apply_project_pages",
     "build_registered_pages",
-    "project_page_refusal",
     "register_settings_page",
     "registered_settings_pages",
     "unregister_settings_page",

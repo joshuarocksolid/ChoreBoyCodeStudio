@@ -242,11 +242,13 @@ def _data_facts(doc: UiDocument, widgets: Dict[str, WidgetFacts]) -> Optional[Da
     table_name = getattr(source, "table", "") or ""
     connection = getattr(source, "connection", "") or ""
     schema = schema_for(doc, connection) if connection else None
+    record_known = False
     if schema is not None and table_name:
         engine = schema.engine or "sqlite"
         for table in schema.tables:
             if table.name != table_name:
                 continue
+            record_known = True
             for column in table.columns:
                 ref = column.references.table if column.references is not None else ""
                 kind = describe(
@@ -277,7 +279,11 @@ def _data_facts(doc: UiDocument, widgets: Dict[str, WidgetFacts]) -> Optional[Da
         if node.object_name:
             grids[node.object_name] = tuple(names)
     del widgets
-    return DataFacts(record=MappingProxyType(record), grids=MappingProxyType(grids))
+    return DataFacts(
+        record=MappingProxyType(record),
+        grids=MappingProxyType(grids),
+        record_known=record_known,
+    )
 
 
 def _also(node: WidgetNode) -> Tuple[str, ...]:

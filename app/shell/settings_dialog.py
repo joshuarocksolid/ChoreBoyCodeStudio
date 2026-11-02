@@ -43,7 +43,7 @@ from app.shell.settings_dialog_general import (
 )
 from app.shell.settings_dialog_handlers import SettingsDialogHandlersMixin
 from app.shell.settings_dialog_state import GeneralTabState
-from app.shell.settings_pages import apply_built_pages, build_registered_pages, project_page_refusal
+from app.shell.settings_pages import apply_built_pages, apply_project_pages, build_registered_pages
 from app.shell.settings_dialog_tables import (
     finalize_keybindings_columns,
     finalize_linter_columns,
@@ -255,7 +255,7 @@ class SettingsDialog(SettingsDialogHandlersMixin, QDialog):
         apply_initial_scope(self, initial_scope)
 
     def accept(self) -> None:  # noqa: D102
-        sentence = project_page_refusal(self._feature_pages, self._feature_payload)
+        sentence = apply_project_pages(self._feature_pages, self._project_root or "")
         if sentence:
             self._validation_banner_label.setText(sentence)
             self._validation_banner_label.setVisible(True)

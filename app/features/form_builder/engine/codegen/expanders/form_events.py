@@ -38,16 +38,6 @@ def clear_close_guards() -> None:
 
     _GUARDS.clear()
 
-from app.features.form_builder.engine.codegen.expanders.steps import _body, _generates
-from app.features.form_builder.engine.codegen.logic_hooks import CodegenContext, Contribution, Method, one_line
-from app.features.form_builder.engine.logic import compat
-from app.features.form_builder.engine.logic.events_codec import read_list
-from app.features.form_builder.engine.ui4.document import UiDocument
-from app.features.form_builder.engine.ui4.defaults import QtClassTable
-from app.features.form_builder.engine.ui4.values import StringValue
-
-_FORM_SIGNALS = ("opened", "closing")
-
 
 class FormEventsExpander:
     expander_id = "form_events"

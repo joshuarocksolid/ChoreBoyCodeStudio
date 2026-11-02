@@ -310,7 +310,7 @@ def _check_attr(state: _State, node: Attr, ctx: _Ctx) -> Node:
             return replace(node, type=ANY)
         _data_required(state, node.span)
         data = state.env.data
-        if data is None:
+        if data is None or not getattr(data, "record_known", False):
             return replace(node, type=TEXT)
         column = data.record.get(node.name) if hasattr(data, "record") else None
         if column is None:

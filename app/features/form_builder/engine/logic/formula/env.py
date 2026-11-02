@@ -92,12 +92,14 @@ def is_reserved_word(name: str, reserved: frozenset) -> bool:
 class DataFacts:
     """Names a bound form adds. ``FormulaEnv.data`` stays None until the form has a source.
 
-    ``record`` maps a column name to its formula type. ``grids`` maps a table
-    view's object name to its column names.
+    ``record`` maps a column name to its formula type. ``record_known`` is true
+    only when the schema cache had the source table. A missing cache is not an
+    empty table. ``grids`` maps a table view's object name to its column names.
     """
 
     record: Mapping[str, FType] = field(default_factory=dict)
     grids: Mapping[str, Tuple[str, ...]] = field(default_factory=dict)
+    record_known: bool = False
 
 
 @dataclass(frozen=True)

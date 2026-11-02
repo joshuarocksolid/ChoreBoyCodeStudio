@@ -15,6 +15,7 @@ class DataPage(QWidget):
         self.setObjectName("formBuilder.dataBody")
         self._layout = QVBoxLayout(self)
         self._layout.setContentsMargins(12, 12, 12, 12)
+        self._layout.addStretch(1)
         self._built: Dict[str, QWidget] = {}
         self._class_name = ""
 
@@ -47,7 +48,7 @@ class DataPage(QWidget):
             if widget is None:
                 widget = section.create(self)
                 self._built[section.section_id] = widget
-                self._layout.addWidget(widget)
+                self._layout.insertWidget(self._layout.count() - 1, widget)
             widget.show()
         if not shown:
             return
