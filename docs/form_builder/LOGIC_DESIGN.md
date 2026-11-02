@@ -1802,3 +1802,23 @@ The M7 spec (UX_SPEC §13.4, version 1) and CONTRACTS §17–18 change this desi
 | §2.10 one compiler | "The compiler turns the formula into the same Python expression" | The evaluator `eval`s the compiled source with the helpers built from the same source strings the generator emits (CONTRACTS §17.11–17.12) | One definition of every helper |
 | §4.12 `when` errors | — | A `when` with a formula error skips only that step; the JSON-shape FB401 rule still covers whole lists (CONTRACTS §18.4) | A typo in one condition shouldn't stop Save |
 | §2.1 form events | Seven form events | M7: Opened and Closing; the record events with M8 (UX E10) | They need no data |
+
+## Changes recorded by M8.0 (2026-11-02)
+
+The M8 spec (UX_SPEC §13.5, version 1) and CONTRACTS §19 change this design in the places below. Where this document and those disagree, they win.
+
+| Section | Was | Now | Why |
+| --- | --- | --- | --- |
+| §5.1, Decision 10 | A user-owned `cbcs_connections.py`, created once | Connections are a project setting (Settings › Connections). `connections.json` holds them (version 1, with title, schema, password policy and setup). `cbcs_connections.py` is **generated** from it and never edited. A setup function lives in a user-owned `connection_setup.py` and runs only when the connection names it (UX F1–F3, CONTRACTS §19.2–19.4) | Owner decision 1 |
+| §5.1 passwords | `set_password`, then `~/.config/<app>/connections.local.json`, then a prompt | A policy per connection: ask, remember on this machine, or none. The machine file is under the CBCS state root (dotfiles in `~` can't be written on ChoreBoy), with mode 0600 (CONTRACTS §19.3) | Owner decision 1; the M0.7 probe |
+| §5.1 drivers | `cb_psycopg`, then `psycopg`, then `pg8000` | `psycopg`, then `pg8000`. FreeCAD 1.1 has no `cb_psycopg` (PLAN Appendix A). M8.1 confirms both on 9.3 (UX F4) | Probe facts |
+| §2.6 the Data panel | A dock beside the widget box | A Data tab in the left pane (form source, columns, lines, SQL), plus an inspector Data tab for the selected widget's binding, lookup or lines (UX F5) | The left pane already holds Outline, Insert and Logic; a binding belongs to its widget |
+| §2.10 Try data | PostgreSQL read-only, with a "rolled back" option for developers | PostgreSQL writes run and are rolled back per verb, with a banner, a 5 s statement timeout, a 2 s lock timeout, and sequence and trigger warnings. "Only show the SQL" is a per-connection option (UX F11, CONTRACTS §19.10) | Owner decision 2 |
+| §5.5 conflicts | [Reload their version] [Cancel] | Adds [Keep mine and save] when the source allows overwrite (UX F10) | An honest third choice where the developer allowed it |
+| §5.2 | No record word | `recordWord` in `cbcsData`, the singular used in every app sentence (UX F9) | "Save changes to this invoice?" needs it |
+| §4.12 verbs | — | Adds `addRow` and `deleteRow` for the lines buttons, `showAll` for Find, and `openRecord` for list screens (CONTRACTS §19.12) | The lines buttons, Show all and Open are ordinary steps (Decision 11) |
+| §5.5 toolbar | The delete button carries Ask, then Delete | Delete asks its own question; the button carries only Delete (UX F7) | One question, not two |
+| Owner decision 1 | `on_connect(conn)` | `on_connect(name, connection)` in user-owned `connection_setup.py` (CONTRACTS §19.4) | One function can set up several connections |
+| §5.1, §5.5 transactions | Each verb commits or rolls back | Every database path, reads included, runs in one `work()` block that ends its transaction; UPDATE writes only changed columns; SQLite runs with foreign keys on; packaged SQLite files are seed data (CONTRACTS §19.4–19.5) | No idle-in-transaction locks, no silent rewrite of values a field can't show exactly, and app updates never replace a customer's data |
+| §2.9 codes | FB301 missing column, FB302 stale schema, FB303 lookup without a key | FB301–FB321 (CONTRACTS §19.8). Those three cases are now FB303, FB310 and FB311 | Every data problem has its own code and fix |
+| §6.1 | `cbcsData` keys as in §6.2 | Adds `recordWord`; list screens add `sql` (renamed from `query`, since on-screen words avoid "query") | Copy rules (UX §13.5 words) |

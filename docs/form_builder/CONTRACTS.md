@@ -1210,7 +1210,7 @@ Both lanes run the suite under the Python 3.9 AppRun lane as well as 3.11.
 
 M7.4 types these verbs in the codec (§15.3) and in a verb registry, `engine/logic/verbs/` (M7.0s), so the codec, codegen and the step picker learn each verb from one entry. The verbs: `validate`, `set`, `clear`, `focus`, `enable`, `disable`, `show`, `hide`, `message`, `ask`, `stop`, `page`, `openForm`, `close`, `call` (now with `when`), `slot` (now with `when`). Their fields are LOGIC §4.12's.
 
-M8 adds `new`, `save`, `delete`, `revert`, `reload`, `first`, `previous`, `next`, `last`, `find`, `refreshLookups`, `addRow` and `deleteRow`. Until then they stay FB403 (read-only, kept).
+M8 adds `new`, `save`, `delete`, `revert`, `reload`, `first`, `previous`, `next`, `last`, `find`, `showAll`, `refreshLookups`, `addRow`, `deleteRow` and `openRecord` (§19.12). Until then they stay FB403 (read-only, kept).
 
 - A step with `when` is wrapped in `if <compiled formula>:`, and the step's lines are indented under it. A `when` with an Error makes **only that step** skip: it is emitted as a one-line comment `# step {n} skipped ({code}: see Problems)`. The rest of the list still runs. This differs from §15.3's whole-list FB401, which is about JSON shape, not formula meaning.
 - `call`: the M6 rule stands unchanged: `if self._form.<m>(...) is False: return` when a later step is on, else a plain call (byte-identical to M6 for M6 lists).
@@ -1241,6 +1241,244 @@ M7.0s makes these changes in `engine/codegen/logic_hooks.py`, `emit.py`, `api.py
 ### 18.5 "Open rule" links
 
 The run console turns a traceback frame inside `ui_<stem>.py` into a link when the line falls in a block whose first comment is a source reference. The block's lines are found by scanning back from the frame line to the nearest `# {widget}: ` comment at the method's indent. Activating the link opens the form and selects that widget's rule row. M7.3b owns the run-console link through a new `integration/run_links_ext/` contributor. If the shell's console has no extension point, M7.0s adds a minimal one.
+
+## 19. Data (M8)
+
+This section binds M8. It refines LOGIC_DESIGN §5, §6.1–6.2 (data shapes) and §7.6–7.7, with owner decisions 1 and 2 of 2026-10-20 applied. Where LOGIC_DESIGN differs, this section wins, and LOGIC_DESIGN's "Changes recorded by M8.0" lists each difference. The UX clauses are in UX_SPEC §13.5.
+
+### 19.1 Package and layering
+
+`engine/data/` is Qt-free. It never imports a PostgreSQL driver, and it touches the filesystem only through the functions named below.
+
+| Module | Owner | Contents |
+| --- | --- | --- |
+| `connections.py` | M8.1 | `Connection`, `ConnectionSet`, read and write of `connections.json` (§19.2), and code-name rules |
+| `machine.py` | M8.1 | The machine file path and read/write with mode 0600 (§19.3) |
+| `connections_module.py` | M8.1 | Generates `cbcs_connections.py` text from a `ConnectionSet` (§19.4) |
+| `schema.py` | M8.6 (model by M8.0s) | `Schema`, `Table`, `Column`, the cache file (§19.6), and staleness |
+| `types.py` | M8.0s | Column type → kind, suggested widget class, words, and value conversion (LOGIC §5.3) |
+| `source.py` | M8.0s | Typed codecs for `cbcsData`, `cbcsBind`, `cbcsBindMode`, `cbcsLookup` and `cbcsRows`, with canonical JSON (LOGIC §6.3) |
+| `sql.py` | M8.2 | Statement builders per dialect (§19.5). The only place SQL text is made |
+| `check.py` | M8.0s (frame), each lane its rows | Design-time data diagnostics, FB3xx (§19.8) |
+| `helper/` | M8.6 | The schema helper's request handlers, run in the child (§19.7) |
+| `diagnostic_codes/fb3xx_data.py` | M8.0s | FB301–FB3xx declarations (§19.8) |
+
+Codegen expanders (`engine/codegen/expanders/`, ordered per `logic_hooks`):
+
+| Order | Expander | Owner | Emits |
+| --- | --- | --- | --- |
+| 380 | `lookups.py` | M8.3a | `cbcs_load_lookups`, the `_CBCS_ALSO_ROLE` items, and `_cbcs_also` |
+| 400 | `record.py` | M8.2 | `cbcs_open`, `_cbcs_show`, `_cbcs_start_new`, the read/write/snapshot methods, verbs, the dirty prompt (through the close-guard hook), and `form.*` / `record.*` support. Its "open at start" setup line is contributed at order **890**, after every model and lookup is built and before form events (900) |
+| 420 | `rows.py` | M8.3b | The lines model, delegates, aggregates, and line save inside the record transaction |
+| 430 | `listing.py` | M8.3c | List-screen search, limit label, and open-record |
+
+Qt side:
+- `qtside/data_panel/` is the left-pane Data tab;
+- `qtside/inspector/data_ext/` is the inspector Data tab sections;
+- `integration/settings_ext/connections_page.py` is Settings › Connections, through the shell's settings-page registry, as UX-TMPL-006 joined;
+- `qtside/dialogs/from_table.py` is extended by M8.3d.
+
+M8.0s provides the registries and empty shells every lane fills, as M7.0s did:
+- the verbs of §18.4's M8 list, as read-only FB403 entries until each lane types them;
+- a **close-guard hook** in `form_events.py` (M7's `_CbcsCloseGuard`): an ordered list of guard contributions, so the record expander adds the dirty prompt without editing that file. A setup-line order on `Contribution` lines, so an expander can place one setup line at 890;
+- `CHANGE_SIGNALS` entries for the generated lines model (`dataChanged`, `rowsInserted`, `rowsRemoved`), so line edits run `cbcs_refresh` and Save's Enabled rule updates;
+- project scope for settings pages, with an `apply` that can refuse with a sentence and keep the dialog open (today's `apply` only logs exceptions);
+- the data names in `FormulaEnv` (§19.9);
+- both Data tabs with registered sections;
+- the FB3xx module;
+- `types.py`;
+- `source.py`.
+
+After M8.0s, lanes never edit each other's files.
+
+### 19.2 `connections.json` (version 1)
+
+```json
+{"version": 1,
+ "connections": [
+  {"name": "shop", "title": "Shop database", "engine": "sqlite", "file": "data/shop.db"},
+  {"name": "office", "title": "Office", "engine": "postgres", "host": "192.168.1.20", "database": "shop", "user": "clerk", "password": "ask", "setup": "on_connect"}
+ ]}
+```
+
+- `password` is one of `ask`, `machine` or `none`. It is absent for SQLite. No other secret key exists, and the reader rejects a file that has a `"secret"` or `"pw"` key, or a `password` value that isn't one of the three (FB302 is file-level; the settings page shows the sentence).
+- `file` is relative to the project root, with forward slashes, and must stay inside the project.
+- `name` matches `^[a-z_][a-z0-9_]*$` and is unique.
+- The JSON is canonical, with one connection per line as in LOGIC §6.3: keys in the order shown, and absent at default (`port` 5432, `schema` public, `setup` none, `tryShowSqlOnly` false).
+
+### 19.3 The machine file
+
+The path is `{state_root}/connections/{project_slug}.json`, where `state_root` is CBCS's state root (`app/core/constants.py` `GLOBAL_STATE_DIRNAME` under the home folder) and `project_slug` is the project manifest's name, slugified. The generated module embeds the slug as `_CBCS_PROJECT`, so the packaged app finds the same file. The format:
+
+```json
+{"version": 1, "connections": {"office": {"password": "…", "host": "…", "port": 5433}}}
+```
+
+`host` and `port` are optional per-machine overrides. Entries are keyed by connection code name. A code-name rename in Settings moves this machine's entry; other machines ask again. With the `machine` policy and no entry yet, the app's prompt (§19.4) has "Remember on this machine" ticked, and OK writes the entry. The file is written with mode 0600, and its folder with 0700. On read, a file whose mode allows group or other access is still used. The settings page shows "This password file can be read by other users of this computer. [Fix]" (FB321). The machine file is never in the project tree, and the packager has a test that it is never in a package.
+
+### 19.4 `cbcs_connections.py` (generated)
+
+The header is the generated-file header of §6, plus "Edit connections in Settings › Connections." The public API, documented as stable:
+- `open_connection(name)` returns the DB-API connection;
+- `set_password(name, password)`;
+- `dialect(name)` returns `"sqlite"` or `"postgres"`;
+- `close_all()`.
+
+Behaviour (MUST):
+- **One connection per name per process** (Try overrides this per session, §19.10). SQLite opens its file with `detect_types=0`, then runs `PRAGMA foreign_keys = ON`, so "points to" errors fire on SQLite too. `PROJECT_ROOT` is the folder of `cbcs_connections.py`, or `_CBCS_PROJECT_ROOT` when the helper set it (§19.7).
+- **Seed data.** Run from the project, SQLite uses `PROJECT_ROOT/file`. Run as an installed package (the packager writes `cbcs_installed.json` beside the module), SQLite uses `{state_root}/apps/{project_slug}/{file}`, copied from the packaged file on first run and never overwritten.
+- **PostgreSQL drivers** are tried in `_CBCS_DRIVERS = ("psycopg", "pg8000")` order (UX F4). The first that imports and connects wins. Failing all, it raises `CbcsConnectionError` naming each driver and its import error.
+- **After connect,** for PostgreSQL: `SET client_encoding TO 'UTF8'`, then `SET search_path TO "{schema}"` when the schema isn't `public`, then the setup function when named: `connection_setup.on_connect(name, connection)` (the owner's `on_connect(conn)` gains the name, so one function can serve several connections). Then a commit.
+- **Password resolution:**
+  1. `set_password`;
+  2. the machine file (policy `machine`);
+  3. a small generated prompt (a `QDialog` with a hidden-echo field, plus "Remember on this machine" for policy `machine`). It needs a `QApplication`, otherwise `CbcsConnectionError`. The answer is kept in memory for the process;
+  4. none.
+
+  Host and port overrides from the machine file apply for every policy.
+- **Every database path ends its transaction.** The module provides `work(name)`, a context manager yielding the connection. It commits on success, and on any exception it rolls back and re-raises (pitfalls E-1). Every generated database access runs inside one `with cbcs_connections.work(name) as conn:` block: verbs, and also reads (key load, lookups, lines load, list search). So no path leaves a connection idle in a transaction, holding locks. For psycopg the connection runs with `autocommit = False`, and pg8000's default is the same. **Nested blocks join the outer one:** a `work()` entered while another is open on the same connection yields it, and only the outermost block commits or rolls back. That lets `rows.py` save lines inside the record's save without splitting it.
+- **Reached through the module.** Generated code and ejected code (M8.5) write `import cbcs_connections` and call `cbcs_connections.work(...)` at call time, never `from cbcs_connections import …`. Try substitutes the module (§19.10), and nothing can hold a stale reference to the real one.
+- **Bytes guard.** Values that come back as `bytes` or `memoryview` for text columns are decoded as UTF-8 (pitfalls B-2).
+- **No other imports.** The module imports nothing from Code Studio, since it ships alone (no runtime library).
+
+### 19.5 Generated data code and SQL
+
+- **The dialect is fixed at generate time** from the source's connection engine. A form whose connection changes engine is regenerated (FB305 until it is). `sql.py` returns `Statement(text, params_order, caption)`. The record expander and Show SQL both call it, so the two never differ (UX-DATA-006).
+- **Statements** follow LOGIC §5.8 exactly:
+  - double-quoted identifiers checked against the name rule (FB307);
+  - placeholders `?` or `%s`;
+  - `RETURNING` for PostgreSQL inserts, `lastrowid` for SQLite;
+  - no upsert;
+  - `IS` or `IS NOT DISTINCT FROM` in conflict checks;
+  - `LIKE … ESCAPE '\'` or `ILIKE … ESCAPE '\'` in searches.
+- **Types** (`types.py`). timestamp maps to `QDateTimeEdit`, time to `QTimeEdit`, float and real to `QDoubleSpinBox`, numeric(p,s) to a field whose decimals are at least s (fewer is FB304), and text to a line edit with `maxLength`. uuid, json, bytea, arrays and intervals bind read-only by default, shown in a line edit. A writable binding of those is FB304.
+- **Values.** Python `Decimal` goes to SQLite as `str` and to PostgreSQL as `Decimal`. Dates go to SQLite as ISO text and to PostgreSQL as `date`, converted explicitly in both directions. Blank text is saved as NULL, or `''` for a NOT NULL text column.
+- **Only changed columns are written.** An UPDATE sets only the bound columns whose read-back value differs from the snapshot, so a value the field can't show exactly is never rewritten unless the person changed it. The conflict check compares the loaded values of the same bound columns. An update with no changed column is skipped.
+- **New keys.** PostgreSQL uses `RETURNING`. SQLite uses `lastrowid` only when the key is an INTEGER PRIMARY KEY (rowid alias). Any other SQLite key must be bound to a field and typed in, or the source is FB306. Booleans go as 0/1 or `boolean`.
+- **Keys.** `cbcs_open` selects keys only (LOGIC §5.5), with `ORDER BY` the source order and the key last as the tie-breaker. Positions come from the key list. `find` narrows the list, and `form.isFiltered` is true until Show all.
+- **Dirty.** `_cbcs_snapshot` holds the values as written into the fields after load, read back through `cbcs_read_fields`, so formatting round-trips never look dirty. `_cbcs_is_dirty()` compares `cbcs_read_fields()` with it, plus the lines' snapshot, in ≤ 1 ms on the Mac for 20 fields and 20 lines (UX-M8-003). Calculated fields and read-only bindings are never in the comparison. `form.isDirty` reads it, and the rule graph re-runs dirty-dependent rules on each field change through the existing `cbcs_refresh` connects.
+- **Save.**
+  1. Checks.
+  2. `cbcsOnBeforeSave`, then the `beforeSave` hook. `False` cancels either.
+  3. Insert or update the record, with the conflict check when `conflicts` is `check`.
+  4. Lines: deletes, updates, then inserts. Position renumbering writes only rows whose position changed. When the schema shows a UNIQUE constraint over (link, position), the changed rows are first moved to negative positions, then to their final ones, in the same transaction.
+  5. Re-read the record and its lines.
+  6. End the block: commit in the app (rollback in Try, §19.10).
+  7. The new snapshot.
+  8. `cbcsOnAfterSave`, then the `afterSave` hook.
+
+  Steps 3–6 are one `work()` block, so the re-read sees the saved row in the app and in Try alike. A conflict (0 rows updated) rolls back and returns the conflict to the prompt of UX F10. A row that no longer exists gives "deleted by someone else". Database errors map to field labels per LOGIC §5.8 (SQLite message text, PostgreSQL SQLSTATE 23505, 23502, 23503), or else a message box with the database's text. Fields keep their values.
+- **Close guard.** The record expander registers the unsaved prompt (UX F9) through the close-guard hook (§19.1). It runs before `cbcsOnClosing`.
+- **List screens' own SQL** is wrapped as LOGIC §5.7 says. On PostgreSQL every `%` in the person's SQL is doubled before wrapping, because the drivers' `format` style treats it as a placeholder.
+- **Generated code for a form with no data properties is byte-identical to M7's.** Golden tests prove it on the M7 corpus.
+
+### 19.6 The schema cache
+
+The cache is `cbcs/schema/{connection}.json`, version 1, canonical. It is excluded from packages and listed in the project's ignore defaults.
+
+```json
+{"version": 1, "connection": "office", "engine": "postgres", "server": "9.3.25",
+ "readAt": "2026-11-02T14:02:11", "driver": "psycopg",
+ "tables": [
+  {"name": "invoices", "key": "id", "triggers": false, "rows": 100000,
+   "columns": [
+    {"name": "id", "type": "integer", "nullable": false, "default": "nextval('invoices_id_seq'::regclass)", "unique": true},
+    {"name": "customer_id", "type": "integer", "nullable": false, "references": {"table": "customers", "column": "id"}}
+   ]}
+ ]}
+```
+
+- **`key`** is the single-column primary key, or absent.
+- **`rows`** is a count capped at 100,000: `SELECT count(*) FROM (SELECT 1 FROM t LIMIT 100001) AS c`, run on both engines for tables used as a lookup or source, and `reltuples` for the others on PostgreSQL (a never-analyzed table's 0 is replaced by the capped count). 100,001 means "more than 100,000". The lookup advice (UX-LKP-001) uses it.
+- **Types** are lower-case as the server reports them. For SQLite this is the declared type, with affinity applied by `types.py`.
+- **SQLite** is read in the editor process with `sqlite3.connect("file:…?mode=ro", uri=True)`, using `PRAGMA table_info`, `foreign_key_list`, `index_list` and `index_info`, and `sqlite_master` for triggers.
+- **PostgreSQL** is read by the helper (§19.7) from `pg_catalog` only: `pg_class`, `pg_namespace`, `pg_attribute`, `pg_attrdef`, `pg_constraint`, `pg_index` and `pg_trigger` (not internal). Not `information_schema`, whose constraint views hide tables the login doesn't own, so a clerk login would see no keys or references. Only queries valid on 9.3 are used.
+- **Staleness.** The cache is stale after 7 days (FB310, Info). A missing cache is FB309 (Info). Design-time checks run against whatever cache exists, and never block opening a form.
+
+### 19.7 The schema helper
+
+The helper is a child process started the same way the preview child is: `ProcessSupervisor` on AppRun with the short `runpy` stub (§10.1), using the same framed stdio JSON. Passwords follow §10.4: the helper asks with `need_secret` and the editor answers with `provide_secret`. A request never carries a password unasked. It lives only for one request batch. Messages, version 1:
+
+| Request | Fields | Response |
+| --- | --- | --- |
+| `test` | `connection` (the §19.2 object). The password comes only through `need_secret`, never on argv or in the environment | `{ok, server, driver, tables}` or `{ok: false, kind, message}`, where `kind` is one of `auth`, `unreachable`, `no_database`, `no_driver`, `other` |
+| `schema` | `connection` | `{ok, schema}`, where `schema` is the §19.6 object |
+| `probe_select` | `connection`, `sql` | `{ok, columns: [{name, type}]}`. Runs `SELECT * FROM (<sql>) AS q LIMIT 0` inside a read-only transaction (`SET TRANSACTION READ ONLY`) that is rolled back (UX-LIST-001) |
+| `cancel` | — | The child exits |
+
+- The helper connects with the same code the app uses: it writes `connections_module`'s text for the connection under test to a temp folder, with `_CBCS_PROJECT_ROOT` set to the real project root, and puts the project root on `sys.path` so `connection_setup` imports.
+- **Timeouts:** 10 s to connect, 20 s for the batch. At the timeout the editor kills the child and reports `unreachable` or "took too long".
+- **Classification:** auth errors (SQLSTATE 28P01, 28000), unreachable (socket errors), and no database (3D000) are mapped. Everything else is `other`, with the first line of the driver's message.
+
+### 19.8 FB301–FB3xx (`diagnostic_codes/fb3xx_data.py`, M8.0s)
+
+LOGIC §2.9's FB301–FB303 examples are superseded: their cases are FB303 (missing column), FB310 (stale schema) and FB311 (lookup without a key) below.
+
+| Code | Severity | When | Sentence or source |
+| --- | --- | --- | --- |
+| FB301 | Error | The source names a connection that isn't in `connections.json` | "This form uses the connection {name}, which this project doesn't have." Fix: pick one |
+| FB302 | Error | `connections.json` can't be read, or breaks §19.2 (secrets included) | The reason |
+| FB303 | Warning | A bound column isn't in the cached schema | UX "Bind, missing" |
+| FB304 | Warning | A binding's widget doesn't fit the column type | UX "Bind, type". Fixes per UX-BIND-002 |
+| FB305 | Warning | `cbcs_connections.py`, or a form's generated data code, was generated from a different `connections.json`. Each generated file embeds the hash of the canonical `connections.json` it came from, never file times (git checkouts change those) | Regenerated on the next save. The note says so |
+| FB306 | Error | The source table has no single-column key | UX-DATA-002 sentence |
+| FB307 | Error | A table or column name fails `^[A-Za-z_][A-Za-z0-9_]*$` | "{name} can't be used: names with spaces or symbols aren't supported." |
+| FB308 | Warning | Two fields bound to one column | "{column} is bound to both {a} and {b}." |
+| FB309 | Info | No schema cache for the connection | "Columns haven't been read yet. [Read now]" |
+| FB310 | Info | The schema cache is stale | UX "Schema, stale" |
+| FB311 | Error | A lookup's table, key, show or also column is missing | The missing name |
+| FB312 | Info | A lookup table has over 2,000 rows | UX-LKP-001 sentence |
+| FB313 | Error | A lines link column doesn't point to the form's table | "{link} in {table} doesn't point to {source table}." |
+| FB314 | Error | A list screen's own SQL isn't a single SELECT, or `probe_select` failed | UX-LIST-001 sentence, or the database's message |
+| FB315 | Warning | A list's search box isn't a line edit, or a filter widget can't give a value | The widget and the reason |
+| FB316 | Warning | A data hook names a method the window file doesn't have | As FB209's style, with Create method |
+| FB317 | Warning | A connection's setup function isn't in `connection_setup.py` | Create function |
+| FB318 | Error | A Records step on a form with no data source | "Records steps need this form connected to a table." |
+| FB319 | Warning | A NOT NULL column with no default isn't bound on a record form | "Saving a new {record} will fail: {column} is required and no field is bound to it." |
+| FB320 | Error | A second lines grid, or a nested one | UX-LINES-003 sentence |
+| FB321 | Warning | The machine file can be read by other users | §19.3 sentence |
+
+Codes run in `check.py` against the document, the connection set and the cache. They are cheap: ≤ 5 ms on the Mac for a 40-field form, and they reuse the structure memo as M7 does.
+
+### 19.9 Data names in formulas
+
+`FormulaEnv` gains, for a bound form:
+- `form` facts: `position` whole, `count` whole, `isNew` yes/no, `isDirty` yes/no, `isFiltered` yes/no;
+- `record` facts, one per table column, typed by `types.py`;
+- `also` facts on lookup combos;
+- grid facts: the column names for aggregates, and the row's columns inside a grid column formula.
+
+The compiler emits `self._cbcs_form_position()` and its siblings for `form.*`, and `self._cbcs_record.get("{column}")` for `record.*`. `form.*` and `record.*` on an unbound form stay FB115 (§17.5), with its sentence shortened to "Connect this form to a table first." The rule graph treats `form.*` and `record.*` as inputs that change on load, New, save and every field change for `isDirty`. Rules that read them refresh through `cbcs_refresh`, which `_cbcs_show` and `_cbcs_start_new` call.
+
+### 19.10 Try with data (M8.4)
+
+`TryStart` (§10.2) gains `data: {connection_name: {"mode": "scratch"|"rollback"|"would_run", "scratch": path?}}`, the mode names §10.2 already uses.
+
+- **Substitution.** Before the child imports the form module or anything from the project, it puts a Try module into `sys.modules["cbcs_connections"]`. It has the same API, and its connections and scratch copies belong to the Try session: they are opened per session and closed on `try_stop`, never shared between two forms' Try sessions in the warm child. Generated and ejected code reach the database only through the module (§19.4), so nothing bypasses it.
+- **Own connection hook.** A source whose hooks name `connection` gets no data in Try. Every statement is logged as "Would run" with UX's "own connection" sentence, because Code Studio can't wrap a connection your code makes.
+- **`scratch`** copies the SQLite file to the session's temp folder at Try start, using SQLite's backup API, not a file copy, so a WAL file is captured too. Connections point there. The copy is deleted at the end unless "Keep scratch copy" is set. Everything else behaves as in the app.
+- **`rollback`** opens a real PostgreSQL connection. `work()` starts each block with `SET LOCAL statement_timeout = '5s'` and `SET LOCAL lock_timeout = '2s'` (both exist in 9.3), and **ends every block with a rollback, never a commit**. The Try connection's own `commit()` also rolls back, so a hook that calls `open_connection(name)` and commits writes nothing, and `try_stop` rolls back anything still open. A verb's save, its re-read and its lines all run inside one `work()` block (§19.5 steps 3–6 are one block), so the form shows what the database returned before the rollback.
+  - A record created in rollback mode keeps `form.isNew` after its save. Its key isn't added to the key list. What ran says "Saved, then rolled back". Leaving the record discards it.
+  - An update or delete leaves the key list alone. The next show re-reads the real row.
+  - SQLSTATE 55P03 (lock timeout) and 57014 (statement timeout) map to the UX sentences.
+- **`would_run`** runs reads normally. Writes are logged and not run, and the verb reports success with the values unchanged.
+- **Every statement** is traced as kind `sql`, with its text and values.
+- **Side-effect warnings.** A sequence is used when an INSERT leaves out a column whose default calls `nextval(`, for any column, not only the key. Triggers come from the cache's `triggers` flag. Each warning appears once per Try session.
+
+### 19.11 Test databases
+
+- **SQLite.** `tests/form_builder/fixtures/m8/make_shop.py` builds `shop.db` deterministically: customers, products, invoices, invoice_lines, with keys, references, NOT NULL and UNIQUE. It builds the small fixture by default and the UX-M8-003 reference with `--reference`. The fixture is generated, not committed.
+- **PostgreSQL 9.3.** A local container per the `local-dev-data` rules (`--label dev.lease=run`, removed in teardown), image `postgres:9.3`. Tests carry the marker `pg93` and read `CBCS_PG93_DSN`. Without it they skip, with the reason "set CBCS_PG93_DSN to run PostgreSQL 9.3 tests". The gate's `pg93` lane starts the container, runs the marker, and removes the container.
+- **Both drivers.** psycopg and pg8000 each run the `pg93` suite, parametrized by `_CBCS_DRIVERS` order (UX §13.5.11).
+- **Driver versions.** M8.1 records the exact psycopg, pg8000 and scramp versions in FreeCAD 1.1's `/opt/freecad` on the VM, in PLAN Appendix A. The Mac's FreeCAD.app ships neither driver. M8.1 installs the VM's versions into a test-only folder, `ChoreBoyCodeStudio_artifacts/vendor_pgtest/`: pg8000 and scramp pure-Python, psycopg with its macOS binary. `run_tests.py` adds that folder to the path only for the `pg93` marker. The folder is never a product dependency, and never in `vendor/` or a package. When the VM's psycopg can't reach 9.3, the order flip of UX F4 is recorded there too.
+
+### 19.12 Shape changes to LOGIC §6.2
+
+- `Data` (record form) gains `recordWord?: string`. It is written only when it differs from the default singular (UX F9).
+- `Data` (list) renames `query` to `sql`. The reader accepts `query` and writes `sql`.
+- Step verbs gain `addRow`, `deleteRow`, `showAll` and `openRecord` (`{"do": "openRecord", "which": "new"|"selected"}`, for list screens) next to §18.4's M8 list. `delete` asks its own question, so the record toolbar's delete button has no separate `ask` step.
+- `recordWord` sits after `table` in key order. Its default is the table name made singular by these rules, in order: "ies" → "y", "sses" → "ss", "xes" → "x", otherwise a final "s" is dropped. Any other plural is typed in by hand.
+- Each shape is decoded by `source.py` into frozen dataclasses. Unknown keys are kept on read and written back after the known keys, so a newer file survives an older Code Studio (LOGIC §6.5's rule).
 
 ## Appendix A. Spike: kept, replaced, dropped
 
