@@ -209,3 +209,23 @@ def test_share_experiment_follows_the_contract() -> None:
         raise AssertionError("main is not an experiment")
     change = service.share_experiment(service.status().line)
     assert change.line == "exp/rounding"
+
+
+@pytest.mark.unit
+def test_combine_tab_closes_when_the_session_ends(qapp) -> None:
+    from app.qt.QtWidgets import QTabWidget, QWidget
+
+    from app.features.team_sync.ui.controller import TeamSyncController
+
+    service = InMemoryTeamSync()
+    service.scenario("combine_several")
+    window = QWidget()
+    window._editor_tabs_widget = QTabWidget(window)  # type: ignore[attr-defined]
+    controller = TeamSyncController(window, service, SyncPorts(), dormant=False)
+    controller._open_combine(service.combine_state())
+    assert window._editor_tabs_widget.count() == 1  # type: ignore[attr-defined]
+
+    service.cancel_combine()
+    controller._apply_status(service.status())
+
+    assert window._editor_tabs_widget.count() == 0  # type: ignore[attr-defined]

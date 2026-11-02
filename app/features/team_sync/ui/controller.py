@@ -101,6 +101,7 @@ class TeamSyncController(QObject):
         self._unsubscribe: Optional[Callable[[], None]] = None
         self._tokens: Optional[ShellThemeTokens] = None
         self._blame: dict[str, dict[int, object]] = {}
+        self._blame_paths: set[str] = set()
         self._team_view: Optional[TeamView] = None
         self._send_button: Optional[SendToolbarButton] = None
         self._send_sheet: Optional[SendSheet] = None
@@ -227,6 +228,9 @@ class TeamSyncController(QObject):
         self._apply_status(TeamStatus(shared=False, project_name=""))
 
     def _drop_service(self) -> None:
+        # Blame belongs to the old project's files.
+        self._blame.clear()
+        self._blame_paths.clear()
         if self._unsubscribe is not None:
             self._unsubscribe()
             self._unsubscribe = None
@@ -509,11 +513,8 @@ class TeamSyncController(QObject):
             if self._tokens is not None:
                 summary.apply_theme(self._tokens)
             editor.cursorPositionChanged.connect(lambda rel=relative, summary=summary: self._place_summary(editor, rel, summary))
-        self._run(
-            "team-sync-blame",
-            lambda: self._service.blame(relative),  # type: ignore[attr-defined]
-            lambda rows, rel=relative: self._store_blame(rel, rows),
-        )
+        self._blame_paths.add(relative)
+        self._load_blame(relative)
         self._run(
             "team-sync-gutter",
             lambda: self._service.working_diff(relative),  # type: ignore[attr-defined]
@@ -542,6 +543,10 @@ class TeamSyncController(QObject):
         if event.startswith(EVENT_TOAST_PREFIX):
             self._toast(event[len(EVENT_TOAST_PREFIX) :])
             return
+        if event == EVENT_HISTORY:
+            # A new change can move who last changed any line of an open file.
+            for relative in sorted(self._blame_paths):
+                self._load_blame(relative)
         if event in (EVENT_STATUS, EVENT_FEED, EVENT_INCOMING, EVENT_COMBINE, EVENT_HISTORY):
             self.refresh_status()
             self._run("team-sync-feed", lambda: self._service.feed(), self._apply_feed)  # type: ignore[attr-defined]
@@ -551,6 +556,8 @@ class TeamSyncController(QObject):
         if not isinstance(status, TeamStatus):
             return
         self._status = status
+        if status.combine is None:
+            self._close_combine_tab()
         tokens = self._tokens
         view = status_view(status, waiting_name=self._waiting_name())
         if self._segment is not None:
@@ -901,6 +908,14 @@ class TeamSyncController(QObject):
         if self._peek is not None:
             self._peek.hide()
 
+    def _load_blame(self, relative: str) -> None:
+        # One key per file: a second editor must not cancel the first file's blame.
+        self._run(
+            f"team-sync-blame:{relative}",
+            lambda: self._service.blame(relative),  # type: ignore[attr-defined]
+            lambda rows, rel=relative: self._store_blame(rel, rows),
+        )
+
     def _store_blame(self, relative: str, rows: object) -> None:
         self._blame[relative] = {row.line: row for row in list(rows or [])}
 
@@ -1053,6 +1068,15 @@ class TeamSyncController(QObject):
 
     def _cancel_combine(self) -> None:
         self._run_void(lambda: self._service.cancel_combine())  # type: ignore[attr-defined]
+
+    def _close_combine_tab(self) -> None:
+        # Finish and Cancel both end the session; the tab must not linger on "0 of 0 settled".
+        tabs = getattr(self._window, "_editor_tabs_widget", None)
+        if tabs is None or self._combine is None:
+            return
+        index = tabs.indexOf(self._combine)
+        if index >= 0:
+            tabs.removeTab(index)
 
     def _show_tab(self, widget: QWidget, title: str) -> None:
         tabs = getattr(self._window, "_editor_tabs_widget", None)
