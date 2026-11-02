@@ -125,3 +125,42 @@ def test_explorer_decoration_lookup_does_not_touch_disk(monkeypatch: pytest.Monk
     assert decoration_at_paint(provider, "invoice.py") == ("M", "info")
     assert decoration_at_paint(provider, "legacy_tax.py") == ("!", "warn")
     assert decoration_at_paint(provider, "missing.py") is None
+
+
+@pytest.mark.unit
+def test_intelligence_hover_still_fires_over_code_in_a_team_project(qapp) -> None:
+    from app.qt.QtCore import QEvent, QPoint
+    from app.qt.QtGui import QHelpEvent
+    from app.qt.QtWidgets import QWidget
+
+    from app.editors.code_editor_widget import CodeEditorWidget
+    from app.features.team_sync.ui.controller import TeamSyncController
+    from app.features.team_sync.ui.ports import SyncPorts
+
+    service = InMemoryTeamSync()
+    service.scenario("idle")
+    window = QWidget()
+    controller = TeamSyncController(window, service, SyncPorts(), dormant=False)
+    controller._project_root = "/tmp/invoice-app"
+    editor = CodeEditorWidget()
+    editor.setPlainText("alpha = 1\nbeta = 2\n")
+    editor.resize(480, 220)
+    editor.show()
+    qapp.processEvents()
+    editor._hover_tooltip_enabled = True
+    calls: list[tuple[int, int]] = []
+    editor.set_hover_requester(lambda _source, position, generation: calls.append((position, generation)))
+
+    class _Page(QWidget):
+        def content(self) -> CodeEditorWidget:
+            return editor
+
+    controller.attach_editor_page(_Page(), "/tmp/invoice-app/invoice.py")
+    local = QPoint(editor.line_number_area_width() + 28, 10)
+    handled = editor.event(QHelpEvent(QEvent.ToolTip, local, editor.mapToGlobal(local)))
+
+    assert handled is True
+    assert calls
+    assert calls[0][1] == 1
+    editor.hide()
+    editor.deleteLater()

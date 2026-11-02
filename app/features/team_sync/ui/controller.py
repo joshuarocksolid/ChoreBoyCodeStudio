@@ -6,7 +6,7 @@ import os
 from pathlib import Path
 from typing import Callable, Optional
 
-from app.qt.QtCore import QObject, QTimer, Qt
+from app.qt.QtCore import QObject, QPoint, QTimer, Qt
 from app.qt.QtGui import QTextCursor
 from app.qt.QtWidgets import QCheckBox, QInputDialog, QMenu, QWidget
 
@@ -92,6 +92,8 @@ class TeamSyncController(QObject):
         self._history: Optional[HistoryTab] = None
         self._card: Optional[BlameCard] = None
         self._peek: Optional[GutterPeek] = None
+        self._summaries: dict[int, LineSummary] = {}
+        self._info_bars: list[TeamInfoBar] = []
         self._debounce = QTimer(self)
         self._debounce.setSingleShot(True)
         self._debounce.setInterval(300)
@@ -157,6 +159,10 @@ class TeamSyncController(QObject):
             self._card.apply_theme(tokens)
         if self._peek is not None:
             self._peek.apply_theme(tokens)
+        for summary in self._summaries.values():
+            summary.apply_theme(tokens)
+        for bar in list(self._info_bars):
+            bar.apply_theme(tokens)
 
     def on_project_opened(self, project_root: str, project_name: str) -> None:
         del project_name
@@ -330,9 +336,12 @@ class TeamSyncController(QObject):
             return
         relative = self._relative(path)
         if hasattr(editor, "set_line_hover_callback"):
-            editor.set_line_hover_callback(lambda line, pos, rel=relative: self._hover(rel, line, pos))
+            editor.set_line_hover_callback(
+                lambda line, pos, local, rel=relative, editor=editor: self._hover(editor, rel, line, pos, local)
+            )
         if hasattr(editor, "cursorPositionChanged"):
             summary = LineSummary(editor.viewport())
+            self._summaries[id(editor)] = summary
             if self._tokens is not None:
                 summary.apply_theme(self._tokens)
             editor.cursorPositionChanged.connect(lambda rel=relative, summary=summary: self._place_summary(editor, rel, summary))
@@ -455,12 +464,18 @@ class TeamSyncController(QObject):
         if not isinstance(state, CombineState):
             return
         tab = self._ensure_combine()
+        theirs_label, theirs_id = self._theirs_identity(state)
+        mine = self._status.me
         tab.open_state(
             self._service,
             self._ports,
             on_finished=lambda: self._toast("Combined"),
             on_deleted=self._deleted_dialog,
             tokens=self._tokens,
+            theirs_label=theirs_label,
+            theirs_id=theirs_id,
+            mine_name=first_name(mine.name) if mine is not None else "You",
+            mine_id=mine.id if mine is not None else "",
         )
         self._show_tab(tab, "Combine")
 
@@ -557,6 +572,9 @@ class TeamSyncController(QObject):
             action_label="Review",
             on_action=self.open_review,
             tokens=self._tokens,
+            object_name="shell.teamSync.toast",
+            timeout_ms=6000,
+            word_wrap=False,
         )
         toast.setObjectName("shell.teamSync.toast")
 
@@ -578,6 +596,7 @@ class TeamSyncController(QObject):
             bar = page.findChild(TeamInfoBar, "shell.teamSync.infoBar")
             if bar is None:
                 bar = TeamInfoBar(page)
+                self._info_bars.append(bar)
                 if self._tokens is not None:
                     bar.apply_theme(self._tokens)
                 page.add_notice_bar(bar)
@@ -594,10 +613,16 @@ class TeamSyncController(QObject):
             else:
                 bar.clear()
 
-    def _hover(self, relative: str, line: int, pos: object) -> None:
+    def _hover(self, editor: QWidget, relative: str, line: int, pos: object, local: QPoint) -> bool:
+        if not self._pointer_on_team_chrome(editor, line, local):
+            if self._card is not None:
+                self._card.hide()
+            return False
         blame_line = self._blame.get(relative, {}).get(line)
         if blame_line is None:
-            return
+            if self._card is not None:
+                self._card.hide()
+            return True
         if self._card is None:
             self._card = BlameCard(self._window)
             if self._tokens is not None:
@@ -609,11 +634,35 @@ class TeamSyncController(QObject):
         self._card.show_line(
             blame_line,  # type: ignore[arg-type]
             shop,
-            blame_line.note,  # type: ignore[attr-defined]
+            "",
             pos,  # type: ignore[arg-type]
             on_open=lambda: self._open_change(blame_line.change_id),  # type: ignore[attr-defined]
             on_history=lambda: self.open_history(relative),
         )
+        return True
+
+    def _pointer_on_team_chrome(self, editor: QWidget, line: int, local: QPoint) -> bool:
+        gutter = editor.line_number_area_width() if hasattr(editor, "line_number_area_width") else 0
+        if local.x() < gutter:
+            return True
+        summary = self._summaries.get(id(editor))
+        if summary is None or not summary.isVisible() or not hasattr(editor, "textCursor"):
+            return False
+        if editor.textCursor().blockNumber() + 1 != line:  # type: ignore[attr-defined]
+            return False
+        viewport = editor.viewport() if hasattr(editor, "viewport") else None
+        if viewport is None:
+            return False
+        return summary.geometry().contains(viewport.mapFrom(editor, local))
+
+    def _theirs_identity(self, state: CombineState) -> tuple[str, str]:
+        for member in self._status.members:
+            if member.id == state.theirs_from:
+                return (f"{first_name(member.name)}'s", member.id)
+        label = state.theirs_from
+        if label.startswith("exp/"):
+            label = label[4:]
+        return (f"{label}'s" if label else "Theirs", state.theirs_from)
 
     def _place_summary(self, editor: QWidget, relative: str, summary: LineSummary) -> None:
         if not self._settings.line_summary:

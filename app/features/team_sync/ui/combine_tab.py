@@ -4,8 +4,10 @@ from __future__ import annotations
 
 from typing import Callable, Optional
 
-from app.qt.QtCore import Qt
+from app.qt.QtCore import Qt, QSize
+from app.qt.QtGui import QColor, QFontDatabase, QTextCharFormat, QTextCursor, QTextFormat
 from app.qt.QtWidgets import (
+    QFrame,
     QHBoxLayout,
     QLabel,
     QListWidget,
@@ -13,6 +15,8 @@ from app.qt.QtWidgets import (
     QPlainTextEdit,
     QPushButton,
     QSplitter,
+    QTextEdit,
+    QToolButton,
     QVBoxLayout,
     QWidget,
 )
@@ -29,8 +33,16 @@ from app.features.team_sync.api import (
 )
 from app.features.team_sync.ui.form_preview import FormCompare
 from app.features.team_sync.ui.ports import SyncPorts
-from app.features.team_sync.ui.theme import button_qss, field_qss, primary_button_qss, surface_qss
+from app.features.team_sync.ui.theme import accent_soft, mine_bg, theirs_bg
+from app.features.team_sync.ui.widgets import Avatar
+from app.shell.icon_provider import chevron_left_icon, chevron_right_icon, warning_icon
 from app.shell.theme_tokens import ShellThemeTokens
+
+
+def _polish(widget: QWidget) -> None:
+    widget.setAttribute(Qt.WA_StyledBackground, True)
+    widget.style().unpolish(widget)
+    widget.style().polish(widget)
 
 
 class CombineTab(QWidget):
@@ -43,21 +55,37 @@ class CombineTab(QWidget):
         self._index = 0
         self._on_finished: Optional[Callable[[], None]] = None
         self._on_deleted: Optional[Callable[[Clash], None]] = None
+        self._tokens: Optional[ShellThemeTokens] = None
+        self._theirs_label = "Theirs"
+        self._theirs_id = ""
+        self._mine_name = "You"
+        self._mine_id = ""
+        self._row_ids: list[str] = []
 
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(0)
         header = QWidget(self)
+        header.setObjectName("shell.teamSync.combineHeader")
         header_row = QHBoxLayout(header)
         header_row.setContentsMargins(12, 8, 12, 8)
-        self._warning = QLabel("!", header)
+        header_row.setSpacing(8)
+        self._warning = QLabel(header)
+        self._warning.setFixedSize(16, 16)
         self._summary = QLabel("0 of 0 settled", header)
         self._summary.setObjectName("shell.teamSync.combineSummary")
         header_row.addWidget(self._warning)
         header_row.addWidget(self._summary, 1)
-        self._prev = QPushButton("Previous", header)
+        self._prev = QToolButton(header)
         self._prev.setObjectName("shell.teamSync.combinePrev")
-        self._next = QPushButton("Next", header)
+        self._prev.setFixedSize(22, 22)
+        self._prev.setIconSize(QSize(14, 14))
+        self._prev.setToolTip("Previous")
+        self._next = QToolButton(header)
         self._next.setObjectName("shell.teamSync.combineNext")
+        self._next.setFixedSize(22, 22)
+        self._next.setIconSize(QSize(14, 14))
+        self._next.setToolTip("Next")
         self._cancel = QPushButton("Cancel", header)
         self._cancel.setObjectName("shell.teamSync.combineCancel")
         self.finish_button = QPushButton("Finish", header)
@@ -76,32 +104,48 @@ class CombineTab(QWidget):
         splitter = QSplitter(Qt.Horizontal, self)
         self._list = QListWidget(splitter)
         self._list.setObjectName("shell.teamSync.combineClashes")
-        self._list.currentRowChanged.connect(self._select)
+        self._list.currentRowChanged.connect(self._select_row)
         self._detail = QWidget(splitter)
         detail = QVBoxLayout(self._detail)
-        detail.setContentsMargins(8, 8, 8, 8)
+        detail.setContentsMargins(12, 12, 12, 12)
+        detail.setSpacing(10)
         columns = QHBoxLayout()
-        self._ours = self._column("Yours")
-        self._theirs = self._column("Theirs")
-        columns.addWidget(self._ours[0], 1)
-        columns.addWidget(self._theirs[0], 1)
+        columns.setSpacing(10)
+        self._ours = self._panel("shell.teamSync.combineOurs", RESOLVE_OURS)
+        self._theirs = self._panel("shell.teamSync.combineTheirs", RESOLVE_THEIRS)
+        columns.addWidget(self._ours["frame"], 1)
+        columns.addWidget(self._theirs["frame"], 1)
         detail.addLayout(columns)
-        result_row = QHBoxLayout()
-        result_row.addWidget(QLabel("Result", self._detail))
-        result_row.addStretch(1)
-        self._both = QPushButton("Both", self._detail)
+        result = QFrame(self._detail)
+        result.setObjectName("shell.teamSync.combineResult")
+        result_layout = QVBoxLayout(result)
+        result_layout.setContentsMargins(0, 0, 0, 0)
+        result_layout.setSpacing(0)
+        result_head = QHBoxLayout()
+        result_head.setContentsMargins(8, 6, 8, 6)
+        result_title = QLabel("Result", result)
+        result_title.setObjectName("shell.teamSync.combineSummary")
+        result_head.addWidget(result_title)
+        result_head.addStretch(1)
+        self._both = QPushButton("Both", result)
         self._both.setObjectName("shell.teamSync.combineBoth")
-        self._edit = QPushButton("Edit", self._detail)
+        self._edit = QPushButton("Edit", result)
         self._edit.setObjectName("shell.teamSync.combineEdit")
         self._both.clicked.connect(lambda: self.settle_current(RESOLVE_BOTH))
         self._edit.clicked.connect(self._edit_result)
-        result_row.addWidget(self._both)
-        result_row.addWidget(self._edit)
-        detail.addLayout(result_row)
-        self._result = QPlainTextEdit(self._detail)
-        self._result.setObjectName("shell.teamSync.combineResult")
+        result_head.addWidget(self._both)
+        result_head.addWidget(self._edit)
+        result_layout.addLayout(result_head)
+        self._placeholder = QLabel("Choose a version above", result)
+        self._placeholder.setObjectName("shell.teamSync.combinePlaceholder")
+        self._placeholder.setContentsMargins(10, 8, 10, 8)
+        result_layout.addWidget(self._placeholder)
+        self._result = QPlainTextEdit(result)
+        self._result.setObjectName("shell.teamSync.combineCode")
         self._result.setReadOnly(True)
-        detail.addWidget(self._result)
+        self._result.setFrameStyle(QFrame.NoFrame)
+        result_layout.addWidget(self._result)
+        detail.addWidget(result)
         self._forms = FormCompare(self._detail)
         self._forms.hide()
         detail.addWidget(self._forms)
@@ -109,31 +153,51 @@ class CombineTab(QWidget):
         splitter.addWidget(self._detail)
         splitter.setSizes([240, 640])
         root.addWidget(splitter, 1)
+        self._mono(self._result)
 
-    def _column(self, title: str) -> tuple[QWidget, QLabel, QPushButton]:
-        host = QWidget(self._detail)
-        layout = QVBoxLayout(host)
+    def _panel(self, object_name: str, resolution: str) -> dict:
+        frame = QFrame(self._detail)
+        frame.setObjectName(object_name)
+        layout = QVBoxLayout(frame)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.addWidget(QLabel(title, host))
-        body = QLabel("", host)
-        body.setWordWrap(True)
-        body.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        layout.setSpacing(0)
+        head = QHBoxLayout()
+        head.setContentsMargins(8, 6, 8, 6)
+        head.setSpacing(6)
+        avatar = Avatar("", "", frame, size=18)
+        title = QLabel("", frame)
+        title.setObjectName("shell.teamSync.combineSummary")
+        use = QPushButton("Use This", frame)
+        use.setObjectName("shell.teamSync.combineUse")
+        use.clicked.connect(lambda _checked=False, choice=resolution: self.settle_current(choice))
+        head.addWidget(avatar)
+        head.addWidget(title, 1)
+        head.addWidget(use)
+        layout.addLayout(head)
+        body = QPlainTextEdit(frame)
+        body.setObjectName("shell.teamSync.combineCode")
+        body.setReadOnly(True)
+        body.setFrameStyle(QFrame.NoFrame)
+        self._mono(body)
         layout.addWidget(body, 1)
-        button = QPushButton("Use This", host)
-        layout.addWidget(button, 0, Qt.AlignLeft)
-        if title == "Yours":
-            button.clicked.connect(lambda: self.settle_current(RESOLVE_OURS))
-        else:
-            button.clicked.connect(lambda: self.settle_current(RESOLVE_THEIRS))
-        return host, body, button
+        return {"frame": frame, "avatar": avatar, "title": title, "body": body, "use": use}
+
+    def _mono(self, editor: QPlainTextEdit) -> None:
+        font = QFontDatabase.systemFont(QFontDatabase.FixedFont)
+        font.setPixelSize(12)
+        editor.setFont(font)
+        editor.document().setDefaultFont(font)
 
     def apply_theme(self, tokens: ShellThemeTokens) -> None:
-        self.setStyleSheet(surface_qss(tokens))
-        self.finish_button.setStyleSheet(primary_button_qss(tokens))
-        for button in (self._prev, self._next, self._cancel, self._both, self._edit):
-            button.setStyleSheet(button_qss(tokens))
-        self._result.setStyleSheet(field_qss(tokens))
-        self._warning.setStyleSheet(f"color: {tokens.diag_warning_color or '#B45309'}; font-weight: 700;")
+        self._tokens = tokens
+        color = tokens.text_primary
+        self._prev.setIcon(chevron_left_icon(color))
+        self._next.setIcon(chevron_right_icon(color))
+        self._warning.setPixmap(warning_icon(tokens.diag_warning_color or "#D97706").pixmap(16, 16))
+        self._ours["title"].setText("Yours")
+        self._theirs["title"].setText(self._theirs_label)
+        _polish(self)
+        self._paint_current()
 
     def open_state(
         self,
@@ -143,11 +207,23 @@ class CombineTab(QWidget):
         on_finished: Callable[[], None],
         on_deleted: Callable[[Clash], None],
         tokens: Optional[ShellThemeTokens] = None,
+        theirs_label: str = "Theirs",
+        theirs_id: str = "",
+        mine_name: str = "You",
+        mine_id: str = "",
     ) -> None:
         self._api = api
         self._ports = ports
         self._on_finished = on_finished
         self._on_deleted = on_deleted
+        self._theirs_label = theirs_label or "Theirs"
+        self._theirs_id = theirs_id
+        self._mine_name = mine_name or "You"
+        self._mine_id = mine_id
+        self._ours["title"].setText("Yours")
+        self._ours["avatar"].set_person(mine_id, mine_name or "You", 18)
+        self._theirs["title"].setText(self._theirs_label)
+        self._theirs["avatar"].set_person(theirs_id, theirs_label.replace("'s", ""), 18)
         if tokens is not None:
             self.apply_theme(tokens)
         self.reload()
@@ -161,20 +237,46 @@ class CombineTab(QWidget):
         self._state = state
         self._list.blockSignals(True)
         self._list.clear()
-        self._list.blockSignals(False)
+        self._row_ids = []
         if state is None:
+            self._list.blockSignals(False)
             self._summary.setText("0 of 0 settled")
             self.finish_button.setEnabled(False)
             return
         total = len(state.clashes)
         self._summary.setText(f"{state.settled} of {total} settled")
         self.finish_button.setEnabled(state.done and total > 0)
+        grouped: dict[str, list[Clash]] = {}
+        order: list[str] = []
         for clash in state.clashes:
-            mark = "✓" if clash.resolution is not None else "·"
-            self._list.addItem(QListWidgetItem(f"{mark}  {clash.path}"))
+            if clash.path not in grouped:
+                grouped[clash.path] = []
+                order.append(clash.path)
+            grouped[clash.path].append(clash)
+        target_row = 0
+        for path in order:
+            header = QListWidgetItem(path.upper())
+            header.setFlags(Qt.NoItemFlags)
+            header.setSizeHint(QSize(0, 22))
+            self._list.addItem(header)
+            self._row_ids.append("")
+            for clash in grouped[path]:
+                label = f"Line {clash.line}" if clash.line else clash.kind
+                mark = "✓  " if clash.resolution is not None else "    "
+                item = QListWidgetItem(f"{mark}{label}")
+                item.setData(Qt.UserRole, clash.id)
+                item.setSizeHint(QSize(0, 26))
+                if clash.resolution is not None:
+                    item.setForeground(QColor(self._tokens.test_passed_color if self._tokens else "#1A7F37"))
+                self._list.addItem(item)
+                if state.clashes and clash.id == state.clashes[min(self._index, total - 1)].id:
+                    target_row = self._list.count() - 1
+                self._row_ids.append(clash.id)
         if state.clashes:
             self._index = min(self._index, len(state.clashes) - 1)
-            self._list.setCurrentRow(self._index)
+            self._list.setCurrentRow(target_row)
+        self._list.blockSignals(False)
+        self._paint_current()
 
     def settle(self, clash_id: str, resolution: str) -> None:
         if self._api is None:
@@ -198,10 +300,19 @@ class CombineTab(QWidget):
             return None
         return self._state.clashes[self._index]
 
-    def _select(self, row: int) -> None:
-        if self._state is None or row < 0 or row >= len(self._state.clashes):
+    def _select_row(self, row: int) -> None:
+        if row < 0 or row >= len(self._row_ids):
             return
-        self._index = row
+        clash_id = self._row_ids[row]
+        if not clash_id or self._state is None:
+            return
+        for index, clash in enumerate(self._state.clashes):
+            if clash.id == clash_id:
+                self._index = index
+                break
+        self._paint_current()
+
+    def _paint_current(self) -> None:
         clash = self._current()
         if clash is None:
             return
@@ -209,33 +320,74 @@ class CombineTab(QWidget):
             self._forms.show()
             self._forms.set_forms("\n".join(clash.ours), "\n".join(clash.theirs))
             self._result.hide()
+            self._placeholder.hide()
         else:
             self._forms.hide()
-            self._result.show()
-        self._ours[1].setText(self._block(clash.context_before, clash.ours, clash.context_after))
-        self._theirs[1].setText(self._block(clash.context_before, clash.theirs, clash.context_after))
-        self._result.setPlainText(self._result_text(clash))
+        ours_pick = clash.resolution == RESOLVE_OURS
+        theirs_pick = clash.resolution == RESOLVE_THEIRS
+        self._ours["frame"].setProperty("picked", ours_pick)
+        self._theirs["frame"].setProperty("picked", theirs_pick)
+        _polish(self._ours["frame"])
+        _polish(self._theirs["frame"])
+        mine = self._tint(mine_bg) if self._tokens is not None else QColor("#FFF4E5")
+        other = self._tint(theirs_bg) if self._tokens is not None else QColor("#E6F6F4")
+        before = list(clash.context_before[-2:])
+        after = list(clash.context_after[:2])
+        self._fill(self._ours["body"], before, list(clash.ours), after, mine)
+        self._fill(self._theirs["body"], before, list(clash.theirs), after, other)
         if clash.kind == CLASH_DELETED and clash.resolution is None and self._on_deleted is not None:
             self._on_deleted(clash)
+        self._paint_result(clash, before, after)
 
-    def _block(self, before: tuple[str, ...], lines: tuple[str, ...], after: tuple[str, ...]) -> str:
-        body = list(before[-2:]) + list(lines) + list(after[:2])
-        return "\n".join(body)
+    def _tint(self, fn) -> QColor:  # type: ignore[no-untyped-def]
+        assert self._tokens is not None
+        return QColor(fn(self._tokens))
 
-    def _result_text(self, clash: Clash) -> str:
+    def _fill(self, editor: QPlainTextEdit, before: list[str], mid: list[str], after: list[str], tint: QColor) -> None:
+        lines = before + mid + after
+        editor.setPlainText("\n".join(lines))
+        selections = []
+        for number in range(len(before), len(before) + len(mid)):
+            block = editor.document().findBlockByNumber(number)
+            if not block.isValid():
+                continue
+            cursor = QTextCursor(block)
+            fmt = QTextCharFormat()
+            fmt.setBackground(tint)
+            fmt.setProperty(QTextFormat.FullWidthSelection, True)
+            selection = QTextEdit.ExtraSelection()
+            selection.cursor = cursor
+            selection.format = fmt
+            selections.append(selection)
+        editor.setExtraSelections(selections)
+
+    def _paint_result(self, clash: Clash, before: list[str], after: list[str]) -> None:
+        text = self._result_lines(clash)
+        if text is None:
+            self._result.hide()
+            self._placeholder.show()
+            return
+        self._placeholder.hide()
+        self._result.show()
+        accent = QColor(accent_soft(self._tokens)) if self._tokens is not None else QColor("#E8EEFF")
+        self._fill(self._result, before, text, after, accent)
+
+    def _result_lines(self, clash: Clash) -> Optional[list[str]]:
         resolution = clash.resolution
         if resolution == RESOLVE_OURS:
-            return "\n".join(clash.ours)
+            return list(clash.ours)
         if resolution == RESOLVE_THEIRS:
-            return "\n".join(clash.theirs)
+            return list(clash.theirs)
         if resolution == RESOLVE_BOTH:
-            return "\n".join(tuple(clash.ours) + tuple(clash.theirs))
+            return list(clash.ours) + list(clash.theirs)
         if isinstance(resolution, str) and resolution.startswith(RESOLVE_TEXT_PREFIX):
-            return resolution[len(RESOLVE_TEXT_PREFIX) :]
-        return ""
+            return resolution[len(RESOLVE_TEXT_PREFIX) :].splitlines()
+        return None
 
     def _edit_result(self) -> None:
         self._result.setReadOnly(False)
+        self._result.show()
+        self._placeholder.hide()
         self._result.setFocus()
 
         def commit() -> None:
@@ -245,19 +397,21 @@ class CombineTab(QWidget):
             self._result.setReadOnly(True)
             self.settle(clash.id, RESOLVE_TEXT_PREFIX + self._result.toPlainText())
 
-        self._result.textChanged.connect(lambda: None)
-        commit_button = self._edit
         try:
-            commit_button.clicked.disconnect()
+            self._edit.clicked.disconnect()
         except RuntimeError:
             pass
-        commit_button.clicked.connect(commit)
+        self._edit.clicked.connect(commit)
 
     def _move(self, delta: int) -> None:
         if self._state is None or not self._state.clashes:
             return
         self._index = (self._index + delta) % len(self._state.clashes)
-        self._list.setCurrentRow(self._index)
+        target = self._state.clashes[self._index].id
+        for row, clash_id in enumerate(self._row_ids):
+            if clash_id == target:
+                self._list.setCurrentRow(row)
+                return
 
     def _cancel_clicked(self) -> None:
         if self._api is None:

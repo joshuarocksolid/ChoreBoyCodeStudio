@@ -82,6 +82,34 @@ def _line_tint(base_hex: str, *, is_dark: bool) -> QColor:
     return color
 
 
+def _word_tint(base_hex: str, *, is_dark: bool) -> QColor:
+    """Stronger than the line tint, still the same green or red."""
+    color = QColor(base_hex)
+    color.setAlpha(180 if is_dark else 160)
+    return color
+
+
+def _is_metadata_header(line: str) -> bool:
+    return line.startswith("--- ") or line.startswith("+++ ") or line.startswith("@@")
+
+
+def _without_metadata_headers(
+    text: str,
+    old_numbers: list,
+    new_numbers: list,
+) -> tuple:
+    kept_lines = []
+    kept_old = []
+    kept_new = []
+    for index, line in enumerate(text.splitlines()):
+        if _is_metadata_header(line):
+            continue
+        kept_lines.append(line)
+        kept_old.append(old_numbers[index] if index < len(old_numbers) else None)
+        kept_new.append(new_numbers[index] if index < len(new_numbers) else None)
+    return "\n".join(kept_lines), kept_old, kept_new
+
+
 class _DiffInlineHighlighter(QSyntaxHighlighter):
     """Color the unified-diff text inside the inline view."""
 
@@ -189,6 +217,9 @@ class DiffView(QWidget):
         self._stats = DiffStats(added=0, removed=0)
         self._raw_diff_text = ""
         self._hunks: list[DiffHunk] = []
+        self._hide_metadata_headers = False
+        self._add_word = _word_tint("#1A7F37", is_dark=tokens.is_dark)
+        self._remove_word = _word_tint("#E03131", is_dark=tokens.is_dark)
 
         self.setObjectName("shell.diffView")
         layout = QVBoxLayout(self)
@@ -234,45 +265,54 @@ class DiffView(QWidget):
         from app.qt.QtGui import QTextCharFormat, QTextCursor
         from app.qt.QtWidgets import QTextEdit
 
-        def paint(editor: QPlainTextEdit, pairs: list[tuple[int, int, int]]) -> None:
+        def paint(editor: QPlainTextEdit, groups: list[tuple[list[tuple[int, int, int]], QColor]]) -> None:
             selections = []
-            strong = QTextCharFormat()
-            strong.setFontWeight(QFont.Bold)
-            strong.setBackground(QColor(self._tokens.search_current_match_bg or self._tokens.accent))
-            for block_no, start, end in pairs:
-                if end <= start:
-                    continue
-                block = editor.document().findBlockByNumber(block_no)
-                if not block.isValid():
-                    continue
-                cursor = QTextCursor(block)
-                cursor.setPosition(block.position() + start)
-                cursor.setPosition(block.position() + end, QTextCursor.KeepAnchor)
-                selection = QTextEdit.ExtraSelection()
-                selection.cursor = cursor
-                selection.format = strong
-                selections.append(selection)
+            for pairs, color in groups:
+                strong = QTextCharFormat()
+                strong.setBackground(color)
+                for block_no, start, end in pairs:
+                    if end <= start:
+                        continue
+                    block = editor.document().findBlockByNumber(block_no)
+                    if not block.isValid():
+                        continue
+                    cursor = QTextCursor(block)
+                    cursor.setPosition(block.position() + start)
+                    cursor.setPosition(block.position() + end, QTextCursor.KeepAnchor)
+                    selection = QTextEdit.ExtraSelection()
+                    selection.cursor = cursor
+                    selection.format = strong
+                    selections.append(selection)
             editor.setExtraSelections(selections)
 
-        inline_pairs: list[tuple[int, int, int]] = []
+        inline_removed: list[tuple[int, int, int]] = []
+        inline_added: list[tuple[int, int, int]] = []
         lines = self._inline_editor.toPlainText().splitlines()
         used = 0
         index = 0
         while index < len(lines) - 1 and used < limit:
             left = lines[index]
             right = lines[index + 1]
-            if left.startswith("-") and right.startswith("+") and not left.startswith("---"):
+            if (
+                left.startswith("-")
+                and right.startswith("+")
+                and not _is_metadata_header(left)
+                and not _is_metadata_header(right)
+            ):
                 matcher = SequenceMatcher(a=left[1:], b=right[1:])
                 for tag, i1, i2, j1, j2 in matcher.get_opcodes():
                     if tag == "equal":
                         continue
-                    inline_pairs.append((index, i1 + 1, i2 + 1))
-                    inline_pairs.append((index + 1, j1 + 1, j2 + 1))
+                    inline_removed.append((index, i1 + 1, i2 + 1))
+                    inline_added.append((index + 1, j1 + 1, j2 + 1))
                 used += 1
                 index += 2
                 continue
             index += 1
-        paint(self._inline_editor, inline_pairs)
+        paint(
+            self._inline_editor,
+            [(inline_removed, self._remove_word), (inline_added, self._add_word)],
+        )
 
         before_pairs: list[tuple[int, int, int]] = []
         after_pairs: list[tuple[int, int, int]] = []
@@ -288,8 +328,14 @@ class DiffView(QWidget):
                     continue
                 before_pairs.append((row, i1, i2))
                 after_pairs.append((row, j1, j2))
-        paint(self._before_pane, before_pairs)
-        paint(self._after_pane, after_pairs)
+        paint(self._before_pane, [(before_pairs, self._remove_word)])
+        paint(self._after_pane, [(after_pairs, self._add_word)])
+
+    def set_hide_metadata_headers(self, hide: bool) -> None:
+        """Drop ``---`` / ``+++`` / ``@@`` lines from the inline view."""
+        self._hide_metadata_headers = hide
+        if self._raw_diff_text:
+            self._render_inline()
 
     def set_mode(self, mode: str) -> None:
         if mode not in (DIFF_VIEW_MODE_INLINE, DIFF_VIEW_MODE_SIDE_BY_SIDE):
@@ -324,6 +370,8 @@ class DiffView(QWidget):
         self._message_label.setStyleSheet(
             f"color: {tokens.text_muted}; padding: 24px;"
         )
+        self._add_word = _word_tint(tokens.test_passed_color or "#1A7F37", is_dark=tokens.is_dark)
+        self._remove_word = _word_tint(tokens.diag_error_color or "#E03131", is_dark=tokens.is_dark)
 
     def set_message(self, message: Optional[str]) -> None:
         """Show a centered status message instead of the diff content."""
@@ -444,8 +492,10 @@ class DiffView(QWidget):
 
     def _render_inline(self) -> None:
         text = self._raw_diff_text
-        self._inline_editor.setPlainText(text)
         old_numbers, new_numbers = inline_gutter_numbers(text, self._hunks)
+        if self._hide_metadata_headers:
+            text, old_numbers, new_numbers = _without_metadata_headers(text, old_numbers, new_numbers)
+        self._inline_editor.setPlainText(text)
         self._inline_gutter.set_numbers(
             old_numbers=old_numbers,
             new_numbers=new_numbers,

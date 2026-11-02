@@ -7,7 +7,6 @@ from typing import Callable, Optional
 from app.qt.QtCore import Qt
 from app.qt.QtWidgets import QFrame, QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
 
-from app.features.team_sync.ui.theme import button_qss, surface_qss
 from app.shell.theme_tokens import ShellThemeTokens
 
 
@@ -15,31 +14,31 @@ class GutterPeek(QFrame):
     def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
         self.setObjectName("shell.teamSync.gutterPeek")
+        self.setAttribute(Qt.WA_StyledBackground, True)
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(8, 6, 8, 6)
-        layout.setSpacing(2)
-        self._old = QLabel("", self)
-        self._new = QLabel("", self)
-        layout.addWidget(self._old)
-        layout.addWidget(self._new)
-        row = QHBoxLayout()
-        row.addStretch(1)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+        head = QHBoxLayout()
+        head.setContentsMargins(8, 4, 6, 4)
+        head.addStretch(1)
         self._undo = QPushButton("Undo Edit", self)
         self._undo.setObjectName("shell.teamSync.gutterUndo")
-        row.addWidget(self._undo)
-        layout.addLayout(row)
+        head.addWidget(self._undo)
+        layout.addLayout(head)
+        self._old = QLabel("", self)
+        self._old.setObjectName("shell.teamSync.peekRemoved")
+        self._new = QLabel("", self)
+        self._new.setObjectName("shell.teamSync.peekAdded")
+        layout.addWidget(self._old)
+        layout.addWidget(self._new)
         self._on_undo: Optional[Callable[[], None]] = None
         self._undo.clicked.connect(self._click_undo)
         self.hide()
 
     def apply_theme(self, tokens: ShellThemeTokens) -> None:
-        self.setStyleSheet(
-            surface_qss(tokens)
-            + "QFrame#shell\\.teamSync\\.gutterPeek {"
-            f" border: 1px solid {tokens.border}; border-radius: 6px; }}"
-            f"QLabel {{ color: {tokens.text_primary}; background: transparent; }}"
-        )
-        self._undo.setStyleSheet(button_qss(tokens))
+        del tokens
+        self.style().unpolish(self)
+        self.style().polish(self)
 
     def show_change(
         self,
@@ -49,8 +48,8 @@ class GutterPeek(QFrame):
         y: int,
         on_undo: Callable[[], None],
     ) -> None:
-        self._old.setText(f"- {old_line}")
-        self._new.setText(f"+ {new_line}")
+        self._old.setText(old_line)
+        self._new.setText(new_line)
         self._on_undo = on_undo
         self.adjustSize()
         self.move(x, y)

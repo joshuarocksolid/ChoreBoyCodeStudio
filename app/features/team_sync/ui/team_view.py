@@ -4,34 +4,54 @@ from __future__ import annotations
 
 from typing import Callable, Optional
 
-from app.qt.QtCore import Qt
+from app.qt.QtCore import QSize, Qt
+from app.qt.QtGui import QFont
 from app.qt.QtWidgets import (
     QCheckBox,
     QFrame,
     QHBoxLayout,
     QLabel,
+    QLineEdit,
     QMenu,
     QPushButton,
     QScrollArea,
     QSizePolicy,
-    QTextEdit,
     QToolButton,
     QVBoxLayout,
     QWidget,
 )
 
 from app.features.team_sync.api import (
-    FEED_CHANGE,
+    DELIVERY_ACCEPTED,
+    DELIVERY_DELIVERED,
+    DELIVERY_QUEUED,
+    DELIVERY_SENT,
+    DELIVERY_WAITING_TERMINAL,
     FEED_INCOMING,
-    FEED_NOTE,
     FEED_SYSTEM,
     FeedItem,
     TeamStatus,
 )
 from app.features.team_sync.ui.copy import clock, delivery_mark, first_name
-from app.features.team_sync.ui.theme import button_qss, field_qss, incoming_qss, muted_qss, primary_button_qss, surface_qss
+from app.shell.icon_provider import send_icon
 from app.features.team_sync.ui.widgets import Avatar
 from app.shell.theme_tokens import ShellThemeTokens
+
+
+def _polish(widget: QWidget) -> None:
+    widget.style().unpolish(widget)
+    widget.style().polish(widget)
+    widget.update()
+
+
+def _delivery_key(state: str) -> str:
+    if state in (DELIVERY_QUEUED, DELIVERY_WAITING_TERMINAL):
+        return "queued"
+    if state == DELIVERY_SENT:
+        return "sent"
+    if state in (DELIVERY_DELIVERED, DELIVERY_ACCEPTED):
+        return "delivered"
+    return "queued"
 
 
 class TeamView(QWidget):
@@ -55,14 +75,18 @@ class TeamView(QWidget):
 
         header = QWidget(self)
         header.setObjectName("shell.teamSync.teamHeader")
+        header.setFixedHeight(30)
+        header.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         header_row = QHBoxLayout(header)
-        header_row.setContentsMargins(12, 8, 12, 8)
+        header_row.setContentsMargins(10, 0, 8, 0)
+        header_row.setSpacing(6)
         title = QLabel("TEAM", header)
-        title.setObjectName("shell.teamSync.teamTitle")
+        title.setObjectName("shell.leftRegion.title")
         header_row.addWidget(title)
         header_row.addStretch(1)
         self._avatars = QHBoxLayout()
-        self._avatars.setSpacing(4)
+        self._avatars.setSpacing(-6)
+        self._avatars.setAlignment(Qt.AlignVCenter)
         header_row.addLayout(self._avatars)
         root.addWidget(header)
 
@@ -85,10 +109,14 @@ class TeamView(QWidget):
         self._scroll.setObjectName("shell.teamSync.feed")
         self._scroll.setWidgetResizable(True)
         self._scroll.setFrameShape(QFrame.NoFrame)
+        self._scroll.viewport().setObjectName("shell.teamSync.feedViewport")
+        self._scroll.viewport().setAttribute(Qt.WA_StyledBackground, True)
         self._feed_host = QWidget(self._scroll)
+        self._feed_host.setAttribute(Qt.WA_StyledBackground, True)
+        self._feed_host.setObjectName("shell.teamSync.feedHost")
         self._feed_layout = QVBoxLayout(self._feed_host)
-        self._feed_layout.setContentsMargins(10, 8, 10, 8)
-        self._feed_layout.setSpacing(8)
+        self._feed_layout.setContentsMargins(10, 6, 10, 12)
+        self._feed_layout.setSpacing(14)
         self._feed_layout.addStretch(1)
         self._scroll.setWidget(self._feed_host)
         root.addWidget(self._scroll, 1)
@@ -116,6 +144,7 @@ class TeamView(QWidget):
         self._files_button.setCheckable(True)
         self._files_button.setText("0 files")
         self._files_button.toggled.connect(self._toggle_files)
+        self._files_button.hide()
         composer_layout.addWidget(self._files_button, 0, Qt.AlignLeft)
         self._file_list = QWidget(composer)
         self._file_list.setObjectName("shell.teamSync.composerChecklist")
@@ -124,17 +153,19 @@ class TeamView(QWidget):
         self._file_layout.setSpacing(2)
         self._file_list.hide()
         composer_layout.addWidget(self._file_list)
-        self._note = QTextEdit(composer)
+        send_row = QHBoxLayout()
+        send_row.setSpacing(6)
+        self._note = QLineEdit(composer)
         self._note.setObjectName("shell.teamSync.composerNote")
         self._note.setPlaceholderText("Message")
-        self._note.setFixedHeight(64)
-        composer_layout.addWidget(self._note)
-        send_row = QHBoxLayout()
-        send_row.addStretch(1)
+        self._note.setFixedHeight(28)
+        send_row.addWidget(self._note, 1)
         self._send = QToolButton(composer)
         self._send.setObjectName("shell.teamSync.composerSend")
-        self._send.setText("Send")
-        self._send.setPopupMode(QToolButton.MenuButtonPopup)
+        self._send.setFixedSize(28, 28)
+        self._send.setIconSize(QSize(14, 14))
+        self._send.setToolTip("Send")
+        self._send.setPopupMode(QToolButton.DelayedPopup)
         self._send.clicked.connect(self._send_clicked)
         menu = QMenu(self._send)
         menu.setObjectName("shell.teamSync.composerMenu")
@@ -171,17 +202,9 @@ class TeamView(QWidget):
 
     def apply_theme(self, tokens: ShellThemeTokens) -> None:
         self._tokens = tokens
-        self.setStyleSheet(surface_qss(tokens))
-        header = self.findChild(QWidget, "shell.teamSync.teamHeader")
-        if header is not None:
-            header.setStyleSheet(
-                f"background: {tokens.panel_bg}; border-bottom: 1px solid {tokens.border};"
-            )
-        self._share_button.setStyleSheet(primary_button_qss(tokens))
-        self._note.setStyleSheet(field_qss(tokens))
-        self._send.setStyleSheet(primary_button_qss(tokens).replace("QPushButton", "QToolButton"))
-        self._bring_back.setStyleSheet(button_qss(tokens))
-        self._files_button.setStyleSheet(button_qss(tokens).replace("QPushButton", "QToolButton"))
+        color = tokens.toolbar_package_fg or "#FFFFFF"
+        self._send.setIcon(send_icon(color))
+        _polish(self)
 
     def apply(
         self,
@@ -215,9 +238,11 @@ class TeamView(QWidget):
             item = self._avatars.takeAt(0)
             widget = item.widget()
             if widget is not None:
+                widget.hide()
+                widget.setParent(None)
                 widget.deleteLater()
         for member in status.members:
-            avatar = Avatar(member.id, member.name, self)
+            avatar = Avatar(member.id, member.name, self, size=18)
             avatar.setToolTip(f"{member.name} · {member.shop}")
             self._avatars.addWidget(avatar)
 
@@ -226,6 +251,8 @@ class TeamView(QWidget):
             item = self._feed_layout.takeAt(0)
             widget = item.widget()
             if widget is not None:
+                widget.hide()
+                widget.setParent(None)
                 widget.deleteLater()
         me = status.me.id if status.me is not None else ""
         for entry in feed:
@@ -234,52 +261,73 @@ class TeamView(QWidget):
     def _feed_row(self, entry: FeedItem, me_id: str) -> QWidget:
         if entry.kind == FEED_SYSTEM:
             label = QLabel(f"{entry.text} · {clock(entry.when)}", self._feed_host)
+            label.setObjectName("shell.teamSync.feedSystem")
             label.setAlignment(Qt.AlignCenter)
-            if self._tokens is not None:
-                label.setStyleSheet(muted_qss(self._tokens))
             return label
+        incoming = entry.kind == FEED_INCOMING and entry.incoming is not None
         row = QWidget(self._feed_host)
+        row.setObjectName("shell.teamSync.feedMessage")
+        row.setProperty("incoming", True if incoming else False)
         layout = QHBoxLayout(row)
-        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setContentsMargins(8, 8, 8, 8) if incoming else layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(8)
         author = self._author_name(entry, me_id)
-        member_id = entry.author_id or ""
-        layout.addWidget(Avatar(member_id, author, row), 0, Qt.AlignTop)
+        layout.addWidget(Avatar(entry.author_id or "", author, row, size=20), 0, Qt.AlignTop)
         body = QVBoxLayout()
         body.setSpacing(2)
-        title = QLabel(f"{author} · {clock(entry.when)}", row)
-        body.addWidget(title)
+        body.setContentsMargins(0, 0, 0, 0)
+        title = QHBoxLayout()
+        title.setSpacing(6)
+        name = QLabel(author, row)
+        name.setObjectName("shell.teamSync.feedName")
+        when = QLabel(clock(entry.when), row)
+        when.setObjectName("shell.teamSync.feedTime")
+        title.addWidget(name)
+        title.addWidget(when)
+        title.addStretch(1)
+        body.addLayout(title)
         note = QLabel(entry.text, row)
+        note.setObjectName("shell.teamSync.feedNote")
         note.setWordWrap(True)
         body.addWidget(note)
+        meta = QHBoxLayout()
+        meta.setContentsMargins(0, 4, 0, 0)
+        meta.setSpacing(8)
         if entry.change is not None:
             count = len(entry.change.files)
-            link = QPushButton(f"{count} files" if count != 1 else "1 file", row)
+            link = QPushButton(f"{count} file" if count == 1 else f"{count} files", row)
+            link.setObjectName("shell.teamSync.feedFiles")
             link.setFlat(True)
+            link.setCursor(Qt.PointingHandCursor)
             change_id = entry.change.id
             incoming_id = entry.incoming.id if entry.incoming is not None else ""
             if incoming_id:
                 link.clicked.connect(lambda _checked=False, ident=incoming_id: self._review(ident))
             else:
                 link.clicked.connect(lambda _checked=False, ident=change_id: self._open_change(ident))
-            body.addWidget(link, 0, Qt.AlignLeft)
+            meta.addWidget(link, 0, Qt.AlignLeft)
+        meta.addStretch(1)
         if entry.delivery is not None:
             mark, tip = delivery_mark(entry.delivery.state, git_names=self._git_names)
             badge = QLabel(mark, row)
+            badge.setObjectName("shell.teamSync.feedMark")
+            badge.setProperty("delivery", _delivery_key(entry.delivery.state))
             badge.setToolTip(tip)
-            body.addWidget(badge, 0, Qt.AlignLeft)
-        if entry.kind == FEED_INCOMING and entry.incoming is not None:
+            font = QFont(badge.font())
+            font.setLetterSpacing(QFont.AbsoluteSpacing, -0.4)
+            badge.setFont(font)
+            _polish(badge)
+            meta.addWidget(badge, 0, Qt.AlignRight)
+        if incoming and entry.incoming is not None:
             review = QPushButton("Review", row)
             review.setObjectName("shell.teamSync.feedReview")
+            review.setCursor(Qt.PointingHandCursor)
             incoming_id = entry.incoming.id
             review.clicked.connect(lambda _checked=False, ident=incoming_id: self._review(ident))
-            if self._tokens is not None:
-                review.setStyleSheet(primary_button_qss(self._tokens))
-                row.setStyleSheet(incoming_qss(self._tokens))
-            body.addWidget(review, 0, Qt.AlignLeft)
-        elif entry.kind in (FEED_NOTE, FEED_CHANGE) and self._tokens is not None:
-            row.setStyleSheet("background: transparent;")
+            meta.addWidget(review, 0, Qt.AlignRight)
+        body.addLayout(meta)
         layout.addLayout(body, 1)
+        _polish(row)
         return row
 
     def _author_name(self, entry: FeedItem, me_id: str) -> str:
@@ -287,6 +335,8 @@ class TeamView(QWidget):
             return "You"
         if entry.change is not None:
             return first_name(entry.change.author_name)
+        if entry.incoming is not None and entry.incoming.changes:
+            return first_name(entry.incoming.changes[0].author_name)
         return "Team"
 
     def _fill_files(self, status: TeamStatus) -> None:
@@ -294,11 +344,17 @@ class TeamView(QWidget):
             item = self._file_layout.takeAt(0)
             widget = item.widget()
             if widget is not None:
+                widget.hide()
+                widget.setParent(None)
                 widget.deleteLater()
         self._checks = []
         count = len(status.pending)
         noun = "file" if count == 1 else "files"
         self._files_button.setText(f"{count} {noun}")
+        self._files_button.setVisible(count > 0)
+        if count == 0:
+            self._files_button.setChecked(False)
+            self._file_list.hide()
         for change in status.pending:
             box = QCheckBox(f"{change.kind}  {change.path}", self._file_list)
             box.setChecked(True)
@@ -306,7 +362,7 @@ class TeamView(QWidget):
             self._checks.append((box, change.path))
 
     def _toggle_files(self, checked: bool) -> None:
-        self._file_list.setVisible(checked)
+        self._file_list.setVisible(checked and bool(self._checks))
 
     def selected_paths(self) -> list[str]:
         if not self._checks:
@@ -314,7 +370,7 @@ class TeamView(QWidget):
         return [path for box, path in self._checks if box.isChecked()]
 
     def note_text(self) -> str:
-        return self._note.toPlainText().strip()
+        return self._note.text().strip()
 
     def _share(self) -> None:
         if self._on_share is not None:

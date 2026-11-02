@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Callable, Optional
 
-from app.qt.QtCore import Qt, QTimer
+from app.qt.QtCore import Qt, QSize, QTimer
 from app.qt.QtWidgets import (
     QHBoxLayout,
     QLabel,
@@ -20,8 +20,8 @@ from app.features.team_sync.api import FILE_ADDED, FILE_DELETED, FileDiff, Incom
 from app.features.team_sync.ui.copy import clock, first_name
 from app.features.team_sync.ui.form_preview import FormCompare
 from app.features.team_sync.ui.ports import SyncPorts
-from app.features.team_sync.ui.theme import button_qss, primary_button_qss, surface_qss
 from app.features.team_sync.ui.widgets import Avatar
+from app.shell.icon_provider import file_icon, file_type_icon_map
 from app.shell.diff_view import DIFF_VIEW_MODE_INLINE, DIFF_VIEW_MODE_SIDE_BY_SIDE, DiffView
 from app.shell.theme_tokens import ShellThemeTokens, tokens_from_palette
 from app.ui.segmented_control import SegmentedControl
@@ -51,6 +51,7 @@ class ReviewTab(QWidget):
         self._avatar = Avatar("", "", header)
         header_row.addWidget(self._avatar)
         self._note = QLabel("", header)
+        self._note.setObjectName("shell.teamSync.reviewNote")
         self._note.setWordWrap(True)
         header_row.addWidget(self._note, 1)
         self._mode = SegmentedControl(header)
@@ -81,6 +82,7 @@ class ReviewTab(QWidget):
         stack = QVBoxLayout(self._stack_host)
         stack.setContentsMargins(0, 0, 0, 0)
         self._diff = DiffView(tokens_from_palette(self.palette()), self._stack_host)
+        self._diff.set_hide_metadata_headers(True)
         self._forms = FormCompare(self._stack_host)
         stack.addWidget(self._diff, 1)
         stack.addWidget(self._forms, 1)
@@ -93,11 +95,11 @@ class ReviewTab(QWidget):
 
     def apply_theme(self, tokens: ShellThemeTokens) -> None:
         self._tokens = tokens
-        self.setStyleSheet(surface_qss(tokens))
-        self._accept.setStyleSheet(primary_button_qss(tokens))
-        self._not_now.setStyleSheet(button_qss(tokens))
-        self._show_file.setStyleSheet(button_qss(tokens))
         self._diff.apply_theme(tokens)
+        if self._diffs:
+            self._diff.emphasize_changed_words()
+        self.style().unpolish(self)
+        self.style().polish(self)
 
     def open_incoming(
         self,
@@ -122,6 +124,8 @@ class ReviewTab(QWidget):
         name = first_name(change.author_name) if change is not None else "Someone"
         note = change.note if change is not None else ""
         when = clock(change.when) if change is not None else ""
+        self._mode.set_selected(DIFF_VIEW_MODE_INLINE)
+        self._diff.set_mode(DIFF_VIEW_MODE_INLINE)
         self._avatar.set_person(incoming.from_id, name)
         self._note.setText(f"{note} · {when}")
         if tokens is not None:
@@ -157,12 +161,39 @@ class ReviewTab(QWidget):
     def _show_diffs(self, diffs: object) -> None:
         self._diffs = list(diffs or [])
         self._files.clear()
+        icons = file_type_icon_map()
+        fallback = file_icon(self._tokens.icon_primary if self._tokens is not None else "#5A6168")
         for diff in self._diffs:
-            self._files.addItem(QListWidgetItem(f"{diff.kind}  {diff.path}"))
+            item = QListWidgetItem()
+            item.setSizeHint(QSize(0, 26))
+            self._files.addItem(item)
+            self._files.setItemWidget(item, self._file_row(diff, icons, fallback))
         if self._diffs:
             self._files.setCurrentRow(0)
         else:
             self._diff.set_message("No changes")
+
+    def _file_row(self, diff: FileDiff, icons: dict, fallback) -> QWidget:  # type: ignore[type-arg]
+        row = QWidget()
+        row.setFixedHeight(26)
+        layout = QHBoxLayout(row)
+        layout.setContentsMargins(8, 0, 8, 0)
+        layout.setSpacing(6)
+        ext = diff.path.rsplit(".", 1)[-1].lower() if "." in diff.path else ""
+        icon = QLabel(row)
+        pixmap = (icons.get(ext) or fallback).pixmap(14, 14)
+        icon.setPixmap(pixmap)
+        layout.addWidget(icon)
+        name = QLabel(diff.path, row)
+        name.setObjectName("shell.teamSync.feedNote")
+        layout.addWidget(name, 1)
+        kind = QLabel(diff.kind, row)
+        kind.setObjectName("shell.teamSync.fileKind")
+        kind.setProperty("kind", diff.kind)
+        kind.style().unpolish(kind)
+        kind.style().polish(kind)
+        layout.addWidget(kind)
+        return row
 
     def _show_row(self, row: int) -> None:
         if row < 0 or row >= len(self._diffs):

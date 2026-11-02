@@ -2,7 +2,52 @@
 
 from __future__ import annotations
 
+from app.qt.QtGui import QColor
 from app.shell.theme_tokens import ShellThemeTokens
+
+
+def blend(base: str, tint: str, amount: float) -> str:
+    """Mix ``tint`` into ``base``. ``amount`` 0 keeps ``base``."""
+    start = QColor(base)
+    other = QColor(tint)
+    if not start.isValid():
+        start = QColor("#FFFFFF")
+    if not other.isValid():
+        other = start
+    ratio = max(0.0, min(1.0, amount))
+
+    def channel(left: int, right: int) -> int:
+        return max(0, min(255, int(round(left + (right - left) * ratio))))
+
+    return "#{:02X}{:02X}{:02X}".format(
+        channel(start.red(), other.red()),
+        channel(start.green(), other.green()),
+        channel(start.blue(), other.blue()),
+    )
+
+
+def accent_soft(tokens: ShellThemeTokens) -> str:
+    return blend(tokens.panel_bg or tokens.editor_bg, tokens.accent, 0.14)
+
+
+def warning_soft(tokens: ShellThemeTokens) -> str:
+    return blend(tokens.panel_bg or tokens.editor_bg, tokens.diag_warning_color or "#D97706", 0.18)
+
+
+def mine_bg(tokens: ShellThemeTokens) -> str:
+    return blend(tokens.editor_bg or tokens.panel_bg, tokens.diag_warning_color or "#D97706", 0.22)
+
+
+def theirs_bg(tokens: ShellThemeTokens) -> str:
+    return blend(tokens.editor_bg or tokens.panel_bg, "#0F766E", 0.20)
+
+
+def added_soft(tokens: ShellThemeTokens) -> str:
+    return blend(tokens.editor_bg or tokens.panel_bg, tokens.test_passed_color or "#1A7F37", 0.18)
+
+
+def removed_soft(tokens: ShellThemeTokens) -> str:
+    return blend(tokens.editor_bg or tokens.panel_bg, tokens.diag_error_color or "#E03131", 0.18)
 
 
 def focus_rule(tokens: ShellThemeTokens, selector: str) -> str:
@@ -69,12 +114,19 @@ def level_color(tokens: ShellThemeTokens, level: str) -> str:
 
 
 __all__ = [
+    "accent_soft",
+    "added_soft",
+    "blend",
     "button_qss",
     "field_qss",
     "focus_rule",
     "incoming_qss",
     "level_color",
+    "mine_bg",
     "muted_qss",
     "primary_button_qss",
+    "removed_soft",
     "surface_qss",
+    "theirs_bg",
+    "warning_soft",
 ]

@@ -4,7 +4,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any, cast
 
-from app.qt.QtCore import QPoint, QPointF, QRect, QSize, Qt
+from app.qt.QtCore import QEvent, QPoint, QPointF, QRect, QSize, Qt
 from app.qt.QtGui import QColor, QPainter, QPolygonF, QTextCursor, QTextFormat
 from app.qt.QtWidgets import QTextEdit, QWidget
 from app.qt.qt_compat import event_pos
@@ -28,7 +28,7 @@ if TYPE_CHECKING:
         _change_mark_lines: set[int]
         _change_mark_callback: Callable[[int], None] | None
         _change_mark_color: QColor
-        _line_hover_callback: Callable[[int, QPoint], None] | None
+        _line_hover_callback: Callable[[int, QPoint, QPoint], bool] | None
         _diagnostic_lines: dict[int, Any]
 
         def _diag_color_for_severity(self, severity: Any) -> QColor: ...
@@ -51,6 +51,17 @@ class _LineNumberArea(QWidget):
 
     def paintEvent(self, event) -> None:  # type: ignore[no-untyped-def]  # noqa: N802
         self._editor.paint_line_number_area(event)
+
+    def event(self, event) -> bool:  # noqa: N802 - Qt signature
+        if event.type() == QEvent.ToolTip:
+            callback = getattr(self._editor, "_line_hover_callback", None)
+            if callback is not None:
+                point = event_pos(event)
+                line = self._editor._line_at_y(int(point.y()))
+                local = self.mapTo(self._editor, point)
+                if callback(line, QPoint(event.globalPos()), QPoint(local)):
+                    return True
+        return super().event(event)
 
     def mousePressEvent(self, event) -> None:  # type: ignore[no-untyped-def]  # noqa: N802
         if event.button() != Qt.LeftButton:
@@ -77,7 +88,7 @@ class CodeEditorChromeMixin(_CodeEditorChromeBase):
         self._change_mark_lines: set[int] = set()
         self._change_mark_callback: Callable[[int], None] | None = None
         self._change_mark_color = QColor("#1A7F37")
-        self._line_hover_callback: Callable[[int, QPoint], None] | None = None
+        self._line_hover_callback: Callable[[int, QPoint, QPoint], bool] | None = None
         self._debug_execution_color = QColor("#D97706")
         self._debug_execution_line_bg = QColor("#D0E2FF")
         self._gutter_bg = QColor("#F1F3F5")
@@ -111,7 +122,8 @@ class CodeEditorChromeMixin(_CodeEditorChromeBase):
         self._change_mark_callback = on_click
         self._line_number_area.update()
 
-    def set_line_hover_callback(self, callback: Callable[[int, QPoint], None] | None) -> None:
+    def set_line_hover_callback(self, callback: Callable[[int, QPoint, QPoint], bool] | None) -> None:
+        """Hover hook. Return True only when the pointer is on team-sync chrome."""
         self._line_hover_callback = callback
 
     def _line_at_y(self, y_coordinate: int) -> int:

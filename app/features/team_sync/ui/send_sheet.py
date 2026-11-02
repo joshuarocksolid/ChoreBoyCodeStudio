@@ -18,7 +18,6 @@ from app.qt.QtWidgets import (
 )
 
 from app.features.team_sync.api import TeamStatus
-from app.features.team_sync.ui.theme import button_qss, field_qss, primary_button_qss, surface_qss
 from app.shell.theme_tokens import ShellThemeTokens
 
 
@@ -52,34 +51,18 @@ class SendToolbarButton(QToolButton):
             self._badge.hide()
 
     def apply_theme(self, tokens: ShellThemeTokens) -> None:
-        fg = tokens.toolbar_package_fg or "#FFFFFF"
-        bg = tokens.toolbar_package_bg or tokens.accent
-        hover = tokens.toolbar_package_hover_bg or tokens.accent_hover or bg
-        pressed = tokens.toolbar_package_pressed_bg or tokens.accent_pressed or bg
-        self.setStyleSheet(
-            "QToolButton#shell\\.teamSync\\.toolbar\\.send {"
-            f" background: {bg}; color: {fg}; border: none; border-radius: 5px;"
-            " padding: 5px 12px; font-weight: 600;"
-            "}"
-            "QToolButton#shell\\.teamSync\\.toolbar\\.send:hover {"
-            f" background: {hover};"
-            "}"
-            "QToolButton#shell\\.teamSync\\.toolbar\\.send:pressed {"
-            f" background: {pressed};"
-            "}"
-            "QToolButton#shell\\.teamSync\\.toolbar\\.send:focus {"
-            f" border: {tokens.focus_border_width}px solid {tokens.text_primary};"
-            "}"
-        )
-        self._badge.setStyleSheet(
-            f"background: {tokens.text_primary}; color: {bg}; border-radius: 7px; padding: 0 4px; font-size: 10px;"
-        )
+        del tokens
+        self.style().unpolish(self)
+        self.style().polish(self)
+        self._badge.style().unpolish(self._badge)
+        self._badge.style().polish(self._badge)
 
 
 class SendSheet(QFrame):
     def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
         self.setObjectName("shell.teamSync.sendSheet")
+        self.setAttribute(Qt.WA_StyledBackground, True)
         self.setWindowFlags(Qt.Popup)
         self._on_send: Optional[Callable[[str, list[str]], None]] = None
         self._checks: list[tuple[QCheckBox, str]] = []
@@ -101,17 +84,13 @@ class SendSheet(QFrame):
         self._send = QPushButton("Send", self)
         self._send.setObjectName("shell.teamSync.sendSheetSend")
         self._send.clicked.connect(self._send_clicked)
-        layout.addWidget(self._send, 0, Qt.AlignRight)
+        layout.addWidget(self._send)
         self.setMinimumWidth(320)
 
     def apply_theme(self, tokens: ShellThemeTokens) -> None:
-        self.setStyleSheet(
-            surface_qss(tokens)
-            + "QFrame#shell\\.teamSync\\.sendSheet {"
-            f" border: 1px solid {tokens.border}; border-radius: 8px; }}"
-        )
-        self._note.setStyleSheet(field_qss(tokens))
-        self._send.setStyleSheet(primary_button_qss(tokens))
+        del tokens
+        self.style().unpolish(self)
+        self.style().polish(self)
 
     def present(
         self,

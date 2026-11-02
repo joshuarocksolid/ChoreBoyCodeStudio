@@ -511,6 +511,20 @@ The Dune checker requires each handle below to match a `setObjectName` call unde
 | `#shell.teamSync.settingsGroup` | Settings › Team |
 | `#shell.teamSync.packageMilestone` | Mark this version in history |
 | `#shell.teamSync.toast` | Arrival toast |
+| `#shell.teamSync.teamHeader` | Thread header row |
+| `#shell.teamSync.composerNote` | Thread message field |
+| `#shell.teamSync.composerFiles` | Pending-files chip |
+| `#shell.teamSync.feedFiles` | "N files" link on a message |
+| `#shell.teamSync.feedReview` | Review on an incoming message |
+| `#shell.teamSync.feedMark` | Queued / ✓ / ✓✓ |
+| `#shell.teamSync.statusDot` | 7 px status dot |
+| `#shell.teamSync.statusHistory` | Popover History |
+| `#shell.teamSync.statusMenu` | Popover ⋯ |
+| `#shell.teamSync.lineSummary` | End-of-line who-changed note |
+| `#shell.teamSync.combinePrev` | Previous clash |
+| `#shell.teamSync.combineNext` | Next clash |
+| `#shell.teamSync.historySearch` | History search |
+| `#shell.teamSync.historyFilter` | Main / All lines |
 | `#shell.toast` | Generic toast frame |
 | `#shell.toast.message` | Toast text |
 | `#shell.toast.action` | Toast action |
