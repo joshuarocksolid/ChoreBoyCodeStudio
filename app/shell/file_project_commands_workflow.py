@@ -6,7 +6,7 @@ import logging
 import subprocess
 import time
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Any, Optional, Protocol
 
 from app.qt.QtWidgets import QDialog, QInputDialog, QLineEdit, QMessageBox, QWidget
 
@@ -460,7 +460,12 @@ class FileProjectCommandsWorkflow:
         """Status-bar completion chip: open Settings at the code completion control."""
         self._open_settings_dialog(focus_completion_mode=True)
 
-    def _open_settings_dialog(self, *, focus_completion_mode: bool = False) -> None:
+    def _open_settings_dialog(
+        self,
+        *,
+        focus_completion_mode: bool = False,
+        page_key: Optional[str] = None,
+    ) -> None:
         settings_service = self._host.settings_service()
         global_settings_payload = settings_service.load_global()
         global_snapshot = parse_editor_settings_snapshot(global_settings_payload)
@@ -493,11 +498,17 @@ class FileProjectCommandsWorkflow:
             python_tooling_config_details=python_tooling_copy.config_details,
             global_settings_payload=global_settings_payload,
             project_root=project_root,
+            initial_page_key=page_key,
             initial_scope=(
                 SETTINGS_SCOPE_PROJECT
-                if focus_completion_mode
-                and project_root is not None
-                and effective_snapshot.completion_mode != global_snapshot.completion_mode
+                if project_root is not None
+                and (
+                    page_key == "connections"
+                    or (
+                        focus_completion_mode
+                        and effective_snapshot.completion_mode != global_snapshot.completion_mode
+                    )
+                )
                 else SETTINGS_SCOPE_GLOBAL
             ),
         )

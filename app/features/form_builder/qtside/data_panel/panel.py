@@ -11,7 +11,7 @@ from app.features.form_builder.qtside.data_panel.sections_ext import default_reg
 
 
 class DataPanel(QWidget):
-    """Empty until a form has a source. The buttons stay disabled until a later lane enables them."""
+    """Empty until a form has a source. Add a connection opens Settings › Connections."""
 
     connect_requested = Signal()
     add_connection_requested = Signal()

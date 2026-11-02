@@ -42,6 +42,10 @@ def pytest_configure(config: pytest.Config) -> None:
         "markers",
         'logic(*ids): proves logic scenarios and features, e.g. logic("L-line-total-live")',
     )
+    config.addinivalue_line(
+        "markers",
+        "pg93: PostgreSQL 9.3 tests; opt-in, not part of the unit lane",
+    )
 
 
 def _pyside6_skip_reason() -> str | None:

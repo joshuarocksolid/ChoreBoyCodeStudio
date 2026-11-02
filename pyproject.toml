@@ -29,6 +29,7 @@ markers = [
     "pain(*ids): proves ranked pains, e.g. pain(\"P-3\"); read by tools/form_builder_parity.py",
     "logic(*ids): proves logic scenarios and features, e.g. logic(\"L-line-total-live\")",
     "soak: full CONTRACTS section 13 sequences; excluded from the unit gate",
+    "pg93: PostgreSQL 9.3 tests; opt-in, not part of the unit lane",
 ]
 # Rope emits this internal deprecation until upstream removes legacy init paths; mute CI noise.
 filterwarnings = [

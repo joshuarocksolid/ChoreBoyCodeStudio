@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
-from typing import Any, Mapping
+from typing import Any, Mapping, Optional
 
 from app.qt.QtWidgets import (
     QAbstractItemView,
@@ -43,7 +43,12 @@ from app.shell.settings_dialog_general import (
 )
 from app.shell.settings_dialog_handlers import SettingsDialogHandlersMixin
 from app.shell.settings_dialog_state import GeneralTabState
-from app.shell.settings_pages import apply_built_pages, apply_project_pages, build_registered_pages
+from app.shell.settings_pages import (
+    SCOPE_PROJECT,
+    apply_built_pages,
+    apply_project_pages,
+    build_registered_pages,
+)
 from app.shell.settings_dialog_tables import (
     finalize_keybindings_columns,
     finalize_linter_columns,
@@ -119,6 +124,7 @@ class SettingsDialog(SettingsDialogHandlersMixin, QDialog):
         python_tooling_config_details: str = UNKNOWN_SETTINGS_COPY.config_details,
         global_settings_payload: Mapping[str, Any] | None = None,
         project_root: str | None = None,
+        initial_page_key: Optional[str] = None,
     ) -> None:  # type: ignore[no-untyped-def]
         super().__init__(parent)
         self.setWindowTitle("Settings")
@@ -253,6 +259,18 @@ class SettingsDialog(SettingsDialogHandlersMixin, QDialog):
 
         build_buttons_row(self, layout)
         apply_initial_scope(self, initial_scope)
+        self._select_initial_page(initial_page_key)
+
+    def _select_initial_page(self, page_key: Optional[str]) -> None:
+        if not page_key or self._tabs_widget is None:
+            return
+        for page, widget in self._feature_pages:
+            if page.key != page_key:
+                continue
+            if page.scope == SCOPE_PROJECT and self._project_scope_available:
+                self._set_scope(SETTINGS_SCOPE_PROJECT, apply_snapshot=True)
+            self._tabs_widget.setCurrentWidget(widget)
+            return
 
     def accept(self) -> None:  # noqa: D102
         sentence = apply_project_pages(self._feature_pages, self._project_root or "")

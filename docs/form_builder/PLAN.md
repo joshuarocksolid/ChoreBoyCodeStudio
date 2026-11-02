@@ -600,7 +600,7 @@ Probed on the ChoreBoyExp VM (FreeCAD 1.1.1) with `cb_probes/harness/probes/fb_m
 | stdin/stdout JSON | Works both ways | The IPC can use the existing framed stdio protocol |
 | `uic` / `rcc` | Present under `/opt/freecad/usr/lib/qt6`, but exec is **denied** (execve EACCES) | The in-process generator is mandatory. `uic` is only a dev-machine oracle |
 | FreeCADGui | Imports in an `AppRun -c` child, but `UiLoader` is absent there. Available in-process in GUI FreeCAD | Generated code needs a guarded `FreeCADGui.UiLoader` with a Qt base-class fallback |
-| Postgres drivers | `pg8000`, `psycopg`, `scramp` and `asn1crypto` ship in `/opt/freecad`. No `psycopg2` or `cb_psycopg` | No vendoring needed. Driver probe order: psycopg, then pg8000 |
+| Postgres drivers | 2026-11-02 VM probe: psycopg 3.3.4, psycopg-binary 3.3.4 (libpq 18.0), pg8000 1.31.5, scramp 1.4.17, asn1crypto 1.5.1, sqlite 3.51.1. No `psycopg2` or `cb_psycopg` | No vendoring needed. Driver order stays psycopg, then pg8000. M8.1 Mac lane (postgres:9.3): both drivers open, commit, and roll back. psycopg 3.3.4 with libpq 18 does not refuse 9.3, so UX F4 does not flip. libpq reports an md5 rejection as "password authentication failed" and omits SQLSTATE |
 | SQLite | 3.51.1 | |
 | `QFileSystemWatcher`, `QLocalServer` | Both work | External-change detection and local IPC are available |
 | Home folder | Dotfiles directly in `~` cannot be written; the job dir is writable | Machine-local secrets ("remember on this machine") go under CBCS's existing state directory, which the probe must confirm is writable before M8.1 |
