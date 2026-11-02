@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 from typing import Callable, Optional
 
-from app.qt.QtCore import QPoint, Qt
+from app.qt.QtCore import QPoint, QTimer, Qt
 from app.qt.QtGui import QColor, QPainter, QPen
 from app.qt.QtWidgets import (
     QComboBox,
@@ -289,7 +289,7 @@ class HistoryTab(QWidget):
         self._paint_lanes()
         self._offset = len(self._rows)
         if self._rows and self._list.currentRow() < 0:
-            self._list.setCurrentRow(0)
+            QTimer.singleShot(0, self._select_first)
 
     def _row_widget(self, change: Change) -> QWidget:
         row = QWidget()
@@ -357,13 +357,11 @@ class HistoryTab(QWidget):
         if value >= bar.maximum() and self._offset and self._offset % 200 == 0:
             self._load_page()
 
-    def _select(self, row: int) -> None:
-        if row < 0 or row >= len(self._rows) or self._api is None:
-            return
-        change = self._rows[row]
-        self._avatar.set_person(change.author_id, change.author_name, 20)
-        self._detail_note.setText(change.note)
-        self._detail_meta.setText(f"{first_name(change.author_name)} · {short_date(change.when)}")
+    def _select_first(self) -> None:
+        if self._rows and self._list.currentRow() < 0:
+            self._list.setCurrentRow(0)
+
+    def _clear_files(self) -> None:
         while self._files.count():
             item = self._files.takeAt(0)
             widget = item.widget()
@@ -371,11 +369,15 @@ class HistoryTab(QWidget):
                 widget.hide()
                 widget.setParent(None)
                 widget.deleteLater()
-        for file_change in change.files:
-            label = QLabel(f"{file_change.kind}  {file_change.path}", self._detail)
-            label.setObjectName("shell.teamSync.fileKind")
-            label.setProperty("kind", file_change.kind)
-            self._files.addWidget(label)
+
+    def _select(self, row: int) -> None:
+        if row < 0 or row >= len(self._rows) or self._api is None:
+            return
+        change = self._rows[row]
+        self._avatar.set_person(change.author_id, change.author_name, 20)
+        self._detail_note.setText(change.note)
+        self._detail_meta.setText(f"{first_name(change.author_name)} · {short_date(change.when)}")
+        self._clear_files()
         change_id = change.id
 
         def task() -> object:
@@ -383,6 +385,12 @@ class HistoryTab(QWidget):
 
         def paint(diffs: object) -> None:
             rows = list(diffs or [])
+            self._clear_files()
+            for diff in rows:
+                label = QLabel(f"{diff.kind}  {diff.path}", self._detail)
+                label.setObjectName("shell.teamSync.fileKind")
+                label.setProperty("kind", diff.kind)
+                self._files.addWidget(label)
             if not rows:
                 self._diff.set_message("No textual differences found.")
                 return

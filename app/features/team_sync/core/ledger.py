@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+import json
 import sqlite3
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Sequence, Tuple
 
 from app.features.team_sync.core import TeamSyncError
 
@@ -195,6 +196,23 @@ class Ledger:
         )
         self._db.commit()
 
+    def commit_files(self, sha: str) -> Optional[List[Tuple[str, str]]]:
+        """Cached changed paths for one immutable commit. ``None`` means not stored yet."""
+        cursor = self._db.execute("SELECT payload FROM commit_files WHERE sha = ?", (sha,))
+        row = cursor.fetchone()
+        if row is None:
+            return None
+        payload = json.loads(str(row["payload"]))
+        return [(str(item[0]), str(item[1])) for item in payload]
+
+    def remember_commit_files(self, sha: str, files: Sequence[Tuple[str, str]]) -> None:
+        payload = json.dumps([[path, kind] for path, kind in files])
+        self._db.execute(
+            "INSERT OR REPLACE INTO commit_files (sha, payload) VALUES (?, ?)",
+            (sha, payload),
+        )
+        self._db.commit()
+
     def unverified_count(self) -> int:
         cursor = self._db.execute(
             "SELECT COUNT(*) FROM seen WHERE result = 'unverified'"
@@ -271,6 +289,10 @@ class Ledger:
                 CREATE TABLE IF NOT EXISTS retries (
                     message_key TEXT PRIMARY KEY,
                     attempts INTEGER NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS commit_files (
+                    sha TEXT PRIMARY KEY,
+                    payload TEXT NOT NULL
                 );
                 """
             )

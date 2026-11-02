@@ -6,8 +6,11 @@ land on one state without walking the mail path.
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from typing import Callable, Dict, List, Optional
+
+from app.features.team_sync.core import TeamSyncError
 
 from app.features.team_sync.api import (
     CLASH_DELETED,
@@ -337,6 +340,17 @@ class InMemoryTeamSync:
     def pending_invites(self) -> List[Incoming]:
         return list(self._invites)
 
+    def invite_detail(self, incoming_id: str) -> Dict[str, str]:
+        item = next((row for row in self._invites if row.id == incoming_id), None)
+        author = item.changes[0].author_name if item is not None and item.changes else ""
+        return {
+            "project_id": "",
+            "project_name": self._project_name or "Invoice App",
+            "sender_name": author,
+            "sender_shop": "",
+            "sender_email": "",
+        }
+
     def accept_invite(self, incoming_id: str, folder: str) -> str:
         self._invites = [item for item in self._invites if item.id != incoming_id]
         self._shared = True
@@ -349,6 +363,18 @@ class InMemoryTeamSync:
 
     def send(self, note: str, paths: Optional[List[str]] = None) -> Change:
         return self._commit(note, paths, deliver=True)
+
+    def share_experiment(self, line: str) -> Change:
+        if not str(line).startswith("exp/"):
+            raise TeamSyncError("That line is not an experiment.")
+        if self._line != line:
+            raise TeamSyncError("Switch to that line before sharing it.")
+        if not self._changes and not self._pending:
+            raise TeamSyncError("Save a change before sharing this line.")
+        change = self._commit(f"Shared {line}", None, deliver=True)
+        shared = replace(change, line=line)
+        self._changes = [shared if item.id == change.id else item for item in self._changes]
+        return shared
 
     def save_only(self, note: str, paths: Optional[List[str]] = None) -> Change:
         return self._commit(note, paths, deliver=False)
@@ -483,7 +509,8 @@ class InMemoryTeamSync:
         if query:
             needle = query.lower()
             rows = [row for row in rows if needle in row.note.lower() or needle in row.id.lower()]
-        return rows[offset : offset + limit]
+        page = rows[offset : offset + limit]
+        return [replace(row, files=()) for row in page]
 
     def change_diff(self, change_id: str, against: Optional[str] = None) -> List[FileDiff]:
         del against
