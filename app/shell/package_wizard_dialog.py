@@ -114,6 +114,11 @@ class PackageProjectWizard(QDialog):
         self._stack.addWidget(self._destination_page.widget)
         self._stack.addWidget(self._metadata_page.widget)
         body_layout.addWidget(self._stack, 1)
+        self.metadata_page = self._metadata_page
+        contributions = getattr(parent, "_shell_contributions", None)
+        if contributions is not None:
+            for extra in contributions.package_extras:
+                extra(self)
 
         self._back_button = add_footer_button(chrome, "Back", role=FOOTER_ROLE_SECONDARY)
         self._back_button.clicked.connect(self._go_back)
@@ -353,6 +358,12 @@ class _MetadataPage:
         tip.setProperty("previewLabel", True)
         outer.addWidget(tip)
         outer.addStretch(1)
+        self._outer = outer
+
+    def insert_extra(self, widget: QWidget) -> None:
+        """Place a widget above the trailing stretch on the metadata page."""
+        index = max(0, self._outer.count() - 1)
+        self._outer.insertWidget(index, widget)
 
     def build_package_config(self) -> ProjectPackageConfig:
         return ProjectPackageConfig(

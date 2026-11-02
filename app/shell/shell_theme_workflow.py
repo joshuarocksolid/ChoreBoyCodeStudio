@@ -232,6 +232,10 @@ class ShellThemeWorkflow:
                 callbacks.apply_outline_theme(tokens)
             if callbacks.apply_problems_panel_theme is not None:
                 callbacks.apply_problems_panel_theme(tokens)
+            window = getattr(host, "_window", None)
+            contributions = getattr(window, "_shell_contributions", None) if window is not None else None
+            if contributions is not None:
+                contributions.apply_theme(tokens)
         finally:
             host.is_applying_theme_styles = False
 

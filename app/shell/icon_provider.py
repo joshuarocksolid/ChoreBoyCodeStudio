@@ -263,6 +263,26 @@ def history_icon(color: str) -> QIcon:
     return render_glyph_icon(SVG_GLYPHS["history_icon"], color)
 
 
+def chevron_left_icon(color: str) -> QIcon:
+    """Left chevron for previous-item controls."""
+    return render_glyph_icon(SVG_GLYPHS["chevron_left_icon"], color)
+
+
+def chevron_right_icon(color: str) -> QIcon:
+    """Right chevron for next-item controls."""
+    return render_glyph_icon(SVG_GLYPHS["chevron_right_icon"], color)
+
+
+def send_icon(color: str) -> QIcon:
+    """Paper-plane icon for the Team composer."""
+    return render_glyph_icon(SVG_GLYPHS["send_icon"], color)
+
+
+def warning_icon(color: str) -> QIcon:
+    """Triangle warning icon for combine and clash notices."""
+    return render_glyph_icon(SVG_GLYPHS["warning_icon"], color)
+
+
 def hover_info_icon(color: str) -> QIcon:
     """Information bubble icon."""
     return render_glyph_icon(SVG_GLYPHS["hover_info_icon"], color)

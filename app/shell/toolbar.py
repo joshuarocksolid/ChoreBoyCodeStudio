@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, List
+from typing import Any, List, Optional
 
 from app.qt.QtCore import Qt
 from app.qt.QtWidgets import (
@@ -62,6 +62,7 @@ class RunToolbarWidget(QWidget):
         self,
         menu_registry: MenuStubRegistry,
         parent: QWidget | None = None,
+        contributions: Any | None = None,
     ) -> None:
         super().__init__(parent)
         self.setObjectName("shell.toolbar.runDebug")
@@ -93,6 +94,10 @@ class RunToolbarWidget(QWidget):
                 layout.addWidget(btn)
 
         layout.addStretch(1)
+
+        if contributions is not None:
+            for spec in contributions.toolbar:
+                layout.addWidget(spec.factory(self))
 
         for action_id in _GROUP_RIGHT_IDS:
             btn = self._make_button(menu_registry, action_id)
@@ -132,8 +137,9 @@ class RunToolbarWidget(QWidget):
 def build_run_toolbar_widget(
     menu_registry: MenuStubRegistry | None,
     parent: QWidget | None = None,
+    contributions: Optional[Any] = None,
 ) -> RunToolbarWidget | None:
     """Factory: build toolbar widget or return None if registry unavailable."""
     if menu_registry is None:
         return None
-    return RunToolbarWidget(menu_registry, parent=parent)
+    return RunToolbarWidget(menu_registry, parent=parent, contributions=contributions)
