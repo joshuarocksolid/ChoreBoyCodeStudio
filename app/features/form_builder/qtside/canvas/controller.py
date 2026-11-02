@@ -124,6 +124,7 @@ from app.features.form_builder.qtside.canvas.core.overlay import (
     build_static,
     frame_basis,
     shift_static,
+    splice_layers,
 )
 from app.features.form_builder.qtside.canvas.core.space import ViewMap
 from app.features.form_builder.qtside.canvas.core.structure import effective_selection
@@ -213,6 +214,7 @@ class CanvasController:
             (),
             (),
         )
+        self._frame_stamp: Optional[Tuple[object, ...]] = None
         self._frame_requested = False
         self._pending_reveal: Optional[NodeId] = None
         self._greeted = False
@@ -1261,31 +1263,76 @@ class CanvasController:
         if static or self._static is None:
             self._static = build_static(self._session.document, self._index, view)
             self._static_entries = self._index.indexed_entries()
+            static = True
+        assert self._static is not None
         selection = self._session.selection.state
-        self._frame = build_frame(
-            self._static,
-            FrameInputs(
-                self._session.document,
-                selection,
-                self._gesture,
-                view,
-                self._view.hasFocus(),
-                self._problems(),
-                self._problems_revision,
-                self._sizing(selection),
-                self._stage.chrome_rects(),
-                self._measure,
-                visible_scene_rect(self._view),
-                self._stage.dock_rect(),
-                self._preview_target(),
-                self._shown_for_frame(),
-                knobs=self._knob_set(self._static, selection),
-                readout=self._readout,
-                refusals=self._refusal_tips(),
-                layers=self._layers,
-            ),
-        )
+        inputs = self._frame_inputs(view, selection)
+        # A rule commit leaves the static layer and the structure alone. Feeds and
+        # badges are the only marks that read the new formula text.
+        if not static and self._frame_stamp == self._frame_stamp_of(inputs):
+            self._frame = splice_layers(self._frame, self._static, inputs)
+            self._sync_refusal_access()
+            return
+        self._frame = build_frame(self._static, inputs)
+        self._frame_stamp = self._frame_stamp_of(inputs)
         self._sync_refusal_access()
+
+    def _frame_inputs(self, view: ViewMap, selection: SelectionState) -> FrameInputs:
+        assert self._static is not None
+        return FrameInputs(
+            self._session.document,
+            selection,
+            self._gesture,
+            view,
+            self._view.hasFocus(),
+            self._problems(),
+            self._problems_revision,
+            self._sizing(selection),
+            self._stage.chrome_rects(),
+            self._measure,
+            visible_scene_rect(self._view),
+            self._stage.dock_rect(),
+            self._preview_target(),
+            self._shown_for_frame(),
+            knobs=self._knob_set(self._static, selection),
+            readout=self._readout,
+            refusals=self._refusal_tips(),
+            layers=self._layers,
+        )
+
+    def _frame_stamp_of(self, inputs: FrameInputs) -> Tuple[object, ...]:
+        """What a full frame reads besides formula text.
+
+        Zoom is the view map. A scroll changes the viewport and still builds.
+        The static tuples are compared by identity: an epoch-only refresh keeps
+        them, a shifted obstacle does not.
+        """
+        static = self._static
+        shown = inputs.shown_pages
+        shown_key: Tuple[Tuple[int, int], ...] = ()
+        if shown:
+            shown_key = tuple(sorted((int(node), page) for node, page in shown.items()))
+        layers = tuple((layer.name, layer.state) for layer in inputs.layers)
+        return (
+            None if static is None else id(static.placed),
+            None if static is None else id(static.content),
+            inputs.document.structure_revision,
+            inputs.selection,
+            inputs.gesture,
+            inputs.view,
+            inputs.focused,
+            inputs.problems_revision,
+            inputs.sizing,
+            inputs.chrome,
+            inputs.viewport,
+            inputs.dock,
+            inputs.preview,
+            shown_key,
+            inputs.knobs,
+            inputs.readout,
+            inputs.refusals,
+            layers,
+        )
 
     def _refusal_tips(self) -> Tuple[Tuple[NodeId, str], ...]:
         """Tooltip lines for refused properties. O(1) when Qt accepted everything."""

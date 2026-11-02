@@ -117,8 +117,18 @@ def _line_edit(
         ]
         helpers.append("_cbcs_read_number")
     elif resolved.startswith("date:"):
-        read = ["value = _cbcs_read_date(%s)" % target, "if value is None:", "    return"]
-        helpers.append("_cbcs_read_date")
+        order, sentence = _date_order(code, settings)
+        read = [
+            "raw = %s.text().strip()" % target,
+            'if raw == "":',
+            "    return",
+            "value = _cbcs_read_short_date(raw, %r)" % order,
+            "if value is None:",
+            "    %s.setToolTip(%r)" % (target, sentence),
+            "    return",
+            "%s.setToolTip('')" % target,
+        ]
+        helpers.append("_cbcs_read_short_date")
     else:
         read = ["value = _cbcs_read_line(%s)" % target, "if value is None:", "    return"]
         helpers.append("_cbcs_read_line")
@@ -126,6 +136,21 @@ def _line_edit(
     leave = read + shown + ["if shown is None:", "    return"] + _quiet(target)
     write = _shown(expr.source, settings, resolved) + ["if shown is None:", '    shown = ""'] + _quiet(target)
     return "\n".join(leave), "\n".join(write), tuple(helpers)
+
+
+def _date_order(code: str, settings: FormatSettings) -> Tuple[str, str]:
+    """Project order for a short date. Anything else stays month, day, year.
+
+    A string that is not a date in that order is left in the field and the
+    tooltip says how to type it. The reader does not swap the day and the month.
+    """
+    if code == "date:short" and settings.date == "DD/MM/YYYY":
+        return "DMY", "Enter a date as DD/MM/YYYY."
+    if code == "date:short" and settings.date == "YYYY-MM-DD":
+        return "YMD", "Enter a date as YYYY-MM-DD."
+    if code == "date:iso":
+        return "YMD", "Enter a date as YYYY-MM-DD."
+    return "MDY", "Enter a date as MM/DD/YYYY."
 
 
 def _resolve(code: str, decimals: int) -> Optional[str]:

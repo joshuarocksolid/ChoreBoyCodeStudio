@@ -58,20 +58,46 @@ class RowFace:
     accessible: str
 
 
+def break_opportunities(text: str) -> str:
+    """Let a code line wrap before ``.`` or ``(``, never inside an identifier.
+
+    The mark is U+200B, a zero-width break. ``setEnabled`` stays one word.
+    ``self.ui.discountEdit.setEnabled(True)`` can break before each dot and
+    before the parenthesis.
+    """
+    if not text or "\u200b" in text:
+        return text
+    out = []
+    prev = ""
+    for char in text:
+        if char in ".(" and prev and (prev.isalnum() or prev in "_)"):
+            out.append("\u200b")
+        out.append(char)
+        prev = char
+    return "".join(out)
+
+
 class WrapLabel(QWidget):
     """A second line whose height grows, breaking a long source line as well as words."""
 
     def __init__(self, text: str, parent: QWidget) -> None:
         super().__init__(parent)
-        self._text = text
+        self._text = break_opportunities(text)
         self._color = QColor(FALLBACK_TEXT)
         self._doc = QTextDocument(self)
         self._doc.setDocumentMargin(0)
         option = QTextOption()
-        mode = getattr(QTextOption, "WrapAtWordBoundaryOrAnywhere")
+        # Word boundaries only. U+200B is a boundary, so the line breaks before
+        # "." or "(" and a long identifier is not cut in half.
+        mode = getattr(QTextOption, "WordWrap", None)
+        if mode is None:
+            nested = getattr(QTextOption, "WrapMode", None)
+            mode = getattr(nested, "WordWrap", None) if nested is not None else None
+        if mode is None:
+            mode = getattr(QTextOption, "WrapAtWordBoundaryOrAnywhere")
         option.setWrapMode(mode)
         self._doc.setDefaultTextOption(option)
-        self._doc.setPlainText(text)
+        self._doc.setPlainText(self._text)
         self.setMinimumWidth(0)
         self.setFocusPolicy(_NO_FOCUS)
         self.setAttribute(_TRANSPARENT, True)

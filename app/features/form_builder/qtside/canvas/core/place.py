@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+import weakref
 from typing import Dict, Optional, Tuple
 
 from app.features.form_builder.engine.commands.base import Command
@@ -49,8 +50,8 @@ def payload_for(doc: UiDocument, source_ids: Tuple[NodeId, ...], snap: bool = Tr
     return DropPayload(kind, source_ids, rowspan, colspan, snap, dock=dock, wizard_page=wizard_page)
 
 
-# One tree per document epoch. A page switch bumps the epoch and rebuilds it.
-_TREE: Dict[Tuple[int, int], DropHost] = {}
+# One tree per live document. A page switch bumps the epoch and rebuilds it.
+_TREE: "weakref.WeakKeyDictionary[UiDocument, Tuple[int, DropHost]]" = weakref.WeakKeyDictionary()
 
 
 def resolve_at(
@@ -65,7 +66,7 @@ def resolve_at(
     else:
         geometry = _rects(doc, index)
         host = _tree(doc, index, geometry)
-    host = cover_parts(host, painted_parts(id(doc)))
+    host = cover_parts(host, painted_parts(doc))
     factor = float(getattr(index, "screen_factor", 1.0) or 1.0)
     target = resolve_drop(
         host,
@@ -94,13 +95,12 @@ def resolve_at(
 
 
 def _tree(doc: UiDocument, index: HitIndex, geometry: Dict[NodeId, Rect]) -> DropHost:
-    key = (id(doc), index.epoch)
-    found = _TREE.get(key)
-    if found is not None:
-        return found
+    epoch = index.epoch
+    found = _TREE.get(doc)
+    if found is not None and found[0] == epoch:
+        return found[1]
     host = hosts_from(doc, geometry)
-    _TREE.clear()
-    _TREE[key] = host
+    _TREE[doc] = (epoch, host)
     return host
 
 

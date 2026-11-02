@@ -44,7 +44,6 @@ _UP = enum_value(Qt.Key.Key_Up)
 _DOWN = enum_value(Qt.Key.Key_Down)
 _DELETE = enum_value(Qt.Key.Key_Delete)
 _ALT = enum_value(Qt.KeyboardModifier.AltModifier)
-_ELIDE = getattr(getattr(Qt, "TextElideMode", Qt), "ElideRight")
 _OVERRIDE = enum_value(getattr(getattr(QEvent, "Type", QEvent), "ShortcutOverride"))
 _KEY_PRESS = enum_value(getattr(getattr(QEvent, "Type", QEvent), "KeyPress"))
 # User content for the form, the same red the check manual names. The hex
@@ -62,6 +61,14 @@ _ROW_WORDS = (
     "One of",
     "Formula",
 )
+
+
+def _apply_sheet(widget: QWidget, sheet: str) -> None:
+    """Set a row's sheet once. Repeating it on a commit restyles the subtree."""
+    if widget.property("_cbcsSheet") == sheet:
+        return
+    widget.setProperty("_cbcsSheet", sheet)
+    widget.setStyleSheet(sheet)
 
 
 def _wrap(label: QLabel) -> None:
@@ -131,13 +138,15 @@ class _CheckRow(QWidget):
         self.words.setMinimumWidth(0)
         self.message = QLabel(self)
         self.message.setObjectName("formBuilder.checks.messageText.%d" % index)
+        self.message.setWordWrap(True)
         self.message.setMinimumWidth(0)
-        names = getattr(QSizePolicy, "Policy", QSizePolicy)
-        self.message.setSizePolicy(getattr(names, "Ignored"), getattr(names, "Preferred"))
+        message_policy = self.message.sizePolicy()
+        message_policy.setHeightForWidth(True)
+        self.message.setSizePolicy(message_policy)
         self.qt = QLabel("Qt", self)
         self.qt.setObjectName("formBuilder.checks.qt.%d" % index)
         host = QWidget(self)
-        host.setFixedHeight(24)
+        host.setMinimumHeight(22)
         host.setMinimumWidth(0)
         line = QHBoxLayout(host)
         line.setContentsMargins(0, 0, 0, 0)
@@ -199,15 +208,10 @@ class _CheckRow(QWidget):
 
     def _elide(self) -> None:
         full = self._full
-        if self.message.width() <= 0:
+        if self.message.text() != full:
             self.message.setText(full)
-            return
-        shown = self.message.fontMetrics().elidedText(full, _ELIDE, max(1, self.message.width()))
-        if self.message.text() != shown:
-            self.message.setText(shown)
-        tip = full if shown != full else ""
-        if self.message.toolTip() != tip:
-            self.message.setToolTip(tip)
+        if self.message.toolTip():
+            self.message.setToolTip("")
 
 
 _LEFT = getattr(getattr(Qt, "AlignmentFlag", Qt), "AlignLeft")
@@ -391,6 +395,7 @@ class ChecksBody(QWidget):
         self._outline_line.hide()
         self._outline_revision = -1
         self._outline_show = False
+        self._painted_id: object = None
         self._offer.set_handlers(self._accept_label, self._skip_label)
         self._add.clicked.connect(self._open_menu)
         self._prompt_add.clicked.connect(self._add_label_only)
@@ -450,8 +455,16 @@ class ChecksBody(QWidget):
             self._sync_outline()
             self._arm_keys()
             return
-        self._checks = _stored(self._node)
-        self._fill_rows()
+        stored = _stored(self._node)
+        same = (
+            getattr(self._node, "id", None) == self._painted_id
+            and stored == self._checks
+            and bool(self._row_widgets)
+        )
+        self._checks = stored
+        if not same:
+            self._painted_id = getattr(self._node, "id", None)
+            self._fill_rows()
         self._sync_prompt()
         self._sync_outline()
         self._arm_keys()
@@ -731,7 +744,7 @@ class ChecksBody(QWidget):
             row = self._row_widgets[place]
             row.index = stored
             row.words.setFixedWidth(width)
-            row.message.setStyleSheet(muted)
+            _apply_sheet(row.message, muted)
             message = generated_message(
                 self._class_name(),
                 check,
@@ -791,7 +804,7 @@ class ChecksBody(QWidget):
             return
         style = "color: %s; background: transparent;" % self._accent
         for row in self._row_widgets:
-            row.qt.setStyleSheet(style)
+            _apply_sheet(row.qt, style)
 
     def _drafting(self) -> bool:
         page = self._page

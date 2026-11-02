@@ -10,6 +10,7 @@ import weakref
 from typing import Dict, Hashable, List, Optional, Sequence, Tuple
 
 from app.features.form_builder.engine.logic.events import events_of_sender, read_events
+from app.features.form_builder.engine.logic.storage import is_logic_key
 from app.features.form_builder.engine.logic.events_catalog import event_words
 from app.features.form_builder.engine.style.classes import widget_chain
 from app.features.form_builder.engine.ui4.document import UiDocument
@@ -86,6 +87,16 @@ class _Basis:
 
 _BASIS: Optional[_Basis] = None
 _MEMO_KEEP = 8
+# One entry per live document. The revision sits in the value.
+_NAMES: "weakref.WeakKeyDictionary[UiDocument, Tuple[int, Tuple[str, ...]]]" = weakref.WeakKeyDictionary()
+_MARKS: "weakref.WeakKeyDictionary[UiDocument, Tuple[int, Dict[str, Tuple[str, Optional[Tuple[str, str, int]]]]]]" = (
+    weakref.WeakKeyDictionary()
+)
+# (structure revision, document revision, page). A formula note keeps the page.
+# Any other revision bump drops it, so undo does not keep the old formula text.
+_LOGIC_TEXT: "weakref.WeakKeyDictionary[UiDocument, Tuple[int, int, Dict[str, str]]]" = (
+    weakref.WeakKeyDictionary()
+)
 
 
 def _basis_for(document: UiDocument, static: object) -> _Basis:
@@ -101,6 +112,108 @@ def forget_badge_memo() -> None:
     """Drop the kept seating. The next build seats every badge again."""
     global _BASIS
     _BASIS = None
+    _NAMES.clear()
+    _MARKS.clear()
+    _LOGIC_TEXT.clear()
+    _EDITED.clear()
+
+
+def _widget_names(document: UiDocument) -> Tuple[str, ...]:
+    revision = document.structure_revision
+    cached = _NAMES.get(document)
+    if cached is not None and cached[0] == revision:
+        return cached[1]
+    names = tuple(name for name in (node.object_name for node in document.iter_widgets()) if name)
+    _NAMES[document] = (revision, names)
+    return names
+
+
+def _formula_note(document: UiDocument) -> bool:
+    held = getattr(document, "_formula_edits", None)
+    return isinstance(held, tuple) and len(held) == 2 and isinstance(held[1], list) and bool(held[1])
+
+
+def _logic_text(document: UiDocument, sender: str) -> str:
+    structure = document.structure_revision
+    revision = document.revision
+    held = _LOGIC_TEXT.get(document)
+    if held is None or held[0] != structure or (held[1] != revision and not _formula_note(document)):
+        page: Dict[str, str] = {}
+        _LOGIC_TEXT[document] = (structure, revision, page)
+    else:
+        page = held[2]
+        if held[1] != revision:
+            _LOGIC_TEXT[document] = (structure, revision, page)
+    if _formula_touched(document, sender):
+        page.pop(sender, None)
+    held = page.get(sender)
+    if held is not None:
+        return held
+    found = document.by_name(sender)
+    if not found:
+        page[sender] = ""
+        return ""
+    node = document.node(found[0])
+    parts = []
+    for entry in node.properties():
+        if not is_logic_key(entry.name):
+            continue
+        text = getattr(entry.value, "text", "")
+        parts.append("%s=%s" % (entry.name, text if isinstance(text, str) else ""))
+    joined = "\0".join(parts)
+    page[sender] = joined
+    return joined
+
+
+_EDITED: "weakref.WeakKeyDictionary[UiDocument, Tuple[int, set]]" = weakref.WeakKeyDictionary()
+
+
+def _formula_touched(document: UiDocument, sender: str) -> bool:
+    """True when this revision rewrote a formula on ``sender``."""
+    revision = document.revision
+    held = _EDITED.get(document)
+    if held is None or held[0] != revision:
+        names: set = set()
+        note = getattr(document, "_formula_edits", None)
+        if isinstance(note, tuple) and len(note) == 2 and isinstance(note[1], list):
+            for node_id, _prop in note[1]:
+                if not document.contains(node_id):
+                    continue
+                name = getattr(document.node(node_id), "object_name", "") or ""
+                if name:
+                    names.add(name)
+        _EDITED[document] = (revision, names)
+    else:
+        names = held[1]
+    return sender in names
+
+
+def _event_text(states: Sequence[object]) -> str:
+    """Step text the mark reads. A step commit does not move structure_revision."""
+    parts = []
+    for state in states:
+        steps = getattr(state, "steps", ())
+        parts.append("%s:%s" % (getattr(state, "signal_name", ""), repr(tuple(steps))))
+    return "\0".join(parts)
+
+
+def _cached_mark(
+    document: UiDocument, sender: str, states: Sequence[object]
+) -> Optional[Tuple[str, str, int]]:
+    structure = document.structure_revision
+    held_marks = _MARKS.get(document)
+    if held_marks is None or held_marks[0] != structure:
+        page = {}
+        _MARKS[document] = (structure, page)
+    else:
+        page = held_marks[1]
+    fingerprint = "%s\0%s" % (_logic_text(document, sender), _event_text(states))
+    held = page.get(sender)
+    if held is not None and held[0] == fingerprint:
+        return held[1]
+    mark = _mark(document, sender, tuple(states))
+    page[sender] = (fingerprint, mark)
+    return mark
 
 
 def _badge_senders(document: UiDocument) -> Tuple[List[str], dict]:
@@ -113,11 +226,10 @@ def _badge_senders(document: UiDocument) -> Tuple[List[str], dict]:
             senders.append(event.sender)
         grouped[event.sender].append(event)
     seen = set(senders)
-    for node in document.iter_widgets():
-        name = node.object_name
-        if not name or name in seen:
+    for name in _widget_names(document):
+        if name in seen:
             continue
-        if _mark(document, name, ()) is None:
+        if _cached_mark(document, name, ()) is None:
             continue
         senders.append(name)
         grouped[name] = []
@@ -187,7 +299,7 @@ def build(static: object, inputs: object, state: Hashable) -> LayerOutput:
         basis.seats[seat_key] = seated
     items: List[LayerItem] = []
     for sender, seat in seated:
-        mark = _mark(document, sender, tuple(grouped.get(sender, ())))
+        mark = _cached_mark(document, sender, tuple(grouped.get(sender, ())))
         if mark is None:
             continue
         tip, glyph, count = mark

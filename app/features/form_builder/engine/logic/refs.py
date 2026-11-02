@@ -164,12 +164,22 @@ def _name_tokens(text: str) -> List[tokenize.TokenInfo]:
     return found
 
 
+_FORMULA_NAMES: Dict[str, Tuple[str, ...]] = {}
+
+
 def formula_names(text: str) -> Tuple[str, ...]:
     """The names a formula mentions, in order, once each."""
+    cached = _FORMULA_NAMES.get(text)
+    if cached is not None:
+        return cached
     seen: Dict[str, None] = {}
     for token in _name_tokens(text):
         seen.setdefault(token.string, None)
-    return tuple(seen)
+    found = tuple(seen)
+    if len(_FORMULA_NAMES) > 512:
+        _FORMULA_NAMES.clear()
+    _FORMULA_NAMES[text] = found
+    return found
 
 
 def formula_mentions(text: str, name: str) -> bool:

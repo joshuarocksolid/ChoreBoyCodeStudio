@@ -161,7 +161,7 @@ _FULL = object()
 _NARROW_UNSET = object()
 # doc -> _FULL, or [base revision, set of (sender, signal) edited since that revision]
 _TOUCH: weakref.WeakKeyDictionary = weakref.WeakKeyDictionary()
-_SCOPE: Dict[int, Set[Tuple[str, str]]] = {}
+_SCOPE: "weakref.WeakKeyDictionary[UiDocument, Set[Tuple[str, str]]]" = weakref.WeakKeyDictionary()
 # Where each edited event sits after the command, so the splice does not walk the form.
 # (sender, signal, "native", previous key or None) or (sender, signal, "other", None).
 _ANCHORS: weakref.WeakKeyDictionary = weakref.WeakKeyDictionary()
@@ -176,16 +176,16 @@ def event_edits(doc: UiDocument, pairs: Tuple[Tuple[str, str], ...]) -> Iterator
     and moves no widget, layout or action, and it touches no picture.
     """
     _bind_revision(doc)
-    previous = _SCOPE.get(id(doc))
-    _SCOPE[id(doc)] = set(pairs)
+    previous = _SCOPE.get(doc)
+    _SCOPE[doc] = set(pairs)
     try:
         with doc.event_only_edits():
             yield
     finally:
         if previous is None:
-            _SCOPE.pop(id(doc), None)
+            _SCOPE.pop(doc, None)
         else:
-            _SCOPE[id(doc)] = previous
+            _SCOPE[doc] = previous
 
 
 def _bind_revision(doc: UiDocument) -> None:
@@ -203,7 +203,7 @@ def _bind_revision(doc: UiDocument) -> None:
 
 
 def _on_revision(doc: UiDocument) -> None:
-    scope = _SCOPE.get(id(doc))
+    scope = _SCOPE.get(doc)
     current = _TOUCH.get(doc, None)
     if scope is None or current is _FULL:
         _TOUCH[doc] = _FULL
@@ -276,6 +276,15 @@ def read_events(doc: UiDocument) -> Tuple[EventState, ...]:
     cached = _READ.get(doc)
     if cached is not None and cached[0] == doc.revision:
         return cached[1]
+    if (
+        cached is not None
+        and len(cached) >= 6
+        and _formula_revision(doc)
+        and _event_fingerprint(doc) == cached[2]
+    ):
+        # A formula commit moves the document revision and leaves events alone.
+        _READ[doc] = (doc.revision, cached[1], cached[2], cached[3], cached[4], cached[5])
+        return cached[1]
     touch = _TOUCH.get(doc, None)
     result: Optional[Tuple[EventState, ...]] = None
     keys: Optional[Tuple[Tuple[str, str], ...]] = None
@@ -297,6 +306,14 @@ def read_events(doc: UiDocument) -> Tuple[EventState, ...]:
     _ANCHORS.pop(doc, None)
     _READ[doc] = (doc.revision, result, _event_fingerprint(doc), keys, native_count, widget_order)
     return result
+
+
+def _formula_revision(doc: UiDocument) -> bool:
+    """True while a formula write is in progress, or this revision only rewrote formulas."""
+    if getattr(doc, "_formula_pending", False):
+        return True
+    held = getattr(doc, "_formula_edits", None)
+    return isinstance(held, tuple) and len(held) == 2 and isinstance(held[1], list) and bool(held[1])
 
 
 def _event_fingerprint(doc: UiDocument) -> Tuple[object, ...]:

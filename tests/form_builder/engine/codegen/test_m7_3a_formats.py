@@ -112,6 +112,37 @@ def test_us_money_percent_and_date_rewrite_on_leave(tmp_path: Path, qapp: Any) -
     dialog.close()
 
 
+def test_an_impossible_us_short_date_stays_out_of_the_field_value(tmp_path: Path, qapp: Any) -> None:
+    del qapp
+    dialog, ui = _load(_FORM, "format_us", tmp_path)
+    ui.whenEdit.setText("31/01/2026")
+    ui.whenEdit.editingFinished.emit()
+    assert ui.whenEdit.text() == "31/01/2026"
+    assert ui.whenEdit.toolTip() == "Enter a date as MM/DD/YYYY."
+    dialog.close()
+
+
+def test_a_day_month_short_date_keeps_the_day(tmp_path: Path, qapp: Any) -> None:
+    del qapp
+    meta = tmp_path / "cbcs"
+    meta.mkdir()
+    (meta / "project.json").write_text(
+        '{"formats": {"date": "DD/MM/YYYY"}}\n',
+        encoding="utf-8",
+    )
+    dialog, ui = _load(_FORM, "format_dmy", tmp_path)
+    ui.whenEdit.setText("04/03/2026")
+    ui.whenEdit.editingFinished.emit()
+    assert ui.whenEdit.text() == "04/03/2026"
+    ui.whenEdit.editingFinished.emit()
+    assert ui.whenEdit.text() == "04/03/2026"
+    ui.whenEdit.setText("31/13/2026")
+    ui.whenEdit.editingFinished.emit()
+    assert ui.whenEdit.text() == "31/13/2026"
+    assert ui.whenEdit.toolTip() == "Enter a date as DD/MM/YYYY."
+    dialog.close()
+
+
 def test_a_form_with_no_format_and_no_checks_emits_neither(tmp_path: Path) -> None:
     path = tmp_path / "plain.ui"
     path.write_text(_PLAIN, encoding="utf-8")

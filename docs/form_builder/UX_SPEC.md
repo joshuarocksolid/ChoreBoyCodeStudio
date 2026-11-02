@@ -2928,6 +2928,9 @@ Every on-screen sentence a lane adds is written in its PR as a row in this table
 | --- | --- |
 | Builder disabled | "This is too complex for the builder. Edit it as a formula." |
 | Formula left with an error | "Fix or press Esc to undo this formula" |
+| Short date, month first | "Enter a date as MM/DD/YYYY." |
+| Short date, day first | "Enter a date as DD/MM/YYYY." |
+| Short date, year first | "Enter a date as YYYY-MM-DD." |
 | Rule steer (E6) | "Keep {target} enabled only while {sender} is checked? A rule also gets this right when the form opens." [Make it a rule] [Connect anyway] |
 | Calculated property | "Calculated: {formula}" · "Edit rule" |
 | Error-label offer | "Show messages under the field?" [Add label] [Not now] |

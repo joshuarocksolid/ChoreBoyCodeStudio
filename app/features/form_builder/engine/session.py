@@ -200,7 +200,7 @@ class FormSession:
             text = self._serializer.text(self._document)
             self._diagnostics.publish("reader", live_reader_diagnostics(self._document, text))
         if _behavior_scan_needed(changeset):
-            self._publish_behavior()
+            self._publish_behavior(changeset)
         if not _connection_scan_needed(changeset):
             return
         found = missing_connection_diagnostics(self._document)
@@ -208,13 +208,21 @@ class FormSession:
             self._connection_rows = found
             self._diagnostics.publish("connections", found)
 
-    def _publish_behavior(self) -> None:
-        """Logic and event rows. A step edit republishes only the senders it edited."""
+    def _publish_behavior(self, changeset: Optional[ChangeSet] = None) -> None:
+        """Logic and event rows. A step edit republishes only the senders it edited.
+
+        A formula commit republishes logic for the widgets it edited. Event rows
+        stay as they are: the step lists did not change.
+        """
         from app.features.form_builder.engine.logic.events import take_event_narrow
 
         narrow = take_event_narrow(self._document)
         if narrow:
             self._publish_behavior_for(narrow)
+            return
+        nodes = _formula_nodes(self._document, changeset)
+        if nodes is not None:
+            self._publish_formula(nodes)
             return
         from app.features.form_builder.engine.diagnostic_codes.fb406 import name_diagnostics
         from app.features.form_builder.engine.diagnostic_codes.fb40x_events import event_diagnostics
@@ -262,6 +270,18 @@ class FormSession:
         )
         self._diagnostics.publish("logic.storage", kept_logic + fresh_logic)
 
+    def _publish_formula(self, nodes: Tuple[object, ...]) -> None:
+        from app.features.form_builder.engine.diagnostic_codes.fb4xx_logic import logic_diagnostics
+
+        fresh = logic_diagnostics(self._document, nodes=nodes)
+        ids = {getattr(node, "id") for node in nodes}
+        current = self._diagnostics.rows("logic.storage")
+        kept = tuple(row for row in current if row.location.node_id not in ids)
+        merged = kept + fresh
+        if merged == current:
+            return
+        self._diagnostics.publish("logic.storage", merged)
+
     def _on_selection_notify(self, changeset: ChangeSet) -> None:
         del changeset
         self._selection.release()
@@ -276,6 +296,40 @@ class FormSession:
 
 
 _CONNECTION_FIELDS = frozenset({"sender", "signal", "receiver", "slot"})
+
+
+def _formula_nodes(doc: UiDocument, changeset: Optional[ChangeSet]) -> Optional[Tuple[object, ...]]:
+    """Widgets a formula commit edited, or None when the form must be rescanned.
+
+    Event lists, names, and structure still take the full scan. A formula
+    property does not change them.
+    """
+    from app.features.form_builder.engine.logic.storage import FORMULA_KEYS, JSON_KEYS, is_signal_property
+
+    if changeset is None:
+        return None
+    if changeset.replaced or changeset.added or changeset.removed or changeset.renamed:
+        return None
+    if any(
+        isinstance(change, FieldChanged) and change.field in _CONNECTION_FIELDS
+        for change in changeset.changes
+    ):
+        return None
+    if not changeset.property_dirty:
+        return None
+    allowed = set(FORMULA_KEYS) | set(JSON_KEYS)
+    nodes = []
+    seen = set()
+    for owner, _kind, name in changeset.property_dirty:
+        if is_signal_property(name) or name not in allowed:
+            return None
+        if owner in seen or not doc.contains(owner):
+            continue
+        seen.add(owner)
+        nodes.append(doc.node(owner))
+    if not nodes:
+        return None
+    return tuple(nodes)
 
 
 def _behavior_scan_needed(changeset: ChangeSet) -> bool:

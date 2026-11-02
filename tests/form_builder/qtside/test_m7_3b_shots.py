@@ -180,7 +180,7 @@ def _shoot(qapp: QApplication, folder: Path, scale: str) -> None:
         lines = [tree.topLevelItem(index).text(1) for index in range(tree.topLevelItemCount())]
         sources = [tree.topLevelItem(index).text(2) for index in range(tree.topLevelItemCount())]
         assert any("Email is required" in line for line in lines), lines
-        assert any(source == "emailEdit · Checks" for source in sources), sources
+        assert any(source == "Email · Checks" for source in sources), sources
         logged = " ".join(getattr(item, "text", "") for item in writer.sent)
         assert "Email is required" in logged
         for index in range(tree.topLevelItemCount()):

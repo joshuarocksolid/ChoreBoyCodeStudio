@@ -21,6 +21,7 @@ from app.qt.QtWidgets import (
 from app.qt.qt_compat import enum_value
 from app.features.form_builder.engine.events import ChangeSet
 from app.features.form_builder.engine.ids import NodeId
+from app.features.form_builder.engine.logic.storage import is_logic_key
 from app.features.form_builder.engine.query.direct import (
     LayoutFacts,
     PrimaryFacts,
@@ -694,27 +695,33 @@ class HitIndexInvalidator:
         dirty.update(added)
         rewalk = set()
         for owner, _kind, name in changeset.property_dirty:
+            # A cbcs* edit changes badges, not geometry. currentIndex and visible still rewalk.
+            if is_logic_key(name):
+                continue
             dirty.add(owner)
             if name in ("currentIndex", "visible"):
                 rewalk.add(owner)
         for change in changeset.changes:
-            if change.category == "connection":
+            if change.category in ("connection", "logic"):
                 continue
             for name in ("node", "owner", "parent", "old_parent", "new_parent"):
                 node_id = getattr(change, name, None)
                 if node_id is not None:
                     dirty.add(node_id)
         kept = removed
-        self._index.invalidate(
-            "changeset",
-            RefreshScope(
-                dirty=frozenset(node_id for node_id in dirty if node_id not in kept),
-                removed=removed,
-                added=added,
-                structure=frozenset(node_id for node_id in structure if node_id not in kept),
-                rewalk=frozenset(node_id for node_id in rewalk if node_id not in kept),
-            ),
+        scope = RefreshScope(
+            dirty=frozenset(node_id for node_id in dirty if node_id not in kept),
+            removed=removed,
+            added=added,
+            structure=frozenset(node_id for node_id in structure if node_id not in kept),
+            rewalk=frozenset(node_id for node_id in rewalk if node_id not in kept),
         )
+        # A formula commit changes no geometry. Bumping the hit-index epoch
+        # would resurvey the selection on the next frame.
+        if not scope.dirty and not scope.removed and not scope.added and not scope.structure and not scope.rewalk:
+            self._index.note_quiet()
+            return
+        self._index.invalidate("changeset", scope)
 
 
 def _connection_only_ids(changeset: ChangeSet) -> FrozenSet[NodeId]:

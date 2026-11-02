@@ -89,34 +89,39 @@ def _logic(kb: Kb, name: str, key: str) -> str:
     return ""
 
 
+def script_k27(kb: Kb) -> None:
+    """K27 on an open discount form. Keys only."""
+    kb.press("Key_R", "Control")
+    kb.type("discountEdit")
+    kb.press("Key_Return")
+    kb.pump()
+    assert kb.selected() == ("discountEdit",), kb.log
+    kb.press("Key_B", "Alt")
+    kb.pump()
+    seen = []
+    landed = False
+    for _ in range(40):
+        focus = QApplication.focusWidget()
+        name = focus.objectName() if focus is not None else ""
+        seen.append(name)
+        if name == "formBuilder.state.row.cbcsEnabledWhen":
+            landed = True
+            break
+        kb.press("Key_Tab", "Shift")
+    assert landed, seen
+    kb.press("Key_Return")
+    kb.type("disc")
+    kb.press("Key_Tab")
+    kb.press("Key_Return", "Control")
+    kb.pump()
+    assert kb.session.log.undo_label() == "Set Enabled when for Discount rate"  # type: ignore[attr-defined]
+    assert _logic(kb, "discountEdit", "cbcsEnabledWhen") == "discountCheck"
+
+
 def test_k27_discount_rate_enabled_when(tmp_path: Path, qapp: QApplication) -> None:
     window, kb, guard, _path = _session(tmp_path, qapp)
     try:
-        kb.press("Key_R", "Control")
-        kb.type("discountEdit")
-        kb.press("Key_Return")
-        kb.pump()
-        assert kb.selected() == ("discountEdit",), kb.log
-        kb.press("Key_B", "Alt")
-        kb.pump()
-        seen = []
-        landed = False
-        for _ in range(40):
-            focus = QApplication.focusWidget()
-            name = focus.objectName() if focus is not None else ""
-            seen.append(name)
-            if name == "formBuilder.state.row.cbcsEnabledWhen":
-                landed = True
-                break
-            kb.press("Key_Tab", "Shift")
-        assert landed, seen
-        kb.press("Key_Return")
-        kb.type("disc")
-        kb.press("Key_Tab")
-        kb.press("Key_Return", "Control")
-        kb.pump()
-        assert kb.session.log.undo_label() == "Set Enabled when for Discount rate"  # type: ignore[attr-defined]
-        assert _logic(kb, "discountEdit", "cbcsEnabledWhen") == "discountCheck"
+        script_k27(kb)
         assert guard.seen == []
     finally:
         _close(window, qapp, guard)

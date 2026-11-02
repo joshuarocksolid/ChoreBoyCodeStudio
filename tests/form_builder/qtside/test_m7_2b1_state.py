@@ -156,7 +156,8 @@ def test_a_line_edit_lists_kind_through_format_and_a_button_lists_two() -> None:
         value = enabled.findChild(QLabel, "formBuilder.state.value.cbcsEnabledWhen")
         assert value is not None
         assert value.text() == "always"
-        assert pane._services.chrome.muted in value.styleSheet()  # type: ignore[attr-defined]
+        assert value.property("stateInk") == "muted"
+        assert pane._services.chrome.muted in state.styleSheet()  # type: ignore[attr-defined]
         assert enabled.accessibleName() == "Enabled when  always"
         kind = _row(pane, "cbcsKind")
         form_row = _row(pane, "cbcsFormat")

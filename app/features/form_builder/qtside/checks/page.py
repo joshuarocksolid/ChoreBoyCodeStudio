@@ -134,7 +134,7 @@ class _BoundSide(QWidget):
     def focus_line(self) -> None:
         self.arm()
         if self._formula and self._editor is not None:
-            self._editor.setFocus()
+            self._editor.present()
             return
         self._line.setFocus()
 
@@ -473,7 +473,7 @@ class CheckPage(QWidget):
             self._values.setFocus()
             return
         if self._key == "formula":
-            self._ensure_formula().setFocus()
+            self._ensure_formula().present()
             return
         self._message.setFocus()
 

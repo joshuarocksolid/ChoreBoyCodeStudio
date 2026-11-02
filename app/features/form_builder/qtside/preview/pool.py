@@ -55,11 +55,7 @@ from app.features.form_builder.engine.ipc.timing import (
     DirectorConfig,
     prewarm_from_environ,
 )
-from app.features.form_builder.qtside.preview.launch import (
-    apprun_preview_command,
-    default_apprun,
-    repo_root,
-)
+from app.features.form_builder.qtside.preview.launch import preview_command, repo_root
 from app.qt.QtCore import QObject, Qt, QTimer, Signal
 from app.run.process_supervisor import ProcessEvent, ProcessSupervisor
 
@@ -108,11 +104,7 @@ class PreviewPool:
             resolved = replace(resolved, prewarm=prewarm)
         self._config = resolved
         self._root = root or repo_root()
-        self._command = (
-            list(command)
-            if command is not None
-            else apprun_preview_command(default_apprun(), self._root)
-        )
+        self._command = list(command) if command is not None else preview_command(self._root)
         self._director = PreviewDirector(host_pid=os.getpid(), config=resolved)
         self._supervisor = ProcessSupervisor(on_event=self._on_supervisor_event)
         self._bridge = _Bridge()

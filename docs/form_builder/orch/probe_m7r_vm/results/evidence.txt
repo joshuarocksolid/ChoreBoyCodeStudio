@@ -1,0 +1,20 @@
+formula_status: a whole number    now: 50
+emitted_chars: 197
+save_notice: Saved · ui_order.py updated
+save_kind: generated
+generated_bytes: 156207
+ui_bytes: 139945
+rule_count: 100
+check_count: 60
+preview_open: ok
+preview_open_detail: 
+preview_status: PoolStatus(state='ready', child_pid=752655, crashes_in_window=0, next_restart_in=None, last_error=None, handshake_seconds=0.9824322870117612, load_seconds=None)
+preview_last_ok: True
+refresh_class: Ui_OrderWindow
+python: 3.11.14
+qt_api: PySide6
+qt6: True
+platform: xcb
+child_log:
+DEBUG: here_dir = /opt/freecad
+DEBUG: freecad_bin = /opt/freecad/usr/bin/freecad

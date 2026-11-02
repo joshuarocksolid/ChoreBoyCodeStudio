@@ -427,7 +427,7 @@ def test_a_text_edit_keeps_other_row_items(qapp: QApplication) -> None:
             assert after[node] is item
         shop_item = after[int(shop)]
         assert shop_item.text(0) == "Save"
-        assert shop_item.toolTip(0) == "Label · shop"
+        assert shop_item.toolTip(0) == "Save · Label · shop"
         assert after[int(_id(session, "other"))].text(0) == "other"
 
 

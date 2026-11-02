@@ -397,6 +397,10 @@ class UiDocument:
         self._peak = self._revision
         if not self._event_only_depth:
             self._structure_revision += 1
+        # A formula write sets this before it bumps, then notes the edit.
+        # Every other bump drops the note so the rule graph walks again.
+        if not getattr(self, "_formula_pending", False):
+            self._formula_edits = None
         self._enum_cache = None
         listener = self._revision_listener
         if listener is not None:

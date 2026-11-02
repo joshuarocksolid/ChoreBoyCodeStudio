@@ -42,6 +42,16 @@ _EMAIL = "Enter an email address like name@example.com"
 
 def _shot_text() -> str:
     text = _invoice_text()
+    # The Logic panel's invoice names this field from its buddy. What ran uses
+    # that same name, so the shot form carries the same label.
+    label = (
+        '<item row="6" column="0">'
+        '<widget class="QLabel" name="discountRateLabel">'
+        '<property name="text"><string>Discount rate</string></property>'
+        '<property name="buddy"><cstring>discountEdit</cstring></property>'
+        "</widget></item>"
+    )
+    text = text.replace('<item row="0" column="0">', label + '<item row="0" column="0">', 1)
     text = text.replace(
         '<widget class="QLineEdit" name="emailEdit">',
         '<widget class="QLineEdit" name="emailEdit">%s' % _prop("cbcsErrorLabel", "emailError"),
@@ -112,6 +122,16 @@ def _live(qapp: QApplication, tmp_path: Path) -> tuple:
     assert error is not None and error.text() == _EMAIL
     discount = shell.findChild(QWidget, "discountEdit")
     assert discount is not None and discount.isEnabled()
+    labels = []
+    if tree is not None:
+        for index in range(tree.topLevelItemCount()):
+            item = tree.topLevelItem(index)
+            labels.append(item.text(1))
+            for child_index in range(item.childCount()):
+                labels.append(item.child(child_index).text(1))
+    shown = "\n".join(labels)
+    assert "Discount rate · Enabled when" in shown
+    assert "discount edit" not in shown
     shell.resize(1100, 680)
     shell._splitter.setSizes([420, 680])  # noqa: SLF001
     shell.show()

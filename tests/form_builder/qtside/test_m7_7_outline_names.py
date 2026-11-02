@@ -78,9 +78,9 @@ def test_discount_rate_keeps_both_names_at_the_default_split(qapp: QApplication,
         assert item.text(0) == "Discount rate"
         assert str(item.data(0, caption_role) or "") == "discountEdit"
         tip = item.toolTip(0)
-        assert "Line edit" in tip
+        assert "Discount rate" in tip
         assert "discountEdit" in tip
-        assert "Discount rate" not in tip or tip.index("Line edit") >= 0
+        assert "Line edit" in tip
         drawn = _painted(tree, item)
         texts = [text for _rect, text in drawn]
         assert texts[0] == "Discount rate", texts

@@ -82,16 +82,19 @@ if raw is None:
 parsed = str(raw).strip()
 if parsed == "":
     return None
-if "-" in parsed:
-    bits = parsed.split("-")
-    if len(bits) != 3:
-        return None
-    return date(int(bits[0]), int(bits[1]), int(bits[2]))
-if "/" in parsed:
-    bits = parsed.split("/")
-    if len(bits) != 3:
-        return None
-    return date(int(bits[2]), int(bits[0]), int(bits[1]))
+try:
+    if "-" in parsed and "/" not in parsed:
+        bits = parsed.split("-")
+        if len(bits) != 3:
+            return None
+        return date(int(bits[0]), int(bits[1]), int(bits[2]))
+    if "/" in parsed:
+        bits = parsed.split("/")
+        if len(bits) != 3:
+            return None
+        return date(int(bits[2]), int(bits[0]), int(bits[1]))
+except (TypeError, ValueError):
+    return None
 return None
 """
 
@@ -378,7 +381,40 @@ return text
     _read("_cbcs_read_percent", "widget", "raw = widget.text().strip()", _PERCENT),
     _read("_cbcs_read_label_percent", "widget", "raw = widget.text()", _PERCENT),
     _read("_cbcs_read_plain_percent", "widget", "raw = widget.toPlainText().strip()", _PERCENT),
-    _read("_cbcs_read_date", "widget", "raw = widget.text().strip()", _DATE),
+    _define(
+        "_cbcs_read_short_date",
+        "raw, order",
+        """
+if raw is None:
+    return None
+parsed = str(raw).strip()
+if parsed == "":
+    return None
+try:
+    if "-" in parsed and "/" not in parsed:
+        bits = parsed.split("-")
+        if len(bits) != 3:
+            return None
+        return date(int(bits[0]), int(bits[1]), int(bits[2]))
+    bits = parsed.split("/")
+    if len(bits) != 3:
+        return None
+    if order == "DMY":
+        return date(int(bits[2]), int(bits[1]), int(bits[0]))
+    if order == "YMD":
+        return date(int(bits[0]), int(bits[1]), int(bits[2]))
+    return date(int(bits[2]), int(bits[0]), int(bits[1]))
+except (TypeError, ValueError):
+    return None
+""",
+        "None",
+    ),
+    _read(
+        "_cbcs_read_date",
+        "widget",
+        "raw = widget.text().strip()",
+        'return _cbcs_read_short_date(raw, "MDY")',
+    ),
     _read("_cbcs_read_label_date", "widget", "raw = widget.text()", _DATE),
     _read("_cbcs_read_plain_date", "widget", "raw = widget.toPlainText().strip()", _DATE),
     _read("_cbcs_read_time", "widget", "raw = widget.text().strip()", _TIME),

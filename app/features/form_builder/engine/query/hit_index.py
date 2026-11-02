@@ -149,6 +149,15 @@ class HitIndex:
         if bind is not None:
             bind(self)
 
+    def note_quiet(self) -> None:
+        """A change set moved no geometry. Keep the epoch and record an empty change list.
+
+        Bumping the epoch would resurvey selection knobs. Leaving ``last_changed``
+        as None would look like a full walk to the next reader.
+        """
+        if self.is_fresh():
+            self._last_changed = ()
+
     def invalidate(self, reason: InvalidationReason, scope: Optional[RefreshScope] = None) -> None:
         """O(1) epoch bump. A named ``changeset`` scope refreshes only those entries.
 

@@ -51,6 +51,18 @@ def python_preview_command(python: str, root: str) -> List[str]:
     return [python, os.path.join(root, _PREVIEW_SCRIPT)]
 
 
+def preview_command(root: str) -> List[str]:
+    """The preview child command.
+
+    ChoreBoy uses AppRun when that file exists. A machine without it starts
+    the child on the interpreter that is already running the editor.
+    """
+    apprun = default_apprun()
+    if os.path.isfile(apprun):
+        return apprun_preview_command(apprun, root)
+    return python_preview_command(current_runtime_python(), root)
+
+
 def apprun_preview_command(apprun: str, root: str) -> List[str]:
     """The ChoreBoy command. AppRun ``-c`` stays short via the runpy bootstrap."""
     script = os.path.join(root, _PREVIEW_SCRIPT)

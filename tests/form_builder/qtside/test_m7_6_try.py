@@ -29,7 +29,7 @@ from app.features.form_builder.engine.project.forms import FormScope
 from app.features.form_builder.engine.ui4.reader import read_ui
 from app.features.form_builder.qtside.preview.child.session import ChildSession
 from app.features.form_builder.integration.preview_notice import preview_request
-from app.qt.QtWidgets import QApplication, QLineEdit, QWidget
+from app.qt.QtWidgets import QApplication, QLineEdit, QTreeWidget, QWidget
 
 pytestmark = pytest.mark.unit
 
@@ -201,11 +201,22 @@ def test_invoice_preview_logs_the_behavior_in_order(child, qapp: QApplication, t
     save.click()  # type: ignore[attr-defined]
     qapp.processEvents()
     texts = [item.text for item in _logs(writer)]
-    check_at = texts.index("Check emailEdit: %s" % _EMAIL)
+    check_at = texts.index("Check Email: %s" % _EMAIL)
     stopped_at = texts.index(_STOPPED)
     would_at = texts.index(_WOULD)
     assert check_at < stopped_at < would_at
     assert any(item.startswith("Rules ran (") for item in texts)
+    ran = shell.findChild(QTreeWidget, "preview.whatRan.list")
+    assert ran is not None
+    sources = []
+    for index in range(ran.topLevelItemCount()):
+        item = ran.topLevelItem(index)
+        sources.append(item.text(2))
+        for child_index in range(item.childCount()):
+            sources.append(item.child(child_index).text(1))
+    assert "Save · When clicked" in sources
+    assert "Line total · Value" in sources
+    assert "Email · Checks" in sources
     assert shell.findChild(QWidget, "preview.whatRan") is not None
     assert shell.findChild(QWidget, "preview.whatRan.clear") is not None
     assert shell.findChild(QWidget, "preview.whatRan.copy") is not None

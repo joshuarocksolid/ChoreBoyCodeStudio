@@ -43,7 +43,7 @@ _VERBS = (
 def test_k29_save_checks_then_shows_a_message_only_if(tmp_path: Path, qapp: QApplication) -> None:
     window, kb, guard = _session(tmp_path, qapp, _SALE)
     try:
-        _script(kb)
+        script_k29(kb)
     finally:
         qapp.removeEventFilter(guard)
         _close(window, qapp, guard)
@@ -55,7 +55,8 @@ def _spoken(kb: Kb) -> str:
     return focus.accessibleName() or ""
 
 
-def _script(kb: Kb) -> None:
+def script_k29(kb: Kb) -> None:
+    """K29 on an open sale form. Keys only."""
     kb.press("Key_R", "Control")
     kb.type("saveButton")
     kb.press("Key_Return")

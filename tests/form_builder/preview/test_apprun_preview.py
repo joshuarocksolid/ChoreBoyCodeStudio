@@ -13,7 +13,9 @@ from app.features.form_builder.engine.ipc.protocol import Appearance, LoadForm
 from app.features.form_builder.engine.ipc.timing import DirectorConfig
 from app.features.form_builder.qtside.preview.launch import (
     apprun_preview_command,
+    current_runtime_python,
     default_apprun,
+    preview_command,
     repo_root,
 )
 from app.features.form_builder.qtside.preview.pool import PreviewPool
@@ -42,6 +44,16 @@ def test_default_apprun_prefers_cbcs_fb_apprun(monkeypatch, primary, alias, expe
     else:
         monkeypatch.setenv("CBCS_FB_APPRUN_11", alias)
     assert default_apprun() == expected
+
+
+@pytest.mark.unit
+def test_preview_command_uses_this_interpreter_when_apprun_is_missing(monkeypatch, tmp_path) -> None:
+    missing = tmp_path / "no-such-apprun"
+    monkeypatch.setenv("CBCS_FB_APPRUN", str(missing))
+    monkeypatch.delenv("CBCS_FB_APPRUN_11", raising=False)
+    command = preview_command("/repo")
+    assert command[0] == current_runtime_python()
+    assert command[1].endswith("run_form_preview.py")
 
 
 def _load(view_id: str) -> LoadForm:

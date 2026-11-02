@@ -529,11 +529,15 @@ def _node_id(doc: UiDocument, name: str) -> Optional[NodeId]:
     return found[0]
 
 
-def cache_key(doc: object, source: str, relative: str) -> Tuple[int, int, str, str]:
-    """The publish key: document identity, revision, source digest, path."""
+def cache_key(doc: object, source: str, relative: str) -> Tuple[object, int, str, str]:
+    """The publish key: the document, its revision, the source digest, and the path.
+
+    The document object is the identity. ``id(doc)`` is reused after the
+    document is freed, and two fresh forms share a low revision.
+    """
     text = source if isinstance(source, str) else ""
     return (
-        id(doc),
+        doc,
         int(getattr(doc, "revision", 0)),
         hashlib.sha256(text.encode("utf-8")).hexdigest(),
         relative if isinstance(relative, str) else "",

@@ -184,6 +184,9 @@ def build_try_start(
     class_name = window_class_name(scope)
     root_widget = getattr(document, "root", None)
     base = str(getattr(root_widget, "class_name", "") or "QWidget")
+    from app.features.form_builder.qtside.preview.try_log import names_for
+
+    display_names = names_for(document)
     return TryStart(
         request_id=request_id or uuid.uuid4().hex,
         view_id=view_id,
@@ -204,6 +207,7 @@ def build_try_start(
         promoted=promoted_for(document, root),
         form_methods=tuple(sorted(methods.items())),
         window_methods=specs,
+        display_names=display_names,
     )
 
 
@@ -382,7 +386,9 @@ class PreviewNotices:
             return
         self.last_response = response
         if not response.ok:
-            self._say("Preview could not open this form.")
+            detail = str(getattr(response, "detail", "") or "").strip()
+            first = detail.split("\n", 1)[0] if detail else ""
+            self._say(first or "Preview could not open this form.")
             return
         if not self._failures:
             return

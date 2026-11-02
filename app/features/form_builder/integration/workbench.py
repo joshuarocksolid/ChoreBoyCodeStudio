@@ -975,9 +975,13 @@ class OutlinePane(QWidget):
         elif mode == "captions":
             self.patch_rows(document, selected, captions_touched(change, document))  # type: ignore[arg-type]
         elif mode == "keep" and self._forest is not None:
+            # Captions and structure did not change. Re-selecting the current
+            # row repaints every visible outline row.
             self._document = document
             self._revision = document.revision
-            self.show_current(selected)
+            current_item = None if selected is None else self._rows.get(int(selected))
+            if current_item is not self._current_item:
+                self.show_current(selected)
         else:
             self.rebuild(document, selected)
 
@@ -2108,7 +2112,12 @@ class OutlinePane(QWidget):
             caption = object_name
             item.setData(0, OWNER, True)
             friendly = str(getattr(row, "friendly", "") or "")
-            tip = "%s · %s" % (friendly, object_name) if friendly else object_name
+            bits = [part for part in (owner, friendly, object_name) if part]
+            seen = []
+            for part in bits:
+                if part not in seen:
+                    seen.append(part)
+            tip = " · ".join(seen)
         else:
             item.setText(0, row.primary)  # type: ignore[attr-defined]
             caption = _row_caption(row)

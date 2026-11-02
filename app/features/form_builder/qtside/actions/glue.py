@@ -547,13 +547,13 @@ class MenuEditGlue(QObject):
     def _build_state(self) -> PaintState:
         doc = self._session.document
         if not q.is_main_window(doc):
-            note_painted_parts(id(doc), ())
+            note_painted_parts(doc, ())
             return PaintState()
         root = getattr(self._realizer, "root_widget", None)
         self._maps = []
         self._hints = []
         if root is None:
-            note_painted_parts(id(doc), ())
+            note_painted_parts(doc, ())
             return PaintState()
         font = root.font()
         points = float(font.pointSizeF())
@@ -570,7 +570,7 @@ class MenuEditGlue(QObject):
         if landing is not None:
             line = landing.line
             items.append(PaintItem("drop", line.x, line.y, line.width, line.height))
-        note_painted_parts(id(doc), _menu_covers(items))
+        note_painted_parts(doc, _menu_covers(items))
         return PaintState(tuple(items), font.family(), points, pixels)
 
     def _bar_widgets(self, node_id: NodeId) -> Optional[QWidget]:
