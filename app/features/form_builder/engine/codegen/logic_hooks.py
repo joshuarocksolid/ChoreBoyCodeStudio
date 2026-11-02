@@ -113,9 +113,10 @@ class Method:
 @dataclass(frozen=True)
 class Contribution:
     """``imports``: ``(module, name)`` pairs; the core dedups and sorts them.
-    ``setup_lines``: appended to ``_cbcs_setup``; when any expander contributes
-    setup lines, ``setupUi`` ends with ``self._cbcs_setup(<form_param>)`` after
-    ``connectSlotsByName``.
+    ``setup_lines``: appended to ``_cbcs_setup`` in expander order. A line in
+    ``ordered_setup`` is ``(order, text)`` and is placed by that order, so one
+    line can sit at 890, after every earlier expander and before form events
+    (900). Lines with no order keep today's position.
     ``helpers``: helper ids from the fixed helper table (emitted once, in table
     order, at module bottom).
     A rule with an error contributes nothing and reports a diagnostic; it never
@@ -128,12 +129,15 @@ class Contribution:
     diagnostics: Tuple[FormDiagnostic, ...] = ()
     needs_form: bool = False
     connects: Tuple[Tuple[str, str], ...] = ()  # (widget, handler)
+    ordered_setup: Tuple[Tuple[int, str], ...] = ()
+    expander_order: int = 0
 
 
 class LogicExpander(Protocol):
     """``level``: 1-4 (documentation). ``order``: sort key; ties broken by
     ``expander_id``. Built-ins: 100 steps, 200 rules (with defaults), 300 checks,
-    350 formats, 900+ "after everything" (form events)."""
+    350 formats, 380 lookups, 400 record, 420 rows, 430 listing, 900+ "after
+    everything" (form events). One record setup line is placed at 890."""
 
     expander_id: str
     level: int

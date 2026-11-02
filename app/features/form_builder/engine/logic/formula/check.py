@@ -87,8 +87,8 @@ _EXCEL_IDS = frozenset(
         "label",
     }
 )
-_FB115 = "Connect this form to a table first (coming with data forms)."
-_FORM_ATTRS = {"isNew": YESNO, "isDirty": YESNO, "position": WHOLE, "count": WHOLE}
+_FB115 = "Connect this form to a table first."
+_FORM_ATTRS = {"isNew": YESNO, "isDirty": YESNO, "isFiltered": YESNO, "position": WHOLE, "count": WHOLE}
 _VERBS = {"+": "add", "-": "subtract", "*": "multiply", "/": "divide"}
 _FORMATS = frozenset(
     {
@@ -309,7 +309,14 @@ def _check_attr(state: _State, node: Attr, ctx: _Ctx) -> Node:
             _problem(state, "FB114", node.span, "record has no %s.%s." % (node.name, node.sub))
             return replace(node, type=ANY)
         _data_required(state, node.span)
-        return replace(node, type=TEXT)
+        data = state.env.data
+        if data is None or not getattr(data, "record_known", False):
+            return replace(node, type=TEXT)
+        column = data.record.get(node.name) if hasattr(data, "record") else None
+        if column is None:
+            _problem(state, "FB114", node.span, "record has no %s." % node.name)
+            return replace(node, type=ANY)
+        return replace(node, type=column)
     facts = state.env.widgets.get(base_name)
     if facts is None:
         typed = _check_ref(state, node.base, ctx)
@@ -361,6 +368,13 @@ def _grid_attr(state: _State, node: Attr, base: Ref, display: str, ctx: _Ctx) ->
         return replace(node, base=base, type=TEXT)
     if node.sub is None and node.name not in ("text", "enabled", "visible", "checked", "count", "selected"):
         _data_required(state, node.span)
+        data = state.env.data
+        columns: Tuple[str, ...] = ()
+        if data is not None and hasattr(data, "grids"):
+            columns = data.grids.get(base.name, ())
+        if columns and node.name not in columns:
+            _problem(state, "FB114", node.span, "%s has no %s." % (display, node.name))
+            return replace(node, base=base, type=ANY)
         if state.env.data is not None and not ctx.aggregate:
             _problem(
                 state,

@@ -2,15 +2,19 @@
 
 The formula package does not open a document. This module does, once per
 structure revision and window reading, and caches the result on the document.
+A form with data properties also keys the cache on those texts, so a logic
+edit that does not move ``structure_revision`` still rebuilds the snapshot.
 """
 
 from __future__ import annotations
 
+import hashlib
 from types import MappingProxyType
 from typing import Dict, Optional, Tuple
 
 from app.features.form_builder.engine.logic.events_catalog import class_chain
-from app.features.form_builder.engine.logic.formula.env import FormulaEnv, WidgetFacts, reserved_names
+from app.features.form_builder.engine.logic.formula.env import DataFacts, FormulaEnv, WidgetFacts, reserved_names
+from app.features.form_builder.engine.logic.formula.types import DATE, DATETIME, MONEY, NUMBER, TEXT, TIME, WHOLE, YESNO, FType
 from app.features.form_builder.engine.project.window_facts import MethodFacts, WindowFacts
 from app.features.form_builder.engine.query.tab_stops import caption, form_row_pairs
 from app.features.form_builder.engine.ui4.defaults import QtClassTable
@@ -37,6 +41,10 @@ def env_for(doc: UiDocument, window_facts: Optional[WindowFacts], catalog: QtCla
     token = _window_token(window_facts)
     table = catalog if catalog is not None else QtClassTable.shared()
     key = "m7.2a.formula_env\0%s" % token
+    if _text(doc.root, "cbcsData"):  # type: ignore[arg-type]
+        digest = _data_digest(doc)
+        if digest:
+            key = "%s\0%s" % (key, digest)
     return doc.structure_memo(key, lambda: _build(doc, window_facts, table))
 
 
@@ -64,7 +72,7 @@ def _build(doc: UiDocument, window_facts: Optional[WindowFacts], catalog: QtClas
         widgets=MappingProxyType(widgets),
         methods=MappingProxyType(methods),
         reserved=reserved_names(),
-        data=None,
+        data=_data_facts(doc, widgets),
         class_chain=_chain_of(catalog),
         returns={},
         class_name=class_name,
@@ -133,7 +141,7 @@ def _facts(doc: UiDocument, node: WidgetNode, buddy_label: str) -> WidgetFacts:
         allow_blank=bool(_text(node, "specialValueText")),
         has_items_data=_items_have_data(node),
         pages=_pages(doc, node),
-        also=(),
+        also=_also(node),
     )
 
 
@@ -190,3 +198,101 @@ def _whole(node: WidgetNode, name: str) -> Optional[int]:
     if isinstance(value, _NUMBER) and not isinstance(value.value, bool):
         return int(value.value)
     return None
+
+
+_FORMULA_TYPES = {
+    "whole": WHOLE,
+    "number": NUMBER,
+    "money": MONEY,
+    "text": TEXT,
+    "date": DATE,
+    "time": TIME,
+    "datetime": DATETIME,
+    "yesno": YESNO,
+}
+
+
+def _data_digest(doc: UiDocument) -> str:
+    parts = [_text(doc.root, "cbcsData")]  # type: ignore[arg-type]
+    try:
+        widgets = tuple(doc.iter_widgets())
+    except Exception:
+        widgets = ()
+    for node in widgets:
+        for key in ("cbcsLookup", "cbcsRows"):
+            text = _text(node, key)
+            if text:
+                parts.append("%s\0%s\0%s" % (node.object_name or "", key, text))
+    blob = "\0".join(parts)
+    if not blob.strip("\0"):
+        return ""
+    return hashlib.sha256(blob.encode("utf-8")).hexdigest()
+
+
+def _data_facts(doc: UiDocument, widgets: Dict[str, WidgetFacts]) -> Optional[DataFacts]:
+    from app.features.form_builder.engine.data.schema import schema_for
+    from app.features.form_builder.engine.data.source import read_data, read_rows
+    from app.features.form_builder.engine.data.types import describe
+
+    read = read_data(_text(doc.root, "cbcsData"))  # type: ignore[arg-type]
+    source = read.value
+    if source is None:
+        return None
+    record: Dict[str, FType] = {}
+    table_name = getattr(source, "table", "") or ""
+    connection = getattr(source, "connection", "") or ""
+    schema = schema_for(doc, connection) if connection else None
+    record_known = False
+    if schema is not None and table_name:
+        engine = schema.engine or "sqlite"
+        for table in schema.tables:
+            if table.name != table_name:
+                continue
+            record_known = True
+            for column in table.columns:
+                ref = column.references.table if column.references is not None else ""
+                kind = describe(
+                    column.type,
+                    engine=engine,
+                    column_name=column.name,
+                    references_table=ref,
+                    nullable=column.nullable,
+                )
+                record[column.name] = _FORMULA_TYPES.get(kind.kind, TEXT)
+    grids: Dict[str, Tuple[str, ...]] = {}
+    try:
+        nodes = tuple(doc.iter_widgets())
+    except Exception:
+        nodes = ()
+    for node in nodes:
+        text = _text(node, "cbcsRows")
+        if not text:
+            continue
+        rows, _error = read_rows(text)
+        if rows is None:
+            continue
+        names = []
+        for column in rows.columns:
+            name = getattr(column, "column", "") or getattr(column, "name", "")
+            if name:
+                names.append(name)
+        if node.object_name:
+            grids[node.object_name] = tuple(names)
+    del widgets
+    return DataFacts(
+        record=MappingProxyType(record),
+        grids=MappingProxyType(grids),
+        record_known=record_known,
+    )
+
+
+def _also(node: WidgetNode) -> Tuple[str, ...]:
+    from app.features.form_builder.engine.data.source import read_lookup
+
+    text = _text(node, "cbcsLookup")
+    if not text:
+        return ()
+    lookup, _error = read_lookup(text)
+    if lookup is None:
+        return ()
+    return lookup.also

@@ -4,11 +4,14 @@
 runs from ``_CbcsCloseGuard``. The guard is defined inside ``_cbcs_setup``
 because a contribution cannot add a module-level class. A closing step that
 returns leaves the form open.
+
+``register_close_guard`` adds statements the guard runs before ``cbcsOnClosing``.
+With no registrations the generated guard is unchanged.
 """
 
 from __future__ import annotations
 
-from typing import List, Tuple
+from typing import Callable, List, Tuple
 
 from app.features.form_builder.engine.codegen.expanders.steps import _body, _generates
 from app.features.form_builder.engine.codegen.logic_hooks import CodegenContext, Contribution, Method, one_line
@@ -19,6 +22,21 @@ from app.features.form_builder.engine.ui4.defaults import QtClassTable
 from app.features.form_builder.engine.ui4.values import StringValue
 
 _FORM_SIGNALS = ("opened", "closing")
+
+CloseGuard = Callable[[UiDocument, CodegenContext], Tuple[str, ...]]
+_GUARDS: List[Tuple[int, str, CloseGuard]] = []
+
+
+def register_close_guard(order: int, guard_id: str, contribute: CloseGuard) -> None:
+    """One ordered block of statements, run before ``cbcsOnClosing``."""
+
+    _GUARDS.append((order, guard_id, contribute))
+
+
+def clear_close_guards() -> None:
+    """Drop every registration. Tests use this. The product does not."""
+
+    _GUARDS.clear()
 
 
 class FormEventsExpander:
@@ -55,7 +73,10 @@ class FormEventsExpander:
         setup: List[str] = []
         imports: List[Tuple[str, str]] = list(bag["imports"])
         if closing:
-            setup.extend(_guard_lines(ctx.ui_class_name, ctx.form_param, closing))
+            extras: List[str] = []
+            for _order, _guard_id, contribute in sorted(_GUARDS, key=lambda item: (item[0], item[1])):
+                extras.extend(contribute(doc, ctx))
+            setup.extend(_guard_lines(ctx.ui_class_name, ctx.form_param, closing, tuple(extras)))
             for pair in (
                 ("PySide6.QtCore", "QObject"),
                 ("PySide6.QtCore", "QEvent"),
@@ -85,16 +106,18 @@ def _read(doc: UiDocument, signal_name: str):
     return read_list(entry.value.text)
 
 
-def _guard_lines(ui_class: str, form_param: str, handler: str) -> Tuple[str, ...]:
+def _guard_lines(ui_class: str, form_param: str, handler: str, extras: Tuple[str, ...] = ()) -> Tuple[str, ...]:
     del ui_class
     call = "self.ui.%s() is not True" % handler
-    return (
+    head = (
         "class _CbcsCloseGuard(QObject):",
         "    def __init__(self, ui, form):",
         "        super().__init__(form)",
         "        self.ui = ui",
         "        form.installEventFilter(self)",
         "    def eventFilter(self, obj, event):",
+    )
+    body = (
         "        if event.type() == QEvent.Type.Close and %s:" % call,
         "            event.ignore()",
         "            return True",
@@ -104,6 +127,10 @@ def _guard_lines(ui_class: str, form_param: str, handler: str) -> Tuple[str, ...
         "        return False",
         "self._cbcs_close_guard = _CbcsCloseGuard(self, %s)" % form_param,
     )
+    if not extras:
+        return head + body
+    inserted = tuple("        %s" % line for line in extras)
+    return head + inserted + body
 
 
 EXPANDER = FormEventsExpander()

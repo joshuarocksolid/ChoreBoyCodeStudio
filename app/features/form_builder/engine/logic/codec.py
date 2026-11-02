@@ -50,17 +50,26 @@ def _verb_spec(verb: str) -> object:
     return default_registry().get(verb)
 
 
+def _typed_spec(verb: str) -> object:
+    """A verb this build types. Read-only registrations stay untyped, so they remain FB403."""
+
+    spec = _verb_spec(verb)
+    if spec is None or not getattr(spec, "editable", False):
+        return None
+    return spec
+
+
 class _TypedVerbs:
     """Field names in written order, from the verb registry. Not built at import."""
 
     def get(self, verb: str, default: Optional[Tuple[str, ...]] = None) -> Optional[Tuple[str, ...]]:
-        spec = _verb_spec(verb)
+        spec = _typed_spec(verb)
         if spec is None:
             return default
         return tuple(field.name for field in spec.fields)  # type: ignore[attr-defined]
 
     def __contains__(self, verb: object) -> bool:
-        return isinstance(verb, str) and _verb_spec(verb) is not None
+        return isinstance(verb, str) and _typed_spec(verb) is not None
 
     def __getitem__(self, verb: str) -> Tuple[str, ...]:
         found = self.get(verb)

@@ -1797,7 +1797,8 @@ class _Emitter:
         found = []
         for expander in load_expanders():
             try:
-                found.append(expander.contribute(self.doc, ctx))
+                item = expander.contribute(self.doc, ctx)
+                found.append(replace(item, expander_order=int(getattr(expander, "order", 0))))
             except Exception:
                 # A broken expander adds no lines. The rest of the form still generates.
                 name = getattr(expander, "expander_id", type(expander).__name__)
@@ -1809,7 +1810,7 @@ class _Emitter:
 
     def _has_logic(self, contributions: Sequence[Contribution]) -> bool:
         for item in contributions:
-            if item.setup_lines or item.methods or item.helpers or item.needs_form or item.connects:
+            if item.setup_lines or item.ordered_setup or item.methods or item.helpers or item.needs_form or item.connects:
                 return True
         return False
 
@@ -1885,8 +1886,15 @@ class _Emitter:
         lines: List[str] = []
         if any(item.needs_form for item in contributions):
             lines.append("self._form = %s" % self.form_param)
+        pending = sorted(
+            (order, text) for item in contributions for order, text in item.ordered_setup
+        )
+        index = 0
         seen: List[Tuple[str, str]] = []
         for item in contributions:
+            while index < len(pending) and pending[index][0] < item.expander_order:
+                lines.append(pending[index][1])
+                index += 1
             lines.extend(item.setup_lines)
             for widget, handler in item.connects:
                 pair = (widget, handler)
@@ -1896,6 +1904,9 @@ class _Emitter:
                 line = self._change_connect(widget, handler)
                 if line:
                     lines.append(line)
+        while index < len(pending):
+            lines.append(pending[index][1])
+            index += 1
         return lines
 
     def _change_connect(self, widget: str, handler: str) -> Optional[str]:
@@ -2360,7 +2371,7 @@ _SELECTOR_TYPES = re.compile(r"^[A-Za-z_][A-Za-z0-9_:<>*&, ]*$")
 
 
 def _wants_setup(contributions: Sequence[Contribution]) -> bool:
-    return any(item.setup_lines or item.needs_form or item.connects for item in contributions)
+    return any(item.setup_lines or item.ordered_setup or item.needs_form or item.connects for item in contributions)
 
 
 def _class_bases(class_name: str) -> Tuple[str, ...]:

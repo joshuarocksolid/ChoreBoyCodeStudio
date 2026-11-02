@@ -40,8 +40,6 @@ from app.qt.QtGui import QColor, QKeyEvent, QKeySequence, QPalette, QShowEvent
 from app.qt.QtWidgets import (
     QApplication,
     QFrame,
-    QLabel,
-    QPushButton,
     QScrollArea,
     QTabWidget,
     QVBoxLayout,
@@ -124,6 +122,7 @@ class InspectorPane(QWidget):
         self.behavior = BehaviorPage(self._services, realizer, self.tabs)
         self.behavior.set_refresh(self._refresh_now)
         self._behavior_scroll = _behavior_scroll(self.behavior, self.tabs)
+        self.data: Optional[QWidget] = None
         self._tab_index: Dict[TabId, int] = {}
         for tab in TAB_ORDER:
             if tab is TabId.DATA and not data_tab:
@@ -133,7 +132,10 @@ class InspectorPane(QWidget):
             elif tab is TabId.BEHAVIOR:
                 page = self._behavior_scroll
             else:
-                page = _data_page(self.tabs)
+                from app.features.form_builder.qtside.inspector.data_page import DataPage
+
+                self.data = DataPage(self.tabs)
+                page = self.data
             self.tabs.addTab(page, tab.value.capitalize())
             self._tab_index[tab] = self.tabs.count() - 1
         layout = QVBoxLayout(self)
@@ -213,13 +215,9 @@ class InspectorPane(QWidget):
         viewport_palette = viewport.palette()
         viewport_palette.setColor(QPalette.ColorRole.Window, QColor(chrome.panel))
         viewport.setPalette(viewport_palette)
-        data = self.findChild(QWidget, "formBuilder.dataBody")
-        if data is not None:
-            data.setStyleSheet(
-                "QWidget#formBuilder\\.dataBody { background: %s; color: %s; }"
-                "QLabel { color: %s; }"
-                % (chrome.panel, chrome.faint, chrome.faint)
-            )
+        data = self.data
+        if data is not None and hasattr(data, "apply_colors"):
+            data.apply_colors(chrome.panel, chrome.faint, chrome.faint)
         window = self.window()
         for popover in window.findChildren(QWidget, "formBuilder.rowPopover") if window is not None else ():
             # A popover left open on a closed tab outlives its row; skip it.
@@ -262,6 +260,9 @@ class InspectorPane(QWidget):
             if method_row is not None:
                 method_row.setFocus()
                 return
+        if tab is TabId.DATA:
+            self._pending = True
+            self.flush()
         page = self.tabs.widget(index)
         if page is not None:
             page.setFocus()
@@ -333,6 +334,11 @@ class InspectorPane(QWidget):
         # setTabText relays out the styled tab bar even for the same text.
         if index is not None and self.tabs.tabText(index) != title:
             self.tabs.setTabText(index, title)
+        data = self.data
+        if data is not None and hasattr(data, "paint"):
+            from app.features.form_builder.qtside.inspector.data_page import selected_class
+
+            data.paint(selected_class(document, ids))
 
     def dispose(self) -> None:
         self._timer.stop()
@@ -557,18 +563,6 @@ class _TabOrderMemo:
         if self._names is None:
             self._names = tuple(effective_tab_order(self._session.document))
         return self._names
-
-def _data_page(parent: QWidget) -> QWidget:
-    page = QWidget(parent)
-    page.setObjectName("formBuilder.dataBody")
-    layout = QVBoxLayout(page)
-    button = QPushButton("Connect this form to a table", page)
-    button.setEnabled(False)
-    caption = QLabel("Not built yet (M8)", page)
-    layout.addWidget(button)
-    layout.addWidget(caption)
-    layout.addStretch(1)
-    return page
 
 def _stylesheet(chrome: FormChrome) -> str:
     width = chrome.focus_width if chrome.focus_width > 0 else 1

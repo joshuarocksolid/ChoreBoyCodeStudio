@@ -622,18 +622,30 @@ def _with_form_events(
     read_only: bool,
     events: Tuple[EventView, ...],
 ) -> Tuple[EventView, ...]:
-    titles = {
-        "opened": "When the form opens",
-        "closing": "Before the form closes (the form stays open if a step stops)",
-    }
+    titles = [
+        ("opened", "When the form opens"),
+        ("closing", "Before the form closes (the form stays open if a step stops)"),
+    ]
+    from app.features.form_builder.engine.data.source import has_data_source
+
+    if has_data_source(doc):
+        titles.extend(
+            (
+                ("recordLoaded", "When a record is shown"),
+                ("newRecord", "When a new record starts"),
+                ("beforeSave", "Before saving (a step can stop the save)"),
+                ("afterSave", "After saving"),
+                ("beforeDelete", "Before deleting (a step can stop the delete)"),
+            )
+        )
     by_signal = {event.signal: event for event in events}
     front = []
-    for signal, title in titles.items():
+    for signal, title in titles:
         current = by_signal.get(signal)
         if current is None:
             current = _event_view(doc, classes, read_event(doc, sender, signal), chain, qt_names, read_only)
         front.append(replace(current, header=title, accessible=title))
-    rest = tuple(event for event in events if event.signal not in titles)
+    rest = tuple(event for event in events if event.signal not in {signal for signal, _title in titles})
     return tuple(front) + rest
 
 

@@ -4,7 +4,10 @@
 package in sorted name order and collects its ``EXPANDER`` object (a module
 with no ``EXPANDER`` is skipped). Expanders then run ordered by
 ``(order, expander_id)``: 100 steps, 200 rules (with defaults), 300 checks,
-350 formats, 900+ "after everything" (form events).
+350 formats, 380 lookups, 400 record, 420 rows, 430 listing, 900+ "after
+everything" (form events). The record expander's open-at-start line is
+placed at 890, after those models and before form events. The lane adds
+the expander file. This package does not.
 
 A lane adds an expander by adding a module here and edits no shared file. The
 package itself is empty on purpose; it exists since M6.0s so the first expander

@@ -1,0 +1,6 @@
+{
+  "version": 1,
+  "connections": [
+    {"name": "shop", "title": "Shop database", "engine": "sqlite", "file": "data/shop.db"}
+  ]
+}
