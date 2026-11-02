@@ -118,7 +118,7 @@ ensure_freecad() {
 # ---------------------------------------------------------------------------
 ensure_vendor() {
   local vendor_py39="$CBCS_ARTIFACTS_DIR/vendor_py39"
-  if [[ -d "$vendor_py39/tree_sitter" ]] && [[ -d "$vendor_py39/jedi" ]]; then
+  if [[ -d "$vendor_py39/tree_sitter" ]] && [[ -d "$vendor_py39/jedi" ]] && [[ -d "$vendor_py39/dulwich" ]]; then
     log "Vendor bundle already populated at $vendor_py39."
     return 0
   fi

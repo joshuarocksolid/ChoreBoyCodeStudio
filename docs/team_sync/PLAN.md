@@ -133,6 +133,41 @@ The contract may grow only by adding optional parameters or new methods, recorde
 exist on the fake so the UI and the screenshot script can jump states. `TeamSyncApi` is unchanged.
 The UI reads `share_summary` with `getattr` and falls back when a service does not provide it.
 
+## L1 additions (engine)
+
+`TeamSyncService(project_root, *, machine=None, clock=None, mail_roots=None)`
+is the constructor. `machine` is a shop-sharing `Machine`. `clock` returns a
+datetime. `mail_roots`, when passed, replaces FaxMail discovery and may be
+either a `.Mails` directory or one account directory.
+
+`accept_invite(incoming_id, folder, my_name="", my_shop="")` grows two optional
+keyword arguments so the joiner can name themselves. The folder is the new
+project root.
+
+`copy_change(change_id) -> Optional[CombineState]` copies one change onto the
+current line (cherry-pick through the merge engine).
+
+`invite_detail(incoming_id) -> dict` returns `project_id`, `project_name`,
+`sender_name`, `sender_shop`, and `sender_email` for an invite. `Incoming` is
+unchanged.
+
+Wire additions beyond the spec's sample body, all signed when the message is
+signed: `part-sha256` (this part), and on join `member-id`, `member-name`,
+`member-shop`, `member-email`. Invites stay unsigned and carry `key`,
+`sender-name`, `sender-shop`, `sender-email`. `have` may include `accepted: 1`.
+The outbox stores `recipient`, `part_idx`, `part_total`, `change_id`, and `tip`
+next to the columns the spec names, so delivery can be updated per person.
+
+## L1b additions (engine)
+
+`share_experiment(line) -> Change` publishes `exp/<slug>` as its own ref. `send`
+always publishes `main` and refuses while the current line is an experiment.
+
+Owner decisions D1 to D6 are recorded in `SPEC.md` under Rules T3a to T3e and the
+Merge engine and Security sections. The wire gained optional signed fields
+`note`, `removed`, and `line`. `removed` is the member a rekey drops.
+`line` is set only when an experiment is shared.
+
 ## Lanes
 
 | Lane | Branch | Owner | Depends on | Delivers |
