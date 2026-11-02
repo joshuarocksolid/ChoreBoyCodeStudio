@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 
 from dulwich.diff_tree import tree_changes
+from dulwich.graph import find_merge_base
 from dulwich.ignore import IgnoreFilterManager
 from dulwich.index import ConflictedIndexEntry, update_working_tree
 from dulwich.object_store import iter_tree_contents
@@ -278,28 +279,47 @@ class TeamRepo:
             return None
         if left == right:
             return left
-        left_seen = {left}
-        right_seen = {right}
-        left_queue = [left]
-        right_queue = [right]
-        while left_queue or right_queue:
-            if left_queue:
-                current = left_queue.pop(0)
-                if current in right_seen:
-                    return current
-                for parent in self._parents(current):
-                    if parent not in left_seen:
-                        left_seen.add(parent)
-                        left_queue.append(parent)
-            if right_queue:
-                current = right_queue.pop(0)
-                if current in left_seen:
-                    return current
-                for parent in self._parents(current):
-                    if parent not in right_seen:
-                        right_seen.add(parent)
-                        right_queue.append(parent)
-        return None
+        try:
+            found = find_merge_base(
+                self._repo(),
+                [left.encode("ascii"), right.encode("ascii")],
+            )
+        except (KeyError, ValueError):
+            return None
+        if not found:
+            return None
+        first = found[0]
+        if isinstance(first, bytes):
+            return first.decode("ascii")
+        return str(first)
+
+    def commit_time(self, sha: str) -> int:
+        return int(self._as_commit(sha).commit_time or 0)
+
+    def store_blob(self, data: bytes) -> str:
+        blob = Blob.from_string(data)
+        self._repo().object_store.add_object(blob)
+        return blob.id.decode("ascii")
+
+    def read_blob(self, sha: str) -> bytes:
+        try:
+            obj = self._repo().object_store[sha.encode("ascii")]
+        except KeyError as exc:
+            raise TeamSyncError("That combine blob is missing.") from exc
+        if not isinstance(obj, Blob):
+            raise TeamSyncError("That combine blob is missing.")
+        return bytes(obj.data)
+
+    def tree_modes(self, sha: Optional[str]) -> Dict[str, int]:
+        if not sha:
+            return {}
+        found: Dict[str, int] = {}
+        commit = self._as_commit(sha)
+        for entry in iter_tree_contents(self._repo().object_store, commit.tree):
+            if entry.path is None or entry.mode is None or not stat.S_ISREG(entry.mode):
+                continue
+            found[entry.path.decode("utf-8", "surrogateescape")] = int(entry.mode)
+        return found
 
     def is_ancestor(self, ancestor: str, descendant: str) -> bool:
         return self.merge_base(ancestor, descendant) == ancestor
@@ -342,14 +362,20 @@ class TeamRepo:
         head = self.head_sha()
         if head:
             old_tree = self._as_commit(head).tree
+        self._assert_tree_paths(commit.tree)
         changes = tree_changes(repo.object_store, old_tree, commit.tree)
-        update_working_tree(
-            repo,
-            old_tree,
-            commit.tree,
-            changes,
-            allow_overwrite_modified=True,
-        )
+        try:
+            update_working_tree(
+                repo,
+                old_tree,
+                commit.tree,
+                changes,
+                allow_overwrite_modified=False,
+            )
+        except OSError as exc:
+            raise TeamSyncError(
+                "Could not check out that change without overwriting files."
+            ) from exc
         if branch:
             ref = b"refs/heads/" + branch.encode("utf-8")
             repo.refs[ref] = commit.id
@@ -445,12 +471,13 @@ class TeamRepo:
             except ValueError:
                 continue
             refs[refname.decode("utf-8")] = sha.decode("ascii")
+        existing = set(self._repo().object_store)
         stream = io.BytesIO(pack)
         try:
             self._repo().object_store.add_thin_pack(stream.read, None)
         except Exception as exc:
             raise TeamSyncError(f"The bundle is damaged: {exc}") from exc
-        self._verify_closure(list(refs.values()))
+        self._verify_closure(list(refs.values()), existing)
         return refs
 
     def set_aside(self, name: str, author_name: str, author_email: str) -> None:
@@ -507,24 +534,38 @@ class TeamRepo:
     def drop_aside(self, index: int) -> None:
         Stash.from_repo(self._repo()).drop(index)
 
-    def replace_worktree(self, files: Dict[str, Optional[bytes]]) -> None:
+    def replace_worktree(
+        self,
+        files: Dict[str, Optional[bytes]],
+        modes: Optional[Dict[str, int]] = None,
+        *,
+        only_listed: bool = False,
+    ) -> None:
         root = Path(self.root)
+        file_modes = modes or {}
+        for path in files:
+            _guard_rel(path)
         keep = {path for path, data in files.items() if data is not None}
         for path, data in files.items():
-            target = root.joinpath(*path.split("/"))
+            target = _work_target(root, path)
             if data is None:
-                if target.is_file():
+                if target.is_file() and not target.is_symlink():
                     target.unlink()
                 continue
-            if target.is_file() and target.read_bytes() == data:
+            if target.is_file() and not target.is_symlink() and target.read_bytes() == data:
+                _apply_mode(target, file_modes.get(path, 0o100644))
                 continue
             target.parent.mkdir(parents=True, exist_ok=True)
             atomic_write_bytes(target, data)
-        for rel, _sha in self._tree_shas(self.head_sha()).items():
+            _apply_mode(target, file_modes.get(path, 0o100644))
+        if only_listed:
+            return
+        for rel in self._tree_shas(self.head_sha()):
             if rel in keep:
                 continue
-            target = root.joinpath(*rel.split("/"))
-            if target.is_file():
+            _guard_rel(rel)
+            target = _work_target(root, rel)
+            if target.is_file() and not target.is_symlink():
                 target.unlink()
 
     def _repo(self) -> Repo:
@@ -624,6 +665,10 @@ class TeamRepo:
             self._ignore_key = mtime
         return self._ignore_mgr
 
+    def work_bytes(self, path: str) -> Optional[bytes]:
+        _guard_rel(path)
+        return self._read_work(path)
+
     def _read_work(self, path: str) -> Optional[bytes]:
         full = Path(self.root).joinpath(*path.split("/"))
         if not full.is_file():
@@ -704,9 +749,7 @@ class TeamRepo:
         if commit.parents:
             parent = self._as_commit(commit.parents[0].decode("ascii"))
             parent_tree = parent.tree
-        files = []
-        for diff in self._diff_trees(parent_tree, commit.tree):
-            files.append(FileChange(diff.path, diff.kind))
+        files = self._changed_files(parent_tree, commit.tree)
         return Change(
             id=sha,
             parents=tuple(parent.decode("ascii") for parent in commit.parents),
@@ -740,13 +783,39 @@ class TeamRepo:
             found[sha.decode("ascii")] = version
         return found
 
-    def _verify_closure(self, tips: Sequence[str]) -> None:
+    def _assert_tree_paths(self, tree_sha: bytes) -> None:
+        for entry in iter_tree_contents(self._repo().object_store, tree_sha):
+            if entry.path is None:
+                continue
+            _guard_rel(entry.path.decode("utf-8", "surrogateescape"))
+
+    def _changed_files(self, old_tree: Optional[bytes], new_tree: bytes) -> List[FileChange]:
+        """Names and kinds only. Blob bytes and line diffs stay in ``diff_commits``."""
+
+        files: List[FileChange] = []
+        for change in tree_changes(self._repo().object_store, old_tree, new_tree):
+            if change.type == "delete" and change.old is not None and change.old.path:
+                files.append(
+                    FileChange(change.old.path.decode("utf-8", "surrogateescape"), FILE_DELETED)
+                )
+            elif change.type == "add" and change.new is not None and change.new.path:
+                files.append(
+                    FileChange(change.new.path.decode("utf-8", "surrogateescape"), FILE_ADDED)
+                )
+            elif change.new is not None and change.new.path:
+                files.append(
+                    FileChange(change.new.path.decode("utf-8", "surrogateescape"), FILE_MODIFIED)
+                )
+        return files
+
+    def _verify_closure(self, tips: Sequence[str], existing: Optional[set] = None) -> None:
         store = self._repo().object_store
         seen = set()
+        stop = existing or set()
         stack = [tip.encode("ascii") for tip in tips if tip]
         while stack:
             sha = stack.pop()
-            if sha in seen:
+            if sha in seen or sha in stop:
                 continue
             seen.add(sha)
             try:
@@ -767,6 +836,28 @@ class TeamRepo:
                 continue
             else:
                 raise TeamSyncError("The bundle contains an object Team Sync does not accept.")
+
+
+def _guard_rel(path: str) -> str:
+    if not path or path.startswith("/") or path.startswith("\\") or "\\" in path:
+        raise TeamSyncError(f"Refusing to write {path}.")
+    for part in path.split("/"):
+        if part in {"", ".", ".."} or part.lower() == ".git":
+            raise TeamSyncError(f"Refusing to write {path}.")
+    return path
+
+
+def _work_target(root: Path, path: str) -> Path:
+    target = root.joinpath(*_guard_rel(path).split("/"))
+    try:
+        target.resolve().relative_to(root.resolve())
+    except ValueError as exc:
+        raise TeamSyncError(f"Refusing to write {path}.") from exc
+    return target
+
+
+def _apply_mode(path: Path, mode: int) -> None:
+    os.chmod(path, 0o755 if mode & 0o111 else 0o644)
 
 
 def _stash_name(message: object) -> str:

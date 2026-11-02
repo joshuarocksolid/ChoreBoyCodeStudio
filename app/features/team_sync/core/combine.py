@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import base64
 import json
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Tuple
@@ -23,8 +22,10 @@ from app.features.team_sync.api import (
 )
 from app.features.team_sync.core import TeamSyncError
 from app.features.team_sync.core.mailbox import atomic_write_bytes
+from app.features.team_sync.core.repo import TeamRepo
 from app.features.team_sync.core.merge3way import (
     LinePiece,
+    TreeClash,
     TreeMerge,
     both_lines,
     inspect_text,
@@ -63,6 +64,8 @@ class CombineSession:
             "incoming_id": raw.get("incoming_id", ""),
             "theirs_from": raw["theirs_from"],
             "aside_index": raw.get("aside_index"),
+            "feed": raw.get("feed") or raw.get("note") or "",
+            "commit_note": raw.get("commit_note") or raw.get("note") or "",
         }
 
     def start(
@@ -78,49 +81,69 @@ class CombineSession:
         incoming_id: str,
         merge: TreeMerge,
         aside_index: Optional[int] = None,
+        modes: Optional[Dict[str, int]] = None,
+        feed: str = "",
+        commit_note: str = "",
     ) -> CombineState:
         if self.path.is_file():
             raise TeamSyncError("Finish or cancel the combine already open.")
+        repo = TeamRepo(str(self.root))
+        clashes = [
+            _clash_record(repo, index, clash) for index, clash in enumerate(merge.clashes)
+        ]
+        raw = _session_raw(
+            session_id=session_id,
+            kind=kind,
+            theirs_from=theirs_from,
+            note=note,
+            ours=ours,
+            theirs=theirs,
+            base=base,
+            incoming_id=incoming_id,
+            aside_index=aside_index,
+            merge=merge,
+            modes=modes or {},
+            clashes=clashes,
+            repo=repo,
+            feed=feed,
+            commit_note=commit_note or note,
+        )
+        self._write(raw)
+        return _state(raw)
+
+    def remerge(
+        self,
+        *,
+        ours: str,
+        base: str,
+        merge: TreeMerge,
+        modes: Optional[Dict[str, int]] = None,
+    ) -> CombineState:
+        """Keep resolutions whose (path, ours, theirs) text did not change."""
+
+        raw = self._require()
+        previous = [
+            (str(item["path"]), tuple(item.get("ours") or ()), tuple(item.get("theirs") or ()), item.get("resolution"))
+            for item in raw.get("clashes") or []
+        ]
+        repo = TeamRepo(str(self.root))
         clashes = []
         for index, clash in enumerate(merge.clashes):
-            clashes.append(
-                {
-                    "id": f"{clash.path}#{index}",
-                    "path": clash.path,
-                    "kind": clash.kind,
-                    "line": clash.line,
-                    "ours": list(clash.ours_lines),
-                    "theirs": list(clash.theirs_lines),
-                    "base": list(clash.base_lines),
-                    "context_before": list(clash.context_before),
-                    "context_after": list(clash.context_after),
-                    "resolution": None,
-                    "ours_present": clash.ours_present,
-                    "theirs_present": clash.theirs_present,
-                    "ours_b64": _b64(clash.ours_bytes),
-                    "theirs_b64": _b64(clash.theirs_bytes),
-                    "sep": clash.sep,
-                    "trailing": clash.trailing,
-                    "pieces": [
-                        {"text": list(piece.text), "clash": piece.clash is not None}
-                        for piece in clash.pieces
-                    ],
-                }
-            )
-        raw = {
-            "schema_version": 1,
-            "id": session_id,
-            "kind": kind,
-            "theirs_from": theirs_from,
-            "note": note,
-            "ours": ours,
-            "theirs": theirs,
-            "base": base,
-            "incoming_id": incoming_id,
-            "aside_index": aside_index,
-            "auto": {path: _b64(data) for path, data in merge.files.items()},
-            "clashes": clashes,
-        }
+            record = _clash_record(repo, index, clash)
+            for path, old_ours, old_theirs, resolution in previous:
+                if (
+                    path == clash.path
+                    and old_ours == clash.ours_lines
+                    and old_theirs == clash.theirs_lines
+                    and resolution is not None
+                ):
+                    record["resolution"] = resolution
+                    break
+            clashes.append(record)
+        raw["ours"] = ours
+        raw["base"] = base
+        raw["files"] = _file_records(repo, merge, modes or {})
+        raw["clashes"] = clashes
         self._write(raw)
         return _state(raw)
 
@@ -139,18 +162,32 @@ class CombineSession:
         return _state(raw)
 
     def finish_files(self) -> Dict[str, Optional[bytes]]:
+        raw = self._open_finish()
+        repo = TeamRepo(str(self.root))
+        files: Dict[str, Optional[bytes]] = {}
+        for item in raw.get("files") or []:
+            sha = item.get("sha")
+            files[str(item["path"])] = None if not sha else repo.read_blob(str(sha))
+        grouped: Dict[str, List[dict]] = {}
+        for clash in raw["clashes"]:
+            grouped.setdefault(str(clash["path"]), []).append(clash)
+        for path, clashes in grouped.items():
+            files[path] = _apply_path(clashes, repo)
+        return files
+
+    def file_modes(self) -> Dict[str, int]:
+        raw = self._require()
+        modes: Dict[str, int] = {}
+        for item in raw.get("files") or []:
+            if item.get("sha"):
+                modes[str(item["path"])] = int(item.get("mode") or 0o100644)
+        return modes
+
+    def _open_finish(self) -> dict:
         raw = self._require()
         if any(clash["resolution"] is None for clash in raw["clashes"]):
             raise TeamSyncError("Choose every clash before finishing.")
-        files: Dict[str, Optional[bytes]] = {}
-        for path, payload in raw["auto"].items():
-            files[path] = base64.b64decode(payload) if payload is not None else None
-        grouped: Dict[str, List[dict]] = {}
-        for clash in raw["clashes"]:
-            grouped.setdefault(clash["path"], []).append(clash)
-        for path, clashes in grouped.items():
-            files[path] = _apply_path(clashes)
-        return files
+        return raw
 
     def clear(self) -> None:
         try:
@@ -197,7 +234,9 @@ def _state(raw: dict) -> CombineState:
         for item in raw.get("clashes") or []
     )
     auto_paths = tuple(
-        path for path, payload in (raw.get("auto") or {}).items() if payload is not None
+        str(item["path"])
+        for item in (raw.get("files") or [])
+        if item.get("sha")
     )
     return CombineState(
         id=str(raw.get("id", "")),
@@ -208,7 +247,7 @@ def _state(raw: dict) -> CombineState:
     )
 
 
-def _apply_path(clashes: Sequence[dict]) -> Optional[bytes]:
+def _apply_path(clashes: Sequence[dict], repo: TeamRepo) -> Optional[bytes]:
     first = clashes[0]
     kind = first["kind"]
     if kind == "lines" and first.get("pieces"):
@@ -221,7 +260,7 @@ def _apply_path(clashes: Sequence[dict]) -> Optional[bytes]:
             resolutions[clash_ordinal] = _resolved_lines(clashes[clash_ordinal])
             clash_ordinal += 1
         return render_pieces(pieces, resolutions, first["sep"], bool(first["trailing"]))
-    return _apply_whole(first)
+    return _apply_whole(first, repo)
 
 
 def _pieces(raw_pieces: Sequence[dict]) -> Tuple[LinePiece, ...]:
@@ -253,18 +292,18 @@ def _resolved_lines(clash: dict) -> Tuple[str, ...]:
     raise TeamSyncError("That choice is not one Team Sync understands.")
 
 
-def _apply_whole(clash: dict) -> Optional[bytes]:
+def _apply_whole(clash: dict, repo: TeamRepo) -> Optional[bytes]:
     resolution = clash["resolution"]
     if resolution == RESOLVE_DELETE:
         return None
     if resolution == RESOLVE_OURS:
         if not clash.get("ours_present"):
             return None
-        return _decode(clash.get("ours_b64"))
+        return _blob(repo, clash.get("ours_sha"))
     if resolution == RESOLVE_THEIRS:
         if not clash.get("theirs_present"):
             return None
-        return _decode(clash.get("theirs_b64"))
+        return _blob(repo, clash.get("theirs_sha"))
     if resolution == RESOLVE_BOTH and clash["kind"] == "lines":
         lines = both_lines(tuple(clash.get("ours") or ()), tuple(clash.get("theirs") or ()))
         return join_lines(lines, clash["sep"], bool(clash["trailing"]))
@@ -281,13 +320,83 @@ def _check_resolution(resolution: Resolution) -> None:
     raise TeamSyncError("That choice is not one Team Sync understands.")
 
 
-def _b64(data: Optional[bytes]) -> Optional[str]:
-    if data is None:
-        return None
-    return base64.b64encode(data).decode("ascii")
-
-
-def _decode(payload: Optional[str]) -> bytes:
-    if not payload:
+def _blob(repo: TeamRepo, sha: Optional[str]) -> bytes:
+    if not sha:
         return b""
-    return base64.b64decode(payload)
+    return repo.read_blob(str(sha))
+
+
+def _session_raw(
+    *,
+    session_id: str,
+    kind: str,
+    theirs_from: str,
+    note: str,
+    ours: str,
+    theirs: str,
+    base: str,
+    incoming_id: str,
+    aside_index: Optional[int],
+    merge: TreeMerge,
+    modes: Dict[str, int],
+    clashes: List[dict],
+    repo: TeamRepo,
+    feed: str,
+    commit_note: str,
+) -> dict:
+    return {
+        "schema_version": 2,
+        "id": session_id,
+        "kind": kind,
+        "theirs_from": theirs_from,
+        "note": note,
+        "commit_note": commit_note,
+        "feed": feed or note,
+        "ours": ours,
+        "theirs": theirs,
+        "base": base,
+        "incoming_id": incoming_id,
+        "aside_index": aside_index,
+        "files": _file_records(repo, merge, modes),
+        "clashes": clashes,
+    }
+
+
+def _file_records(repo: TeamRepo, merge: TreeMerge, modes: Dict[str, int]) -> List[dict]:
+    records = []
+    for path, data in merge.files.items():
+        if data is None:
+            records.append({"path": path, "sha": None, "mode": 0})
+            continue
+        records.append(
+            {"path": path, "sha": repo.store_blob(data), "mode": int(modes.get(path, 0o100644))}
+        )
+    return records
+
+
+def _clash_record(repo: TeamRepo, index: int, clash: TreeClash) -> dict:
+    ours_bytes = clash.ours_bytes
+    theirs_bytes = clash.theirs_bytes
+    return {
+        "id": f"{clash.path}#{index}",
+        "path": clash.path,
+        "kind": clash.kind,
+        "line": clash.line,
+        "ours": list(clash.ours_lines),
+        "theirs": list(clash.theirs_lines),
+        "base": list(clash.base_lines),
+        "context_before": list(clash.context_before),
+        "context_after": list(clash.context_after),
+        "resolution": None,
+        "ours_present": clash.ours_present,
+        "theirs_present": clash.theirs_present,
+        "ours_sha": repo.store_blob(ours_bytes) if ours_bytes is not None else None,
+        "theirs_sha": repo.store_blob(theirs_bytes) if theirs_bytes is not None else None,
+        "sep": clash.sep,
+        "trailing": clash.trailing,
+        "mode": 0o100644,
+        "pieces": [
+            {"text": list(piece.text), "clash": piece.clash is not None}
+            for piece in clash.pieces
+        ],
+    }
