@@ -127,6 +127,31 @@ class TeamSyncApi(Protocol):
 
 The contract may grow only by adding optional parameters or new methods, recorded here.
 
+## L1 additions (engine)
+
+`TeamSyncService(project_root, *, machine=None, clock=None, mail_roots=None)`
+is the constructor. `machine` is a shop-sharing `Machine`. `clock` returns a
+datetime. `mail_roots`, when passed, replaces FaxMail discovery and may be
+either a `.Mails` directory or one account directory.
+
+`accept_invite(incoming_id, folder, my_name="", my_shop="")` grows two optional
+keyword arguments so the joiner can name themselves. The folder is the new
+project root.
+
+`copy_change(change_id) -> Optional[CombineState]` copies one change onto the
+current line (cherry-pick through the merge engine).
+
+`invite_detail(incoming_id) -> dict` returns `project_id`, `project_name`,
+`sender_name`, `sender_shop`, and `sender_email` for an invite. `Incoming` is
+unchanged.
+
+Wire additions beyond the spec's sample body, all signed when the message is
+signed: `part-sha256` (this part), and on join `member-id`, `member-name`,
+`member-shop`, `member-email`. Invites stay unsigned and carry `key`,
+`sender-name`, `sender-shop`, `sender-email`. `have` may include `accepted: 1`.
+The outbox stores `recipient`, `part_idx`, `part_total`, `change_id`, and `tip`
+next to the columns the spec names, so delivery can be updated per person.
+
 ## Lanes
 
 | Lane | Branch | Owner | Depends on | Delivers |
