@@ -1,0 +1,787 @@
+<title>CBCS Team Sync</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@75..125,500..800&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap">
+<style>
+/* Layout: technical design dossier. Left rail index on wide screens, one reading column, diagrams break out to full width.
+   Wire colors encode transports everywhere: shop disk (NFS), mail, LAN, USB. */
+:root{
+  --bg:#F2F5F3; --surface:#FFFFFF; --sunk:#E6EBE8; --fg:#15201B; --muted:#55635C; --line:#D2DAD6;
+  --ink:#0B5D4B; --ink-soft:#DCEFE8;
+  --nfs:#0E7490; --mail:#B45309; --lan:#6D28D9; --usb:#4B5563;
+  --good:#15803D; --warn:#A16207; --bad:#B91C1C;
+  --good-bg:#E3F3E8; --warn-bg:#FBF1D9; --bad-bg:#FBE4E4;
+  --f-display:"Archivo","Arial Narrow",Arial,sans-serif;
+  --f-body:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --f-mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+  --s1:4px; --s2:8px; --s3:12px; --s4:16px; --s5:24px; --s6:32px; --s7:48px; --s8:72px;
+  --r:6px;
+}
+@media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){
+  --bg:#0E1412; --surface:#151D1A; --sunk:#1C2622; --fg:#E2EAE6; --muted:#98A8A0; --line:#2B3732;
+  --ink:#5CC8A8; --ink-soft:#173029;
+  --nfs:#3BB8D6; --mail:#F2A23C; --lan:#A68BFA; --usb:#A3AAB5;
+  --good:#4ADE80; --warn:#F5C542; --bad:#F87171;
+  --good-bg:#16301F; --warn-bg:#33290F; --bad-bg:#3A1818;
+  color-scheme:dark;
+}}
+:root[data-theme="dark"]{
+  --bg:#0E1412; --surface:#151D1A; --sunk:#1C2622; --fg:#E2EAE6; --muted:#98A8A0; --line:#2B3732;
+  --ink:#5CC8A8; --ink-soft:#173029;
+  --nfs:#3BB8D6; --mail:#F2A23C; --lan:#A68BFA; --usb:#A3AAB5;
+  --good:#4ADE80; --warn:#F5C542; --bad:#F87171;
+  --good-bg:#16301F; --warn-bg:#33290F; --bad-bg:#3A1818;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--fg);font-family:var(--f-body);font-size:16px;line-height:1.6;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:0 var(--s8)}
+a{color:var(--ink)}
+:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
+code,.mono{font-family:var(--f-mono);font-size:.86em}
+code{background:var(--sunk);padding:1px 5px;border-radius:4px;overflow-wrap:anywhere}
+h1,h2,h3{font-family:var(--f-display);text-wrap:balance;line-height:1.15;margin:0}
+h1{font-size:clamp(2.2rem,5vw,3.6rem);font-weight:800;font-stretch:88%;letter-spacing:-.01em}
+h2{font-size:clamp(1.5rem,3vw,2rem);font-weight:750;font-stretch:92%}
+h3{font-size:1.12rem;font-weight:700;font-stretch:100%}
+p{margin:0}
+.eyebrow{font-family:var(--f-mono);font-size:.74rem;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.wrap{max-width:1180px;margin:0 auto;display:grid;grid-template-columns:200px minmax(0,1fr);gap:var(--s7)}
+@media (max-width:900px){.wrap{grid-template-columns:minmax(0,1fr);gap:0}.rail{display:none}}
+.rail{position:sticky;top:env(safe-area-inset-top,0px);align-self:start;padding-top:var(--s7);font-size:.86rem}
+.rail ol{list-style:none;margin:var(--s3) 0 0;padding:0;display:grid;gap:2px}
+.rail a{display:block;padding:4px 8px;border-radius:4px;color:var(--muted);text-decoration:none}
+.rail a:hover{background:var(--sunk);color:var(--fg)}
+main{min-width:0;display:grid;gap:var(--s8);padding-top:var(--s7)}
+section{display:grid;gap:var(--s5);min-width:0;scroll-margin-top:16px}
+.lede{font-size:1.14rem;max-width:66ch;color:var(--fg)}
+.prose{max-width:68ch;display:grid;gap:var(--s3)}
+.muted{color:var(--muted)}
+.small{font-size:.88rem}
+
+/* hero */
+.hero{display:grid;gap:var(--s5)}
+.verdict{border-left:3px solid var(--ink);background:var(--surface);padding:var(--s5);border-radius:0 var(--r) var(--r) 0;display:grid;gap:var(--s3);max-width:78ch}
+.verdict strong{font-weight:600}
+.facts{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:var(--s3)}
+.fact{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:var(--s4);display:grid;gap:var(--s1);align-content:start}
+.fact b{font-family:var(--f-display);font-size:1.5rem;font-stretch:90%;font-variant-numeric:tabular-nums;line-height:1.1}
+.fact span{font-size:.86rem;color:var(--muted)}
+
+/* legend chips */
+.legend{display:flex;flex-wrap:wrap;gap:var(--s2) var(--s4);font-size:.85rem}
+.legend i{display:inline-block;width:22px;height:3px;border-radius:2px;vertical-align:middle;margin-right:6px}
+.chip{display:inline-flex;align-items:center;gap:6px;font-family:var(--f-mono);font-size:.72rem;letter-spacing:.03em;padding:2px 8px;border-radius:999px;white-space:nowrap;border:1px solid transparent}
+.chip.good{background:var(--good-bg);color:var(--good)}
+.chip.warn{background:var(--warn-bg);color:var(--warn)}
+.chip.bad{background:var(--bad-bg);color:var(--bad)}
+.chip.plain{border-color:var(--line);color:var(--muted)}
+.t-nfs{color:var(--nfs)} .t-mail{color:var(--mail)} .t-lan{color:var(--lan)} .t-usb{color:var(--usb)}
+
+/* figures */
+.fig{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:var(--s4);display:grid;gap:var(--s3);min-width:0}
+.fig .scroll{overflow-x:auto}
+.fig svg{display:block;width:100%;min-width:760px;height:auto}
+.fig figcaption{font-size:.86rem;color:var(--muted)}
+svg text{font-family:var(--f-body);fill:var(--fg)}
+svg .lbl{font-size:13px;font-weight:600}
+svg .sub{font-size:11px;fill:var(--muted)}
+svg .mono{font-family:var(--f-mono);font-size:10.5px;fill:var(--muted)}
+svg .box{fill:var(--surface);stroke:var(--line);stroke-width:1.2}
+svg .zone{fill:var(--sunk);stroke:var(--line);stroke-dasharray:4 4}
+svg .zone-t{font-family:var(--f-display);font-size:15px;font-weight:700;fill:var(--fg)}
+svg .w-nfs{stroke:var(--nfs);fill:none;stroke-width:2.4}
+svg .w-mail{stroke:var(--mail);fill:none;stroke-width:2.4}
+svg .w-lan{stroke:var(--lan);fill:none;stroke-width:2;stroke-dasharray:6 4}
+svg .w-bad{stroke:var(--bad);fill:none;stroke-width:1.6;stroke-dasharray:3 3}
+svg .f-nfs{fill:var(--nfs)} svg .f-mail{fill:var(--mail)} svg .f-lan{fill:var(--lan)} svg .f-bad{fill:var(--bad)} svg .f-ink{fill:var(--ink)}
+svg .tag-nfs{fill:var(--nfs);font-size:11px;font-weight:600}
+svg .tag-mail{fill:var(--mail);font-size:11px;font-weight:600}
+svg .tag-lan{fill:var(--lan);font-size:11px;font-weight:600}
+svg .tag-bad{fill:var(--bad);font-size:11px;font-weight:600}
+svg .hub{fill:var(--ink-soft);stroke:var(--ink);stroke-width:1.5}
+
+/* tables */
+.tbl{overflow-x:auto;border:1px solid var(--line);border-radius:var(--r);background:var(--surface)}
+table{border-collapse:collapse;width:100%;font-size:.9rem;min-width:720px}
+th,td{text-align:left;vertical-align:top;padding:10px 12px;border-bottom:1px solid var(--line)}
+th{font-family:var(--f-mono);font-size:.72rem;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);font-weight:500;background:var(--sunk)}
+tr:last-child td{border-bottom:0}
+td.w{width:34%}
+tr.pick td{background:var(--ink-soft)}
+.src{font-family:var(--f-mono);font-size:.74rem;color:var(--muted)}
+.filter{display:flex;flex-wrap:wrap;gap:var(--s2)}
+.filter button{font:inherit;font-size:.84rem;padding:5px 12px;border-radius:999px;border:1px solid var(--line);background:var(--surface);color:var(--fg);cursor:pointer}
+.filter button[aria-pressed="true"]{background:var(--fg);color:var(--bg);border-color:var(--fg)}
+
+/* principles */
+.rules{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:var(--s3)}
+.rule{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:var(--s4);display:grid;gap:var(--s2);align-content:start}
+.rule .because{font-size:.86rem;color:var(--muted)}
+.rule .so{font-weight:600}
+.needs{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:var(--s2)}
+.need{border-top:2px solid var(--fg);padding-top:var(--s2);display:grid;gap:2px}
+.need b{font-family:var(--f-display);font-stretch:92%}
+.need span{font-size:.86rem;color:var(--muted)}
+
+/* architecture stack */
+.stack{display:grid;gap:var(--s2)}
+.layer{display:grid;grid-template-columns:150px minmax(0,1fr);gap:var(--s3);align-items:stretch}
+@media (max-width:640px){.layer{grid-template-columns:minmax(0,1fr)}}
+.layer>.name{font-family:var(--f-display);font-weight:700;font-stretch:92%;padding-top:10px}
+.layer>.name small{display:block;font-family:var(--f-body);font-weight:400;font-size:.8rem;color:var(--muted)}
+.cells{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:var(--s2)}
+.cell{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:10px 12px;display:grid;gap:2px;align-content:start}
+.cell b{font-weight:600;font-size:.95rem}
+.cell span{font-size:.82rem;color:var(--muted)}
+.cell.nfs{border-top:3px solid var(--nfs)} .cell.mail{border-top:3px solid var(--mail)} .cell.lan{border-top:3px solid var(--lan)} .cell.usb{border-top:3px solid var(--usb)}
+.cell.core{background:var(--ink-soft);border-color:transparent}
+
+/* code panes */
+.panes{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:var(--s3)}
+pre{margin:0;background:var(--sunk);border-radius:var(--r);padding:var(--s4);overflow-x:auto;font-family:var(--f-mono);font-size:.8rem;line-height:1.55;min-width:0}
+.pane{display:grid;gap:var(--s2);min-width:0}
+.pane h3{font-size:.98rem}
+
+/* flow */
+.tabs{display:flex;flex-wrap:wrap;gap:var(--s2)}
+.tabs button{font:inherit;font-weight:500;padding:7px 14px;border-radius:var(--r);border:1px solid var(--line);background:var(--surface);color:var(--fg);cursor:pointer}
+.tabs button[aria-selected="true"]{border-color:var(--ink);box-shadow:inset 0 -3px 0 var(--ink)}
+.steps{list-style:none;margin:0;padding:0;display:grid;gap:0;counter-reset:s}
+.steps li{display:grid;grid-template-columns:88px 18px minmax(0,1fr);gap:var(--s3);align-items:start}
+.steps .when{font-family:var(--f-mono);font-size:.78rem;color:var(--muted);text-align:right;padding-top:3px;font-variant-numeric:tabular-nums}
+.steps .dot{position:relative;align-self:stretch}
+.steps .dot::before{content:"";position:absolute;left:6px;top:7px;width:8px;height:8px;border-radius:50%;background:var(--c,var(--fg))}
+.steps .dot::after{content:"";position:absolute;left:9.5px;top:18px;bottom:-4px;width:1px;background:var(--line)}
+.steps li:last-child .dot::after{display:none}
+.steps .what{padding-bottom:var(--s4)}
+.steps .what b{font-weight:600}
+.steps .what span{display:block;font-size:.86rem;color:var(--muted)}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:999px;overflow:hidden}
+.seg button{font:inherit;font-size:.82rem;padding:4px 12px;border:0;background:var(--surface);color:var(--fg);cursor:pointer}
+.seg button[aria-pressed="true"]{background:var(--fg);color:var(--bg)}
+.total{font-family:var(--f-display);font-size:1.25rem;font-stretch:90%}
+
+/* mock */
+.mock{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,1fr);gap:0;border:1px solid var(--line);border-radius:var(--r);overflow:hidden;background:var(--surface);font-size:.88rem}
+@media (max-width:760px){.mock{grid-template-columns:minmax(0,1fr)}}
+.mock .bar{grid-column:1/-1;display:flex;align-items:center;gap:var(--s3);flex-wrap:wrap;padding:8px 12px;background:var(--sunk);border-bottom:1px solid var(--line)}
+.mock .bar .title{font-weight:600}
+.mock .bar .sp{flex:1}
+.btn{font:inherit;font-size:.82rem;padding:5px 12px;border-radius:5px;border:1px solid var(--line);background:var(--surface);color:var(--fg);cursor:pointer}
+.btn.pri{background:var(--ink);border-color:var(--ink);color:var(--bg)}
+.mock .col{padding:12px;display:grid;gap:10px;align-content:start;min-width:0}
+.mock .col+.col{border-left:1px solid var(--line)}
+@media (max-width:760px){.mock .col+.col{border-left:0;border-top:1px solid var(--line)}}
+.incoming{border:1px solid var(--mail);background:var(--warn-bg);border-radius:5px;padding:10px;display:grid;gap:6px}
+.tl{list-style:none;margin:0;padding:0;display:grid;gap:8px}
+.tl li{display:grid;grid-template-columns:10px minmax(0,1fr);gap:8px}
+.tl li::before{content:"";width:8px;height:8px;border-radius:50%;margin-top:7px;background:var(--c,var(--muted))}
+.tl b{font-weight:600}
+.tl span{display:block;color:var(--muted);font-size:.8rem}
+.diff{font-family:var(--f-mono);font-size:.76rem;background:var(--sunk);border-radius:5px;padding:8px;overflow-x:auto;white-space:pre;line-height:1.5}
+.diff .a{color:var(--good)} .diff .d{color:var(--bad)} .diff .h{color:var(--muted)}
+.who{display:flex;flex-wrap:wrap;gap:6px}
+
+/* roadmap */
+.road{display:grid;gap:var(--s3)}
+.phase{display:grid;grid-template-columns:120px minmax(0,1fr);gap:var(--s4);background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:var(--s4)}
+@media (max-width:640px){.phase{grid-template-columns:minmax(0,1fr)}}
+.phase .pn{font-family:var(--f-display);font-weight:800;font-stretch:85%;font-size:1.5rem;line-height:1}
+.phase .pn small{display:block;font-family:var(--f-mono);font-size:.72rem;font-weight:400;color:var(--muted);letter-spacing:.04em;margin-top:6px}
+.phase ul{margin:6px 0 0;padding-left:1.1em;display:grid;gap:2px;font-size:.92rem}
+.phase .gate{margin-top:8px;font-size:.84rem;color:var(--muted)}
+.phase.opt{background:transparent;border-style:dashed}
+
+/* risks / questions */
+.qs{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:var(--s3)}
+.q{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:var(--s4);display:grid;gap:var(--s2);align-content:start}
+.q .n{font-family:var(--f-mono);font-size:.74rem;color:var(--muted)}
+.q b{font-weight:600}
+.q ul{margin:0;padding-left:1.1em;font-size:.88rem;color:var(--muted);display:grid;gap:2px}
+.q .rec{font-size:.86rem}
+footer{max-width:1180px;margin:var(--s8) auto 0;font-size:.82rem;color:var(--muted);border-top:1px solid var(--line);padding-top:var(--s4)}
+@media (prefers-reduced-motion:no-preference){.tabs button,.filter button,.seg button{transition:background .15s,color .15s}}
+</style>
+
+<div class="wrap">
+<nav class="rail" aria-label="Sections">
+  <div class="eyebrow">Design dossier</div>
+  <ol>
+    <li><a href="#found">1 · What exists</a></li>
+    <li><a href="#options">2 · Every option</a></li>
+    <li><a href="#principles">3 · First principles</a></li>
+    <li><a href="#architecture">4 · Architecture</a></li>
+    <li><a href="#format">5 · Data &amp; wire format</a></li>
+    <li><a href="#git">5b · Real git?</a></li>
+    <li><a href="#flows">6 · How a change travels</a></li>
+    <li><a href="#ux">7 · What users see</a></li>
+    <li><a href="#roadmap">8 · Roadmap</a></li>
+    <li><a href="#risks">9 · Risks</a></li>
+    <li><a href="#questions">10 · Questions for you</a></li>
+  </ol>
+</nav>
+
+<main>
+<header class="hero">
+  <div class="eyebrow">ChoreBoy Code Studio · feature proposal · 2 Nov 2026</div>
+  <h1>CBCS Team Sync</h1>
+  <p class="lede">Code collaboration for ChoreBoy projects using only what a shop already has: the station network, the shared disk on net1, and the FaxMail terminal's email. No GitHub, no internet, no new hardware.</p>
+  <div class="verdict">
+    <div class="eyebrow">Recommendation</div>
+    <p>Keep <strong>real git history inside CBCS</strong> (vendored pure-Python dulwich) and move changes as <strong>signed git bundles</strong> over two transports. Inside a shop, stations sync through a <strong>hub folder on net1's shared disk</strong> within seconds. Between shops, one hub mails bundles to the other through the <strong>FaxMail terminal</strong>, typically within minutes. Both transports carry the same bundle, so USB hand-off works too.</p>
+    <p>Nothing on the FaxMail terminal has to change. Everything runs in-process on CBCS's Python 3.9, using the standard library plus pure-Python dulwich, which matters because ChoreBoy blocks running <code>git</code>, <code>ssh</code> or any other program.</p>
+  </div>
+  <div class="facts" aria-label="Key facts proven on the infrastructure">
+    <div class="fact"><b>0.5 ms</b><span>station-to-station TCP from confined CBCS (cart net2 to net1)</span></div>
+    <div class="fact"><b>82 ms</b><span>to write 4 MiB to net1's shared disk from a cart, then rename atomically</span></div>
+    <div class="fact"><b>0.31 s</b><span>to hand a 5 MiB attachment to the terminal's mail server on port 25</span></div>
+    <div class="fact"><b>3 min</b><span>terminal mail-check cadence 04:00–22:57 (15 min overnight)</span></div>
+    <div class="fact"><b>36 MB</b><span>largest message the terminal accepts; base64 makes 5 MiB weigh 7.2 MB</span></div>
+  </div>
+</header>
+
+<!-- 1 -->
+<section id="found">
+  <div class="eyebrow">1 · Research</div>
+  <h2>What the infrastructure can actually do</h2>
+  <p class="prose">I read the probe repo, inspected the live FaxMail terminal at the shop (read-only over SSH), and leased a throwaway shop on the cbfarm (net1, cart net2 and a FaxMail twin) to test each channel from inside the confined CBCS runtime. Green chips below were proven today. The rest are cited.</p>
+
+  <figure class="fig">
+    <div class="legend" aria-hidden="true">
+      <span><i style="background:var(--nfs)"></i>Shop disk (NFS from net1)</span>
+      <span><i style="background:var(--mail)"></i>Email via FaxMail</span>
+      <span><i style="background:var(--lan);height:2px"></i>Station LAN (TCP / UDP)</span>
+      <span><i style="background:var(--bad);height:2px"></i>Blocked</span>
+    </div>
+    <div class="scroll">
+    <svg viewBox="0 0 1000 470" role="img" aria-labelledby="topoT topoD">
+      <title id="topoT">Shop network topology</title>
+      <desc id="topoD">Shop A has net1, a cart net2 and FaxMail terminal net15 on the 77.77.77.0/24 network. net1 shares /home/share over NFS to the cart and the terminal. Stations reach each other over TCP and the terminal over SMTP port 25. The terminal exchanges mail with upwardmail.com, which links to Shop B's terminal. ChoreBoys have no internet route and cannot run programs.</desc>
+      <defs>
+        <marker id="aN" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="f-nfs"/></marker>
+        <marker id="aM" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="f-mail"/></marker>
+        <marker id="aL" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="f-lan"/></marker>
+      </defs>
+      <!-- Shop A -->
+      <rect x="16" y="20" width="560" height="430" rx="10" class="zone"/>
+      <text x="34" y="48" class="zone-t">Shop A · 77.77.77.0/24</text>
+      <!-- net1 -->
+      <rect x="40" y="80" width="230" height="150" rx="8" class="box"/>
+      <text x="56" y="106" class="lbl">net1 · main ChoreBoy</text>
+      <text x="56" y="124" class="mono">77.77.77.1</text>
+      <text x="56" y="148" class="sub">NFS server: /home/share</text>
+      <text x="56" y="166" class="sub">PostgreSQL 9.3 :5432</text>
+      <text x="56" y="184" class="sub">CBCS in confined FreeCAD</text>
+      <rect x="56" y="196" width="196" height="24" rx="5" class="hub"/>
+      <text x="66" y="212" class="mono" style="fill:var(--ink)">share/…/PDF/.cbcs-team/</text>
+      <!-- net2 -->
+      <rect x="40" y="290" width="230" height="130" rx="8" class="box"/>
+      <text x="56" y="316" class="lbl">net2 · cart (and net3…)</text>
+      <text x="56" y="334" class="mono">77.77.77.2</text>
+      <text x="56" y="358" class="sub">mounts net1's share (NFSv4.2,</text>
+      <text x="56" y="374" class="sub">soft, 0.5 s timeout)</text>
+      <text x="56" y="398" class="sub">CBCS in confined FreeCAD</text>
+      <!-- net15 -->
+      <rect x="330" y="80" width="225" height="200" rx="8" class="box"/>
+      <text x="346" y="106" class="lbl">net15 · FaxMail terminal</text>
+      <text x="346" y="124" class="mono">77.77.77.15 · Debian 12 ARM</text>
+      <text x="346" y="148" class="sub">Postfix :25 → upwardmail relay</text>
+      <text x="346" y="166" class="sub">getmail POP3 every 3 min</text>
+      <text x="346" y="184" class="sub">mounts net1's share (noexec)</text>
+      <text x="346" y="202" class="sub">has git, python3, rsync, gpg</text>
+      <text x="346" y="220" class="sub">mail lands as zip_in/&lt;ts&gt;!.zip</text>
+      <text x="346" y="246" class="mono">.custom_mail_scripts hook</text>
+      <text x="346" y="262" class="mono">SSH :22 (admin only)</text>
+      <!-- wires -->
+      <path d="M155 290 L155 230" class="w-nfs" marker-end="url(#aN)"/>
+      <text x="164" y="266" class="tag-nfs">NFS</text>
+      <path d="M330 160 L270 160" class="w-nfs" marker-end="url(#aN)"/>
+      <text x="282" y="152" class="tag-nfs">NFS</text>
+      <path d="M215 290 C 215 262, 225 250, 225 232" class="w-lan" marker-end="url(#aL)"/>
+      <text x="232" y="268" class="tag-lan">TCP 0.5 ms</text>
+      <path d="M270 340 C 400 340, 430 330, 430 282" class="w-mail" marker-end="url(#aM)"/>
+      <text x="300" y="330" class="tag-mail">SMTP :25</text>
+      <!-- blocked -->
+      <rect x="330" y="330" width="225" height="96" rx="8" fill="none" class="w-bad"/>
+      <text x="346" y="354" class="tag-bad">Blocked from CBCS</text>
+      <text x="346" y="374" class="sub">no internet route, no outside DNS</text>
+      <text x="346" y="392" class="sub">only /bin/sh may run; git, ssh denied</text>
+      <text x="346" y="410" class="sub">no hardlinks on the share</text>
+      <!-- internet mail -->
+      <rect x="620" y="150" width="150" height="70" rx="35" class="box"/>
+      <text x="695" y="180" class="lbl" text-anchor="middle">upwardmail.com</text>
+      <text x="695" y="198" class="sub" text-anchor="middle">internet email</text>
+      <path d="M555 180 L618 185" class="w-mail" marker-end="url(#aM)" marker-start="url(#aM)"/>
+      <path d="M770 185 L830 180" class="w-mail" marker-end="url(#aM)" marker-start="url(#aM)"/>
+      <!-- Shop B -->
+      <rect x="810" y="20" width="176" height="430" rx="10" class="zone"/>
+      <text x="826" y="48" class="zone-t">Shop B</text>
+      <rect x="832" y="120" width="134" height="80" rx="8" class="box"/>
+      <text x="846" y="146" class="lbl">its FaxMail</text>
+      <text x="846" y="166" class="sub">own address</text>
+      <text x="846" y="184" class="sub">same scripts</text>
+      <rect x="832" y="280" width="134" height="80" rx="8" class="box"/>
+      <text x="846" y="306" class="lbl">its net1</text>
+      <text x="846" y="326" class="sub">its own share</text>
+      <text x="846" y="344" class="sub">+ carts</text>
+      <path d="M899 200 L899 278" class="w-nfs" marker-end="url(#aN)" marker-start="url(#aN)"/>
+    </svg>
+    </div>
+    <figcaption>The two shops share nothing but email. Inside a shop, net1's shared disk is the one place every station and the terminal can all read and write.</figcaption>
+  </figure>
+
+  <div class="filter" role="group" aria-label="Filter capabilities">
+    <button type="button" id="f-all" aria-pressed="true" data-f="all">All</button>
+    <button type="button" id="f-proven" aria-pressed="false" data-f="proven">Proven today</button>
+    <button type="button" id="f-cited" aria-pressed="false" data-f="cited">Cited from earlier probes</button>
+    <button type="button" id="f-limit" aria-pressed="false" data-f="limit">Limits and blocks</button>
+  </div>
+  <div class="tbl">
+  <table id="caps">
+    <thead><tr><th>Capability</th><th>Finding</th><th>Status</th><th>Evidence</th></tr></thead>
+    <tbody>
+      <tr data-k="proven"><td class="w">Shared disk across stations</td><td>Carts mount <code>77.77.77.1:/home/share</code> at <code>/home/default/share</code>. The writable folder is <code>share/net1/PDF</code>. The terminal mounts the same export.</td><td><span class="chip good">proven</span></td><td class="src">cbfarm shop esee, net2 mount + write</td></tr>
+      <tr data-k="proven"><td>Safe writes on that disk</td><td>Atomic <code>os.replace</code>, exclusive create (<code>O_EXCL</code>) and <code>mkdir</code> both refuse a second claimant, <code>fcntl</code> locks succeed, 4 MiB in 82 ms.</td><td><span class="chip good">proven</span></td><td class="src">collab_probe share_fs</td></tr>
+      <tr data-k="limit"><td>Soft mount, short timeout</td><td>Cart mount is <code>soft,timeo=5,retrans=2</code>: a stalled server returns an I/O error after about 1.5 s, so a write can be cut short.</td><td><span class="chip warn">design for it</span></td><td class="src">net2 /proc mounts</td></tr>
+      <tr data-k="proven"><td>Station-to-station TCP</td><td>CBCS on net1 listened on :47811. CBCS on net2 connected in 0.5 ms. UDP broadcast send works. No firewall in the lab image.</td><td><span class="chip good">proven</span></td><td class="src">collab_probe net, listener</td></tr>
+      <tr data-k="proven"><td>Send mail from CBCS</td><td>Plain SMTP to <code>77.77.77.15:25</code>, no login. Postfix advertises <code>SIZE 36000000</code>. A 5 MiB attachment was queued in 0.31 s and became a 7.2 MB message.</td><td><span class="chip good">proven</span></td><td class="src">collab_probe smtp; twin mail sent</td></tr>
+      <tr data-k="cited"><td>Send mail the FaxMail way</td><td>Write <code>.Mails/&lt;acct&gt;/out/&lt;id&gt;/message.mail</code> (mutt draft headers) plus an <code>att/</code> folder. <code>compile_mail.sh</code> picks it up every 15 s, skips folders holding <code>.lock</code>, then moves it to <code>sent/</code> so it shows in the user's Sent mail.</td><td><span class="chip plain">read on terminal</span></td><td class="src">net15 /usr/mailsystem/scripts/compile_mail.sh</td></tr>
+      <tr data-k="proven"><td>Receive mail in CBCS</td><td>Each inbound message lands on the share as <code>zip_in/&lt;ts&gt;!.zip</code> holding <code>_headers_</code>, <code>textfile0</code> (body) and the attachments byte-for-byte.</td><td><span class="chip good">proven</span></td><td class="src">twin inject → net2 read zip</td></tr>
+      <tr data-k="cited"><td>Mail cadence</td><td>Cron runs <code>mail.sh</code> at <code>0-57/3 4-22</code> and <code>0-45/15 23-3</code>: every 3 minutes by day, every 15 minutes overnight.</td><td><span class="chip plain">read on terminal</span></td><td class="src">net15 crontab</td></tr>
+      <tr data-k="cited"><td>Precedent: machine mail</td><td>IntellaQuote already mails a structured <code>IQ-UPDATES/1</code> header block through this terminal. FaxMail itself routes its own update mails by sender and subject.</td><td><span class="chip plain">read on terminal</span></td><td class="src">sent/20261027114154623; mail_processor2.sh:299</td></tr>
+      <tr data-k="cited"><td>Supported extension hook</td><td>Every inbound message sources <code>~/.custom_mail_scripts/*.sh</code>, which may set <code>dest_path</code>. A six-line script could route sync mail to its own folder.</td><td><span class="chip plain">read on terminal</span></td><td class="src">mail_processor2.sh:164-172</td></tr>
+      <tr data-k="proven"><td>Python 3.9 standard library</td><td><code>sqlite3</code> 3.34, <code>zlib</code>, <code>zipfile</code>, <code>hashlib</code> (sha256, blake2), <code>hmac</code>, <code>difflib</code>, <code>smtplib</code>, <code>email</code>, <code>socketserver</code>, <code>ssl</code> (OpenSSL 1.1.1n) all import.</td><td><span class="chip good">proven</span></td><td class="src">collab_probe modules</td></tr>
+      <tr data-k="limit"><td>Running programs</td><td><code>/usr/bin/git</code> exists on ChoreBoy but running it gives "Permission denied". Only <code>/bin/sh</code> and its builtins run.</td><td><span class="chip bad">blocked</span></td><td class="src">collab_probe subprocess; DISCOVERY §4G</td></tr>
+      <tr data-k="limit"><td>Internet</td><td>"Network is unreachable" to 1.1.1.1. Outside DNS fails. Shop names such as <code>net15</code> resolve.</td><td><span class="chip bad">blocked</span></td><td class="src">collab_probe net</td></tr>
+      <tr data-k="limit"><td>SQLite on the share</td><td>Opened fine from one station, but SQLite's WAL mode needs shared memory that NFS does not give across machines.</td><td><span class="chip warn">never multi-writer</span></td><td class="src">collab_probe sqlite_share</td></tr>
+      <tr data-k="cited"><td>Shared PostgreSQL</td><td>net1 runs PostgreSQL 9.3 on :5432. Carts reach it (1.1 ms). It holds the shop's business data and its open trust login is unverified on real boxes.</td><td><span class="chip plain">reachable, not ours</span></td><td class="src">net_info.json; collab_probe net</td></tr>
+      <tr data-k="cited"><td>Station identity</td><td>Hostname (<code>net2</code>) and <code>/var/lib/dbus/machine-id</code> are readable. <code>/etc/machine-id</code> is denied.</td><td><span class="chip good">proven</span></td><td class="src">collab_probe identity</td></tr>
+    </tbody>
+  </table>
+  </div>
+</section>
+
+<!-- 2 -->
+<section id="options">
+  <div class="eyebrow">2 · Possibilities</div>
+  <h2>Every option, scored</h2>
+  <p class="prose">Eleven ways to move code between people with this infrastructure. "Reach" is the widest group of people the option can connect. The highlighted rows make up the recommendation.</p>
+  <div class="tbl">
+  <table>
+    <thead><tr><th>Option</th><th>Reach</th><th>Latency</th><th>Needs terminal change?</th><th>Verdict</th></tr></thead>
+    <tbody>
+      <tr><td><b>Everyone edits one folder on the share</b><br><span class="muted small">Open the project straight from net1's disk.</span></td><td>One shop</td><td>Instant</td><td>No</td><td><span class="chip bad">reject</span> <span class="small muted">Last save wins, no history, soft mount can cut writes.</span></td></tr>
+      <tr class="pick"><td><b class="t-nfs">Hub folder on the share</b><br><span class="muted small">Immutable change objects plus a locked "tip" pointer, like a git remote on a path.</span></td><td>One shop</td><td>Seconds</td><td>No</td><td><span class="chip good">core</span> <span class="small muted">Uses only proven primitives.</span></td></tr>
+      <tr class="pick"><td><b class="t-mail">Change bundles by email</b><br><span class="muted small">Hub mails a bundle through FaxMail. Git was designed for patches by email.</span></td><td>Any shop</td><td>Minutes</td><td>No</td><td><span class="chip good">core</span> <span class="small muted">The only path between shops.</span></td></tr>
+      <tr class="pick"><td><b class="t-usb">Bundle file on USB</b><br><span class="muted small">Same bundle, carried by hand. Covers PRD item 4.</span></td><td>Anyone</td><td>Hours</td><td>No</td><td><span class="chip good">free fallback</span></td></tr>
+      <tr class="pick"><td><b class="t-lan">Live LAN link</b><br><span class="muted small">TCP and UDP between running CBCS copies: instant "something changed", who is editing what.</span></td><td>One shop</td><td>Under 1 s</td><td>No</td><td><span class="chip warn">later</span> <span class="small muted">Nice to have. Polling the hub covers most of it.</span></td></tr>
+      <tr><td><b>Real-time co-editing</b><br><span class="muted small">Google-Docs style, two cursors in one file.</span></td><td>One shop</td><td>Live</td><td>No</td><td><span class="chip warn">not now</span> <span class="small muted">Large build. Needs both people online at once.</span></td></tr>
+      <tr><td><b>Git server on the FaxMail terminal</b><br><span class="muted small">It has git 2.39. CBCS would need a pure-Python git client over git:// or SSH.</span></td><td>One shop</td><td>Seconds</td><td>Yes, a new service</td><td><span class="chip bad">reject</span> <span class="small muted">Changes a vendor's appliance, still shop-only.</span></td></tr>
+      <tr><td><b>Sync agent on the terminal</b><br><span class="muted small">Python on the terminal turns mail into git commits.</span></td><td>Any shop</td><td>Minutes</td><td>Yes, software install</td><td><span class="chip bad">reject</span> <span class="small muted">Same result as bundles, plus appliance risk.</span></td></tr>
+      <tr><td><b>Use the shop's PostgreSQL</b><br><span class="muted small">Store changes in tables, LISTEN/NOTIFY for alerts.</span></td><td>One shop</td><td>Seconds</td><td>No</td><td><span class="chip bad">reject</span> <span class="small muted">That server holds accounting data. The shared disk does the job.</span></td></tr>
+      <tr><td><b>RockSolid mail relay</b><br><span class="muted small">Shops mail one RockSolid mailbox that forwards to members and mirrors to GitHub.</span></td><td>Any shop + RockSolid</td><td>Minutes</td><td>No</td><td><span class="chip warn">optional</span> <span class="small muted">Cuts fan-out and lets RockSolid support teams.</span></td></tr>
+      <tr><td><b>Fax</b></td><td>Any phone line</td><td>Slow</td><td>No</td><td><span class="chip bad">reject</span> <span class="small muted">Images of code are not code.</span></td></tr>
+    </tbody>
+  </table>
+  </div>
+</section>
+
+<!-- 3 -->
+<section id="principles">
+  <div class="eyebrow">3 · Analysis</div>
+  <h2>Reasoning from first principles</h2>
+  <p class="prose">Strip collaboration down and five things remain. The constraints we found then decide how each must be built.</p>
+  <div class="needs">
+    <div class="need"><b>Identity</b><span>Everyone agrees which project this is.</span></div>
+    <div class="need"><b>History</b><span>Who changed what, and why.</span></div>
+    <div class="need"><b>Exchange</b><span>Changes move between copies.</span></div>
+    <div class="need"><b>Merge</b><span>Two people's changes combine safely.</span></div>
+    <div class="need"><b>Awareness</b><span>You know when something arrived and who is working on what.</span></div>
+  </div>
+  <div class="rules">
+    <div class="rule"><div class="because">Between shops the only link is email: minutes of delay, roughly 15 MB per message, sometimes lost or duplicated.</div><div class="so">So every exchange is one self-contained bundle. Sending it twice is harmless. No back-and-forth protocol.</div></div>
+    <div class="rule"><div class="because">ChoreBoy refuses to run git, ssh or any other program.</div><div class="so">So everything runs inside CBCS on Python 3.9: the standard library, plus pure-Python dulwich to write genuine git history.</div></div>
+    <div class="rule"><div class="because">The share is a soft NFS mount with a 0.5 s timeout, and SQLite cannot be shared across machines on it.</div><div class="so">So hub files never change once written: write to a temp file, fsync, rename, then check the hash on every read. One small pointer file changes, under a lock.</div></div>
+    <div class="rule"><div class="because">Station and terminal clocks drift. The terminal even restores its time from a file after a reboot.</div><div class="so">So order comes from the change graph (each change names its parents), never from timestamps.</div></div>
+    <div class="rule"><div class="because">Anyone on the internet can email a shop's address.</div><div class="so">So every bundle is signed with the project's shared key (HMAC-SHA256), and incoming changes wait for review before they touch your files.</div></div>
+    <div class="rule"><div class="because">The people using this are shop builders, not git users.</div><div class="so">So there are two everyday actions: <em>Save change</em> and <em>Sync</em>. There are no branches to manage. Conflicts appear as side-by-side choices.</div></div>
+    <div class="rule"><div class="because">The FaxMail terminal is another company's production appliance.</div><div class="so">So nothing on it is required. CBCS only reads mail files and writes outgoing ones. The mail hook stays optional.</div></div>
+    <div class="rule"><div class="because">A shop has several stations but one terminal and one mailbox.</div><div class="so">So there are two levels: stations sync with their shop hub, and only hubs talk by mail. One mail per shop, not one per station.</div></div>
+  </div>
+</section>
+
+<!-- 4 -->
+<section id="architecture">
+  <div class="eyebrow">4 · Design</div>
+  <h2>Architecture</h2>
+  <p class="prose">A transport-neutral core produces and consumes bundles. Adapters move bundles. The feature installs as <code>app/features/team_sync/</code> through the existing <code>FeatureSpec</code> registry. History is a genuine git repository written by dulwich, behind one CBCS interface so nothing above it uses git terms.</p>
+
+  <div class="stack" aria-label="Layer diagram">
+    <div class="layer"><div class="name">Team panel<small>what users touch</small></div>
+      <div class="cells">
+        <div class="cell"><b>Save change</b><span>Name what you did. Becomes one entry in history.</span></div>
+        <div class="cell"><b>Incoming changes</b><span>Who sent what, a diff to review, Accept or Not now.</span></div>
+        <div class="cell"><b>Merge view</b><span>Side-by-side choices when two edits overlap.</span></div>
+        <div class="cell"><b>Who's here</b><span>Stations working on this project and the files they have open.</span></div>
+      </div></div>
+    <div class="layer"><div class="name">Sync core<small>pure Python, no Qt</small></div>
+      <div class="cells">
+        <div class="cell core"><b>Git history</b><span>Vendored dulwich 0.24.10, pure Python: commits, trees, refs, bundles.</span></div>
+        <div class="cell core"><b>Tips per peer</b><span>One ref per shop, such as <code>refs/peers/shop-b/main</code>.</span></div>
+        <div class="cell core"><b>Three-way merge</b><span>Line merge built on <code>difflib</code>. Whole-file choice for forms and binaries.</span></div>
+        <div class="cell core"><b>Bundle codec</b><span>Git bundle v2 + HMAC signature. Splits above 10 MiB and joins parts.</span></div>
+        <div class="cell core"><b>Membership &amp; keys</b><span>Invite, join, rotate the key. Names plus shop mail addresses.</span></div>
+      </div></div>
+    <div class="layer"><div class="name">Transports<small>move bundles</small></div>
+      <div class="cells">
+        <div class="cell nfs"><b>Shop hub</b><span>Folder on net1's share. Lease lock, tip pointer, poll every 15 s.</span></div>
+        <div class="cell mail"><b>FaxMail mail</b><span>Writes <code>out/</code>, reads <code>zip_in/</code> and <code>inbox/</code>. One station holds the mail duty.</span></div>
+        <div class="cell usb"><b>File / USB</b><span>Export and import a <code>.cbcsbundle</code> by hand.</span></div>
+        <div class="cell lan"><b>LAN live <em>(later)</em></b><span>UDP nudge and TCP presence between running copies.</span></div>
+      </div></div>
+  </div>
+
+  <figure class="fig">
+    <div class="scroll">
+    <svg viewBox="0 0 1000 300" role="img" aria-labelledby="twoT twoD">
+      <title id="twoT">Two-level sync</title>
+      <desc id="twoD">Stations in Shop A sync with the Shop A hub over the shared disk. The Shop A hub exchanges bundles by email with the Shop B hub. Stations in Shop B sync with the Shop B hub.</desc>
+      <defs>
+        <marker id="bN" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="f-nfs"/></marker>
+        <marker id="bM" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="f-mail"/></marker>
+      </defs>
+      <text x="40" y="30" class="zone-t">Shop A</text>
+      <rect x="40" y="50" width="130" height="50" rx="7" class="box"/><text x="105" y="80" class="lbl" text-anchor="middle">net1 · Joe</text>
+      <rect x="40" y="125" width="130" height="50" rx="7" class="box"/><text x="105" y="155" class="lbl" text-anchor="middle">net2 · Mary</text>
+      <rect x="40" y="200" width="130" height="50" rx="7" class="box"/><text x="105" y="230" class="lbl" text-anchor="middle">net3 · Eli</text>
+      <rect x="260" y="105" width="170" height="90" rx="10" class="hub"/>
+      <text x="345" y="140" class="lbl" text-anchor="middle">Shop A hub</text>
+      <text x="345" y="160" class="mono" text-anchor="middle">PDF/.cbcs-team/&lt;project&gt;</text>
+      <text x="345" y="178" class="sub" text-anchor="middle">holds mail duty</text>
+      <path d="M170 75 L258 128" class="w-nfs" marker-end="url(#bN)" marker-start="url(#bN)"/>
+      <path d="M170 150 L258 150" class="w-nfs" marker-end="url(#bN)" marker-start="url(#bN)"/>
+      <path d="M170 225 L258 172" class="w-nfs" marker-end="url(#bN)" marker-start="url(#bN)"/>
+      <text x="196" y="110" class="tag-nfs">seconds</text>
+      <path d="M430 150 L570 150" class="w-mail" marker-end="url(#bM)" marker-start="url(#bM)"/>
+      <text x="500" y="135" class="tag-mail" text-anchor="middle">CBCS-SYNC/1 bundles</text>
+      <text x="500" y="172" class="sub" text-anchor="middle">via both FaxMail terminals · minutes</text>
+      <rect x="570" y="105" width="170" height="90" rx="10" class="hub"/>
+      <text x="655" y="140" class="lbl" text-anchor="middle">Shop B hub</text>
+      <text x="655" y="160" class="mono" text-anchor="middle">its own share</text>
+      <text x="655" y="178" class="sub" text-anchor="middle">holds mail duty</text>
+      <text x="830" y="30" class="zone-t">Shop B</text>
+      <rect x="830" y="85" width="130" height="50" rx="7" class="box"/><text x="895" y="115" class="lbl" text-anchor="middle">net1 · Clair</text>
+      <rect x="830" y="165" width="130" height="50" rx="7" class="box"/><text x="895" y="195" class="lbl" text-anchor="middle">net2 · Ruth</text>
+      <path d="M740 140 L828 112" class="w-nfs" marker-end="url(#bN)" marker-start="url(#bN)"/>
+      <path d="M740 162 L828 188" class="w-nfs" marker-end="url(#bN)" marker-start="url(#bN)"/>
+      <text x="500" y="270" class="sub" text-anchor="middle">A one-station shop works the same way: its hub lives on its own share.</text>
+    </svg>
+    </div>
+    <figcaption>Each person keeps their own working copy. Hubs are the meeting points. Only hubs send mail, so a team of three shops sends two mails per sync, not one per station.</figcaption>
+  </figure>
+
+  <div class="panes">
+    <div class="pane"><h3>Hub folder on the share</h3>
+<pre>PDF/.cbcs-team/&lt;project_id&gt;.git/   bare git repo
+  objects/             written once, never rewritten
+  refs/heads/main      the shop's current tip
+  refs/peers/shop-b/main   last tip seen from Shop B
+  logs/                every past tip, for audit
+  cbcs/project.json    name, members, key id
+  cbcs/lease/          mkdir lock: holder, station, expiry
+  cbcs/presence/net2-mary.json   heartbeat every 20 s
+  cbcs/mail/           sent ids, have-lists per shop</pre></div>
+    <div class="pane"><h3>Writing to the hub safely</h3>
+<pre>1. write objects (temp → fsync → rename)
+2. take lease: mkdir cbcs/lease/  (EEXIST = someone else)
+   stale after 60 s without heartbeat → break it
+3. re-read refs/heads/main
+   if it moved: fetch, merge locally, go to 1
+4. update refs/heads/main  (dulwich: .lock file + rename)
+5. remove cbcs/lease/
+reads: git object ids are hashes; re-verify, retry on I/O error</pre></div>
+  </div>
+</section>
+
+<!-- 5 -->
+<section id="format">
+  <div class="eyebrow">5 · Format</div>
+  <h2>Data and wire format</h2>
+  <p class="prose">The mail format copies the shape of IntellaQuote's <code>IQ-UPDATES/1</code>, which already works through these terminals: a plain-text header block in the body, the payload as an attachment. Readable by a person, parseable by CBCS.</p>
+  <div class="panes">
+    <div class="pane"><h3>A saved change is a git commit</h3>
+<pre>commit f61c4af2bf4e02b9d1ca0f797bd2ca14facd30e8
+parent c14533ab1c51a41c6374078ad9a00463e9139204
+author Mary Yoder &lt;shopa@example.test&gt;
+
+    Round totals to cents
+
+    CBCS-Station: net2
+    CBCS-Shop: Shop A
+
+(made by dulwich on a ChoreBoy cart in the probe;
+ real git reads it and git fsck --strict passes)</pre></div>
+    <div class="pane"><h3>The bundle (.cbcsbundle)</h3>
+<pre># v2 git bundle
+-c14533ab…   receiver must already have this
+f61c4af2… refs/heads/main
+&lt;pack: only objects the receiver lacks&gt;
+
+sidecar in the same mail:
+  bundle-sha256  5d0e…
+  signature      HMAC-SHA256(project key, bundle)
+over 10 MiB: name.part-02-of-03, sha256 of whole
+RockSolid can run: git fetch shop.cbcsbundle main</pre></div>
+    <div class="pane"><h3>The mail it rides in</h3>
+<pre>To: shopb@upwardmail.com
+Subject: CBCS-SYNC/1 push p_2c91… Invoice App
+
+CBCS-SYNC/1
+verb: push
+project: p_2c91…
+name: Invoice App
+from: Shop A hub
+tip: c_8812ab…
+changes: 2
+bundle-sha256: 5d0e…
+parts: 1/1
+
+This message was sent by ChoreBoy Code Studio.
+No action is needed in your mail.</pre></div>
+  </div>
+  <p class="small muted">Verbs: <code>invite</code>, <code>join</code>, <code>push</code>, <code>have</code> (what I already hold, so the next push sends less), <code>want</code> (resend what I am missing), <code>note</code> (a review comment on a change).</p>
+</section>
+
+<!-- 5b -->
+<section id="git">
+  <div class="eyebrow">5b · Format decision · decided: dulwich 0.24.10</div>
+  <h2>Real git, or our own format?</h2>
+  <div class="prose">
+    <p>The format of the history is the one choice that is expensive to change later. Every saved change, every bundle and every shop's history is written in it. Transports, merge and the Team panel can all be replaced. The format cannot, without migrating every customer's history.</p>
+    <p>Git's object format brings things a home-grown one never will. Any git tool can read it, RockSolid can fetch a shop's bundle with plain <code>git fetch</code>, a GitHub mirror is easy, and the model has 20 years of proof. So the long-term answer is to <b>store history as genuine git</b>. What remains open is who writes it.</p>
+  </div>
+  <div class="tbl">
+  <table>
+    <thead><tr><th>Approach</th><th>Weight on ChoreBoy</th><th>Long-term cost</th><th>Interop</th></tr></thead>
+    <tbody>
+      <tr><td><b>Our own format</b><br><span class="small muted">The earlier recommendation.</span></td><td>None added</td><td>We own a format forever. Git export only goes one way, and two-way GitHub needs an importer too.</td><td><span class="chip warn">via export</span></td></tr>
+      <tr class="pick"><td><b>Git format, using dulwich 0.24.10</b><br><span class="small muted">Pure-Python git library, last release for Python 3.9.</span></td><td>0.57 MB wheel, pure Python. Needs <code>typing_extensions</code>. <code>urllib3</code> only for network use. <code>merge3</code> optional.</td><td>Frozen at the Nov 2025 release until ChoreBoy moves to Python 3.10 or newer, then a drop-in upgrade.</td><td><span class="chip good">native git</span></td></tr>
+      <tr><td><b>Git format, our own small engine</b><br><span class="small muted">Write loose objects, trees, commits, refs and bundle packs ourselves.</span></td><td>None added</td><td>We must write and test pack and delta reading for bundles made by real git. Hundreds of lines doing what dulwich already does.</td><td><span class="chip good">native git</span></td></tr>
+    </tbody>
+  </table>
+  </div>
+  <div class="prose small">
+    <p><b>Why the freeze is acceptable.</b> We use dulwich offline only: objects, packs and bundles. None of its network code is used. The only outside input it parses is a bundle from email, and CBCS checks the project signature first, so only bundles from members ever reach it. The lab already has a FreeCAD 1.1 image running Python 3.11 (ChoreBoyExp), so a ChoreBoy update may lift the freeze. That is unconfirmed for customer boxes.</p>
+    <p><b>What stays ours either way:</b> merge, the sync and mail layers, signing, and the Team panel. dulwich sits behind one interface, and users never see git words.</p>
+  </div>
+  <div class="eyebrow">Probe · cart net2 · confined AppRun · Python 3.9.2 · 2 Nov 2026</div>
+  <div class="tbl">
+  <table>
+    <thead><tr><th>Check</th><th>Result</th><th>Status</th></tr></thead>
+    <tbody>
+      <tr><td>Import dulwich 0.24.10</td><td>0.10 s, pure Python (no native speedups), <code>urllib3</code> never loaded</td><td><span class="chip good">pass</span></td></tr>
+      <tr><td>Commit a 202-file project on net1's share</td><td>0.65 s first commit, 0.55 s second, clean status after</td><td><span class="chip good">pass</span></td></tr>
+      <tr><td>Make full and incremental bundles</td><td>Written in 0.03 s. The incremental bundle names its prerequisite.</td><td><span class="chip good">pass</span></td></tr>
+      <tr><td>Incremental bundle before its base</td><td>Refused: "missing prerequisites"</td><td><span class="chip good">pass</span></td></tr>
+      <tr><td>Import full, then incremental</td><td>Both commits, every tree and file reachable, author kept</td><td><span class="chip good">pass</span></td></tr>
+      <tr><td>Import a delta-compressed bundle made by real git</td><td>All 6 commits and files, via <code>add_thin_pack</code></td><td><span class="chip good">pass</span></td></tr>
+      <tr><td>Real git reads the ChoreBoy's bundles</td><td><code>git bundle verify</code>, <code>git fetch</code>, <code>git fsck --full --strict</code> clean, full and incremental</td><td><span class="chip good">pass</span></td></tr>
+      <tr><td>dulwich's own bundle import helpers</td><td><code>Bundle.store_objects</code> / <code>add_pack_data(iter_unpacked())</code> lost a commit on git's offset deltas</td><td><span class="chip warn">avoid</span></td></tr>
+      <tr><td>Three-way merge</td><td><code>dulwich.merge</code> needs <code>merge3</code>, not vendored. CBCS keeps its own merge, or vendors merge3.</td><td><span class="chip plain">by design</span></td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p class="small muted">Test data note: the probe's 200 library files had identical content, so git stored them once and the bundles were tiny (2.5 KB full). Timing for a project with all-different files is still to measure. Evidence: <code>.audit/dulwich_probe/</code>.</p>
+</section>
+
+<!-- 6 -->
+<section id="flows">
+  <div class="eyebrow">6 · Flows</div>
+  <h2>How a change travels</h2>
+  <div class="tabs" role="tablist" aria-label="Flow">
+    <button type="button" role="tab" id="tab-shop" aria-selected="true" aria-controls="flow-shop">Same shop</button>
+    <button type="button" role="tab" id="tab-mail" aria-selected="false" aria-controls="flow-mail">Between shops</button>
+    <button type="button" role="tab" id="tab-conf" aria-selected="false" aria-controls="flow-conf">Two people edit one file</button>
+  </div>
+
+  <div id="flow-shop" role="tabpanel" aria-labelledby="tab-shop" class="fig">
+    <ol class="steps">
+      <li><div class="when">0 s</div><div class="dot"></div><div class="what"><b>Mary clicks Save change on net2</b><span>CBCS records the new file versions and her note in her local store.</span></div></li>
+      <li style="--c:var(--nfs)"><div class="when">+0.2 s</div><div class="dot"></div><div class="what"><b>Push to the shop hub</b><span>New objects go to net1's share, then the tip moves under the lease. A few KB for a typical edit.</span></div></li>
+      <li style="--c:var(--nfs)"><div class="when">≤ 15 s</div><div class="dot"></div><div class="what"><b>Joe's CBCS on net1 notices the tip moved</b><span>It polls one small file. With the LAN link added later, it hears a nudge in under a second.</span></div></li>
+      <li><div class="when">+ review</div><div class="dot"></div><div class="what"><b>Joe sees "Mary saved 1 change"</b><span>He opens the diff and accepts. Files he has not touched update. Overlaps go to the merge view.</span></div></li>
+    </ol>
+    <p class="total">About 15 seconds from save to notice.</p>
+  </div>
+
+  <div id="flow-mail" role="tabpanel" aria-labelledby="tab-mail" class="fig" hidden>
+    <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+      <span class="small muted">Sent during</span>
+      <div class="seg" role="group" aria-label="Time of day">
+        <button type="button" id="seg-day" aria-pressed="true" data-t="day">Day (04:00–23:00)</button>
+        <button type="button" id="seg-night" aria-pressed="false" data-t="night">Night</button>
+      </div>
+    </div>
+    <ol class="steps">
+      <li style="--c:var(--nfs)"><div class="when">0 s</div><div class="dot"></div><div class="what"><b>Shop A hub gets Mary's change</b><span>Same as the same-shop flow.</span></div></li>
+      <li style="--c:var(--mail)"><div class="when">+5 s</div><div class="dot"></div><div class="what"><b>The station on mail duty writes an outgoing mail</b><span>A folder in <code>.Mails/default/out/</code> with <code>.lock</code>, message, bundle, then the lock is removed. If the terminal is off, it waits safely on the share.</span></div></li>
+      <li style="--c:var(--mail)"><div class="when" data-day="≤ 15 s" data-night="≤ 15 s">≤ 15 s</div><div class="dot"></div><div class="what"><b>Shop A's terminal sends it</b><span><code>compile_mail.sh</code> loops every 15 s, hands it to Postfix and files it under Sent.</span></div></li>
+      <li style="--c:var(--mail)"><div class="when" data-day="≤ 3 min" data-night="≤ 15 min">≤ 3 min</div><div class="dot"></div><div class="what"><b>Shop B's terminal fetches it</b><span>getmail on the cron cadence, then writes <code>zip_in/&lt;ts&gt;!.zip</code> to Shop B's share.</span></div></li>
+      <li style="--c:var(--nfs)"><div class="when">≤ 30 s</div><div class="dot"></div><div class="what"><b>Shop B's mail-duty station imports it</b><span>Reads the zip without moving it, checks the signature, adds the changes to Shop B's hub as "incoming from Shop A".</span></div></li>
+      <li style="--c:var(--nfs)"><div class="when">≤ 15 s</div><div class="dot"></div><div class="what"><b>Clair sees "Shop A sent 1 change"</b><span>She reviews and accepts. Shop B's hub then mails back a short <code>have</code> so Shop A knows it arrived.</span></div></li>
+    </ol>
+    <p class="total" id="mail-total">Typically under 5 minutes by day.</p>
+    <p class="small muted">Worst cases come from the terminals' cron schedule, read on the live terminal. Internet delivery time between the two upwardmail mailboxes is not measured yet.</p>
+  </div>
+
+  <div id="flow-conf" role="tabpanel" aria-labelledby="tab-conf" class="fig" hidden>
+    <ol class="steps">
+      <li><div class="when">base</div><div class="dot"></div><div class="what"><b>Both start from the same change</b><span>The graph knows their common ancestor, so CBCS can compare three versions instead of two.</span></div></li>
+      <li><div class="when">edits</div><div class="dot"></div><div class="what"><b>Mary edits lines 10–14, Joe edits lines 40–52 of invoice.py</b><span>Different regions merge automatically into a new change with two parents.</span></div></li>
+      <li style="--c:var(--warn)"><div class="when">overlap</div><div class="dot"></div><div class="what"><b>Both changed line 12</b><span>The merge view shows Mine, Theirs and the original side by side. Pick one, combine, or edit by hand.</span></div></li>
+      <li><div class="when">forms</div><div class="dot"></div><div class="what"><b>Both changed invoice.ui</b><span>Designer forms and binary files are chosen whole, with a preview of each, because a line merge of XML can break a form.</span></div></li>
+      <li style="--c:var(--good)"><div class="when">done</div><div class="dot"></div><div class="what"><b>Nothing is lost</b><span>Every version stays in history and can be restored, including the one not chosen.</span></div></li>
+    </ol>
+  </div>
+</section>
+
+<!-- 7 -->
+<section id="ux">
+  <div class="eyebrow">7 · Experience</div>
+  <h2>What users see</h2>
+  <p class="prose">A sketch of the Team panel with example people. The words avoid git terms on purpose.</p>
+  <div class="mock" aria-label="Team panel mockup (example data)">
+    <div class="bar">
+      <span class="title">Team · Invoice App</span>
+      <span class="chip good">Shop hub · synced 8 s ago</span>
+      <span class="chip plain">Mail · last from Shop B 3 min ago</span>
+      <span class="sp"></span>
+      <button type="button" class="btn" id="mock-sync">Sync now</button>
+      <button type="button" class="btn pri" id="mock-save">Save change…</button>
+    </div>
+    <div class="col">
+      <div class="incoming">
+        <b>Clair (Shop B) sent 2 changes</b>
+        <span class="small">"Round totals to cents" · "Fix tab order on invoice form"</span>
+        <div style="display:flex;gap:8px;flex-wrap:wrap"><button type="button" class="btn pri" id="mock-review">Review</button><button type="button" class="btn" id="mock-later">Not now</button></div>
+      </div>
+      <div class="eyebrow">History</div>
+      <ul class="tl">
+        <li style="--c:var(--ink)"><div><b>Add discount column to invoice form</b><span>Mary · net2 · today 9:14</span></div></li>
+        <li style="--c:var(--mail)"><div><b>Combined Shop B's changes</b><span>Joe · net1 · yesterday 16:02 · merged</span></div></li>
+        <li><div><b>Print customer phone on header</b><span>Joe · net1 · yesterday 11:40</span></div></li>
+        <li><div><b>First version shared with Shop B</b><span>Joe · net1 · 28 Oct</span></div></li>
+      </ul>
+    </div>
+    <div class="col">
+      <div class="eyebrow">Round totals to cents · invoice.py</div>
+<div class="diff"><span class="h">@@ line 38 @@</span>
+     subtotal = sum(l.amount for l in lines)
+<span class="d">-    total = subtotal * (1 + tax_rate)</span>
+<span class="a">+    total = round(subtotal * (1 + tax_rate), 2)</span>
+     return total</div>
+      <div class="eyebrow">Working on this project now</div>
+      <div class="who"><span class="chip plain">Mary · net2 · invoice.ui</span><span class="chip plain">Eli · net3 · reports.py</span></div>
+      <p class="small muted">Presence comes from heartbeat files in the hub. Nobody is locked out: it is a heads-up, not a lock.</p>
+    </div>
+  </div>
+</section>
+
+<!-- 8 -->
+<section id="roadmap">
+  <div class="eyebrow">8 · Delivery</div>
+  <h2>Roadmap</h2>
+  <p class="prose">Each phase ships something useful on its own and ends with a test on the cbfarm (a floor or a shop with fault injection) before it reaches a customer.</p>
+  <div class="road">
+    <div class="phase"><div class="pn">P0<small>change history</small></div><div><b>Save change, history, diff, restore. Local only.</b>
+      <ul><li>Vendor dulwich 0.24.10 and typing_extensions into the cp39 bundle. One history interface over them.</li><li>Team panel with history and diff. Restore any version.</li><li>Already useful for one person: named checkpoints that never expire.</li></ul>
+      <div class="gate">Gate: unit tests for history and three-way merge on recorded edit pairs, <code>git fsck --strict</code> on every repo the tests produce, Python 3.9 compatible.</div></div></div>
+    <div class="phase"><div class="pn">P1<small>between shops · first</small></div><div><b>Shops share a project through FaxMail.</b>
+      <ul><li>One station per shop shares the project. Its own history is the shop's copy until the hub arrives.</li><li>Invites with a shared key, membership, key rotation.</li><li><code>out/</code> writer, <code>zip_in</code>/<code>inbox</code> reader (read only), signature check, incoming review, merge view.</li><li>Have and want replies, resend, 10 MiB parts. Export and import a bundle file (USB).</li></ul>
+      <div class="gate">Gate: two leased shops exchanging bundles through their twins with mail faults (drop, duplicate, reorder). Then one real round trip on the shop terminal with your OK. Measure the provider's real size cap.</div></div></div>
+    <div class="phase"><div class="pn">P2<small>shop hub</small></div><div><b>Stations in one shop share a project.</b>
+      <ul><li>Create and join a hub on net1's share. Locate the share on net1 and on carts.</li><li>Lease lock, tip pointer, polling, presence.</li><li>Mail moves from the single station to the hub, with a leader lease for mail duty.</li></ul>
+      <div class="gate">Gate: floor lease with net1 and two carts saving at the same time, with the NFS link dropped mid-write. No lost or torn change.</div></div></div>
+    <div class="phase opt"><div class="pn">P3<small>optional</small></div><div><b>LAN live link.</b>
+      <ul><li>UDP "tip moved" nudge, so same-shop notice drops from 15 s to under 1 s.</li><li>Follow mode: watch what a teammate is doing.</li></ul></div></div>
+    <div class="phase opt"><div class="pn">P4<small>optional</small></div><div><b>Bridges to RockSolid.</b>
+      <ul><li>Export history to git (fast-import stream) so RockSolid can mirror a project to GitHub.</li><li>A RockSolid relay mailbox as a member: support, backups and fewer mails for larger teams.</li></ul></div></div>
+  </div>
+</section>
+
+<!-- 9 -->
+<section id="risks">
+  <div class="eyebrow">9 · Unknowns</div>
+  <h2>Risks and what still needs proving</h2>
+  <div class="tbl">
+  <table>
+    <thead><tr><th>Risk</th><th>Why it matters</th><th>Plan</th></tr></thead>
+    <tbody>
+      <tr><td>Upwardmail's size limit is unknown</td><td>The terminal accepts 36 MB, but the provider may cap lower.</td><td>Split bundles at 10 MiB (about 14 MB on the wire). Measure the real cap in P2.</td></tr>
+      <tr><td>Share path differs between boxes</td><td>The lab shows <code>share/net1/PDF</code> on carts and <code>share/PDF</code> on net1.</td><td>Try known paths, check by writing a marker, ask the user once if none fits.</td></tr>
+      <tr><td>NFS locks across machines unproven</td><td>The probe locked from one station only.</td><td>Use the <code>mkdir</code> lease (proven atomic) with heartbeat. Prove contention in the P1 gate.</td></tr>
+      <tr><td>Sync mail clutters the shop inbox</td><td>Users see CBCS messages in FaxMail.</td><td>Clear subject and "no action needed" body. Optional terminal hook to file them separately, with Sunrise Circuits' OK.</td></tr>
+      <tr><td>Spam filters or rate limits</td><td>Automated mail with attachments can be flagged.</td><td>Batch saves into one push per few minutes. Plain-text bodies. Watch for bounces in <code>inbox</code>.</td></tr>
+      <tr><td>Shared key leaks</td><td>A forwarded invite lets a stranger send signed bundles.</td><td>Invites expire, keys rotate, and incoming changes still need a person to accept them. Bundles never run code.</td></tr>
+      <tr><td>dulwich is frozen at 0.24.10</td><td>No fixes for Python 3.9. Newer releases need 3.10 or newer.</td><td>Offline use only, signature checked before parsing, one interface so an upgrade is a swap when ChoreBoy's Python moves.</td></tr>
+      <tr><td>dulwich bundle import shortcut is unsafe</td><td>Its helpers lost a commit on a real-git bundle in the probe.</td><td>Always import through <code>add_thin_pack</code>, then walk every commit, tree and file before moving any ref.</td></tr>
+      <tr><td>Product decision</td><td>"Git idea via faxmail terminal" is marked WON'T DO in <code>USER_REQUESTS_TODO.md</code> #23.</td><td>This proposal reverses that. Needs your sign-off and an update to that entry.</td></tr>
+    </tbody>
+  </table>
+  </div>
+</section>
+
+<!-- 10 -->
+<section id="questions">
+  <div class="eyebrow">10 · Decisions</div>
+  <h2>Decisions</h2>
+  <p class="prose">Answers recorded 2 Nov 2026.</p>
+  <div class="qs">
+    <div class="q"><div class="n">Q1 · decided</div><b>Who collaborates first?</b>
+      <p class="rec"><span class="chip good">Between shops</span> Mail between shops is now P1. The shop hub follows in P2.</p></div>
+    <div class="q"><div class="n">Q2 · decided</div><b>Must history be real git?</b>
+      <p class="rec"><span class="chip good">Real git via dulwich 0.24.10</span> Proven on a confined ChoreBoy cart, with real git reading its bundles. See section 5b.</p></div>
+    <div class="q"><div class="n">Q3 · decided</div><b>Terminal hook?</b>
+      <p class="rec"><span class="chip good">No terminal changes</span> CBCS reads and writes mail files only. Sync mail shows in the shop inbox with a clear "no action needed" note.</p></div>
+    <div class="q"><div class="n">Q4 · decided</div><b>Live co-editing?</b>
+      <p class="rec"><span class="chip good">Save-and-sync</span> Overlaps go to the merge view. Live editing is out of scope.</p></div>
+  </div>
+</section>
+</main>
+</div>
+
+<footer>
+  Sources: cbfarm shop lease <span class="mono">esee</span> (net1, cart net2, FaxMail twin) probed 2 Nov 2026 with <span class="mono">.audit/collab_probe/collab_probe.py</span>; floor lease <span class="mono">ea9g</span> (cart net2) with <span class="mono">.audit/dulwich_probe/dulwich_probe.py</span>, checked against real git 2.x on a Mac; read-only SSH inspection of the shop's FaxMail terminal faxmail15; the <span class="mono">cb_probes</span> repo (faxmail_probe, django_server, iq_faxmail_update_channel_probe); CBCS <span class="mono">docs/DISCOVERY.md</span>. People and projects in the mockups are examples.
+</footer>
+
+<script>
+(function(){
+  // capability filter
+  var fb = document.querySelectorAll('.filter button');
+  var rows = document.querySelectorAll('#caps tbody tr');
+  fb.forEach(function(b){ b.addEventListener('click', function(){
+    fb.forEach(function(x){ x.setAttribute('aria-pressed', x===b ? 'true':'false'); });
+    var f = b.getAttribute('data-f');
+    rows.forEach(function(r){ r.hidden = !(f==='all' || r.getAttribute('data-k')===f); });
+  });});
+  // flow tabs
+  var tabs = document.querySelectorAll('[role="tab"]');
+  tabs.forEach(function(t){ t.addEventListener('click', function(){
+    tabs.forEach(function(x){
+      var on = x===t; x.setAttribute('aria-selected', on?'true':'false');
+      document.getElementById(x.getAttribute('aria-controls')).hidden = !on;
+    });
+  });});
+  // day / night
+  var seg = document.querySelectorAll('.seg button');
+  var total = document.getElementById('mail-total');
+  seg.forEach(function(b){ b.addEventListener('click', function(){
+    seg.forEach(function(x){ x.setAttribute('aria-pressed', x===b?'true':'false'); });
+    var t = b.getAttribute('data-t');
+    document.querySelectorAll('#flow-mail .when[data-day]').forEach(function(w){ w.textContent = w.getAttribute('data-'+t); });
+    total.textContent = t==='day' ? 'Typically under 5 minutes by day.' : 'Up to about 20 minutes overnight.';
+  });});
+})();
+</script>

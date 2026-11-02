@@ -1,0 +1,626 @@
+<title>Team Sync Prototype</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@75..125,600..800&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* PROTOTYPE, throwaway. Four Team Sync variants inside a CBCS window replica.
+   Colors are CBCS ShellThemeTokens (default light / default dark chrome); components copy CBCS's own patterns. */
+:root{
+  --win:#F8F9FA; --panel:#FFFFFF; --editor:#FFFFFF; --text:#212529; --muted:#5A6168; --border:#DEE2E6;
+  --accent:#3366FF; --accent-soft:#E8EEFF; --gutter:#F1F3F5; --gutter-text:#666F76; --linehl:#EEF7FF;
+  --treesel:#D0E2FF; --hover:#E9ECEF; --act:#E9ECEF; --badge:#E9ECEF; --input:#FFFFFF; --row:#E9ECEF;
+  --err:#E03131; --warn:#D97706; --ok:#1A7F37; --info:#3366FF;
+  --run-bg:#E6F4EA; --run-fg:#15803D; --dbg-bg:#FEF3C7; --dbg-fg:#B45309; --pkg-bg:#E8EEFF; --pkg-fg:#2952CC;
+  --add-bg:#E6F4EA; --del-bg:#FDE8E8; --chip-warn:#FEF3C7;
+  --s-kw:#AF00DB; --s-str:#A31515; --s-fn:#795E26; --s-num:#098658;
+  --p-sam:#0F766E; --p-ana:#C2410C;
+  --wm:#5F8F92; --wm-fg:#0E1A1B;
+  --page:#ECEFF2; --page-fg:#212529; --page-muted:#5A6168; --pill:#16191C; --pill-fg:#F3F5F7; --shade:rgba(15,20,25,.32);
+  --f-ui:"DejaVu Sans",Verdana,system-ui,-apple-system,"Segoe UI",sans-serif;
+  --f-code:"DejaVu Sans Mono",Menlo,Consolas,ui-monospace,monospace;
+}
+@media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){
+  --win:#1F2428; --panel:#262C33; --editor:#1B1F23; --text:#E9ECEF; --muted:#A3ACB6; --border:#3C434A;
+  --accent:#5B8CFF; --accent-soft:#1E2A4A; --gutter:#1F2428; --gutter-text:#8B949E; --linehl:#252B33;
+  --treesel:#2D3A4A; --hover:#2A3038; --act:#1A1E22; --badge:#3C434A; --input:#1B1F23; --row:#2A3038;
+  --err:#FF6B6B; --warn:#E5A100; --ok:#3FB950; --info:#5B8CFF;
+  --run-bg:#1B3D1B; --run-fg:#4ADE80; --dbg-bg:#3A2E10; --dbg-fg:#FBBF24; --pkg-bg:#1E2A4A; --pkg-fg:#8AA8FF;
+  --add-bg:#173322; --del-bg:#3D1B1B; --chip-warn:#3A2E10;
+  --s-kw:#C586C0; --s-str:#CE9178; --s-fn:#DCDCAA; --s-num:#B5CEA8;
+  --p-sam:#14B8A6; --p-ana:#F59E0B;
+  --wm:#3E6466; --wm-fg:#E8F1F1;
+  --page:#121619; --page-fg:#E9ECEF; --page-muted:#9AA5AF; --pill:#F3F5F7; --pill-fg:#16191C; --shade:rgba(0,0,0,.45);
+  color-scheme:dark;
+}}
+:root[data-theme="dark"]{
+  --win:#1F2428; --panel:#262C33; --editor:#1B1F23; --text:#E9ECEF; --muted:#A3ACB6; --border:#3C434A;
+  --accent:#5B8CFF; --accent-soft:#1E2A4A; --gutter:#1F2428; --gutter-text:#8B949E; --linehl:#252B33;
+  --treesel:#2D3A4A; --hover:#2A3038; --act:#1A1E22; --badge:#3C434A; --input:#1B1F23; --row:#2A3038;
+  --err:#FF6B6B; --warn:#E5A100; --ok:#3FB950; --info:#5B8CFF;
+  --run-bg:#1B3D1B; --run-fg:#4ADE80; --dbg-bg:#3A2E10; --dbg-fg:#FBBF24; --pkg-bg:#1E2A4A; --pkg-fg:#8AA8FF;
+  --add-bg:#173322; --del-bg:#3D1B1B; --chip-warn:#3A2E10;
+  --s-kw:#C586C0; --s-str:#CE9178; --s-fn:#DCDCAA; --s-num:#B5CEA8;
+  --p-sam:#14B8A6; --p-ana:#F59E0B;
+  --wm:#3E6466; --wm-fg:#E8F1F1;
+  --page:#121619; --page-fg:#E9ECEF; --page-muted:#9AA5AF; --pill:#F3F5F7; --pill-fg:#16191C; --shade:rgba(0,0,0,.45);
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+body{background:var(--page);color:var(--page-fg);font-family:var(--f-ui);font-size:13px;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:28px 96px}
+:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.page{max-width:1160px;margin:0 auto;display:grid;gap:14px}
+.top{display:flex;align-items:center;gap:16px;flex-wrap:wrap}
+.top h1{margin:0;font-size:15px;font-weight:700}
+.top .sp{flex:1}
+.sw{display:inline-flex;align-items:center;gap:8px;color:var(--page-muted);cursor:pointer;user-select:none;position:relative}
+.sw input{position:absolute;opacity:0;width:1px;height:1px}
+.sw .track{width:28px;height:16px;border-radius:8px;background:var(--border);position:relative;transition:background .15s}
+.sw .track::after{content:"";position:absolute;top:2px;left:2px;width:12px;height:12px;border-radius:50%;background:var(--panel);transition:transform .15s}
+.sw input:checked+.track{background:var(--warn)}
+.sw input:checked+.track::after{transform:translateX(12px)}
+.sw input:focus-visible+.track{outline:2px solid var(--accent);outline-offset:2px}
+.steps{list-style:none;margin:0;padding:0;display:flex;gap:2px;flex-wrap:wrap;border-bottom:1px solid var(--border)}
+.steps button{font:inherit;display:flex;align-items:center;gap:7px;padding:7px 12px 8px;border:0;background:transparent;color:var(--page-muted);cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-1px}
+.steps button:hover{color:var(--page-fg)}
+.steps button[aria-current="step"]{color:var(--page-fg);border-bottom-color:var(--accent)}
+.steps .who{width:6px;height:6px;border-radius:50%}
+.stage{overflow-x:auto;border-radius:6px;box-shadow:0 18px 50px -24px var(--shade)}
+
+/* ===== CBCS window ===== */
+.win{position:relative;min-width:1120px;height:680px;display:grid;grid-template-rows:22px 25px minmax(0,1fr) 23px;background:var(--win);color:var(--text);font-family:var(--f-ui);font-size:12.5px;line-height:1.35;border:1px solid var(--border);overflow:hidden}
+.wmbar{background:var(--wm);color:var(--wm-fg);font-family:Georgia,"DejaVu Serif",serif;font-weight:700;font-size:12px;display:grid;place-items:center}
+.mb{display:flex;align-items:center;padding:0 6px;border-bottom:1px solid var(--border)}
+.mb span{padding:2px 8px}
+.bd{display:grid;grid-template-columns:34px 300px minmax(0,1fr);min-height:0}
+.act{background:var(--act);display:flex;flex-direction:column;align-items:center;gap:6px;padding-top:6px;border-right:1px solid var(--border)}
+.act button{position:relative;width:28px;height:28px;border-radius:5px;border:1px solid transparent;background:transparent;color:var(--muted);display:grid;place-items:center;cursor:pointer;padding:0}
+.act button[aria-pressed="true"]{background:var(--treesel);border-color:var(--accent);color:var(--accent)}
+.act .bdg{position:absolute;right:-4px;top:-4px;min-width:14px;height:14px;border-radius:7px;background:var(--accent);color:#fff;font-size:9px;font-weight:700;display:grid;place-items:center;padding:0 3px}
+.side{display:flex;flex-direction:column;min-height:0;min-width:0;border-right:1px solid var(--border)}
+.sh{display:flex;align-items:center;gap:6px;height:30px;padding:0 8px 0 10px;font-size:11px;font-weight:700;letter-spacing:.05em;color:var(--muted);flex:none}
+.sh .sp{flex:1}
+.ib{width:22px;height:22px;border:0;background:transparent;color:var(--muted);border-radius:4px;display:grid;place-items:center;cursor:pointer;padding:0}
+.ib:hover{background:var(--hover);color:var(--text)}
+.proj{padding:0 10px 2px}
+.rows{list-style:none;margin:0;padding:0}
+.rows li{display:flex;align-items:center;gap:7px;height:24px;padding:0 10px;white-space:nowrap}
+.rows li.click{cursor:pointer}
+.rows li.click:hover{background:var(--hover)}
+.rows li.sel{background:var(--treesel)}
+.rows .nm{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis}
+.rows .dim{color:var(--muted)}
+.dec{font-size:11px;font-weight:700;width:12px;text-align:center;flex:none}
+.dec.M{color:var(--warn)} .dec.A{color:var(--ok)} .dec.in{color:var(--info)} .dec.x{color:var(--err)}
+.grp{display:flex;align-items:center;gap:6px;height:28px;padding:0 10px 0 6px;font-size:11px;font-weight:700;letter-spacing:.05em;color:var(--muted);border-top:1px solid var(--border);cursor:pointer;flex:none}
+.grp .n{font-weight:400;letter-spacing:0;background:var(--badge);color:var(--text);border-radius:8px;padding:0 6px;font-size:10.5px}
+.empty{flex:1;display:grid;place-content:center;justify-items:center;gap:12px;color:var(--muted);padding:20px}
+.main{display:grid;grid-template-rows:40px 28px auto minmax(0,1fr) 112px;min-width:0;min-height:0}
+.tool{display:flex;align-items:center;gap:6px;padding:0 8px;position:relative}
+.tb{font:inherit;font-weight:700;display:inline-flex;align-items:center;gap:6px;height:28px;padding:0 12px;border-radius:5px;border:0;background:transparent;color:var(--text);cursor:default}
+.tb.run{background:var(--run-bg);color:var(--run-fg)} .tb.dbg{background:var(--dbg-bg);color:var(--dbg-fg)} .tb.pkg{background:var(--pkg-bg);color:var(--pkg-fg)}
+.tb.team{background:var(--pkg-bg);color:var(--pkg-fg);cursor:pointer}
+.tb .cnt{background:var(--accent);color:#fff;border-radius:8px;padding:0 6px;font-size:10.5px}
+.grow{flex:1}
+.tabs{display:flex;align-items:flex-end;padding-left:8px;border-bottom:1px solid var(--border)}
+.tab{display:flex;align-items:center;gap:8px;height:26px;padding:0 10px;border:1px solid transparent;border-bottom:0;border-radius:4px 4px 0 0;color:var(--muted)}
+.tab.on{background:var(--editor);border-color:var(--border);color:var(--text);box-shadow:inset 0 2px 0 var(--accent)}
+.tab .x{color:var(--muted)}
+.infobar{display:flex;align-items:center;gap:10px;height:32px;padding:0 8px 0 12px;background:var(--accent-soft);border-bottom:1px solid var(--border)}
+.ed{background:var(--editor);display:grid;grid-template-columns:42px 4px minmax(0,1fr);font-family:var(--f-code);font-size:12.5px;line-height:19px;padding-top:6px;overflow:hidden}
+.ed .ln{color:var(--gutter-text);text-align:right;padding-right:8px;background:var(--gutter)}
+.ed .mk{background:var(--gutter)} .ed .mk i{display:block;height:19px}
+.ed .mk i.chg{background:var(--accent)} .ed .mk i.add{background:var(--ok)}
+.ed .cd{white-space:pre;padding-left:10px}
+.ed .cd .hl{background:var(--linehl)}
+.k{color:var(--s-kw)} .s{color:var(--s-str)} .f{color:var(--s-fn)} .nu{color:var(--s-num)}
+.bp{border-top:1px solid var(--border);display:grid;grid-template-rows:26px 1fr;min-height:0}
+.bp .bt{display:flex}
+.bp .bt span{padding:5px 10px;border-right:1px solid var(--border);color:var(--muted)}
+.bp .bt span.on{color:var(--text);background:var(--panel);box-shadow:inset 0 2px 0 var(--accent)}
+.bp .bc{background:var(--panel);font-family:var(--f-code);font-size:11.5px;padding:6px 8px;color:var(--muted)}
+.sb{display:flex;align-items:center;gap:18px;padding:0 8px;border-top:1px solid var(--border);color:var(--muted);font-size:11.5px;white-space:nowrap;position:relative}
+.sb .seg{display:inline-flex;align-items:center;gap:6px;border:0;background:transparent;font:inherit;color:var(--text);padding:0 4px;height:19px;border-radius:3px}
+.sb button.seg{cursor:pointer} .sb button.seg:hover{background:var(--hover)}
+.dot{width:7px;height:7px;border-radius:50%;background:var(--ok);flex:none}
+.dot.warn{background:var(--warn)} .dot.info{background:var(--info)} .dot.off{background:var(--muted)}
+
+/* shared atoms */
+.av{display:inline-grid;place-items:center;width:20px;height:20px;border-radius:50%;color:#fff;font-size:9px;font-weight:700;flex:none}
+.av.sam{background:var(--p-sam)} .av.ana{background:var(--p-ana)}
+.av.lg{width:30px;height:30px;font-size:11px}
+.btn{font:inherit;font-weight:700;display:inline-flex;align-items:center;justify-content:center;gap:6px;height:28px;padding:0 14px;border-radius:4px;border:1px solid var(--border);background:var(--panel);color:var(--text);cursor:pointer;white-space:nowrap}
+.btn:hover{background:var(--hover)}
+.btn.pri{background:var(--accent);border-color:var(--accent);color:#fff}
+.btn.sm{height:24px;padding:0 10px;font-size:12px}
+.btn.wide{width:100%}
+.input{font:inherit;width:100%;height:28px;border:1px solid var(--border);background:var(--input);color:var(--text);border-radius:4px;padding:0 8px}
+.input:focus{outline:2px solid var(--accent);outline-offset:-1px;border-color:transparent}
+.chip{display:inline-flex;align-items:center;justify-self:start;height:20px;padding:0 9px;border-radius:10px;background:var(--badge);font-size:11px;font-weight:700;color:var(--text);white-space:nowrap}
+.chip.warn{background:var(--chip-warn);color:var(--warn)} .chip.ok{background:var(--add-bg);color:var(--ok)}
+.tk{font-size:11px;letter-spacing:-2px;color:var(--muted);flex:none} .tk.on{color:var(--ok)} .tk.wait{color:var(--warn);letter-spacing:0}
+.scroll{overflow:auto;min-height:0}
+.coach{animation:coach 1.8s ease-in-out infinite}
+@keyframes coach{50%{box-shadow:0 0 0 3px var(--accent-soft)}}
+@media (prefers-reduced-motion:reduce){.coach{animation:none;box-shadow:0 0 0 2px var(--accent-soft)}}
+
+/* A */
+.a-box{padding:6px 10px 10px;display:grid;gap:6px}
+/* B */
+.seg3{display:flex;margin:0 10px 8px;border:1px solid var(--border);border-radius:5px;overflow:hidden;flex:none}
+.seg3 span{flex:1;text-align:center;padding:4px 0;font-size:12px;color:var(--muted);border-left:1px solid var(--border)}
+.seg3 span:first-child{border-left:0}
+.seg3 span.on{background:var(--treesel);color:var(--text);font-weight:700}
+.mail{display:grid;grid-template-columns:20px minmax(0,1fr) auto;gap:2px 9px;padding:8px 10px;cursor:pointer;align-items:center}
+.mail:hover{background:var(--hover)}
+.mail .who{font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mail .t{font-size:11px;color:var(--muted);text-align:right}
+.mail .sub{grid-column:2/4;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mail.unread .sub{color:var(--text)}
+.mail.unread{box-shadow:inset 2px 0 0 var(--accent)}
+/* C */
+.feed{flex:1;padding:6px 10px 12px;display:grid;gap:14px;align-content:start}
+.day{justify-self:center;font-size:11px;color:var(--muted)}
+.msg{display:grid;grid-template-columns:20px minmax(0,1fr);gap:9px}
+.msg .h{display:flex;gap:6px;align-items:baseline}
+.msg .h span{font-size:11px;color:var(--muted)}
+.msg .txt{margin-top:2px}
+.msg .meta{display:flex;align-items:center;gap:8px;margin-top:5px}
+.msg .files{color:var(--accent);font-size:12px;cursor:pointer}
+.msg.new{background:var(--accent-soft);border-radius:6px;padding:8px;margin:0 -8px}
+.comp{border-top:1px solid var(--border);padding:8px 10px;display:grid;gap:6px;flex:none}
+.comp .row{display:flex;gap:6px}
+.comp .send{width:28px;padding:0;flex:none}
+.attach{display:inline-flex;align-items:center;gap:5px;justify-self:start;height:20px;padding:0 8px;border-radius:10px;background:var(--badge);font-size:11px;font-weight:700;cursor:pointer}
+/* D */
+.pop{position:absolute;right:300px;bottom:27px;width:300px;background:var(--panel);border:1px solid var(--border);border-radius:6px;box-shadow:0 12px 30px -10px var(--shade);z-index:5}
+.pop .ph{display:flex;align-items:center;gap:8px;padding:10px 12px;border-bottom:1px solid var(--border);font-weight:700}
+.pop .rows li{height:28px}
+.pop .pf{display:flex;gap:4px;padding:6px 8px;border-top:1px solid var(--border)}
+.sheet{position:absolute;top:86px;right:160px;width:320px;background:var(--panel);border:1px solid var(--border);border-radius:6px;box-shadow:0 12px 30px -10px var(--shade);padding:10px;display:grid;gap:8px;z-index:5}
+.sheet .rows li{padding:0 2px}
+
+/* CBCS dialog chrome */
+.ov{position:absolute;inset:22px 0 0;background:var(--shade);display:grid;place-items:center;z-index:10}
+.dlg{background:var(--panel);border:2px solid var(--text);display:grid;grid-template-rows:20px auto minmax(0,1fr) auto;max-height:560px;color:var(--text)}
+.dlg .wt{background:var(--wm);color:var(--wm-fg);font-family:Georgia,"DejaVu Serif",serif;font-weight:700;font-size:12px;display:grid;place-items:center}
+.dlg .dh{padding:16px 20px 12px;display:grid;gap:8px;border-bottom:1px solid var(--border)}
+.dlg .dh .t{display:flex;align-items:center;gap:10px;font-size:16px;font-weight:700}
+.dlg .db{padding:14px 20px;display:grid;gap:12px;overflow:auto;align-content:start}
+.dlg .df{padding:12px 20px;border-top:1px solid var(--border);display:flex;gap:8px;align-items:center}
+.dlg .df .sp{flex:1}
+.list{border:1px solid var(--border);border-radius:5px;padding:5px;display:grid;gap:3px}
+.list .it{display:flex;align-items:center;gap:9px;padding:6px 9px;border-radius:4px;cursor:pointer;min-width:0}
+.list .it.on{background:var(--row)}
+.form{display:grid;grid-template-columns:80px minmax(0,1fr);gap:10px 12px;align-items:center}
+.form label{color:var(--muted)}
+.tokens{display:flex;flex-wrap:wrap;gap:6px;align-items:center;min-height:30px;border:1px solid var(--border);border-radius:4px;padding:3px 5px;background:var(--input)}
+.tok{display:inline-flex;align-items:center;gap:6px;background:var(--accent-soft);border-radius:12px;padding:1px 9px 1px 1px}
+.diff{font-family:var(--f-code);font-size:12px;line-height:19px;border:1px solid var(--border);border-radius:5px;background:var(--editor);overflow:auto;padding:4px 0;align-self:start}
+.diff div{white-space:pre;padding:0 10px}
+.diff .ctx{color:var(--muted)} .diff .a{background:var(--add-bg)} .diff .d{background:var(--del-bg)}
+.split{display:grid;grid-template-columns:200px minmax(0,1fr);gap:12px;min-height:0}
+.opt{display:grid;grid-template-columns:16px 20px minmax(0,1fr);gap:10px;align-items:center;padding:10px;border:1px solid var(--border);border-radius:5px;cursor:pointer}
+.opt[aria-checked="true"]{border-color:var(--accent);background:var(--accent-soft)}
+.opt .r{width:14px;height:14px;border-radius:50%;border:2px solid var(--muted)}
+.opt[aria-checked="true"] .r{border:4px solid var(--accent)}
+.opt code{font-family:var(--f-code);font-size:12px;white-space:pre;overflow:hidden;text-overflow:ellipsis}
+
+/* ===== explanation (artifact page, not the prototyped UI) ===== */
+.doc{font-family:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;font-size:15px;line-height:1.55}
+.doc h1,.doc h2,.doc h3{font-family:"Archivo","Arial Narrow",Arial,sans-serif;margin:0;text-wrap:balance;line-height:1.15}
+.doc h1{font-size:clamp(1.9rem,4vw,2.7rem);font-weight:800;font-stretch:88%}
+.doc h2{font-size:clamp(1.35rem,2.6vw,1.75rem);font-weight:750;font-stretch:92%}
+.doc h3{font-size:1.1rem;font-weight:700;font-stretch:95%}
+.doc p{margin:0}
+.eyebrow{font-size:.72rem;letter-spacing:.08em;text-transform:uppercase;color:var(--page-muted);font-weight:600}
+.lede{max-width:72ch;font-size:1.05rem}
+.prose{max-width:72ch;display:grid;gap:10px}
+.dmuted{color:var(--page-muted)}
+.dsmall{font-size:.88rem}
+.page{gap:18px}
+.dsec{display:grid;gap:18px;margin-top:44px;min-width:0}
+.intro{display:grid;gap:12px}
+.howto{display:flex;flex-wrap:wrap;gap:6px 18px;font-size:.88rem;color:var(--page-muted)}
+.howto kbd{font-family:var(--f-code);font-size:.8rem;border:1px solid var(--border);border-bottom-width:2px;border-radius:4px;padding:0 5px;background:var(--panel);color:var(--page-fg)}
+.explain{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);gap:0;background:var(--panel);border:1px solid var(--border);border-radius:8px;overflow:hidden}
+@media (max-width:820px){.explain{grid-template-columns:minmax(0,1fr)}}
+.explain>div{padding:14px 18px;display:grid;gap:6px;align-content:start}
+.explain>div+div{border-left:1px solid var(--border);background:var(--win)}
+@media (max-width:820px){.explain>div+div{border-left:0;border-top:1px solid var(--border)}}
+.explain .whoami{display:flex;align-items:center;gap:8px;font-size:.84rem;color:var(--page-muted)}
+.explain .bg{font-size:.88rem;color:var(--page-muted)}
+.vtag{display:inline-flex;align-items:center;gap:6px;font-weight:600}
+.vtag b{display:inline-grid;place-items:center;width:20px;height:20px;border-radius:4px;background:var(--accent);color:#fff;font-size:.75rem}
+.vgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px}
+.vcard{background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:16px 18px;display:grid;gap:10px;align-content:start}
+.vcard.pick{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
+.vcard .idea{font-size:.95rem}
+.vcard dl{margin:0;display:grid;gap:8px}
+.vcard dt{font-size:.72rem;letter-spacing:.06em;text-transform:uppercase;color:var(--page-muted);font-weight:600}
+.vcard dd{margin:0;font-size:.9rem}
+.vcard ul{margin:0;padding-left:1.1em;display:grid;gap:2px}
+.vcard .try{justify-self:start}
+.dbtn{font:inherit;font-size:.86rem;padding:5px 12px;border-radius:5px;border:1px solid var(--border);background:var(--panel);color:var(--page-fg);cursor:pointer}
+.dbtn:hover{background:var(--hover)}
+.mtx{overflow-x:auto;border:1px solid var(--border);border-radius:8px;background:var(--panel)}
+.mtx table{border-collapse:collapse;width:100%;min-width:900px;font-size:.86rem}
+.mtx th,.mtx td{text-align:left;vertical-align:top;padding:10px 12px;border-bottom:1px solid var(--border);border-left:1px solid var(--border)}
+.mtx th:first-child,.mtx td:first-child{border-left:0}
+.mtx th{background:var(--win);font-size:.72rem;letter-spacing:.06em;text-transform:uppercase;color:var(--page-muted);font-weight:600}
+.mtx td:first-child{width:170px}
+.mtx td:first-child b{display:block}
+.mtx td.shared{color:var(--page-muted);font-style:italic;text-align:center}
+.mtx tr:last-child td{border-bottom:0}
+.mtx tr.cur td{background:var(--accent-soft)}
+.life{overflow-x:auto}
+.life ol{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(6,minmax(150px,1fr));min-width:900px}
+.life li{padding:0 14px 0 0;display:grid;gap:4px;align-content:start}
+.life li::before{content:"";height:4px;border-radius:2px;background:var(--c,var(--accent));margin-bottom:8px}
+.life b{font-family:"Archivo",Arial,sans-serif;font-stretch:92%;font-size:1rem}
+.life .w{font-family:var(--f-code);font-size:.72rem;color:var(--page-muted)}
+.life .ls{font-size:.86rem}
+.life .x{font-size:.8rem;color:var(--page-muted)}
+.sgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px}
+.scard{background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:14px 16px;display:grid;gap:6px;align-content:start}
+.scard p{font-size:.88rem;color:var(--page-muted)}
+.rec{background:var(--panel);border:1px solid var(--border);border-left:3px solid var(--accent);border-radius:0 8px 8px 0;padding:18px 20px;display:grid;gap:10px;max-width:84ch}
+.qgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px}
+.qcard{background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:14px 16px;display:grid;gap:8px;align-content:start}
+.qcard ul{margin:0;padding-left:1.1em;font-size:.88rem;display:grid;gap:3px}
+.qcard .r{font-size:.86rem;color:var(--page-muted)}
+.qcard .r b{color:var(--page-fg)}
+.gaps{margin:0;padding-left:1.1em;display:grid;gap:4px;max-width:80ch;font-size:.92rem}
+
+/* prototype switcher (not part of the design) */
+.switcher{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(18px + env(safe-area-inset-bottom,0px));z-index:50;display:flex;align-items:center;background:var(--pill);color:var(--pill-fg);border-radius:999px;padding:4px;box-shadow:0 10px 30px -8px var(--shade);max-width:calc(100vw - 32px)}
+.switcher button{font:inherit;width:32px;height:32px;border-radius:50%;border:0;background:transparent;color:inherit;cursor:pointer;font-size:17px}
+.switcher button:hover{background:rgba(127,127,127,.25)}
+.switcher .cur{padding:0 12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.switcher .cur b{margin-right:8px;opacity:.6}
+</style>
+
+<div class="page">
+  <header class="doc intro">
+    <div class="eyebrow">ChoreBoy Code Studio · Team Sync · UX prototype</div>
+    <h1>Team Sync Prototype</h1>
+    <p class="lede">Four ways the everyday Team Sync workflow could look inside CBCS. Each one is a different bet on where collaboration lives in the editor. Step through one day between two shops, switch between the four setups, and use the explanations below to compare them.</p>
+    <p class="prose dmuted dsmall">The story: Sam at Maple Ridge built an invoice app and shares it with Ana at Cedar Hollow. Changes travel as signed git bundles by email through each shop's FaxMail terminal, so nothing is instant: a change takes a few minutes by day. People, shops and code are examples. Nothing here touches real data.</p>
+    <div class="howto"><span>Steps: click a tab or press <kbd>[</kbd> <kbd>]</kbd></span><span>Setups: the floating bar or <kbd>←</kbd> <kbd>→</kbd></span><span>Buttons inside the window that move the story forward work too</span></div>
+  </header>
+
+  <div class="top" style="margin-top:10px">
+    <ol class="steps" id="steps" style="flex:1"></ol>
+    <label class="sw"><input type="checkbox" id="offline"><span class="track"></span>Terminal offline</label>
+  </div>
+  <div class="doc explain" id="explain" aria-live="polite"></div>
+  <div class="stage"><div id="win"></div></div>
+
+  <section class="doc dsec" id="setups">
+    <div class="eyebrow">How each setup works</div>
+    <h2>Four setups, four bets</h2>
+    <p class="prose">All four share the same engine, the same dialogs for sharing, joining and combining, and the same tree letters (M changed, A new, ↓ incoming, ! needs your call). What differs is where your team's work lives day to day.</p>
+    <div class="vgrid" id="vcards"></div>
+  </section>
+
+  <section class="doc dsec" id="matrix">
+    <div class="eyebrow">Step by step</div>
+    <h2>The same day in each setup</h2>
+    <p class="prose">Each row is one moment of the day. Each column is what that setup shows at that moment. The highlighted row is the step open in the prototype.</p>
+    <div class="mtx" id="mtx"></div>
+  </section>
+
+  <section class="doc dsec" id="sharedparts">
+    <div class="eyebrow">Shared by every setup</div>
+    <h2>What stays the same</h2>
+    <div class="sgrid">
+      <div class="scard"><h3>Share dialog</h3><p>Who to invite, an optional message, and the project's size. Vendor folders and caches are left out automatically. Sending builds the git history, a project key and a signed invite.</p></div>
+      <div class="scard"><h3>Invite dialog</h3><p>Shows who invited you and that the invite was verified. You pick a folder and open the project. The invite email also stays in FaxMail.</p></div>
+      <div class="scard"><h3>Review dialog</h3><p>Note, changed files and the diff, built on CBCS's existing diff view. Your files don't change until you press Accept, and every accept leaves a restore point.</p></div>
+      <div class="scard"><h3>Combine dialog</h3><p>Everything that doesn't clash is combined automatically. For a line both people changed, you pick Yours, Theirs or Both. Forms (<code>.ui</code>) are picked whole.</p></div>
+      <div class="scard"><h3>Explorer letters</h3><p>M changed since you last sent, A new file, ↓ incoming change waiting for you, ! a line that needs your call.</p></div>
+      <div class="scard"><h3>Status bar</h3><p>A "Team:" segment next to Run and Project: Up to date, 3 to send, Queued, Sent, Delivered, 1 from Sam, or Terminal offline. In setup D it opens a popover.</p></div>
+    </div>
+  </section>
+
+  <section class="doc dsec" id="lifecycle">
+    <div class="eyebrow">A change's journey</div>
+    <h2>Where a change is, minute by minute</h2>
+    <p class="prose">Between shops, a change passes through six places. Every setup has to show which one it's in, because people will wonder why it hasn't arrived yet.</p>
+    <div class="life"><ol>
+      <li style="--c:var(--muted)"><span class="w">your editor</span><b>Edited</b><span class="ls">File saved as usual. The tree shows M.</span><span class="x">Local history already protects it.</span></li>
+      <li style="--c:var(--accent)"><span class="w">your git history</span><b>Saved change</b><span class="ls">Has a note and an author. Happens when you press Send.</span><span class="x">Can be restored any time.</span></li>
+      <li style="--c:var(--warn)"><span class="w">shop share · out/</span><b>Queued</b><span class="ls">Waits for the terminal's 15-second send loop.</span><span class="x">Terminal off: shows "Waiting" and stays safe.</span></li>
+      <li style="--c:var(--info)"><span class="w">terminal → internet</span><b>Sent ✓</b><span class="ls">FaxMail files it under Sent.</span><span class="x">A bounce comes back to the inbox and shows here.</span></li>
+      <li style="--c:var(--info)"><span class="w">their share · zip_in/</span><b>Delivered ✓✓</b><span class="ls">Their CBCS confirms by a short return mail.</span><span class="x">Their terminal checks mail every 3 min by day, 15 at night.</span></li>
+      <li style="--c:var(--ok)"><span class="w">their files</span><b>Accepted</b><span class="ls">They reviewed it and pressed Accept.</span><span class="x">Their restore point makes it undoable.</span></li>
+    </ol></div>
+  </section>
+
+  <section class="doc dsec" id="rec">
+    <div class="eyebrow">Recommendation</div>
+    <h2>C as the home, D's signals everywhere else</h2>
+    <div class="rec">
+      <p><b>Use the Thread (C) as the one Team view, and add Ambient's (D) toolbar Send button, editor bar and clickable status segment.</b> Keep A's file list inside the composer so you always see what goes out.</p>
+      <p class="dsmall">Why: between shops nothing is instant, so the work reads best as a conversation with clear delivery states, and a thread is exactly that. People spend nearly all their time in the editor, so new work should meet them on the file they're looking at instead of waiting in a panel. One Team view still gives history, notes and team settings an obvious home, which D alone lacks. B makes delivery easy to understand, but it turns code into mail and splits history across tabs. A is the most familiar to programmers but hides the delays and leaves no room for notes. When stations in the same shop can sync (phase 2), they join the same thread with faster ticks, so nothing has to be redesigned.</p>
+    </div>
+  </section>
+
+  <section class="doc dsec" id="decisions">
+    <div class="eyebrow">Decisions · recorded 2 Nov 2026</div>
+    <h2>What was decided</h2>
+    <div class="rec"><p><b>Direction:</b> Thread + ambient. <b>Saving:</b> inside Send, with Save Only. <b>Incoming:</b> always review before anything applies. <b>Alerts:</b> badge, status bar and file bar, plus a toast popup when something arrives.</p><p class="dsmall">The options considered are kept below for reference. Round two (diffs, combining, power tools) is in "Team Sync Power Tools".</p></div>
+    <div class="qgrid">
+      <div class="qcard"><h3>1 · Direction</h3><ul><li>Thread + ambient (C with D's signals)</li><li>A · Changes</li><li>B · Mailroom</li><li>D · Ambient only</li></ul><p class="r"><b>Recommended:</b> Thread + ambient.</p></div>
+      <div class="qcard"><h3>2 · When a change is saved</h3><ul><li>Inside Send, with a "Save only" option for checkpoints</li><li>A separate Save step, then send one or more later</li><li>Automatically on every file save</li></ul><p class="r"><b>Recommended:</b> inside Send. One verb to learn, and history stays readable.</p></div>
+      <div class="qcard"><h3>3 · Incoming changes</h3><ul><li>Always wait for Accept</li><li>Apply automatically when nothing clashes, with Undo</li></ul><p class="r"><b>Recommended:</b> always wait for Accept. It matches the security design and nobody's files change by surprise.</p></div>
+      <div class="qcard"><h3>4 · How loud an arrival is</h3><ul><li>Badge, status bar, and a bar on any open file it touches</li><li>All of that plus a popup toast</li></ul><p class="r"><b>Recommended:</b> no toast. Arrivals happen a few times a day and shouldn't interrupt typing.</p></div>
+    </div>
+  </section>
+
+  <section class="doc dsec" id="notshown">
+    <div class="eyebrow">Not in this prototype yet</div>
+    <h2>Still to design</h2>
+    <ul class="gaps">
+      <li>Adding or removing a teammate, and what happens to the project key when someone leaves.</li>
+      <li>A large change that goes out as several emails ("2 of 3 parts arrived").</li>
+      <li>A message that claims to be from the team but fails the signature check.</li>
+      <li>Saving and opening a bundle on USB when there's no terminal.</li>
+      <li>Undoing an accept from the toast or from history.</li>
+      <li>Stations in the same shop syncing through net1's shared folder (phase 2).</li>
+    </ul>
+  </section>
+</div>
+
+<div class="switcher" role="group" aria-label="Variant">
+  <button type="button" id="vprev" aria-label="Previous variant">‹</button>
+  <span class="cur" id="vcur" aria-live="polite"></span>
+  <button type="button" id="vnext" aria-label="Next variant">›</button>
+</div>
+
+<script>
+(function(){
+var V=[{k:'A',name:'Changes'},{k:'B',name:'Mailroom'},{k:'C',name:'Thread'},{k:'D',name:'Ambient'}];
+var P={sam:{name:'Sam Brenneman',first:'Sam',shop:'Maple Ridge',ini:'SB'},ana:{name:'Ana Kurtz',first:'Ana',shop:'Cedar Hollow',ini:'AK'}};
+var STEPS=[{id:'solo',who:'sam',t:'Start'},{id:'share',who:'sam',t:'Share'},{id:'join',who:'ana',t:'Join'},{id:'edit',who:'sam',t:'Send'},{id:'transit',who:'sam',t:'Deliver'},{id:'receive',who:'ana',t:'Receive'},{id:'conflict',who:'ana',t:'Combine'},{id:'history',who:'sam',t:'History'}];
+var STORY={
+ solo:{h:'Sam works alone',bg:'Sam has built Invoice App by himself. Until a project is shared, Team Sync stays out of the way: no badges, no panel content, just one way in.'},
+ share:{h:'Sam shares the project',bg:'Sam invites Ana at Cedar Hollow. CBCS turns the project into git history, creates a project key, and drops a signed invite into the shop’s FaxMail outgoing folder. Vendor folders and caches are left out.'},
+ join:{h:'Ana joins',bg:'Ana’s CBCS checks the shop’s incoming mail folder every 30 seconds. It finds the invite, checks the signature, and offers to open the project. The invite email stays in FaxMail too.'},
+ edit:{h:'Sam sends a change',bg:'Sam rounds invoice totals to cents and adds a statement report. Pressing Send saves a change in git with his note and queues it for the FaxMail terminal.'},
+ transit:{h:'The change travels',bg:'The change waits in the shop folder until the terminal’s 15-second send loop picks it up (Queued), FaxMail sends it (✓), and Ana’s CBCS confirms it arrived with a short return mail (✓✓). Turn on Terminal offline to see a stalled terminal.'},
+ receive:{h:'Ana receives it',bg:'Ana’s terminal fetches mail every 3 minutes by day. CBCS imports the change into a holding area, so nothing touches her files until she reviews it and presses Accept. Turn on Terminal offline to see what she sees when her terminal is down.'},
+ conflict:{h:'Both edited the same line',bg:'Ana had added shipping on the same return line Sam changed. CBCS combines everything else automatically and asks about the one line that clashes. Saving makes a combined change that goes back to Sam.'},
+ history:{h:'A week later, Sam looks back',bg:'Every change from both shops, newest first, with who and when. Any version can be compared or restored. Restoring makes a new change, so nothing is ever lost.'}
+};
+var NOTES={
+ solo:{A:'The Team icon in the activity bar opens a Team view that says Not shared, with Share Project.',B:'The Team icon opens an empty mailroom with Share Project.',C:'The Team icon opens an empty thread with Share Project.',D:'There is no Team icon. The status bar shows Team: Not shared; clicking it starts sharing.'},
+ share:{all:'Same Share dialog in every setup.'},
+ join:{all:'Same Invite dialog in every setup.'},
+ edit:{A:'The Team view lists changed files under Changes, with a note field and Send right below.',B:'Sending means composing a message: To, Subject, and the changed files attached.',C:'The composer at the bottom of the thread already knows 3 files changed. Type a message and send.',D:'A Send button with a count appears in the toolbar. It opens a small sheet with the files, a note and Send.'},
+ transit:{A:'The change moves to a Sent group and its mark goes Queued, ✓, ✓✓.',B:'The message sits in Outbox until the terminal sends it, then moves to Sent with ticks.',C:'Sam’s message shows in the thread with ticks under it.',D:'The status bar segment reads Queued, Sent, Delivered. Its popover shows the detail.'},
+ receive:{A:'An Incoming group appears at the top of the Team view. The Team icon gets a badge. Click the change to review.',B:'An unread message lands in Inbox. Click it to review.',C:'Sam’s message appears highlighted in the thread with a Review button.',D:'A bar above the editor says Sam changed this file, with Review. The tree shows ↓ and the status bar says 1 from Sam.'},
+ conflict:{all:'Same Combine dialog in every setup.'},
+ history:{A:'A History group at the bottom of the Team view, collapsed until you open it.',B:'The Sent tab lists everything exchanged with Cedar Hollow.',C:'The thread is the history. Scroll up.',D:'History in the status-bar popover opens a History dialog, an extension of today’s Local History.'}
+};
+var CARDS=[
+ {k:'A',name:'Changes',idea:'A source-control panel, like VS Code or GitHub Desktop.',where:'A Team view in the sidebar, opened from the activity bar.',flow:['See your changed files listed under Changes','Type a note, press Send','Watch it under Sent: Queued, ✓, ✓✓','Incoming work appears in a group at the top','History is a collapsible group at the bottom'],good:['Exact list of what goes out','Dense and fast','Familiar to anyone who has used git tools'],bad:['Delays are easy to miss','No place for notes or a conversation','Reads as a tool for programmers'],cost:'Open Team, Send'},
+ {k:'B',name:'Mailroom',idea:'Works like the FaxMail client the shop already knows.',where:'A Team view with Inbox, Outbox and Sent, opened from the activity bar.',flow:['Press compose','Fill To and Subject; changed files are attached','It waits in Outbox, then moves to Sent','Incoming work arrives as an unread message','History is the Sent tab'],good:['No new ideas for shop users','Delays make sense: it’s in the Outbox','Fits how FaxMail already behaves'],bad:['Code changes become emails','A compose window for a one-line fix feels heavy','History is split across tabs'],cost:'Compose, Send'},
+ {k:'C',name:'Thread',idea:'One conversation per project. Each change is a message with its files.',where:'A Team view with a message feed and a composer, opened from the activity bar.',flow:['The composer shows how many files changed','Write a message, press send','Ticks appear under your message','Incoming work arrives highlighted, with Review','History is the thread itself'],good:['Notes, review and history in one place','Delivery ticks feel natural','Same-shop teammates fit in later'],bad:['Long histories need search and filters','The file list is folded into the composer'],cost:'Type, Send'},
+ {k:'D',name:'Ambient',idea:'No new place to go. Team Sync appears where you already work.',where:'Toolbar Send button, a bar above the editor, tree letters, and a clickable status-bar segment.',flow:['A toolbar Send button counts your changes','It opens a small sheet: files, note, Send','The status bar shows Queued, Sent, Delivered','Incoming work shows as a bar on the file you’re in','History opens from the status-bar popover'],good:['Least friction','You find new work on the file you’re looking at','Nothing new in the sidebar'],bad:['History and team settings are tucked away','Harder to discover','Little room for notes'],cost:'Send, Send'}
+];
+var S={v:0,step:0,view:null,modal:undefined,pop:undefined,pick:'both',offline:false,tick:2};
+try{var h=(location.hash||'').slice(1).toUpperCase();var hi=V.findIndex(function(x){return x.k===h});if(hi>=0)S.v=hi;}catch(e){}
+
+var I={
+ explorer:'<svg width="16" height="16" viewBox="0 0 16 16"><path d="M2 2h5l1.5 1.5H14v4H2V2z" fill="currentColor" fill-opacity=".15" stroke="currentColor" stroke-width="1.1" stroke-linejoin="round"/><path d="M2 7.5h12v5H2z" fill="currentColor" fill-opacity=".08" stroke="currentColor" stroke-width="1.1" stroke-linejoin="round"/></svg>',
+ search:'<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><circle cx="7" cy="7" r="4.3"/><path d="M10.3 10.3L14 14" stroke-linecap="round"/></svg>',
+ test:'<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"><path d="M6 1.8h4M7 1.8v4.4L3.2 13.4h9.6L9 6.2V1.8"/></svg>',
+ team:'<svg width="16" height="16" viewBox="0 0 16 16"><circle cx="5.5" cy="5.5" r="2.2" fill="currentColor" fill-opacity=".12" stroke="currentColor" stroke-width="1.1"/><circle cx="11" cy="6.2" r="1.8" fill="currentColor" fill-opacity=".12" stroke="currentColor" stroke-width="1.1"/><path d="M1.8 13.5c.4-2.4 1.8-3.7 3.7-3.7s3.3 1.3 3.7 3.7M10 13.5c.2-1.7 1-2.8 2.2-2.8s2 1.1 2.1 2.8" fill="none" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/></svg>',
+ history:'<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M2.5 4a6 6 0 1 1-1 4.5"/><path d="M2.5 1.5v3h3" stroke-linejoin="round"/><path d="M8 5v3.3l2.2 1.3"/></svg>',
+ refresh:'<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M13.5 8A5.5 5.5 0 1 1 11.6 3.8"/><path d="M12 1.5v3h-3" stroke-linejoin="round"/></svg>',
+ compose:'<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"><path d="M2.5 13.5l.9-3.4 7.5-7.5 2.5 2.5-7.5 7.5z"/></svg>',
+ more:'<svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><circle cx="3.5" cy="8" r="1.2"/><circle cx="8" cy="8" r="1.2"/><circle cx="12.5" cy="8" r="1.2"/></svg>',
+ send:'<svg width="13" height="13" viewBox="0 0 14 14" fill="currentColor"><path d="M1 7l12-5.5L9 13 7.2 8.2z"/></svg>',
+ caretD:'<svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor"><path d="M1.5 3h7L5 7.5z"/></svg>',
+ caretR:'<svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor"><path d="M3 1.5v7L7.5 5z"/></svg>',
+ py:'<svg width="14" height="14" viewBox="0 0 14 14"><path d="M7 1C4 1 4.2 2.3 4.2 2.3V3.7H7.1v.4H3S1 3.9 1 7s1.7 2.9 1.7 2.9h1V8.5S3.6 6.8 5.4 6.8h2.9s1.7 0 1.7-1.6V2.6S10.2 1 7 1z" fill="#3776AB"/><path d="M7 13c3 0 2.8-1.3 2.8-1.3V10.3H6.9v-.4H11S13 10.1 13 7s-1.7-2.9-1.7-2.9h-1v1.4s.1 1.7-1.7 1.7H5.7S4 7.2 4 8.8v2.6S3.8 13 7 13z" fill="#FFD43B"/></svg>',
+ ui:'<svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="#2F9E44" stroke-width="1.2"><rect x="1.5" y="2" width="11" height="10" rx="1"/><path d="M1.5 5h11"/></svg>',
+ dir:'<svg width="14" height="14" viewBox="0 0 16 16"><path d="M2 3h4.5l1.5 1.5H14V13H2z" fill="currentColor" fill-opacity=".12" stroke="currentColor" stroke-width="1.1" stroke-linejoin="round" opacity=".75"/></svg>',
+ warn:'<svg width="18" height="18" viewBox="0 0 16 16"><path d="M8 1.5l7 12.5H1z" fill="var(--warn)"/><path d="M8 6v4" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/><circle cx="8" cy="12" r=".9" fill="#fff"/></svg>'
+};
+var BASE=['from decimal import Decimal','','TAX_RATE = Decimal("0.0725")','','','def line_total(qty, price):','    return qty * price','','','def invoice_total(lines):','    subtotal = sum(line_total(q, p) for q, p in lines)','    total = subtotal * (1 + TAX_RATE)','    return total'];
+var SAM='    return total.quantize(Decimal("0.01"))', ANA='    return total + SHIPPING', BOTH='    return (total + SHIPPING).quantize(Decimal("0.01"))';
+var CH=[{p:'invoice.py',k:'M',ic:'py'},{p:'invoice.ui',k:'M',ic:'ui'},{p:'statement.py',k:'A',ic:'py'}];
+var NOTE='Round totals to cents, add statement report';
+var HIST=[
+ {who:'sam',note:'Statement covers last 90 days',when:'Nov 9'},
+ {who:'ana',note:'Fix tab order on invoice form',when:'Nov 4'},
+ {who:'ana',note:'Add shipping to invoices',when:'Nov 2'},
+ {who:'sam',note:NOTE,when:'Nov 2'},
+ {who:'sam',note:'Shared with Cedar Hollow',when:'Nov 2'},
+ {who:'sam',note:'Customer phone on header',when:'Oct 28'}];
+
+function st(){return STEPS[S.step]} function vk(){return V[S.v].k}
+function them(){return st().who==='sam'?P.ana:P.sam}
+function esc(t){return String(t).replace(/&/g,'&amp;').replace(/</g,'&lt;')}
+function hl(l){return esc(l).replace(/("[^"]*")|\b(from|import|def|return|for|in)\b|\b(\d+(?:\.\d+)?)\b|\b([A-Za-z_]\w*)(?=\()/g,function(m,s,k,n,f){return s?'<span class="s">'+s+'</span>':k?'<span class="k">'+k+'</span>':n?'<span class="nu">'+n+'</span>':'<span class="f">'+f+'</span>';});}
+function av(w,lg){return '<span class="av '+w+(lg?' lg':'')+'" title="'+P[w].name+' · '+P[w].shop+'">'+P[w].ini+'</span>';}
+
+function sit(){
+  var id=st().id,x={shared:id!=='solo'&&id!=='share',pending:[],deco:{},code:BASE.slice(),marks:{},out:null,inbox:[]};
+  if(id==='edit'){x.pending=CH;x.code[12]=SAM;x.marks[12]='chg';x.deco={'invoice.py':'M','forms/invoice.ui':'M','reports/statement.py':'A'};}
+  if(id==='transit'||id==='history')x.code[12]=SAM;
+  if(id==='transit')x.out={s:S.offline?-1:Math.min(S.tick,2)};
+  if(id==='receive'){x.code.splice(3,0,'SHIPPING = Decimal("12.00")');x.code[13]=ANA;x.marks[3]='add';x.marks[13]='chg';
+    if(!S.offline){x.inbox=[{from:'sam',note:NOTE,time:'9:18'}];x.deco={'invoice.py':'in','forms/invoice.ui':'in','reports/statement.py':'in'};}}
+  if(id==='conflict')x.deco={'invoice.py':'x'};
+  return x;
+}
+function ticks(s){
+  if(s<0)return '<span class="tk wait" title="FaxMail terminal not responding">Waiting</span>';
+  var tip=['Waiting for terminal','Sent','Arrived at '+them().shop][s];
+  return '<span class="tk'+(s>=1?' on':'')+'" title="'+tip+'">'+(s===0?'<span style="letter-spacing:0">Queued</span>':s===1?'✓':'✓✓')+'</span>';}
+function defView(){var id=st().id;return vk()==='D'||id==='solo'||id==='share'||id==='join'||id==='conflict'?'explorer':'team';}
+function defModal(){var id=st().id,k=vk();if(id==='share')return 'share';if(id==='join')return 'invite';if(id==='conflict')return 'merge';
+  if(id==='edit'&&k==='B')return 'compose';if(id==='edit'&&k==='D')return 'dsend';if(id==='history'&&k==='D')return 'hist';return null;}
+function view(){return S.view||defView()} function modal(){return S.modal===undefined?defModal():S.modal}
+function pop(){return S.pop===undefined?(vk()==='D'&&st().id==='transit'):S.pop}
+
+/* ---- shell ---- */
+function activity(x){
+  var v=view(),n=x.inbox.length,team=vk()==='D'?'':'<button type="button" data-act="team" aria-label="Team" aria-pressed="'+(v==='team')+'"'+(st().id==='solo'?' class="coach"':'')+'>'+I.team+(n?'<span class="bdg">'+n+'</span>':'')+'</button>';
+  return '<div class="act"><button type="button" data-act="explorer" aria-label="Explorer" aria-pressed="'+(v==='explorer')+'">'+I.explorer+'</button><button type="button" aria-label="Search" aria-pressed="false">'+I.search+'</button><button type="button" aria-label="Tests" aria-pressed="false">'+I.test+'</button>'+team+'</div>';
+}
+function explorer(x){
+  var id=st().id,stmt=['edit','transit','receive','conflict','history'].indexOf(id)>=0;
+  var R=[['forms',0,'dir'],['forms/invoice.ui',1,'ui'],['reports',0,'dir'],['reports/statement.py',1,'py'],['invoice.py',0,'py'],['main.py',0,'py']];
+  var li=R.filter(function(r){return r[0]!=='reports/statement.py'||stmt}).map(function(r){var d=x.deco[r[0]];
+    return '<li class="'+(r[0]==='invoice.py'?'sel':'')+'" style="padding-left:'+(10+r[1]*16)+'px">'+(r[2]==='dir'?'<span style="color:var(--muted)">'+I.caretD+'</span>':'')+I[r[2]]+'<span class="nm">'+r[0].split('/').pop()+'</span>'+(d?'<span class="dec '+d+'">'+{M:'M',A:'A',in:'↓',x:'!'}[d]+'</span>':'')+'</li>';}).join('');
+  return '<div class="sh">EXPLORER<span class="sp"></span><button type="button" class="ib" aria-label="Refresh">'+I.refresh+'</button></div><div class="proj">Invoice App</div><ul class="rows">'+li+'</ul>';
+}
+function notShared(){return '<div class="empty"><span>Not shared</span><button type="button" class="btn pri" data-act="share">Share Project…</button></div>';}
+function head(icons){return '<div class="sh">TEAM<span class="sp"></span>'+icons+'</div>';}
+function grp(open,label,n){return '<div class="grp">'+(open?I.caretD:I.caretR)+label+(n?'<span class="n">'+n+'</span>':'')+'</div>';}
+
+/* ---- A: Changes ---- */
+function A(x){
+  if(!x.shared)return head('')+notShared();
+  var id=st().id,h=head('<button type="button" class="ib" aria-label="Refresh">'+I.refresh+'</button><button type="button" class="ib" aria-label="More">'+I.more+'</button>');
+  if(x.inbox.length)h+=grp(1,'INCOMING',1)+'<ul class="rows">'+x.inbox.map(function(b){return '<li class="click" data-act="review">'+av(b.from)+'<span class="nm">'+b.note+'</span></li>'}).join('')+'</ul>';
+  h+=grp(1,'CHANGES',x.pending.length||'');
+  if(x.pending.length)h+='<ul class="rows">'+x.pending.map(function(f){return '<li>'+I[f.ic]+'<span class="nm">'+f.p+'</span><span class="dec '+f.k+'">'+f.k+'</span></li>'}).join('')+'</ul><div class="a-box"><input class="input" id="a-note" value="'+NOTE+'" aria-label="Describe your change"><button type="button" class="btn pri wide" data-act="send">Send</button></div>';
+  if(x.out)h+=grp(1,'SENT')+'<ul class="rows"><li>'+av('sam')+'<span class="nm">'+NOTE+'</span>'+ticks(x.out.s)+'</li></ul>';
+  var open=id==='history';h+=grp(open,'HISTORY');
+  if(open)h+='<ul class="rows">'+HIST.map(function(c){return '<li class="click">'+av(c.who)+'<span class="nm">'+c.note+'</span><span class="dim">'+c.when+'</span></li>'}).join('')+'</ul>';
+  return '<div class="scroll" style="flex:1">'+h+'</div>';
+}
+/* ---- B: Mailroom ---- */
+function B(x){
+  if(!x.shared)return head('')+notShared();
+  var id=st().id,tab=id==='transit'?(x.out.s>=1?'Sent':'Outbox'):id==='history'?'Sent':'Inbox';
+  var h=head('<button type="button" class="ib" aria-label="Send changes" data-act="compose">'+I.compose+'</button>');
+  var q=(id==='transit'&&x.out.s<1)?1:0;
+  h+='<div class="seg3">'+['Inbox','Outbox','Sent'].map(function(t){var n=t==='Inbox'?x.inbox.length:t==='Outbox'?q:0;return '<span class="'+(t===tab?'on':'')+'">'+t+(n?' '+n:'')+'</span>'}).join('')+'</div>';
+  var rows='';
+  if(tab==='Inbox'){rows=x.inbox.map(function(b){return '<div class="mail unread" data-act="review">'+av(b.from)+'<span class="who">'+P[b.from].name+'</span><span class="t">'+b.time+'</span><span class="sub">'+b.note+'</span></div>'}).join('')+
+    '<div class="mail">'+av('sam')+'<span class="who">'+P.sam.name+'</span><span class="t">9:02</span><span class="sub">Invite: Invoice App</span></div>';}
+  else if(id==='history'){rows=HIST.map(function(c){return '<div class="mail">'+av(c.who)+'<span class="who">'+(c.who==='sam'?'To Cedar Hollow':P[c.who].name)+'</span><span class="t">'+c.when+'</span><span class="sub">'+c.note+'</span></div>'}).join('');}
+  else rows='<div class="mail">'+av('ana')+'<span class="who">'+P.ana.name+'</span><span class="t">'+ticks(x.out.s)+'</span><span class="sub">'+NOTE+'</span></div>';
+  return h+'<div class="scroll" style="flex:1">'+rows+'</div>';
+}
+/* ---- C: Thread ---- */
+function C(x){
+  if(!x.shared)return head('')+notShared();
+  var id=st().id,who=st().who;
+  var h=head('<span style="display:flex;gap:2px">'+av('sam')+av('ana')+'</span>');
+  function m(w,txt,time,extra,cls){return '<div class="msg'+(cls?' '+cls:'')+'">'+av(w)+'<div><div class="h"><b>'+(w===who?'You':P[w].first)+'</b><span>'+time+'</span></div><div class="txt">'+txt+'</div>'+(extra||'')+'</div></div>';}
+  var f=[];
+  if(id==='history'){HIST.slice().reverse().forEach(function(c){f.push(m(c.who,c.note,c.when,'<div class="meta"><span class="files">Changes</span></div>'));});}
+  else{
+    f.push('<div class="day">Today</div>');
+    f.push(m('ana','Got it, thanks!','9:13'));
+    if(id==='transit')f.push(m('sam',NOTE,'9:14','<div class="meta"><span class="files">3 files</span><span class="grow"></span>'+ticks(x.out.s)+'</div>'));
+    if(id==='receive'&&x.inbox.length)f.push(m('sam',NOTE,'9:18','<div class="meta"><span class="files">3 files</span><span class="grow"></span><button type="button" class="btn pri sm" data-act="review">Review</button></div>','new'));
+  }
+  var comp=id==='history'?'':'<div class="comp">'+(x.pending.length?'<span class="attach">'+x.pending.length+' files '+I.caretD+'</span>':'')+'<div class="row"><input class="input" id="c-note" placeholder="Message" value="'+(x.pending.length?NOTE:'')+'"><button type="button" class="btn pri send" data-act="'+(x.pending.length?'send':'')+'" aria-label="Send">'+I.send+'</button></div></div>';
+  return h+'<div class="scroll feed">'+f.join('')+'</div>'+comp;
+}
+function sidebar(x){if(view()==='explorer'||vk()==='D')return explorer(x);return vk()==='A'?A(x):vk()==='B'?B(x):C(x);}
+
+function toolbar(x){var t='';
+  if(vk()==='D'&&x.shared)t='<button type="button" class="tb team'+(st().id==='edit'?' coach':'')+'" data-act="dsend">'+I.send+' Send'+(x.pending.length?' <span class="cnt">'+x.pending.length+'</span>':'')+'</button>';
+  return '<div class="tool"><span class="tb run">▶ Run Active File</span><span class="tb dbg">✱ Debug Active File</span><span class="tb">▶ Run Project</span><span class="tb">✱ Debug Project</span><span class="grow"></span>'+t+'<span class="tb pkg">▣ Package Project</span></div>';}
+function tabs(){return '<div class="tabs"><span class="tab on">invoice.py <span class="x">×</span></span><span class="tab">main.py</span></div>';}
+function infobar(x){if(vk()==='D'&&st().id==='receive'&&x.inbox.length)return '<div class="infobar">'+av('sam')+'<span><b>Sam</b> changed this file</span><span class="grow"></span><button type="button" class="btn sm" data-act="review">Review</button></div>';return '<div></div>';}
+function editor(x){var a='',b='',c='';x.code.forEach(function(l,i){a+='<div>'+(i+1)+'</div>';b+='<i class="'+(x.marks[i]||'')+'"></i>';c+='<div'+(i===x.code.length-1?' class="hl"':'')+'>'+(hl(l)||' ')+'</div>';});return '<div class="ed"><div class="ln">'+a+'</div><div class="mk">'+b+'</div><div class="cd">'+c+'</div></div>';}
+function bottom(){return '<div class="bp"><div class="bt"><span class="on">Python Console</span><span>Debug</span><span>Problems</span><span>Run Log</span></div><div class="bc">&gt;&gt;&gt;</div></div>';}
+function teamSeg(x){
+  var id=st().id,dot='ok',txt='Up to date';
+  if(!x.shared){if(vk()!=='D')return '';return '<button type="button" class="seg'+(id==='solo'?' coach':'')+'" data-act="share"><span class="dot off"></span>Team: Not shared</button>';}
+  if(x.pending.length){dot='info';txt=x.pending.length+' to send';}
+  if(id==='transit'){if(S.offline){dot='warn';txt='Waiting for terminal';}else txt=['Queued','Sent','Delivered'][x.out.s];}
+  if(id==='receive'){if(S.offline){dot='warn';txt='Terminal offline';}else{dot='info';txt='1 from Sam';}}
+  if(id==='conflict'){dot='warn';txt='1 line to choose';}
+  return vk()==='D'?'<button type="button" class="seg" data-act="pop"><span class="dot '+dot+'"></span>Team: '+txt+'</button>':'<span class="seg"><span class="dot '+dot+'"></span>Team: '+txt+'</span>';
+}
+function statusbar(x){return '<div class="sb"><span>Startup: Runtime ready (9/9 checks)</span><span class="grow"></span>'+teamSeg(x)+'<span>Run: idle</span><span>Project: Invoice App</span><span>Spaces: 4</span><span>Ln 13, Col 5 | saved</span></div>';}
+function popover(x){
+  if(vk()!=='D'||!pop()||!x.shared)return '';var id=st().id,rows='';
+  if(id==='transit')rows='<li>'+av('ana')+'<span class="nm">'+NOTE+'</span>'+ticks(x.out.s)+'</li>';
+  else if(x.inbox.length)rows='<li class="click" data-act="review">'+av('sam')+'<span class="nm">'+NOTE+'</span></li>';
+  else rows='<li class="dim">Up to date</li>';
+  return '<div class="pop"><div class="ph"><span style="display:flex;gap:2px">'+av('sam')+av('ana')+'</span>Invoice App</div><ul class="rows" style="padding:4px 0">'+rows+'</ul><div class="pf"><button type="button" class="btn sm" data-act="hist">'+I.history+' History</button><span class="grow"></span><button type="button" class="ib" aria-label="More">'+I.more+'</button></div></div>';
+}
+
+/* ---- dialogs (CBCS chrome) ---- */
+function dlg(w,wt,hd,body,foot){return '<div class="ov" data-act="dismiss"><div class="dlg" role="dialog" aria-modal="true" aria-label="'+wt+'" style="width:'+w+'px" data-stop="1"><div class="wt">'+wt+'</div><div class="dh">'+hd+'</div><div class="db">'+body+'</div><div class="df">'+foot+'</div></div></div>';}
+function share(){return dlg(520,'Share Project','<div class="t">Share Invoice App</div><span class="chip">24 files · 186 KB</span>',
+  '<div class="form"><label>Invite</label><div class="tokens"><span class="tok">'+av('ana')+'Ana Kurtz · Cedar Hollow</span></div><label for="sh-msg">Message</label><input class="input" id="sh-msg" placeholder="Optional"></div>',
+  '<button type="button" class="btn" data-act="close">Cancel</button><span class="sp"></span><button type="button" class="btn pri" data-act="next">Send Invite</button>');}
+function invite(){return dlg(520,'Team Invite','<div class="t">'+av('sam',1)+'Sam Brenneman invited you to Invoice App</div><span class="chip ok">✓ Verified</span>',
+  '<div class="form"><label for="inv-path">Location</label><input class="input" id="inv-path" value="~/Projects/Invoice App"></div>',
+  '<button type="button" class="btn" data-act="close">Not Now</button><span class="sp"></span><button type="button" class="btn pri" data-act="next">Open Project</button>');}
+function compose(){return dlg(520,'Send Changes','<div class="t">New Message</div>',
+  '<div class="form"><label>To</label><div class="tokens"><span class="tok">'+av('ana')+'Ana Kurtz</span></div><label for="b-subj">Subject</label><input class="input" id="b-subj" value="'+NOTE+'"></div><div class="list">'+CH.map(function(f){return '<div class="it">'+I[f.ic]+'<span style="flex:1">'+f.p+'</span><span class="dec '+f.k+'">'+f.k+'</span></div>'}).join('')+'</div>',
+  '<button type="button" class="btn" data-act="close">Cancel</button><span class="sp"></span><button type="button" class="btn pri" data-act="send">Send</button>');}
+function dsend(){return '<div class="sheet" data-stop="1"><ul class="rows">'+CH.map(function(f){return '<li>'+I[f.ic]+'<span class="nm">'+f.p+'</span><span class="dec '+f.k+'">'+f.k+'</span></li>'}).join('')+'</ul><input class="input" id="d-note" value="'+NOTE+'" aria-label="Describe your change"><button type="button" class="btn pri wide" data-act="send">Send to Cedar Hollow</button></div>';}
+function review(){var d='<div class="ctx">    total = subtotal * (1 + TAX_RATE)</div><div class="d">-    return total</div><div class="a">+    return total.quantize(Decimal("0.01"))</div>';
+  return dlg(720,'Review Changes','<div class="t">'+av('sam',1)+NOTE+'</div>',
+  '<div class="split"><div class="list" style="align-content:start">'+CH.map(function(f,i){return '<div class="it'+(i===0?' on':'')+'">'+I[f.ic]+'<span style="flex:1">'+f.p+'</span><span class="dec '+f.k+'">'+f.k+'</span></div>'}).join('')+'</div><div class="diff">'+d+'</div></div>',
+  '<button type="button" class="btn" data-act="close">Not Now</button><span class="sp"></span><button type="button" class="btn pri" data-act="accept">Accept</button>');}
+function merge(){function o(k,w,code,lab){return '<div class="opt" role="radio" tabindex="0" aria-checked="'+(S.pick===k)+'" data-act="pick-'+k+'"><span class="r"></span>'+(w?av(w):'<span></span>')+'<div style="display:grid;gap:3px;min-width:0"><b>'+lab+'</b><code>'+hl(code.trim())+'</code></div></div>';}
+  return dlg(600,'Combine Changes','<div class="t">'+I.warn+'Choose a version</div><span class="chip warn">invoice.py · line 14</span>',
+  '<div style="display:grid;gap:8px" role="radiogroup" aria-label="Version">'+o('mine','ana',ANA,'Yours')+o('theirs','sam',SAM,'Sam’s')+o('both','',BOTH,'Both')+'</div>',
+  '<button type="button" class="btn" data-act="close">Cancel</button><span class="sp"></span><button type="button" class="btn pri" data-act="next">Save</button>');}
+function hist(){var d='<div class="d">-    since = today - timedelta(days=365)</div><div class="a">+    since = today - timedelta(days=90)</div>';
+  return dlg(760,'Team History — Invoice App','<div class="t">'+I.history+' History</div>',
+  '<div class="split"><div class="list" style="align-content:start">'+HIST.map(function(c,i){return '<div class="it'+(i===0?' on':'')+'">'+av(c.who)+'<span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+c.note+'</span></div>'}).join('')+'</div><div class="diff">'+d+'</div></div>',
+  '<button type="button" class="btn" data-act="close">Close</button><span class="sp"></span><button type="button" class="btn pri">Restore</button>');}
+function modalHTML(){var m=modal();return m==='share'?share():m==='invite'?invite():m==='compose'?compose():m==='dsend'?dsend():m==='review'?review():m==='merge'?merge():m==='hist'?hist():'';}
+
+function renderWin(){var x=sit();
+  document.getElementById('win').innerHTML='<div class="win"><div class="wmbar">ChoreBoy Code Studio v0.5 — Invoice App</div><div class="mb"><span>File</span><span>Edit</span><span>Run</span><span>View</span><span>Tools</span><span>Help</span></div>'+
+  '<div class="bd">'+activity(x)+'<div class="side">'+sidebar(x)+'</div><div class="main">'+toolbar(x)+tabs()+infobar(x)+editor(x)+bottom()+'</div></div>'+statusbar(x)+popover(x)+modalHTML()+'</div>';}
+function renderTop(){
+  document.getElementById('steps').innerHTML=STEPS.map(function(s,i){return '<li><button type="button" data-step="'+i+'" aria-current="'+(i===S.step?'step':'false')+'" title="'+P[s.who].name+' · '+P[s.who].shop+'"><span class="who" style="background:var(--p-'+s.who+')"></span>'+s.t+'</button></li>'}).join('');
+  document.getElementById('vcur').innerHTML='<b>'+vk()+'</b>'+V[S.v].name;
+  var s=st(),story=STORY[s.id],note=NOTES[s.id][vk()]||NOTES[s.id].all,p=P[s.who];
+  document.getElementById('explain').innerHTML='<div><span class="whoami">'+av(s.who)+'Step '+(S.step+1)+' of '+STEPS.length+' · you are '+p.name+' at '+p.shop+'</span><h3>'+story.h+'</h3><p class="bg">'+story.bg+'</p></div>'+
+    '<div><span class="vtag"><b>'+vk()+'</b>'+V[S.v].name+'</span><p>'+note+'</p></div>';
+  var rows=STEPS.map(function(x,i){var n=NOTES[x.id];
+    return '<tr class="'+(i===S.step?'cur':'')+'"><td><b>'+(i+1)+' · '+x.t+'</b><span class="dmuted">'+P[x.who].first+'</span></td>'+(n.all?'<td class="shared" colspan="4">'+n.all+'</td>':V.map(function(v){return '<td>'+n[v.k]+'</td>'}).join(''))+'</tr>';}).join('');
+  document.getElementById('mtx').innerHTML='<table><thead><tr><th>Moment</th>'+V.map(function(v){return '<th>'+v.k+' · '+v.name+'</th>'}).join('')+'</tr></thead><tbody>'+rows+'</tbody></table>';
+  document.getElementById('vcards').innerHTML=CARDS.map(function(c,i){function ul(a){return '<ul>'+a.map(function(t){return '<li>'+t+'</li>'}).join('')+'</ul>';}
+    return '<article class="vcard'+(i===S.v?' pick':'')+'"><div class="vtag"><b>'+c.k+'</b><h3>'+c.name+'</h3></div><p class="idea">'+c.idea+'</p><dl><dt>Where it lives</dt><dd>'+c.where+'</dd><dt>How a day goes</dt><dd>'+ul(c.flow)+'</dd><dt>Good at</dt><dd>'+ul(c.good)+'</dd><dt>Weak at</dt><dd>'+ul(c.bad)+'</dd><dt>To send a change</dt><dd>'+c.cost+'</dd></dl><button type="button" class="dbtn try" data-try="'+i+'">'+(i===S.v?'Showing in the prototype':'Show in the prototype')+'</button></article>';}).join('');
+}
+var timer;
+function go(i){S.step=Math.max(0,Math.min(STEPS.length-1,i));S.view=null;S.modal=undefined;S.pop=undefined;S.pick='both';clearInterval(timer);
+  if(st().id==='transit'&&!S.offline){if(window.matchMedia&&matchMedia('(prefers-reduced-motion: reduce)').matches)S.tick=2;else{S.tick=0;timer=setInterval(function(){S.tick++;renderWin();if(S.tick>=2)clearInterval(timer);},1000);}}
+  renderTop();renderWin();}
+function variant(d){S.v=(S.v+d+V.length)%V.length;S.view=null;S.modal=undefined;S.pop=undefined;try{history.replaceState(null,'','#'+vk().toLowerCase());}catch(e){}renderTop();renderWin();}
+
+document.addEventListener('click',function(e){
+  var s=e.target.closest('[data-step]');if(s){go(+s.getAttribute('data-step'));return;}
+  if(e.target.closest('#vprev')){variant(-1);return;} if(e.target.closest('#vnext')){variant(1);return;}
+  var tr=e.target.closest('[data-try]');if(tr){variant(+tr.getAttribute('data-try')-S.v);document.querySelector('.stage').scrollIntoView({behavior:'smooth',block:'center'});return;}
+  var a=e.target.closest('[data-act]');if(!a)return;var act=a.getAttribute('data-act');
+  if(act==='dismiss'&&e.target.closest('[data-stop]'))return;
+  switch(act){
+    case 'team':S.view='team';break; case 'explorer':S.view='explorer';break;
+    case 'share':go(1);return; case 'next':go(S.step+1);return; case 'send':go(4);return; case 'accept':go(6);return;
+    case 'review':S.modal='review';S.pop=false;break; case 'compose':S.modal='compose';break; case 'dsend':S.modal=modal()==='dsend'?null:'dsend';break;
+    case 'hist':S.modal='hist';S.pop=false;break; case 'pop':S.pop=!pop();break;
+    case 'close':case 'dismiss':S.modal=null;break;
+    case 'pick-mine':S.pick='mine';break; case 'pick-theirs':S.pick='theirs';break; case 'pick-both':S.pick='both';break;
+    default:return;}
+  renderWin();
+});
+document.getElementById('offline').addEventListener('change',function(e){S.offline=e.target.checked;go(S.step);});
+document.addEventListener('keydown',function(e){var t=e.target;if(t&&(t.tagName==='INPUT'||t.tagName==='TEXTAREA'||t.isContentEditable))return;
+  if(e.key==='ArrowLeft')variant(-1);else if(e.key==='ArrowRight')variant(1);else if(e.key==='[')go(S.step-1);else if(e.key===']')go(S.step+1);
+  else if((e.key===' '||e.key==='Enter')&&t.getAttribute&&/^pick-/.test(t.getAttribute('data-act')||'')){e.preventDefault();t.click();}});
+go(0);
+})();
+</script>

@@ -1,0 +1,690 @@
+<title>Team Sync Power Tools</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@75..125,600..800&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* PROTOTYPE, throwaway. Round two of the Team Sync UX: diffs, combining, power tools.
+   Window colors are CBCS ShellThemeTokens; window components copy CBCS's own patterns. The page around it explains. */
+:root{
+  --win:#F8F9FA; --panel:#FFFFFF; --editor:#FFFFFF; --text:#212529; --muted:#5A6168; --border:#DEE2E6;
+  --accent:#3366FF; --accent-soft:#E8EEFF; --gutter:#F1F3F5; --gutter-text:#666F76; --linehl:#EEF7FF;
+  --treesel:#D0E2FF; --hover:#E9ECEF; --act:#E9ECEF; --badge:#E9ECEF; --input:#FFFFFF; --row:#E9ECEF;
+  --err:#E03131; --warn:#D97706; --ok:#1A7F37; --info:#3366FF;
+  --run-bg:#E6F4EA; --run-fg:#15803D; --dbg-bg:#FEF3C7; --dbg-fg:#B45309; --pkg-bg:#E8EEFF; --pkg-fg:#2952CC;
+  --add-bg:#E6F4EA; --add-strong:#B7E4C4; --del-bg:#FDE8E8; --del-strong:#F7C1C1; --warn-bg:#FEF3C7; --mine-bg:#FFF4E5; --theirs-bg:#E6F6F4;
+  --s-kw:#AF00DB; --s-str:#A31515; --s-fn:#795E26; --s-num:#098658;
+  --p-sam:#0F766E; --p-ana:#C2410C;
+  --wm:#5F8F92; --wm-fg:#0E1A1B;
+  --page:#ECEFF2; --page-fg:#212529; --page-muted:#5A6168; --pill:#16191C; --pill-fg:#F3F5F7; --shade:rgba(15,20,25,.32);
+  --f-ui:"DejaVu Sans",Verdana,system-ui,-apple-system,"Segoe UI",sans-serif;
+  --f-code:"DejaVu Sans Mono",Menlo,Consolas,ui-monospace,monospace;
+  --f-doc:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --f-head:"Archivo","Arial Narrow",Arial,sans-serif;
+}
+@media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){
+  --win:#1F2428; --panel:#262C33; --editor:#1B1F23; --text:#E9ECEF; --muted:#A3ACB6; --border:#3C434A;
+  --accent:#5B8CFF; --accent-soft:#1E2A4A; --gutter:#1F2428; --gutter-text:#8B949E; --linehl:#252B33;
+  --treesel:#2D3A4A; --hover:#2A3038; --act:#1A1E22; --badge:#3C434A; --input:#1B1F23; --row:#2A3038;
+  --err:#FF6B6B; --warn:#E5A100; --ok:#3FB950; --info:#5B8CFF;
+  --run-bg:#1B3D1B; --run-fg:#4ADE80; --dbg-bg:#3A2E10; --dbg-fg:#FBBF24; --pkg-bg:#1E2A4A; --pkg-fg:#8AA8FF;
+  --add-bg:#173322; --add-strong:#22543A; --del-bg:#3D1B1B; --del-strong:#6B2A2A; --warn-bg:#3A2E10; --mine-bg:#3A2A14; --theirs-bg:#13332F;
+  --s-kw:#C586C0; --s-str:#CE9178; --s-fn:#DCDCAA; --s-num:#B5CEA8;
+  --p-sam:#14B8A6; --p-ana:#F59E0B;
+  --wm:#3E6466; --wm-fg:#E8F1F1;
+  --page:#121619; --page-fg:#E9ECEF; --page-muted:#9AA5AF; --pill:#F3F5F7; --pill-fg:#16191C; --shade:rgba(0,0,0,.45);
+  color-scheme:dark;
+}}
+:root[data-theme="dark"]{
+  --win:#1F2428; --panel:#262C33; --editor:#1B1F23; --text:#E9ECEF; --muted:#A3ACB6; --border:#3C434A;
+  --accent:#5B8CFF; --accent-soft:#1E2A4A; --gutter:#1F2428; --gutter-text:#8B949E; --linehl:#252B33;
+  --treesel:#2D3A4A; --hover:#2A3038; --act:#1A1E22; --badge:#3C434A; --input:#1B1F23; --row:#2A3038;
+  --err:#FF6B6B; --warn:#E5A100; --ok:#3FB950; --info:#5B8CFF;
+  --run-bg:#1B3D1B; --run-fg:#4ADE80; --dbg-bg:#3A2E10; --dbg-fg:#FBBF24; --pkg-bg:#1E2A4A; --pkg-fg:#8AA8FF;
+  --add-bg:#173322; --add-strong:#22543A; --del-bg:#3D1B1B; --del-strong:#6B2A2A; --warn-bg:#3A2E10; --mine-bg:#3A2A14; --theirs-bg:#13332F;
+  --s-kw:#C586C0; --s-str:#CE9178; --s-fn:#DCDCAA; --s-num:#B5CEA8;
+  --p-sam:#14B8A6; --p-ana:#F59E0B;
+  --wm:#3E6466; --wm-fg:#E8F1F1;
+  --page:#121619; --page-fg:#E9ECEF; --page-muted:#9AA5AF; --pill:#F3F5F7; --pill-fg:#16191C; --shade:rgba(0,0,0,.45);
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+body{background:var(--page);color:var(--page-fg);font-family:var(--f-doc);font-size:15px;line-height:1.55;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:32px 110px}
+:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+code{font-family:var(--f-code);font-size:.85em;background:var(--hover);padding:1px 5px;border-radius:4px}
+.page{max-width:1160px;margin:0 auto;display:grid;gap:18px}
+h1,h2,h3{font-family:var(--f-head);margin:0;text-wrap:balance;line-height:1.15}
+h1{font-size:clamp(1.9rem,4vw,2.7rem);font-weight:800;font-stretch:88%}
+h2{font-size:clamp(1.35rem,2.6vw,1.75rem);font-weight:750;font-stretch:92%}
+h3{font-size:1.08rem;font-weight:700;font-stretch:95%}
+p{margin:0}
+.eyebrow{font-size:.72rem;letter-spacing:.08em;text-transform:uppercase;color:var(--page-muted);font-weight:600}
+.lede{max-width:74ch;font-size:1.05rem}
+.prose{max-width:74ch;display:grid;gap:10px}
+.dm{color:var(--page-muted)} .ds{font-size:.88rem}
+.howto{display:flex;flex-wrap:wrap;gap:6px 18px;font-size:.88rem;color:var(--page-muted)}
+kbd{font-family:var(--f-code);font-size:.8rem;border:1px solid var(--border);border-bottom-width:2px;border-radius:4px;padding:0 5px;background:var(--panel);color:var(--page-fg)}
+.studies{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+.studies button{font:inherit;font-weight:600;display:flex;align-items:center;gap:10px;padding:10px 16px;border-radius:8px;border:1px solid var(--border);background:var(--panel);color:var(--page-fg);cursor:pointer}
+.studies button .n{font-family:var(--f-head);font-size:1.2rem;font-weight:800;color:var(--page-muted)}
+.studies button[aria-pressed="true"]{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
+.studies button[aria-pressed="true"] .n{color:var(--accent)}
+.steps{list-style:none;margin:0;padding:0;display:flex;gap:2px;flex-wrap:wrap;border-bottom:1px solid var(--border)}
+.steps button{font:inherit;font-size:.9rem;display:flex;align-items:center;gap:7px;padding:7px 12px 8px;border:0;background:transparent;color:var(--page-muted);cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-1px}
+.steps button:hover{color:var(--page-fg)}
+.steps button[aria-current="step"]{color:var(--page-fg);border-bottom-color:var(--accent)}
+.steps .who{width:6px;height:6px;border-radius:50%}
+.explain{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);background:var(--panel);border:1px solid var(--border);border-radius:8px;overflow:hidden}
+@media (max-width:820px){.explain{grid-template-columns:minmax(0,1fr)}}
+.explain>div{padding:14px 18px;display:grid;gap:6px;align-content:start}
+.explain>div+div{border-left:1px solid var(--border);background:var(--win)}
+@media (max-width:820px){.explain>div+div{border-left:0;border-top:1px solid var(--border)}}
+.whoami{display:flex;align-items:center;gap:8px;font-size:.84rem;color:var(--page-muted)}
+.bgtxt{font-size:.9rem;color:var(--page-muted)}
+.vtag{display:inline-flex;align-items:center;gap:8px;font-weight:600}
+.vtag b{display:inline-grid;place-items:center;min-width:20px;height:20px;border-radius:4px;background:var(--accent);color:#fff;font-size:.75rem;padding:0 4px}
+.vtag.same b{background:var(--muted)}
+.stage{overflow-x:auto;border-radius:6px;box-shadow:0 18px 50px -24px var(--shade)}
+.dsec{display:grid;gap:18px;margin-top:44px;min-width:0}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:14px}
+.card{background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:16px 18px;display:grid;gap:10px;align-content:start}
+.card.pick{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
+.card dl{margin:0;display:grid;gap:8px}
+.card dt{font-size:.72rem;letter-spacing:.06em;text-transform:uppercase;color:var(--page-muted);font-weight:600}
+.card dd{margin:0;font-size:.9rem}
+.card ul{margin:0;padding-left:1.1em;display:grid;gap:2px}
+.dbtn{font:inherit;font-size:.86rem;justify-self:start;padding:5px 12px;border-radius:5px;border:1px solid var(--border);background:var(--panel);color:var(--page-fg);cursor:pointer}
+.dbtn:hover{background:var(--hover)}
+.rec{background:var(--panel);border:1px solid var(--border);border-left:3px solid var(--accent);border-radius:0 8px 8px 0;padding:16px 20px;display:grid;gap:8px;max-width:86ch}
+.tbl{overflow-x:auto;border:1px solid var(--border);border-radius:8px;background:var(--panel)}
+.tbl table{border-collapse:collapse;width:100%;min-width:880px;font-size:.88rem}
+.tbl th,.tbl td{text-align:left;vertical-align:top;padding:9px 12px;border-bottom:1px solid var(--border)}
+.tbl th{background:var(--win);font-size:.72rem;letter-spacing:.06em;text-transform:uppercase;color:var(--page-muted);font-weight:600}
+.tbl tr:last-child td{border-bottom:0}
+.tbl td:first-child{font-weight:600;white-space:nowrap}
+.tbl .grp td{background:var(--win);font-size:.72rem;letter-spacing:.06em;text-transform:uppercase;color:var(--page-muted);font-weight:600}
+.lay{display:inline-block;font-size:.72rem;font-weight:600;padding:1px 8px;border-radius:10px;white-space:nowrap}
+.lay.l1{background:var(--add-bg);color:var(--ok)} .lay.l2{background:var(--accent-soft);color:var(--accent)} .lay.l3{background:var(--warn-bg);color:var(--warn)} .lay.l0{background:var(--hover);color:var(--page-muted)}
+.layers{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:12px}
+.layer{background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:14px 16px;display:grid;gap:6px;align-content:start}
+.layer ul{margin:0;padding-left:1.1em;font-size:.9rem;display:grid;gap:2px}
+.qgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px}
+.q{background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:14px 16px;display:grid;gap:8px;align-content:start}
+.q ul{margin:0;padding-left:1.1em;font-size:.88rem;display:grid;gap:3px}
+.q .r{font-size:.86rem;color:var(--page-muted)} .q .r b{color:var(--page-fg)}
+footer{max-width:1160px;margin:48px auto 0;font-size:.8rem;color:var(--page-muted);border-top:1px solid var(--border);padding-top:12px}
+
+/* ===== CBCS window (the prototyped UI) ===== */
+.win{position:relative;min-width:1120px;height:700px;display:grid;grid-template-rows:22px 25px minmax(0,1fr) 23px;background:var(--win);color:var(--text);font-family:var(--f-ui);font-size:12.5px;line-height:1.35;border:1px solid var(--border);overflow:hidden}
+.wmbar{background:var(--wm);color:var(--wm-fg);font-family:Georgia,"DejaVu Serif",serif;font-weight:700;font-size:12px;display:grid;place-items:center}
+.mb{display:flex;align-items:center;padding:0 6px;border-bottom:1px solid var(--border)} .mb span{padding:2px 8px}
+.bd{display:grid;grid-template-columns:34px 270px minmax(0,1fr);min-height:0}
+.act{background:var(--act);display:flex;flex-direction:column;align-items:center;gap:6px;padding-top:6px;border-right:1px solid var(--border)}
+.act button{position:relative;width:28px;height:28px;border-radius:5px;border:1px solid transparent;background:transparent;color:var(--muted);display:grid;place-items:center;padding:0}
+.act button[aria-pressed="true"]{background:var(--treesel);border-color:var(--accent);color:var(--accent)}
+.act .bdg{position:absolute;right:-4px;top:-4px;min-width:14px;height:14px;border-radius:7px;background:var(--accent);color:#fff;font-size:9px;font-weight:700;display:grid;place-items:center;padding:0 3px}
+.side{display:flex;flex-direction:column;min-height:0;min-width:0;border-right:1px solid var(--border)}
+.sh{display:flex;align-items:center;gap:6px;height:30px;padding:0 8px 0 10px;font-size:11px;font-weight:700;letter-spacing:.05em;color:var(--muted);flex:none}
+.sh .sp{flex:1}
+.ib{width:22px;height:22px;border:0;background:transparent;color:var(--muted);border-radius:4px;display:grid;place-items:center;padding:0}
+.proj{padding:0 10px 2px}
+.rows{list-style:none;margin:0;padding:0}
+.rows li{display:flex;align-items:center;gap:7px;height:24px;padding:0 10px;white-space:nowrap}
+.rows li.sel{background:var(--treesel)}
+.rows .nm{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis}
+.dim{color:var(--muted)}
+.dec{font-size:11px;font-weight:700;width:12px;text-align:center;flex:none}
+.dec.M{color:var(--warn)} .dec.A{color:var(--ok)} .dec.D{color:var(--err)} .dec.in{color:var(--info)} .dec.x{color:var(--err)} .dec.ok{color:var(--ok)}
+.main{display:grid;grid-template-rows:40px 28px minmax(0,1fr) 84px;min-width:0;min-height:0}
+.tool{display:flex;align-items:center;gap:6px;padding:0 8px}
+.tb{font:inherit;font-weight:700;display:inline-flex;align-items:center;gap:6px;height:28px;padding:0 12px;border-radius:5px;border:0;background:transparent;color:var(--text)}
+.tb.run{background:var(--run-bg);color:var(--run-fg)} .tb.dbg{background:var(--dbg-bg);color:var(--dbg-fg)} .tb.pkg,.tb.team{background:var(--pkg-bg);color:var(--pkg-fg)}
+.grow{flex:1}
+.tabs{display:flex;align-items:flex-end;padding-left:8px;border-bottom:1px solid var(--border);gap:2px}
+.tab{display:flex;align-items:center;gap:7px;height:26px;padding:0 10px;border:1px solid transparent;border-bottom:0;border-radius:4px 4px 0 0;color:var(--muted);white-space:nowrap}
+.tab.on{background:var(--editor);border-color:var(--border);color:var(--text);box-shadow:inset 0 2px 0 var(--accent)}
+.tab .tdot{width:7px;height:7px;border-radius:50%;background:var(--info)}
+.area{min-height:0;min-width:0;display:flex;flex-direction:column;background:var(--editor);position:relative}
+.infobar{display:flex;align-items:center;gap:10px;height:34px;padding:0 8px 0 12px;background:var(--accent-soft);border-bottom:1px solid var(--border);flex:none}
+.infobar.warn{background:var(--warn-bg)}
+.ed{display:grid;grid-template-columns:42px 4px minmax(0,1fr);font-family:var(--f-code);font-size:12.5px;line-height:20px;padding-top:6px;overflow:hidden;flex:1;align-content:start;position:relative}
+.ed>.ln{color:var(--gutter-text);text-align:right;padding-right:8px;background:var(--gutter)}
+.ed>.mk{background:var(--gutter)}
+.ed>.mk.chg{background:var(--accent)} .ed>.mk.add{background:var(--ok)} .ed>.mk.mrg{background:var(--p-sam)}
+.ed>.cd{white-space:pre;padding-left:10px;min-width:0;overflow:hidden}
+.ed>.cd.hl{background:var(--linehl)}
+.ed>.cd.gadd{background:var(--add-bg)} .ed>.cd.gdel{background:var(--del-bg);text-decoration:line-through;text-decoration-color:var(--del-strong)}
+.ed>.cd.mine{background:var(--mine-bg)} .ed>.cd.theirs{background:var(--theirs-bg)}
+.ed>.wg{grid-column:1/-1}
+.blame{color:var(--muted);font-family:var(--f-ui);font-size:11.5px;margin-left:24px}
+.k{color:var(--s-kw)} .s{color:var(--s-str)} .f{color:var(--s-fn)} .nu{color:var(--s-num)}
+.wa{background:var(--add-strong);border-radius:2px} .wd{background:var(--del-strong);border-radius:2px}
+.peek{margin:4px 0 6px 46px;border:1px solid var(--accent);border-radius:5px;background:var(--panel);font-family:var(--f-code);overflow:hidden;max-width:620px}
+.peek .ph{display:flex;align-items:center;gap:8px;padding:4px 6px 4px 10px;border-bottom:1px solid var(--border);font-family:var(--f-ui);font-size:12px}
+.peek .l{white-space:pre;padding:0 10px}
+.peek .l.d{background:var(--del-bg)} .peek .l.a{background:var(--add-bg)}
+.lens{display:flex;gap:12px;align-items:center;padding:2px 0 2px 56px;font-family:var(--f-ui);font-size:11.5px;color:var(--muted)}
+.lens button{font:inherit;border:0;background:transparent;color:var(--accent);padding:0;cursor:pointer}
+.lens button:hover{text-decoration:underline}
+.lens .who{display:inline-flex;align-items:center;gap:5px;color:var(--text)}
+.bp{border-top:1px solid var(--border);display:grid;grid-template-rows:26px 1fr;min-height:0}
+.bp .bt{display:flex} .bp .bt span{padding:5px 10px;border-right:1px solid var(--border);color:var(--muted)}
+.bp .bt span.on{color:var(--text);background:var(--panel);box-shadow:inset 0 2px 0 var(--accent)}
+.bp .bc{background:var(--panel);font-family:var(--f-code);font-size:11.5px;padding:6px 8px;color:var(--muted)}
+.sb{display:flex;align-items:center;gap:18px;padding:0 8px;border-top:1px solid var(--border);color:var(--muted);font-size:11.5px;white-space:nowrap;position:relative}
+.sb .seg{display:inline-flex;align-items:center;gap:6px;color:var(--text);padding:0 4px;height:19px;border-radius:3px}
+.sb .seg.on{background:var(--hover)}
+.dot{width:7px;height:7px;border-radius:50%;background:var(--ok);flex:none}
+.dot.warn{background:var(--warn)} .dot.info{background:var(--info)}
+.av{display:inline-grid;place-items:center;width:20px;height:20px;border-radius:50%;color:#fff;font-size:9px;font-weight:700;flex:none}
+.av.sam{background:var(--p-sam)} .av.ana{background:var(--p-ana)} .av.lg{width:28px;height:28px;font-size:10.5px}
+.btn{font:inherit;font-weight:700;display:inline-flex;align-items:center;justify-content:center;gap:6px;height:28px;padding:0 14px;border-radius:4px;border:1px solid var(--border);background:var(--panel);color:var(--text);cursor:pointer;white-space:nowrap}
+.btn:hover{background:var(--hover)}
+.btn.pri{background:var(--accent);border-color:var(--accent);color:#fff}
+.btn.pri[disabled]{opacity:.45;cursor:default}
+.btn.sm{height:24px;padding:0 10px;font-size:12px}
+.input{font:inherit;width:100%;height:28px;border:1px solid var(--border);background:var(--input);color:var(--text);border-radius:4px;padding:0 8px}
+.chip{display:inline-flex;align-items:center;height:20px;padding:0 9px;border-radius:10px;background:var(--badge);font-size:11px;font-weight:700;color:var(--text);white-space:nowrap}
+.chip.warn{background:var(--warn-bg);color:var(--warn)} .chip.flag{background:var(--accent-soft);color:var(--accent)}
+.segc{display:inline-flex;border:1px solid var(--border);border-radius:4px;overflow:hidden}
+.segc span{padding:3px 10px;font-size:12px;color:var(--muted);border-left:1px solid var(--border)}
+.segc span:first-child{border-left:0} .segc span.on{background:var(--treesel);color:var(--text);font-weight:700}
+.feed{flex:1;padding:6px 10px 12px;display:grid;gap:14px;align-content:start;overflow:auto}
+.msg{display:grid;grid-template-columns:20px minmax(0,1fr);gap:9px}
+.msg .h{display:flex;gap:6px;align-items:baseline} .msg .h span{font-size:11px;color:var(--muted)}
+.msg .meta{display:flex;align-items:center;gap:8px;margin-top:5px;font-size:12px}
+.sys{justify-self:center;font-size:11px;color:var(--muted);text-align:center}
+.comp{border-top:1px solid var(--border);padding:8px 10px;display:grid;gap:6px;flex:none;position:relative}
+.comp .row{display:flex;gap:6px}
+.aside{display:flex;align-items:center;gap:8px;padding:6px 8px;border:1px dashed var(--border);border-radius:5px;font-size:12px}
+/* review / combine / history tabs */
+.rt{display:grid;grid-template-rows:auto minmax(0,1fr);min-height:0;flex:1}
+.rt .rh{display:flex;align-items:center;gap:10px;padding:8px 12px;border-bottom:1px solid var(--border);background:var(--panel)}
+.rt .rh b{font-size:13px}
+.rt .rb{display:grid;grid-template-columns:190px minmax(0,1fr);min-height:0}
+.flist{border-right:1px solid var(--border);padding:6px 0;overflow:auto;background:var(--win)}
+.flist .g{padding:6px 10px 2px;font-size:11px;font-weight:700;letter-spacing:.05em;color:var(--muted)}
+.flist .it{display:flex;align-items:center;gap:7px;height:26px;padding:0 10px;white-space:nowrap;cursor:pointer}
+.flist .it.on{background:var(--treesel)}
+.flist .it .nm{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis}
+.dv{overflow:auto;font-family:var(--f-code);font-size:12px;line-height:20px;padding:6px 0}
+.dv .hh{color:var(--muted);padding:0 10px;font-family:var(--f-ui);font-size:11.5px;background:var(--win);border-block:1px solid var(--border);margin:6px 0}
+.dv .r{display:grid;grid-template-columns:36px minmax(0,1fr)}
+.dv .r .n{color:var(--gutter-text);text-align:right;padding-right:8px}
+.dv .r .c{white-space:pre;padding-left:6px}
+.dv .r.a .c{background:var(--add-bg)} .dv .r.d .c{background:var(--del-bg)}
+.sbs{display:grid;grid-template-columns:1fr 1fr}
+.sbs>div+div{border-left:1px solid var(--border)}
+.cmb{display:grid;grid-template-rows:auto auto auto;gap:10px;padding:12px;overflow:auto;align-content:start}
+.cols{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.side-v{border:1px solid var(--border);border-radius:5px;overflow:hidden;background:var(--editor)}
+.side-v.on{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
+.side-v .vh{display:flex;align-items:center;gap:7px;padding:6px 8px;border-bottom:1px solid var(--border);background:var(--panel)}
+.side-v .code{font-family:var(--f-code);font-size:12px;line-height:20px;padding:4px 0}
+.side-v .code div{white-space:pre;padding:0 10px}
+.side-v .code .x.mine{background:var(--mine-bg)} .side-v .code .x.theirs{background:var(--theirs-bg)} .side-v .code .x.res{background:var(--accent-soft)}
+.side-v .code .ph{color:var(--muted);font-style:italic;font-family:var(--f-ui)}
+.forms{display:grid;grid-template-columns:1fr 1fr;gap:12px;padding:12px;overflow:auto;align-content:start}
+.fp{border:1px solid var(--border);border-radius:5px;background:var(--panel);overflow:hidden}
+.fp.on{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
+.fp .vh{display:flex;align-items:center;gap:7px;padding:6px 8px;border-bottom:1px solid var(--border)}
+.qt{margin:10px;border:1px solid var(--border);background:var(--win);padding:10px;display:grid;gap:8px;font-size:12px}
+.qt .fr{display:grid;grid-template-columns:70px 1fr;align-items:center;gap:8px;position:relative}
+.qt .le{height:22px;border:1px solid var(--border);background:var(--input);border-radius:2px}
+.qt .chg{outline:2px dashed var(--accent);outline-offset:2px}
+.qt .ord{position:absolute;right:-6px;top:-7px;width:16px;height:16px;border-radius:50%;background:var(--accent);color:#fff;font-size:9px;font-weight:700;display:grid;place-items:center}
+.props{grid-column:1/-1;border:1px solid var(--border);border-radius:5px;background:var(--panel)}
+.props div{display:grid;grid-template-columns:150px 1fr 1fr;gap:10px;padding:5px 10px;border-top:1px solid var(--border)}
+.props div:first-child{border-top:0;color:var(--muted);font-size:11px;font-weight:700;letter-spacing:.04em}
+.hist{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,1fr);min-height:0;flex:1}
+.hl-l{border-right:1px solid var(--border);display:flex;flex-direction:column;min-height:0}
+.hl-tools{display:flex;gap:6px;padding:6px 8px;border-bottom:1px solid var(--border);background:var(--panel)}
+.hrows{overflow:auto;position:relative}
+.hrow{display:grid;grid-template-columns:var(--gw,8px) 20px minmax(0,1fr) auto;gap:8px;align-items:center;height:30px;padding:0 10px}
+.hrow.on{background:var(--treesel)}
+.hrow .nt{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.hrow .wh{color:var(--muted);font-size:11.5px}
+.hdet{padding:12px;display:grid;gap:10px;align-content:start;overflow:auto}
+.ctx{position:absolute;z-index:6;background:var(--panel);border:1px solid var(--border);border-radius:5px;box-shadow:0 10px 26px -8px var(--shade);padding:4px 0;min-width:230px}
+.ctx div{padding:5px 14px;display:flex;justify-content:space-between;gap:20px}
+.ctx div.on{background:var(--treesel)}
+.ctx hr{border:0;border-top:1px solid var(--border);margin:4px 0}
+.ctx .kb{color:var(--muted);font-size:11px}
+.card2{position:absolute;z-index:6;background:var(--panel);border:1px solid var(--border);border-radius:6px;box-shadow:0 12px 30px -10px var(--shade);width:320px;font-family:var(--f-ui)}
+.card2 .hd{display:flex;gap:9px;align-items:center;padding:10px 12px;border-bottom:1px solid var(--border)}
+.card2 .bdy{padding:8px 12px;display:grid;gap:6px}
+.card2 .ft{display:flex;gap:6px;padding:8px 12px;border-top:1px solid var(--border)}
+.popm{position:absolute;z-index:6;background:var(--panel);border:1px solid var(--border);border-radius:6px;box-shadow:0 12px 30px -10px var(--shade);width:280px;padding:4px 0}
+.popm .it{display:flex;align-items:center;gap:8px;padding:6px 12px}
+.popm .it.on{background:var(--treesel)}
+.popm hr{border:0;border-top:1px solid var(--border);margin:4px 0}
+.ov{position:absolute;inset:22px 0 0;background:var(--shade);display:grid;place-items:center;z-index:10}
+.dlg{background:var(--panel);border:2px solid var(--text);display:grid;grid-template-rows:20px auto minmax(0,1fr) auto;max-height:580px;color:var(--text)}
+.dlg .wt{background:var(--wm);color:var(--wm-fg);font-family:Georgia,"DejaVu Serif",serif;font-weight:700;font-size:12px;display:grid;place-items:center}
+.dlg .dh{padding:16px 20px 12px;display:grid;gap:8px;border-bottom:1px solid var(--border)}
+.dlg .dh .t{display:flex;align-items:center;gap:10px;font-size:16px;font-weight:700}
+.dlg .db{padding:14px 20px;display:grid;gap:10px;overflow:auto;align-content:start}
+.dlg .df{padding:12px 20px;border-top:1px solid var(--border);display:flex;gap:8px;align-items:center}
+.dlg .df .sp{flex:1}
+.opt{display:grid;grid-template-columns:16px 20px minmax(0,1fr);gap:10px;align-items:center;padding:10px;border:1px solid var(--border);border-radius:5px;cursor:pointer}
+.opt[aria-checked="true"]{border-color:var(--accent);background:var(--accent-soft)}
+.opt .rd{width:14px;height:14px;border-radius:50%;border:2px solid var(--muted)}
+.opt[aria-checked="true"] .rd{border:4px solid var(--accent)}
+.opt code{font-family:var(--f-code);font-size:12px;white-space:pre;overflow:hidden;text-overflow:ellipsis;background:none;padding:0}
+.form{display:grid;grid-template-columns:90px minmax(0,1fr);gap:10px 12px;align-items:center}
+.form label{color:var(--muted)}
+.cbx{display:flex;align-items:center;gap:8px}
+.cbx i{width:14px;height:14px;border-radius:3px;border:1px solid var(--border);background:var(--input);display:grid;place-items:center;font-style:normal;font-size:10px;color:#fff}
+.cbx i.on{background:var(--accent);border-color:var(--accent)}
+.set{display:grid;grid-template-columns:150px minmax(0,1fr);min-height:300px}
+.set .cats{border-right:1px solid var(--border);padding:6px 0}
+.set .cats div{padding:6px 12px} .set .cats div.on{background:var(--treesel);font-weight:700}
+.set .pane{padding:4px 16px;display:grid;gap:12px;align-content:start}
+.tg{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px;align-items:center;padding:8px 0;border-bottom:1px solid var(--border)}
+.tgl{width:30px;height:17px;border-radius:9px;background:var(--border);position:relative}
+.tgl::after{content:"";position:absolute;top:2px;left:2px;width:13px;height:13px;border-radius:50%;background:var(--panel)}
+.tgl.on{background:var(--accent)} .tgl.on::after{left:15px}
+
+/* prototype switcher (not part of the design) */
+.switcher{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(18px + env(safe-area-inset-bottom,0px));z-index:50;display:flex;align-items:center;background:var(--pill);color:var(--pill-fg);border-radius:999px;padding:4px;box-shadow:0 10px 30px -8px var(--shade);max-width:calc(100vw - 32px);font-family:var(--f-doc)}
+.switcher button{font:inherit;width:32px;height:32px;border-radius:50%;border:0;background:transparent;color:inherit;cursor:pointer;font-size:17px}
+.switcher button:hover{background:rgba(127,127,127,.25)}
+.switcher .cur{padding:0 12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.switcher .cur b{margin-right:8px;opacity:.6}
+</style>
+
+<div class="page">
+  <header style="display:grid;gap:12px">
+    <div class="eyebrow">ChoreBoy Code Studio · Team Sync · UX prototype, round two</div>
+    <h1>Team Sync Power Tools</h1>
+    <p class="lede">Round one settled where Team Sync lives: a Thread view plus signals in the editor. This round answers three harder questions. How do people see what changed? What happens when two people change the same thing? And can CBCS give the full power of git without making it feel like git?</p>
+    <p class="prose dm ds">Same story as round one: Sam at Maple Ridge and Ana at Cedar Hollow share Invoice App, and changes travel by email through each shop's FaxMail terminal. The window uses the round-one direction (Thread view, toolbar Send, Team status segment) so only the part being studied changes. People and code are examples.</p>
+    <div class="howto"><span>Pick a study below</span><span>Moments: click a tab or press <kbd>[</kbd> <kbd>]</kbd></span><span>Setups: the floating bar or <kbd>←</kbd> <kbd>→</kbd></span><span>Buttons in the window work where the story allows</span></div>
+  </header>
+
+  <div class="studies" id="studies"></div>
+  <ol class="steps" id="steps"></ol>
+  <div class="explain" id="explain" aria-live="polite"></div>
+  <div class="stage"><div id="win"></div></div>
+
+  <section class="dsec" id="setups">
+    <div class="eyebrow" id="setups-eyebrow"></div>
+    <h2 id="setups-h"></h2>
+    <p class="prose" id="setups-p"></p>
+    <div class="cards" id="cards"></div>
+    <div class="rec" id="study-rec"></div>
+  </section>
+
+  <section class="dsec" id="layersec">
+    <div class="eyebrow">Full power, kept simple</div>
+    <h2>Three layers of git</h2>
+    <p class="prose">Everything git can do for a small team is available, but it shows up only when someone reaches for it. Plain words come first. Git's names appear in tooltips and, if you turn it on, everywhere.</p>
+    <div class="layers">
+      <div class="layer"><span class="lay l1">Everyday</span><h3>Always visible</h3><ul><li>Send (saves a change and sends it)</li><li>Review and Accept</li><li>Combine</li><li>History and Restore</li><li>See your edits in the gutter</li></ul></div>
+      <div class="layer"><span class="lay l2">When you need it</span><h3>In menus where you already are</h3><ul><li>Who changed this line (hover in the editor)</li><li>File history (right-click in the tree)</li><li>Compare any two versions</li><li>Undo a past change</li><li>Set aside unfinished work</li><li>Milestones (made by Package Project)</li><li>Experiments (try an idea separately)</li></ul></div>
+      <div class="layer"><span class="lay l3">Advanced setting</span><h3>Off by default</h3><ul><li>Git names everywhere (commit, branch, tag)</li><li>Change IDs</li><li>Copy a change into an experiment (cherry-pick)</li><li>Find when it broke (bisect)</li><li>Tidy unsent changes (squash, reword)</li></ul></div>
+    </div>
+  </section>
+
+  <section class="dsec" id="map">
+    <div class="eyebrow">Git capability map</div>
+    <h2>Every git operation, and where it lives</h2>
+    <p class="prose">What CBCS calls it, which git operation runs underneath, where the user finds it, and whether the vendored dulwich 0.24.10 already does it. "Our merge" means CBCS's own three-way merge built on Python's <code>difflib</code>. dulwich's merge helpers need the <code>merge3</code> package, which is GPL-licensed and won't be bundled in an MIT product.</p>
+    <div class="tbl"><table>
+      <thead><tr><th>In CBCS</th><th>Git</th><th>Where</th><th>Layer</th><th>Engine</th></tr></thead>
+      <tbody>
+        <tr class="grp"><td colspan="5">Working together</td></tr>
+        <tr><td>Send</td><td>commit + bundle</td><td>Composer, toolbar Send</td><td><span class="lay l1">Everyday</span></td><td>dulwich commit and bundle, proven on a ChoreBoy</td></tr>
+        <tr><td>Save only</td><td>commit</td><td>Send menu</td><td><span class="lay l1">Everyday</span></td><td>dulwich</td></tr>
+        <tr><td>Accept</td><td>fetch bundle + merge</td><td>Review</td><td><span class="lay l1">Everyday</span></td><td>dulwich import (add_thin_pack) + our merge</td></tr>
+        <tr><td>Combine</td><td>three-way merge, conflict resolution</td><td>Combine tab</td><td><span class="lay l1">Everyday</span></td><td>Our merge</td></tr>
+        <tr><td>Teammates</td><td>remotes</td><td>Team › Members</td><td><span class="lay l2">On demand</span></td><td>CBCS refs per shop</td></tr>
+        <tr class="grp"><td colspan="5">Seeing what changed</td></tr>
+        <tr><td>Gutter marks and quick diff</td><td>diff against last change</td><td>Editor</td><td><span class="lay l1">Everyday</span></td><td>dulwich diff, existing diff gutter</td></tr>
+        <tr><td>Review tab</td><td>diff between changes</td><td>Editor tab</td><td><span class="lay l1">Everyday</span></td><td>dulwich diff, existing DiffView</td></tr>
+        <tr><td>History</td><td>log</td><td>History tab</td><td><span class="lay l1">Everyday</span></td><td>dulwich log</td></tr>
+        <tr><td>File history</td><td>log -- path</td><td>Tree right-click</td><td><span class="lay l2">On demand</span></td><td>dulwich log</td></tr>
+        <tr><td>Who changed this line</td><td>blame</td><td>Editor hover</td><td><span class="lay l2">On demand</span></td><td>dulwich annotate</td></tr>
+        <tr><td>Compare any two versions</td><td>diff A..B</td><td>History right-click</td><td><span class="lay l2">On demand</span></td><td>dulwich diff</td></tr>
+        <tr class="grp"><td colspan="5">Going back</td></tr>
+        <tr><td>Restore this version</td><td>checkout, saved as a new commit</td><td>History right-click</td><td><span class="lay l1">Everyday</span></td><td>dulwich checkout + commit</td></tr>
+        <tr><td>Undo this change</td><td>revert</td><td>History right-click</td><td><span class="lay l2">On demand</span></td><td>Our merge (dulwich revert needs merge3)</td></tr>
+        <tr><td>Set aside</td><td>stash</td><td>Send menu</td><td><span class="lay l2">On demand</span></td><td>dulwich stash</td></tr>
+        <tr class="grp"><td colspan="5">Organizing work</td></tr>
+        <tr><td>Milestone</td><td>tag</td><td>Package Project, History</td><td><span class="lay l2">On demand</span></td><td>dulwich tag</td></tr>
+        <tr><td>Experiment</td><td>branch + switch</td><td>Status bar</td><td><span class="lay l2">On demand</span></td><td>dulwich branch and checkout</td></tr>
+        <tr><td>Bring an experiment in</td><td>merge</td><td>Experiment menu</td><td><span class="lay l2">On demand</span></td><td>Our merge</td></tr>
+        <tr><td>Copy a change into…</td><td>cherry-pick</td><td>History right-click</td><td><span class="lay l3">Advanced</span></td><td>Our merge (dulwich cherry-pick needs merge3)</td></tr>
+        <tr><td>Find when it broke</td><td>bisect</td><td>Tools menu</td><td><span class="lay l3">Advanced</span></td><td>dulwich bisect</td></tr>
+        <tr><td>Tidy unsent changes</td><td>rebase, amend, squash</td><td>History, unsent changes only</td><td><span class="lay l3">Advanced</span></td><td>dulwich rebase; locked once a change is sent</td></tr>
+        <tr><td>Housekeeping</td><td>gc, pack</td><td>Automatic</td><td><span class="lay l0">Hidden</span></td><td>dulwich gc</td></tr>
+        <tr class="grp"><td colspan="5">Left out on purpose</td></tr>
+        <tr><td>Force-rewrite shared history</td><td>push --force, history rewrite after sending</td><td>Not offered</td><td><span class="lay l0">No</span></td><td>Would break other shops' copies</td></tr>
+        <tr><td>Submodules, worktrees, LFS, hooks</td><td>—</td><td>Not offered</td><td><span class="lay l0">No</span></td><td>No need in ChoreBoy projects; hooks would run code</td></tr>
+      </tbody>
+    </table></div>
+  </section>
+
+  <section class="dsec" id="decisions">
+    <div class="eyebrow">Decisions · recorded 2 Nov 2026</div>
+    <h2>What was decided</h2>
+    <div class="qgrid">
+      <div class="q"><h3>Decided · Reviewing incoming changes</h3><ul><li>B · Review tab, with a Show in file button</li></ul><p class="r">Full editor space for reading, stays open while you look around, inline or side by side.</p></div>
+      <div class="q"><h3>Decided · Combining clashes</h3><ul><li>B · Combine tab</li></ul><p class="r">Your files stay untouched until Finish, Cancel puts everything back, and several clashes stay manageable.</p></div>
+      <div class="q"><h3>Decided · History view</h3><ul><li>Plain list, with lanes only when experiments exist or advanced tools are on</li></ul><p class="r">Reads simply for most shops without hiding the shape of the work when it matters.</p></div>
+      <div class="q"><h3>Decided · How much git to expose</h3><ul><li>Three layers, advanced off by default</li></ul><p class="r">Beginners never trip over it; power users turn it all on in Settings › Team.</p></div>
+      <div class="q"><h3>Settled · Merge engine</h3><ul><li>CBCS writes its own three-way merge on Python's <code>difflib</code></li></ul><p class="r"><b>Why:</b> <code>merge3</code> is GPL-2.0-or-later and CBCS is MIT, so bundling it would bring GPL obligations into the product. dulwich is dual-licensed and is used under Apache-2.0, with its notice shipped in the vendor bundle.</p></div>
+    </div>
+  </section>
+</div>
+
+<footer>Round two of the Team Sync prototype. Round one: "Team Sync Prototype". Architecture: "CBCS Team Sync". Source: <code>docs/collab/team_sync_power_prototype.html</code>. dulwich operations checked against the vendored 0.24.10 source in <code>.audit/dulwich_probe/vendor/</code>.</footer>
+
+<div class="switcher" role="group" aria-label="Setup">
+  <button type="button" id="vprev" aria-label="Previous setup">‹</button>
+  <span class="cur" id="vcur" aria-live="polite"></span>
+  <button type="button" id="vnext" aria-label="Next setup">›</button>
+</div>
+
+<script>
+(function(){
+var P={sam:{name:'Sam Brenneman',first:'Sam',shop:'Maple Ridge',ini:'SB'},ana:{name:'Ana Kurtz',first:'Ana',shop:'Cedar Hollow',ini:'AK'}};
+function av(w,lg){return '<span class="av '+w+(lg?' lg':'')+'" title="'+P[w].name+' · '+P[w].shop+'">'+P[w].ini+'</span>';}
+function esc(t){return String(t).replace(/&/g,'&amp;').replace(/</g,'&lt;')}
+function hl(l){return esc(l).replace(/("[^"]*")|\b(from|import|def|return|for|in|if|or)\b|\b(\d+(?:\.\d+)?)\b|\b([A-Za-z_]\w*)(?=\()/g,function(m,s,k,n,f){return s?'<span class="s">'+s+'</span>':k?'<span class="k">'+k+'</span>':n?'<span class="nu">'+n+'</span>':'<span class="f">'+f+'</span>';});}
+var I={
+ explorer:'<svg width="16" height="16" viewBox="0 0 16 16"><path d="M2 2h5l1.5 1.5H14v4H2V2z" fill="currentColor" fill-opacity=".15" stroke="currentColor" stroke-width="1.1" stroke-linejoin="round"/><path d="M2 7.5h12v5H2z" fill="currentColor" fill-opacity=".08" stroke="currentColor" stroke-width="1.1" stroke-linejoin="round"/></svg>',
+ search:'<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><circle cx="7" cy="7" r="4.3"/><path d="M10.3 10.3L14 14" stroke-linecap="round"/></svg>',
+ test:'<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"><path d="M6 1.8h4M7 1.8v4.4L3.2 13.4h9.6L9 6.2V1.8"/></svg>',
+ team:'<svg width="16" height="16" viewBox="0 0 16 16"><circle cx="5.5" cy="5.5" r="2.2" fill="currentColor" fill-opacity=".12" stroke="currentColor" stroke-width="1.1"/><circle cx="11" cy="6.2" r="1.8" fill="currentColor" fill-opacity=".12" stroke="currentColor" stroke-width="1.1"/><path d="M1.8 13.5c.4-2.4 1.8-3.7 3.7-3.7s3.3 1.3 3.7 3.7M10 13.5c.2-1.7 1-2.8 2.2-2.8s2 1.1 2.1 2.8" fill="none" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/></svg>',
+ history:'<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M2.5 4a6 6 0 1 1-1 4.5"/><path d="M2.5 1.5v3h3" stroke-linejoin="round"/><path d="M8 5v3.3l2.2 1.3"/></svg>',
+ send:'<svg width="13" height="13" viewBox="0 0 14 14" fill="currentColor"><path d="M1 7l12-5.5L9 13 7.2 8.2z"/></svg>',
+ more:'<svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><circle cx="3.5" cy="8" r="1.2"/><circle cx="8" cy="8" r="1.2"/><circle cx="12.5" cy="8" r="1.2"/></svg>',
+ caretD:'<svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor"><path d="M1.5 3h7L5 7.5z"/></svg>',
+ prev:'<svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M7.5 2.5L4 6l3.5 3.5"/></svg>',
+ next:'<svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4.5 2.5L8 6l-3.5 3.5"/></svg>',
+ close:'<svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M3 3l6 6M9 3L3 9"/></svg>',
+ branch:'<svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><circle cx="4" cy="3.5" r="1.8"/><circle cx="4" cy="12.5" r="1.8"/><circle cx="12" cy="5.5" r="1.8"/><path d="M4 5.3v5.4M12 7.3c0 3-8 2-8 3.4"/></svg>',
+ flag:'<svg width="11" height="11" viewBox="0 0 12 12" fill="currentColor"><path d="M2 1h1v10H2zM3 1.5h7l-2 2.5 2 2.5H3z"/></svg>',
+ py:'<svg width="14" height="14" viewBox="0 0 14 14"><path d="M7 1C4 1 4.2 2.3 4.2 2.3V3.7H7.1v.4H3S1 3.9 1 7s1.7 2.9 1.7 2.9h1V8.5S3.6 6.8 5.4 6.8h2.9s1.7 0 1.7-1.6V2.6S10.2 1 7 1z" fill="#3776AB"/><path d="M7 13c3 0 2.8-1.3 2.8-1.3V10.3H6.9v-.4H11S13 10.1 13 7s-1.7-2.9-1.7-2.9h-1v1.4s.1 1.7-1.7 1.7H5.7S4 7.2 4 8.8v2.6S3.8 13 7 13z" fill="#FFD43B"/></svg>',
+ ui:'<svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="#2F9E44" stroke-width="1.2"><rect x="1.5" y="2" width="11" height="10" rx="1"/><path d="M1.5 5h11"/></svg>',
+ dir:'<svg width="14" height="14" viewBox="0 0 16 16"><path d="M2 3h4.5l1.5 1.5H14V13H2z" fill="currentColor" fill-opacity=".12" stroke="currentColor" stroke-width="1.1" stroke-linejoin="round" opacity=".75"/></svg>',
+ warn:'<svg width="18" height="18" viewBox="0 0 16 16"><path d="M8 1.5l7 12.5H1z" fill="var(--warn)"/><path d="M8 6v4" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/><circle cx="8" cy="12" r=".9" fill="#fff"/></svg>',
+ pkg:'<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="var(--pkg-fg)" stroke-width="1.2"><rect x="2" y="4" width="12" height="9.5" rx="1"/><path d="M2 7h12M6.5 4V2.5h3V4"/></svg>'
+};
+
+/* ---------- code ---------- */
+var INV=['from decimal import Decimal','','TAX_RATE = Decimal("0.0725")','','','def line_total(qty, price):','    return qty * price','','','def invoice_total(lines):','    subtotal = sum(line_total(q, p) for q, p in lines)','    total = subtotal * (1 + TAX_RATE)','    return total'];
+var INV_ANA=INV.slice(0,3).concat(['SHIPPING = Decimal("12.00")']).concat(INV.slice(3,12)).concat(['    return total + SHIPPING']);
+var L_OLD='    return total', L_SAM='    return total.quantize(Decimal("0.01"))', L_ANA='    return total + SHIPPING', L_BOTH='    return (total + SHIPPING).quantize(Decimal("0.01"))';
+var STMT=['from datetime import date, timedelta','','','def statement_lines(customer, today=None):','    today = today or date.today()','    since = today - timedelta(days=30)','    return [i for i in customer.invoices if i.date >= since]'];
+var ST_ANA='    since = today - timedelta(days=30)', ST_SAM='    since = today - timedelta(days=90)';
+function wordAdd(base,added){return hl(base)+'<span class="wa">'+hl(added)+'</span>';}
+function wordDel(base,removed){return hl(base)+'<span class="wd">'+hl(removed)+'</span>';}
+
+/* editor: rows = {t, html, cls, mk, tail} or {w: html} */
+function ed(rows,opts){var h='',n=0;rows.forEach(function(r){
+  if(r.w!==undefined){h+='<div class="wg">'+r.w+'</div>';return;}
+  if(!r.nonum)n++;
+  h+='<div class="ln">'+(r.nonum?'':n)+'</div><div class="mk '+(r.mk||'')+'"></div><div class="cd '+(r.cls||'')+'">'+(r.html!==undefined?r.html:(hl(r.t)||' '))+(r.tail||'')+'</div>';});
+  return '<div class="ed">'+h+'</div>';}
+function lines(arr){return arr.map(function(t){return {t:t};});}
+
+/* ---------- studies & scenes ---------- */
+var STUDIES=[
+ {k:'diff',n:1,name:'Seeing changes',v:[{k:'A',name:'Dialog'},{k:'B',name:'Review tab'},{k:'C',name:'In the file'}],
+  eyebrow:'Study 1 · Seeing changes',h:'Three ways to review incoming changes',
+  p:'Your own edits always show in the editor gutter, and clicking a mark opens a quick diff right under the line. Forms always get a visual before-and-after. What changes between setups is how you review a change that arrives from another shop.',
+  cards:[
+   {k:'A',name:'Dialog',idea:'A Review dialog over the editor: files on the left, diff on the right.',how:['Click Review on the incoming message','Pick a file, read the diff','Accept or Not now'],good:['Simple and focused','Same pattern as CBCS’s Local History dialog'],bad:['Blocks the editor while open','Cramped for big changes','Can’t compare with your other open files']},
+   {k:'B',name:'Review tab',idea:'The change opens as an editor tab, like a file. Inline or side-by-side, with word-level highlights.',how:['Click Review: a Review tab opens','Switch Inline or Side by side','Step through files, then Accept'],good:['Full width and height for the diff','Stays open while you look around the project','Room for word-level highlights and long files'],bad:['One more tab to close','Slightly less obvious that a decision is pending']},
+   {k:'C',name:'In the file',idea:'Incoming lines appear inside your own file, struck out or highlighted, with a bar to step through them.',how:['Open a file that has incoming changes','Read the changes in context','Accept all from the bar, or Hide'],good:['Most context: you see the change where it will land','No new window or tab'],bad:['Your file and the incoming change mix on screen','Hard for large or multi-file changes','Easy to forget it’s only a preview']}
+  ],
+  rec:'<p><b>Recommendation: B, Review tab, with a "Show in file" button.</b> A review is reading work, and reading work wants the full editor area. A tab can stay open while you check other files, holds long diffs, and toggles between inline and side by side. The "Show in file" button gives C’s context when you want it, without making it the default. Your own edits use the gutter quick diff in every case, and forms always get the visual comparison.</p>',
+  scenes:[
+   {id:'own',t:'Your edits',who:'sam',same:1,h:'Sam checks his own edit',bg:'While Sam works, the gutter marks every line he changed since his last send. Clicking a mark opens a quick diff right under the line, with Undo for just that edit. This uses CBCS’s existing diff gutter.',note:'Same in every setup.'},
+   {id:'review',t:'Incoming change',who:'ana',h:'Ana reviews Sam’s change',bg:'Sam’s change arrived: 3 files. Nothing touches Ana’s files until she accepts. Changed words are highlighted inside each line, so a one-word fix in a long line is easy to spot.',notes:{A:'A Review dialog opens over the editor with the file list and an inline diff.',B:'A Review tab opens next to her files. Side by side is on; Inline is one click away.',C:'Sam’s changes appear inside invoice.py: the old line struck out, the new line highlighted. A bar steps through them.'}},
+   {id:'form',t:'Form change',who:'ana',same:1,h:'A form changed',bg:'Sam also changed invoice.ui, a Designer form. Text diffs of form XML are unreadable, so forms get a visual before and after, with the changed widgets outlined and a short list of property changes.',note:'Same in every setup: forms are always compared visually.'}
+  ]},
+ {k:'combine',n:2,name:'Combining',v:[{k:'A',name:'Dialog'},{k:'B',name:'Combine tab'},{k:'C',name:'In the file'}],
+  eyebrow:'Study 2 · Combining',h:'Three ways to settle a clash',
+  p:'When Ana accepts Sam’s change, CBCS combines both shops’ work line by line. Most of the time nothing clashes and it just finishes. A clash means both people changed the same lines. Forms clash as a whole file, and a file one person deleted while the other edited it is its own case. The setups differ in where you settle a line-level clash.',
+  cards:[
+   {k:'A',name:'Dialog',idea:'One clash at a time in a dialog: Yours, Theirs or Both.',how:['A dialog shows the clashing line','Pick Yours, Theirs or Both','Next clash, then Save'],good:['Hard to get lost','Very little to learn'],bad:['No surrounding code','Tedious with several clashes','Can’t look at other files while deciding']},
+   {k:'B',name:'Combine tab',idea:'A tab lists every clash. Yours and Theirs sit side by side over the Result.',how:['Open the Combine tab','Pick a clash from the list','Use Yours, Theirs, Both, or edit the Result','Finish when every clash is settled'],good:['Your files stay untouched until Finish','Shows progress across many clashes and files','Context lines on both sides','Cancel puts everything back'],bad:['A new screen to learn','Takes more space']},
+   {k:'C',name:'In the file',idea:'Clashes appear inside your file with Keep yours, Use theirs and Keep both above each one.',how:['Open the file with the clash','Click an action above the clashing lines','Step to the next clash, then Finish'],good:['Full context in the real file','Fast for one or two clashes','Familiar from VS Code'],bad:['Your file is half-combined until you finish','Running the project mid-combine can fail','Harder to see the whole picture across files']}
+  ],
+  rec:'<p><b>Recommendation: B, Combine tab.</b> Safety decides it. In B your files don’t change until you press Finish, so a half-settled combine can’t break Run, and Cancel always puts everything back. The list keeps several clashes across several files manageable. Each side shows a few lines of context, so you rarely need C’s in-file view. Forms always get the visual chooser, and a deleted-versus-edited file always gets its own question.</p>',
+  scenes:[
+   {id:'auto',t:'Combined',who:'ana',same:1,h:'Most of it combined by itself',bg:'Ana pressed Accept. CBCS combined Sam’s 3 files with her own work automatically: different files and different lines need no help. One line in invoice.py was changed by both. Her files stay as they were until she settles it.',note:'Same in every setup: the editor bar and the ! in the tree point to the clash.'},
+   {id:'one',t:'One clash',who:'ana',h:'Both changed the total line',bg:'Ana added shipping to the total. Sam rounded the total to cents. Both edits are right, so the best answer is Both: add shipping, then round.',notes:{A:'A dialog with three choices. Pick one and save.',B:'The Combine tab: Ana’s version and Sam’s side by side, the Result below. Click a version or Both to fill the Result, then Finish.',C:'The clash sits inside invoice.py: Ana’s line and Sam’s line one above the other, with actions above them. Finish in the bar.'}},
+   {id:'many',t:'Several clashes',who:'ana',h:'Three clashes in two files',bg:'A bigger day: three clashes across invoice.py and statement.py. One is already settled. The question is how easy it is to keep track.',notes:{A:'The dialog walks through clashes one by one: 2 of 3, with Back and Next.',B:'The list on the left shows every clash by file: settled, current, waiting. Progress shows at the top.',C:'statement.py has the current clash inline. The bar says 2 of 3 and steps across files.'}},
+   {id:'formclash',t:'Form clash',who:'ana',same:1,h:'Both changed the same form',bg:'Ana and Sam both changed invoice.ui. Merging form XML line by line can produce a broken form, so CBCS asks which whole form to keep, with a live preview of each. The other version stays in history.',note:'Same in every setup.'},
+   {id:'deleted',t:'Deleted vs edited',who:'ana',same:1,h:'Sam deleted a file Ana edited',bg:'Sam removed the old statement report. Ana had edited it the same week. CBCS can’t guess, so it asks: keep Ana’s version, or delete it like Sam did.',note:'Same in every setup.'}
+  ]},
+ {k:'power',n:3,name:'Power tools',v:[{k:'A',name:'Plain history'},{k:'B',name:'Graph'}],
+  eyebrow:'Study 3 · Power tools',h:'History as a plain list, or as a graph',
+  p:'The power tools mostly live in menus and hovers, so they look the same in either setup. The real question is the History view: does it show one simple list, or the branching shape of the work with lanes for experiments and combined changes?',
+  cards:[
+   {k:'A',name:'Plain history',idea:'One list, newest first. Milestones show as flags. Experiments show through a filter.',how:['Open History from the Team view','Search or filter by file','Right-click a change for Compare, Restore, Undo, Experiment, Milestone'],good:['Anyone can read it','Works at any project size'],bad:['Hides when work split and came back together','Experiments need the filter to see']},
+   {k:'B',name:'Graph',idea:'The same list with lanes: experiments and parallel work branch off and join back.',how:['Open History','Follow lanes to see what came from where','Right-click for the same actions'],good:['Shows the true shape of the work','Makes experiments and combines visible'],bad:['Lanes confuse people who never branch','Looks like a developer tool']}
+  ],
+  rec:'<p><b>Recommendation: A by default, showing lanes only when they mean something.</b> Most shops never start an experiment, and a straight list reads best. When an experiment exists, or advanced tools are on, the lanes from B appear automatically. Everything else in this study is the same in both: who changed a line on hover, experiments in the status bar, Set aside in the Send menu, milestones from Package Project, and an Advanced switch in Settings.</p>',
+  scenes:[
+   {id:'history',t:'History',who:'sam',h:'Every change, and what you can do with it',bg:'Sam opens History. Each change shows who, when and the note, and selecting one shows its files and diff. Right-click offers the power tools in plain words: compare, restore, undo, start an experiment, mark a milestone.',notes:{A:'A plain list with a milestone flag. Experiments are hidden behind the Main filter.',B:'The same list with lanes: the PDF experiment branches off on its own lane, and the day Ana combined Sam’s rounding shows as two lanes joining.'}},
+   {id:'blame',t:'Who changed this',who:'sam',same:1,h:'Who changed this line, and why',bg:'Hovering a line shows who last changed it, when, and the note they wrote, with a link to the whole change. The current line also shows a faint one-line summary at its end. This is git blame in plain words.',note:'Same in both setups.'},
+   {id:'experiment',t:'Experiments',who:'sam',same:1,h:'Trying an idea separately',bg:'Sam wants to try PDF export without disturbing the shared project. An experiment is a separate line of work: switch to it, change things freely, then bring it into Main or throw it away. Experiments stay on his ChoreBoy unless he shares them. Under the hood it is a git branch.',note:'Same in both setups. The status bar shows which line of work you’re on, only once an experiment exists.'},
+   {id:'aside',t:'Set aside',who:'sam',same:1,h:'Parking unfinished work',bg:'Sam is halfway through a discount field when Ana reports a bug. Set aside puts his unfinished edits away so he can fix the bug cleanly, then Bring back restores them. Under the hood it is git stash.',note:'Same in both setups.'},
+   {id:'milestone',t:'Milestones',who:'sam',same:1,h:'Every package is a milestone',bg:'When Sam packages a version for a shop floor, CBCS marks that point in history with the version number. Later, "what did we ship in 1.3?" is one click. Under the hood it is a git tag.',note:'Same in both setups.'},
+   {id:'advanced',t:'Advanced',who:'sam',same:1,h:'For people who know git',bg:'An Advanced section in Settings, off by default. It shows git’s own names, change IDs, and the advanced tools: copy a change into another line of work, find when something broke, and tidy changes before sending them.',note:'Same in both setups.'}
+  ]}
+];
+var S={study:0,scene:0,vs:[1,1,0],pick:null,pickMany:null,formPick:null,del:null};
+try{var hh=(location.hash||'').slice(1);var si=STUDIES.findIndex(function(s){return s.k===hh});if(si>=0)S.study=si;}catch(e){}
+function study(){return STUDIES[S.study]} function scene(){return study().scenes[S.scene]}
+function vIdx(){return S.vs[S.study]} function vk(){return study().v[vIdx()].k}
+
+/* ---------- shell ---------- */
+function shell(o){
+  var acts='<div class="act"><button type="button" aria-label="Explorer" aria-pressed="'+(o.side==='explorer')+'">'+I.explorer+'</button><button type="button" aria-label="Search" aria-pressed="false">'+I.search+'</button><button type="button" aria-label="Tests" aria-pressed="false">'+I.test+'</button><button type="button" aria-label="Team" aria-pressed="'+(o.side==='team')+'">'+I.team+(o.badge?'<span class="bdg">'+o.badge+'</span>':'')+'</button></div>';
+  var side=o.side==='explorer'?explorer(o.deco||{},o.sel):o.sideHTML;
+  var tabs='<div class="tabs">'+o.tabs.map(function(t){return '<span class="tab'+(t.on?' on':'')+'">'+(t.dot?'<span class="tdot"></span>':'')+t.n+'</span>'}).join('')+'</div>';
+  var tool='<div class="tool"><span class="tb run">▶ Run Active File</span><span class="tb dbg">✱ Debug Active File</span><span class="tb">▶ Run Project</span><span class="tb">✱ Debug Project</span><span class="grow"></span><span class="tb team">'+I.send+' Send</span><span class="tb pkg">▣ Package Project</span></div>';
+  var team=o.team||{dot:'ok',t:'Up to date'};
+  var sb='<div class="sb"><span>Startup: Runtime ready (9/9 checks)</span><span class="grow"></span>'+(o.branch?'<span class="seg'+(o.branchOn?' on':'')+'">'+I.branch+' '+o.branch+'</span>':'')+'<span class="seg"><span class="dot '+team.dot+'"></span>Team: '+team.t+'</span><span>Run: idle</span><span>Project: Invoice App</span><span>Ln '+(o.ln||13)+', Col 5</span></div>';
+  return '<div class="win"><div class="wmbar">ChoreBoy Code Studio v0.5 — Invoice App</div><div class="mb"><span>File</span><span>Edit</span><span>Run</span><span>View</span><span>Tools</span><span>Help</span></div><div class="bd">'+acts+'<div class="side">'+side+'</div><div class="main">'+tool+tabs+'<div class="area">'+o.area+'</div><div class="bp"><div class="bt"><span class="on">Python Console</span><span>Debug</span><span>Problems</span><span>Run Log</span></div><div class="bc">&gt;&gt;&gt;</div></div></div></div>'+sb+(o.over||'')+'</div>';
+}
+function explorer(deco,sel){
+  var R=[['forms',0,'dir'],['forms/invoice.ui',1,'ui'],['reports',0,'dir'],['reports/old_statement.py',1,'py'],['reports/statement.py',1,'py'],['invoice.py',0,'py'],['main.py',0,'py']];
+  return '<div class="sh">EXPLORER</div><div class="proj">Invoice App</div><ul class="rows">'+R.map(function(r){var d=deco[r[0]];return '<li class="'+(r[0]===(sel||'invoice.py')?'sel':'')+'" style="padding-left:'+(10+r[1]*16)+'px">'+(r[2]==='dir'?'<span class="dim">'+I.caretD+'</span>':'')+I[r[2]]+'<span class="nm">'+r[0].split('/').pop()+'</span>'+(d?'<span class="dec '+d+'">'+{M:'M',A:'A',D:'D',in:'↓',x:'!',ok:'✓'}[d]+'</span>':'')+'</li>'}).join('')+'</ul>';
+}
+function thread(items,comp){
+  return '<div class="sh">TEAM<span class="sp"></span><span style="display:flex;gap:2px">'+av('sam')+av('ana')+'</span></div><div class="feed">'+items.join('')+'</div>'+(comp===false?'':'<div class="comp">'+(comp||'')+'<div class="row"><input class="input" placeholder="Message" aria-label="Message"><button type="button" class="btn pri" style="width:28px;padding:0" aria-label="Send">'+I.send+'</button></div></div>');
+}
+function msg(w,me,txt,time,extra){return '<div class="msg">'+av(w)+'<div><div class="h"><b>'+(w===me?'You':P[w].first)+'</b><span>'+time+'</span></div><div>'+txt+'</div>'+(extra||'')+'</div></div>';}
+var NOTE='Round totals to cents, add statement report';
+function dlg(w,wt,hd,body,foot){return '<div class="ov"><div class="dlg" role="dialog" aria-modal="true" aria-label="'+wt+'" style="width:'+w+'px"><div class="wt">'+wt+'</div><div class="dh">'+hd+'</div><div class="db">'+body+'</div><div class="df">'+foot+'</div></div></div>';}
+
+/* diff renderers */
+function inlineDiff(){return '<div class="dv"><div class="hh">invoice.py · line 12</div>'+
+  '<div class="r"><span class="n">12</span><span class="c">'+hl('    total = subtotal * (1 + TAX_RATE)')+'</span></div>'+
+  '<div class="r d"><span class="n">13</span><span class="c">'+hl(L_OLD)+'</span></div>'+
+  '<div class="r a"><span class="n">13</span><span class="c">'+wordAdd(L_OLD,'.quantize(Decimal("0.01"))')+'</span></div></div>';}
+function sbsDiff(){function col(side){return '<div class="dv">'+'<div class="hh">'+(side==='l'?'Before':'Sam’s version')+' · invoice.py</div>'+
+  [10,11,12].map(function(i){return '<div class="r"><span class="n">'+(i+1)+'</span><span class="c">'+hl(INV[i])+'</span></div>'}).join('')+
+  (side==='l'?'<div class="r d"><span class="n">13</span><span class="c">'+hl(L_OLD)+'</span></div>':'<div class="r a"><span class="n">13</span><span class="c">'+wordAdd(L_OLD,'.quantize(Decimal("0.01"))')+'</span></div>')+'</div>';}
+  return '<div class="sbs" style="min-height:0;overflow:auto">'+col('l')+col('r')+'</div>';}
+function fileList(items,cur){return '<div class="flist">'+items.map(function(f,i){return (f.g?'<div class="g">'+f.g+'</div>':'')+'<div class="it'+(i===cur?' on':'')+'">'+(f.ic?I[f.ic]:'')+'<span class="nm">'+f.n+'</span>'+(f.d?'<span class="dec '+f.d+'">'+f.dt+'</span>':'')+'</div>'}).join('')+'</div>';}
+var FILES=[{n:'invoice.py',ic:'py',d:'M',dt:'M'},{n:'invoice.ui',ic:'ui',d:'M',dt:'M'},{n:'statement.py',ic:'py',d:'A',dt:'A'}];
+function qtForm(after,markTotal,marksOrder){return '<div class="qt"><div class="fr"><span>Customer</span><span class="le'+(marksOrder?' chg':'')+'"></span>'+(marksOrder?'<span class="ord">1</span>':'')+'</div><div class="fr"><span>Date</span><span class="le'+(marksOrder?' chg':'')+'"></span>'+(marksOrder?'<span class="ord">2</span>':'')+'</div><div class="fr"><span>Lines</span><span class="le" style="height:44px"></span></div><div class="fr"><span'+(after?' style="font-weight:700"':'')+(markTotal?' class="chg"':'')+'>Total</span><span class="le"></span></div>'+(after==='ana'?'<div class="fr"><span class="chg">Shipping</span><span class="le chg"></span></div>':'')+'</div>';}
+
+/* ---------- scene views ---------- */
+var VIEW={
+ own:function(){
+  var rows=lines(INV.slice(0,12));rows.push({t:L_SAM,mk:'chg',cls:'hl'});
+  rows.push({w:'<div class="peek"><div class="ph"><span>invoice.py · line 13</span><span class="grow"></span><button type="button" class="btn sm">Undo edit</button><button type="button" class="ib" aria-label="Close">'+I.close+'</button></div><div class="l d">'+wordDel(L_OLD,'')+'</div><div class="l a">'+wordAdd(L_OLD,'.quantize(Decimal("0.01"))')+'</div></div>'});
+  return shell({side:'explorer',deco:{'invoice.py':'M','forms/invoice.ui':'M','reports/statement.py':'A'},tabs:[{n:'invoice.py',on:1}],area:ed(rows),team:{dot:'info',t:'3 to send'}});
+ },
+ review:function(){
+  var k=vk(),side=thread(['<div class="sys">Today</div>',msg('ana','ana','Got it, thanks!','9:13'),msg('sam','ana',NOTE,'9:18','<div class="meta"><span style="color:var(--accent)">3 files</span><span class="grow"></span>'+(k==='C'?'<span class="chip">Shown in file</span>':'<button type="button" class="btn pri sm">Review</button>')+'</div>')]);
+  var base={side:'team',sideHTML:side,badge:1,team:{dot:'info',t:'1 from Sam'},deco:{}};
+  if(k==='A'){base.tabs=[{n:'invoice.py',on:1}];base.area=ed(lines(INV));
+    base.over=dlg(760,'Review Changes','<div class="t">'+av('sam',1)+NOTE+'</div>','<div style="display:grid;grid-template-columns:190px minmax(0,1fr);border:1px solid var(--border);border-radius:5px;overflow:hidden;min-height:220px">'+fileList(FILES,0)+inlineDiff()+'</div>','<button type="button" class="btn">Not Now</button><span class="sp"></span><button type="button" class="btn pri">Accept</button>');return shell(base);}
+  if(k==='B'){base.tabs=[{n:'invoice.py'},{n:'Review · Sam',on:1}];
+    base.area='<div class="rt"><div class="rh">'+av('sam')+'<b>'+NOTE+'</b><span class="dim">9:18</span><span class="grow"></span><span class="segc"><span>Inline</span><span class="on">Side by side</span></span><button type="button" class="btn sm">Show in file</button><button type="button" class="btn sm">Not Now</button><button type="button" class="btn pri sm">Accept</button></div><div class="rb">'+fileList(FILES,0)+sbsDiff()+'</div></div>';return shell(base);}
+  var rows=lines(INV.slice(0,12));rows.push({t:L_OLD,cls:'gdel'});rows.push({html:wordAdd(L_OLD,'.quantize(Decimal("0.01"))'),cls:'gadd',nonum:1});
+  base.tabs=[{n:'invoice.py',on:1,dot:1}];base.deco={'invoice.py':'in','forms/invoice.ui':'in','reports/statement.py':'in'};base.side='explorer';
+  base.area='<div class="infobar">'+av('sam')+'<b>Sam’s changes</b><span class="grow"></span><button type="button" class="ib" aria-label="Previous">'+I.prev+'</button><span>1 of 3</span><button type="button" class="ib" aria-label="Next">'+I.next+'</button><button type="button" class="btn sm">Hide</button><button type="button" class="btn pri sm">Accept All</button></div>'+ed(rows);
+  return shell(base);
+ },
+ form:function(){
+  var area='<div class="rt"><div class="rh">'+av('sam')+'<b>invoice.ui</b><span class="grow"></span><span class="segc"><span class="on">Preview</span><span>XML</span></span><button type="button" class="btn sm">Open in Designer</button></div><div class="forms">'+
+   '<div class="fp"><div class="vh"><b>Before</b></div>'+qtForm(false,false,false)+'</div><div class="fp on"><div class="vh">'+av('sam')+'<b>Sam’s version</b></div>'+qtForm('sam',true,true)+'</div>'+
+   '<div class="props"><div><span>PROPERTY</span><span>BEFORE</span><span>AFTER</span></div><div><span>Tab order</span><span>Date, Customer</span><span>Customer, Date</span></div><div><span>Total label font</span><span>Normal</span><span>Bold</span></div></div></div></div>';
+  return shell({side:'team',sideHTML:thread(['<div class="sys">Today</div>',msg('sam','ana',NOTE,'9:18','<div class="meta"><span style="color:var(--accent)">3 files</span></div>')]),badge:1,tabs:[{n:'invoice.py'},{n:'Review · Sam',on:1}],area:area,team:{dot:'info',t:'1 from Sam'}});
+ },
+ auto:function(){
+  var rows=lines(INV_ANA);rows[13]={t:L_ANA,cls:'mine'};
+  var side=thread(['<div class="sys">Today</div>',msg('sam','ana',NOTE,'9:18'),'<div class="sys">You accepted Sam’s change · 2 files combined · 1 line needs you</div>']);
+  return shell({side:'team',sideHTML:side,tabs:[{n:'invoice.py',on:1}],area:'<div class="infobar warn">'+I.warn+'<b>1 line in invoice.py needs your choice</b><span class="grow"></span><button type="button" class="btn sm">Cancel Combine</button><button type="button" class="btn pri sm">Resolve</button></div>'+ed(rows),team:{dot:'warn',t:'1 line to choose'},ln:14});
+ },
+ one:function(){return combineView(false);},
+ many:function(){return combineView(true);},
+ formclash:function(){
+  var p=S.formPick;
+  var area='<div class="rt"><div class="rh">'+I.warn+'<b>invoice.ui was changed by both of you</b><span class="grow"></span><button type="button" class="btn sm">Cancel</button><button type="button" class="btn pri sm"'+(p?'':' disabled')+'>Finish</button></div><div class="forms">'+
+   '<div class="fp'+(p==='ana'?' on':'')+'"><div class="vh">'+av('ana')+'<b>Yours</b><span class="grow"></span><button type="button" class="btn sm" data-fp="ana">Keep this form</button></div>'+qtForm('ana',false,false)+'</div>'+
+   '<div class="fp'+(p==='sam'?' on':'')+'"><div class="vh">'+av('sam')+'<b>Sam’s</b><span class="grow"></span><button type="button" class="btn sm" data-fp="sam">Keep this form</button></div>'+qtForm('sam',true,true)+'</div>'+
+   '<div class="props"><div><span>DIFFERENCE</span><span>YOURS</span><span>SAM’S</span></div><div><span>Shipping field</span><span>Added</span><span>—</span></div><div><span>Tab order</span><span>Date, Customer</span><span>Customer, Date</span></div><div><span>Total label font</span><span>Normal</span><span>Bold</span></div></div></div></div>';
+  return shell({side:'explorer',deco:{'forms/invoice.ui':'x'},sel:'forms/invoice.ui',tabs:[{n:'invoice.py'},{n:'Combine · invoice.ui',on:1}],area:area,team:{dot:'warn',t:'1 form to choose'}});
+ },
+ deleted:function(){
+  var p=S.del;
+  function o(k,w,lab,sub){return '<div class="opt" role="radio" tabindex="0" aria-checked="'+(p===k)+'" data-del="'+k+'"><span class="rd"></span>'+(w?av(w):'<span></span>')+'<div style="display:grid;gap:2px"><b>'+lab+'</b><span class="dim">'+sub+'</span></div></div>';}
+  return shell({side:'explorer',deco:{'reports/old_statement.py':'x'},sel:'reports/old_statement.py',tabs:[{n:'old_statement.py',on:1}],area:ed(lines(STMT)),team:{dot:'warn',t:'1 file to choose'},
+   over:dlg(520,'Combine Changes','<div class="t">'+I.warn+'old_statement.py</div><span class="chip warn">Sam deleted it · you edited it</span>','<div style="display:grid;gap:8px" role="radiogroup" aria-label="Choice">'+o('keep','ana','Keep your version','You changed 2 lines on Nov 3')+o('delete','sam','Delete it','Sam removed it on Nov 4')+'</div>','<button type="button" class="btn">Cancel</button><span class="sp"></span><button type="button" class="btn pri"'+(p?'':' disabled')+'>Save</button>')});
+ },
+ history:function(){return historyView();},
+ blame:function(){
+  var rows=lines(INV.slice(0,12));rows.push({t:L_SAM,cls:'hl',tail:'<span class="blame">Sam · Nov 2 · Round totals to cents</span>'});
+  var card='<div class="card2" style="left:520px;top:260px"><div class="hd">'+av('sam',1)+'<div style="display:grid;gap:1px"><b>Sam Brenneman</b><span class="dim">Maple Ridge · Nov 2, 9:14</span></div></div><div class="bdy"><div>'+NOTE+'</div><div class="diff" style="font-family:var(--f-code);font-size:11.5px;line-height:18px;border:1px solid var(--border);border-radius:4px;overflow:hidden"><div style="background:var(--del-bg);padding:0 8px;white-space:pre">'+hl(L_OLD.trim())+'</div><div style="background:var(--add-bg);padding:0 8px;white-space:pre">'+wordAdd('return total','.quantize(Decimal("0.01"))')+'</div></div></div><div class="ft"><button type="button" class="btn sm">Open Change</button><button type="button" class="btn sm">File History</button></div></div>';
+  return shell({side:'explorer',tabs:[{n:'invoice.py',on:1}],area:ed(rows),over:card});
+ },
+ experiment:function(){
+  var pop='<div class="popm" style="right:300px;bottom:27px"><div class="it on">'+I.branch+'<span class="grow"><b>Try PDF export</b></span><span class="dim">2 changes</span></div><div class="it">'+I.branch+'<span class="grow">Main</span><span class="dim">shared</span></div><hr><div class="it">Bring into Main…</div><div class="it">Share with Team…</div><div class="it">Delete Experiment…</div><hr><div class="it">New Experiment…</div></div>';
+  var rows=lines(['from reportlab_lite import Canvas','','','def export_pdf(invoice, path):','    page = Canvas(path)','    page.title(invoice.customer)','    page.table(invoice.lines)','    page.save()']);
+  rows[4].mk='add';rows[5].mk='add';rows[6].mk='add';rows[7].mk='add';
+  return shell({side:'explorer',deco:{'reports/statement.py':'M'},sel:'reports/statement.py',tabs:[{n:'pdf_export.py',on:1}],area:ed(rows),branch:'Try PDF export',branchOn:1,over:pop,team:{dot:'ok',t:'Up to date'},ln:8});
+ },
+ aside:function(){
+  var menu='<div class="popm" style="left:110px;bottom:62px;width:200px"><div class="it">'+I.send+' Send</div><div class="it">Save Only</div><div class="it on">Set Aside</div></div>';
+  var side=thread(['<div class="sys">Today</div>',msg('ana','sam','The total is wrong on the March invoice, can you look?','10:02')],'<div class="aside">'+I.history+'<span style="flex:1">Discount field</span><button type="button" class="btn sm">Bring Back</button></div><span class="chip" style="justify-self:start">2 files changed '+I.caretD+'</span>');
+  var rows=lines(INV.slice(0,12));rows.push({t:L_SAM});rows.splice(3,0,{t:'DISCOUNT = Decimal("0.05")',mk:'add'});
+  return shell({side:'team',sideHTML:side,tabs:[{n:'invoice.py',on:1}],area:ed(rows),over:menu,team:{dot:'info',t:'2 to send'}});
+ },
+ milestone:function(){return historyView(true);},
+ advanced:function(){
+  function t(lab,on){return '<div class="tg"><span>'+lab+'</span><span class="tgl'+(on?' on':'')+'"></span></div>';}
+  var d=dlg(640,'Settings','<div class="t">Settings</div>','<div class="set"><div class="cats"><div>General</div><div>Editor</div><div>Theme</div><div>Keyboard</div><div class="on">Team</div></div><div class="pane"><b>Advanced</b>'+t('Show git names',true)+t('Show change IDs',true)+t('Copy a change into an experiment',false)+t('Find when something broke',false)+t('Tidy changes before sending',false)+'</div></div>','<button type="button" class="btn">Cancel</button><span class="sp"></span><button type="button" class="btn pri">Save</button>');
+  return shell({side:'explorer',tabs:[{n:'invoice.py',on:1}],area:ed(lines(INV)),over:d});
+ }
+};
+function combineView(many){
+  var k=vk(),pick=S.pick;
+  var cur=many?{file:'statement.py',line:6,mine:ST_ANA,theirs:ST_SAM,both:null,ctx:STMT.slice(3,5),code:STMT}:{file:'invoice.py',line:14,mine:L_ANA,theirs:L_SAM,both:L_BOTH,ctx:INV.slice(10,12),code:INV_ANA};
+  var resLine=pick==='mine'?cur.mine:pick==='theirs'?cur.theirs:pick==='both'?cur.both:null;
+  var side=thread(['<div class="sys">Today</div>',msg('sam','ana',NOTE,'9:18'),'<div class="sys">'+(many?'3 clashes in 2 files':'1 line needs your choice')+'</div>']);
+  var team={dot:'warn',t:many?'2 clashes left':'1 line to choose'};
+  if(k==='A'){
+   function o(kk,w,code,lab){return '<div class="opt" role="radio" tabindex="0" aria-checked="'+(pick===kk)+'" data-pick="'+kk+'"><span class="rd"></span>'+(w?av(w):'<span></span>')+'<div style="display:grid;gap:3px;min-width:0"><b>'+lab+'</b><code>'+hl(code.trim())+'</code></div></div>';}
+   var opts=o('mine','ana',cur.mine,'Yours')+o('theirs','sam',cur.theirs,'Sam’s')+(cur.both?o('both','',cur.both,'Both'):'');
+   return shell({side:'team',sideHTML:side,tabs:[{n:cur.file,on:1}],area:ed(lines(cur.code)),team:team,
+    over:dlg(600,'Combine Changes','<div class="t">'+I.warn+'Choose a version</div><span class="chip warn">'+(many?'Clash 2 of 3 · ':'')+cur.file+' · line '+cur.line+'</span>','<div style="display:grid;gap:8px" role="radiogroup" aria-label="Version">'+opts+'</div>',
+     (many?'<button type="button" class="btn">Back</button>':'<button type="button" class="btn">Cancel</button>')+'<span class="sp"></span><button type="button" class="btn pri"'+(pick?'':' disabled')+'>'+(many?'Next':'Save')+'</button>')});
+  }
+  if(k==='B'){
+   function sv(kk,w,lab,line,cls){return '<div class="side-v'+(pick===kk?' on':'')+'"><div class="vh">'+av(w)+'<b>'+lab+'</b><span class="grow"></span><button type="button" class="btn sm" data-pick="'+kk+'">Use This</button></div><div class="code">'+cur.ctx.map(function(c){return '<div>'+hl(c)+'</div>'}).join('')+'<div class="x '+cls+'">'+hl(line)+'</div></div></div>';}
+   var list=many?[{g:'INVOICE.PY',n:'Line 14',d:'ok',dt:'✓'},{g:'STATEMENT.PY',n:'Line 6'},{n:'Line 21'}]:[{g:'INVOICE.PY',n:'Line 14'}];
+   var curIdx=many?1:0;
+   var area='<div class="rt"><div class="rh">'+I.warn+'<b>'+(many?'1 of 3 settled':'Choose a version')+'</b><span class="grow"></span><button type="button" class="ib" aria-label="Previous clash">'+I.prev+'</button><button type="button" class="ib" aria-label="Next clash">'+I.next+'</button><button type="button" class="btn sm">Cancel</button><button type="button" class="btn pri sm"'+(pick&&!many?'':' disabled')+'>Finish</button></div><div class="rb">'+fileList(list,curIdx)+
+    '<div class="cmb"><div class="cols">'+sv('mine','ana','Yours',cur.mine,'mine')+sv('theirs','sam','Sam’s',cur.theirs,'theirs')+'</div>'+
+    '<div class="side-v"><div class="vh"><b>Result</b><span class="grow"></span>'+(cur.both?'<button type="button" class="btn sm" data-pick="both">Both</button>':'')+'<button type="button" class="btn sm">Edit</button></div><div class="code">'+cur.ctx.map(function(c){return '<div>'+hl(c)+'</div>'}).join('')+(resLine?'<div class="x res">'+hl(resLine)+'</div>':'<div class="ph">Choose a version above</div>')+'</div></div></div></div></div>';
+   return shell({side:'team',sideHTML:side,tabs:[{n:cur.file},{n:'Combine',on:1}],area:area,team:team});
+  }
+  var rows=lines(cur.code.slice(0,cur.line-1));
+  if(resLine){rows.push({t:resLine,mk:'mrg',cls:'hl'});}
+  else{rows.push({w:'<div class="lens"><span class="who">'+av('ana')+'Yours</span><button type="button" data-pick="mine">Keep Yours</button><button type="button" data-pick="theirs">Use Sam’s</button>'+(cur.both?'<button type="button" data-pick="both">Keep Both</button>':'')+'</div>'});
+   rows.push({t:cur.mine,cls:'mine'});rows.push({t:cur.theirs,cls:'theirs',nonum:1});rows.push({w:'<div class="lens"><span class="who">'+av('sam')+'Sam’s</span></div>'});}
+  rows=rows.concat(lines(cur.code.slice(cur.line)));
+  var bar='<div class="infobar warn">'+I.warn+'<b>'+(many?'Clash 2 of 3':'1 clash')+'</b><span class="grow"></span><button type="button" class="ib" aria-label="Previous clash">'+I.prev+'</button><button type="button" class="ib" aria-label="Next clash">'+I.next+'</button><button type="button" class="btn sm">Cancel Combine</button><button type="button" class="btn pri sm"'+(resLine&&!many?'':' disabled')+'>Finish</button></div>';
+  return shell({side:'explorer',deco:many?{'invoice.py':'ok','reports/statement.py':'x'}:{'invoice.py':'x'},sel:many?'reports/statement.py':'invoice.py',tabs:[{n:cur.file,on:1}],area:bar+ed(rows),team:team,ln:cur.line});
+}
+var HROWS=[
+ {who:'sam',note:'Statement covers last 90 days',when:'Nov 9',lane:0},
+ {who:'sam',note:'PDF export: page layout',when:'Nov 8',lane:1,exp:1},
+ {who:'sam',note:'Start PDF export',when:'Nov 7',lane:1,exp:1},
+ {who:'ana',note:'Fix tab order on invoice form',when:'Nov 4',lane:0,flag:'1.3'},
+ {who:'ana',note:'Combined Sam’s rounding with shipping',when:'Nov 2',lane:0,merge:1},
+ {who:'ana',note:'Add shipping to invoices',when:'Nov 2',lane:0},
+ {who:'sam',note:NOTE,when:'Nov 2',lane:1},
+ {who:'sam',note:'Shared with Cedar Hollow',when:'Nov 2',lane:0,flag:'1.2'}
+];
+function historyView(milestoneDialog){
+  var graph=vk()==='B',rows=HROWS.filter(function(r){return graph||!r.exp;}),sel=rows.findIndex(function(r){return r.note===NOTE;});
+  var RH=30,gw=graph?40:8;
+  var svg='';
+  if(graph){var X=[14,30],Y=function(i){return i*RH+15;};var idx=function(r){return rows.indexOf(r);};
+   var segs='';
+   // main lane line
+   segs+='<path d="M14 '+Y(0)+' V'+Y(rows.length-1)+'" stroke="var(--accent)" stroke-width="2" fill="none"/>';
+   // experiment lane: rows 1-2 branch from row 3
+   segs+='<path d="M30 '+Y(1)+' V'+Y(2)+' C30 '+(Y(2)+12)+' 14 '+(Y(3)-12)+' 14 '+Y(3)+'" stroke="var(--warn)" stroke-width="2" fill="none"/>';
+   // Sam's rounding on lane 1 from row 7 to merge at row 4
+   segs+='<path d="M14 '+Y(7)+' C14 '+(Y(7)-12)+' 30 '+(Y(6)+12)+' 30 '+Y(6)+' V'+Y(5)+' C30 '+(Y(5)-12)+' 14 '+(Y(4)+12)+' 14 '+Y(4)+'" stroke="var(--p-sam)" stroke-width="2" fill="none"/>';
+   rows.forEach(function(r,i){var c=r.exp?'var(--warn)':r.lane===1?'var(--p-sam)':'var(--accent)';segs+='<circle cx="'+X[r.lane]+'" cy="'+Y(i)+'" r="'+(r.merge?5:4)+'" fill="'+(r.merge?'var(--panel)':c)+'" stroke="'+c+'" stroke-width="2"/>';});
+   svg='<svg width="'+gw+'" height="'+(rows.length*RH)+'" style="position:absolute;left:10px;top:0" aria-hidden="true">'+segs+'</svg>';}
+  var list='<div class="hrows" style="--gw:'+gw+'px">'+svg+rows.map(function(r,i){return '<div class="hrow'+(i===sel?' on':'')+'"><span></span>'+av(r.who)+'<span class="nt">'+(r.flag?'<span class="chip flag" style="margin-right:6px">'+I.flag+'&nbsp;'+r.flag+'</span>':'')+r.note+'</span><span class="wh">'+r.when+'</span></div>'}).join('')+'</div>';
+  var tools='<div class="hl-tools"><input class="input" placeholder="Search changes" aria-label="Search changes" style="height:26px"><span class="segc" style="flex:none"><span class="on">'+(graph?'All work':'Main')+' '+I.caretD+'</span></span></div>';
+  var r=rows[sel];
+  var det='<div class="hdet"><div style="display:flex;gap:8px;align-items:center">'+av(r.who,1)+'<div style="display:grid"><b>'+r.note+'</b><span class="dim">'+P[r.who].name+' · '+r.when+'</span></div></div><div style="border:1px solid var(--border);border-radius:5px;overflow:hidden">'+fileList(FILES,0).replace('class="flist"','class="flist" style="border:0"')+'</div>'+inlineDiff().replace('class="dv"','class="dv" style="border:1px solid var(--border);border-radius:5px"')+'</div>';
+  var ctxTop=34+sel*RH+18;
+  var ctx=milestoneDialog?'':'<div class="ctx" style="left:'+(34+270+180)+'px;top:'+(22+25+40+28+ctxTop)+'px"><div>Compare with Current</div><div>Compare with…</div><hr><div class="on">Restore This Version</div><div>Undo This Change</div><hr><div>Start Experiment Here</div><div>Mark as Milestone…</div><hr><div>Copy Change ID</div></div>';
+  var over=ctx;
+  if(milestoneDialog){over=dlg(500,'Package Project','<div class="t">'+I.pkg+'Package Invoice App</div>','<div class="form"><label for="pk-v">Version</label><input class="input" id="pk-v" value="1.4.0"><label></label><span class="cbx"><i class="on">✓</i>Mark this version in history</span></div>','<button type="button" class="btn">Cancel</button><span class="sp"></span><button type="button" class="btn pri">Package</button>');}
+  return shell({side:'team',sideHTML:thread(['<div class="sys">Nov 9</div>',msg('sam','sam','Statement covers last 90 days','10:05','<div class="meta"><span class="tk on" style="color:var(--ok)">✓✓</span></div>')]),tabs:[{n:'invoice.py'},{n:'History',on:1}],area:'<div class="hist"><div class="hl-l">'+tools+list+'</div>'+det+'</div>',branch:graph?'Main':'',over:over});
+}
+
+/* ---------- page rendering ---------- */
+function renderStudies(){document.getElementById('studies').innerHTML=STUDIES.map(function(s,i){return '<button type="button" data-study="'+i+'" aria-pressed="'+(i===S.study)+'"><span class="n">'+s.n+'</span>'+s.name+'</button>'}).join('');}
+function renderSteps(){var sc=study().scenes;document.getElementById('steps').innerHTML=sc.map(function(x,i){return '<li><button type="button" data-scene="'+i+'" aria-current="'+(i===S.scene?'step':'false')+'"><span class="who" style="background:var(--p-'+x.who+')"></span>'+x.t+'</button></li>'}).join('');}
+function renderExplain(){var x=scene(),p=P[x.who],v=study().v[vIdx()];
+  var note=x.same?x.note:x.notes[v.k];
+  document.getElementById('explain').innerHTML='<div><span class="whoami">'+av(x.who)+'Moment '+(S.scene+1)+' of '+study().scenes.length+' · you are '+p.name+' at '+p.shop+'</span><h3>'+x.h+'</h3><p class="bgtxt">'+x.bg+'</p></div><div><span class="vtag'+(x.same?' same':'')+'"><b>'+v.k+'</b>'+v.name+'</span><p>'+note+'</p>'+(x.same?'<p class="dm ds">Switching setups doesn’t change this moment.</p>':'')+'</div>';}
+function renderCards(){var s=study();
+  document.getElementById('setups-eyebrow').textContent=s.eyebrow;document.getElementById('setups-h').textContent=s.h;document.getElementById('setups-p').textContent=s.p;
+  document.getElementById('cards').innerHTML=s.cards.map(function(c,i){function ul(a){return '<ul>'+a.map(function(t){return '<li>'+t+'</li>'}).join('')+'</ul>';}
+    return '<article class="card'+(i===vIdx()?' pick':'')+'"><div class="vtag"><b>'+c.k+'</b><h3>'+c.name+'</h3></div><p>'+c.idea+'</p><dl><dt>How it works</dt><dd>'+ul(c.how)+'</dd><dt>Good at</dt><dd>'+ul(c.good)+'</dd><dt>Weak at</dt><dd>'+ul(c.bad)+'</dd></dl><button type="button" class="dbtn" data-v="'+i+'">'+(i===vIdx()?'Showing in the prototype':'Show in the prototype')+'</button></article>'}).join('');
+  document.getElementById('study-rec').innerHTML=s.rec;}
+function renderWin(){document.getElementById('win').innerHTML=VIEW[scene().id]();}
+function renderSwitch(){var v=study().v[vIdx()];document.getElementById('vcur').innerHTML='<b>'+v.k+'</b>'+v.name;}
+function render(){renderStudies();renderSteps();renderExplain();renderCards();renderWin();renderSwitch();}
+function reset(){S.pick=null;S.formPick=null;S.del=null;}
+function goScene(i){var n=study().scenes.length;S.scene=Math.max(0,Math.min(n-1,i));reset();render();}
+function goStudy(i){S.study=i;S.scene=0;reset();try{history.replaceState(null,'','#'+study().k);}catch(e){}render();}
+function goV(d){var n=study().v.length;S.vs[S.study]=(vIdx()+d+n)%n;reset();render();}
+document.addEventListener('click',function(e){var t;
+  if((t=e.target.closest('[data-study]'))){goStudy(+t.getAttribute('data-study'));return;}
+  if((t=e.target.closest('[data-scene]'))){goScene(+t.getAttribute('data-scene'));return;}
+  if((t=e.target.closest('[data-v]'))){S.vs[S.study]=+t.getAttribute('data-v');reset();render();document.querySelector('.stage').scrollIntoView({block:'center'});return;}
+  if(e.target.closest('#vprev')){goV(-1);return;} if(e.target.closest('#vnext')){goV(1);return;}
+  if((t=e.target.closest('[data-pick]'))){S.pick=t.getAttribute('data-pick');renderWin();return;}
+  if((t=e.target.closest('[data-fp]'))){S.formPick=t.getAttribute('data-fp');renderWin();return;}
+  if((t=e.target.closest('[data-del]'))){S.del=t.getAttribute('data-del');renderWin();return;}
+});
+document.addEventListener('keydown',function(e){var t=e.target;if(t&&(t.tagName==='INPUT'||t.tagName==='TEXTAREA'||t.isContentEditable))return;
+  if(e.key==='ArrowLeft')goV(-1);else if(e.key==='ArrowRight')goV(1);else if(e.key==='[')goScene(S.scene-1);else if(e.key===']')goScene(S.scene+1);
+  else if((e.key===' '||e.key==='Enter')&&t.getAttribute&&(t.hasAttribute('data-pick')||t.hasAttribute('data-del'))){e.preventDefault();t.click();}});
+render();
+})();
+</script>
