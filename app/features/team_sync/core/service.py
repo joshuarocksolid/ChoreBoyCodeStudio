@@ -475,7 +475,7 @@ class TeamSyncService:
         extra: List[str] = []
         if meta["kind"] in {"merge", "experiment"} and meta.get("theirs"):
             extra = [str(meta["theirs"])]
-        if not self._repo.dirty():
+        if not self._repo.dirty() and not extra:
             change_id = self._repo.head_sha() or ""
         else:
             change_id = self._repo.commit(
@@ -491,10 +491,13 @@ class TeamSyncService:
         self._close_incoming(str(meta.get("incoming_id") or ""))
         session.clear()
         self._append_feed(FEED_SYSTEM, str(meta.get("feed") or meta["note"]), me.member_id)
+        change = self._repo.change(change_id)
+        if meta["kind"] == "merge":
+            self._push_change(change, ref="main")
         self._emit(EVENT_COMBINE)
         self._emit(EVENT_HISTORY)
         self._emit(EVENT_STATUS)
-        return self._repo.change(change_id)
+        return change
 
     def cancel_combine(self) -> None:
         CombineSession(self.project_root).clear()

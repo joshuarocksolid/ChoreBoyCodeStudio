@@ -77,6 +77,10 @@ def test_two_shops_share_join_send_clash_and_deliver(tmp_path: Path) -> None:
     delivery = ana._delivery_for(sent.id)
     assert delivery is not None
     assert delivery.state == DELIVERY_DELIVERED
+    incoming = ana.incoming()
+    assert incoming, "finishing a combine left the other station with nothing to receive"
+    assert ana.accept(incoming[0].id) is None
+    assert "return x * 2" in Path(ana.project_root, "invoice.py").read_text(encoding="utf-8")
 
     _forge(sam, ana_account)
     sam.poll()

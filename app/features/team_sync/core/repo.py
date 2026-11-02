@@ -12,7 +12,7 @@ from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 from dulwich.diff_tree import tree_changes
 from dulwich.graph import find_merge_base
 from dulwich.ignore import IgnoreFilterManager
-from dulwich.index import ConflictedIndexEntry, update_working_tree
+from dulwich.index import ConflictedIndexEntry, index_entry_from_stat, update_working_tree
 from dulwich.object_store import iter_tree_contents
 from dulwich.objects import Blob, Commit, Tag
 from dulwich.porcelain import annotate
@@ -372,6 +372,7 @@ class TeamRepo:
                 changes,
                 allow_overwrite_modified=False,
             )
+            self._checkout_paths_dulwich_skips(old_tree, commit.tree)
         except OSError as exc:
             raise TeamSyncError(
                 "Could not check out that change without overwriting files."
@@ -794,6 +795,68 @@ class TeamRepo:
             found[sha.decode("ascii")] = version
         return found
 
+    def _checkout_paths_dulwich_skips(
+        self,
+        old_tree: Optional[bytes],
+        new_tree: bytes,
+    ) -> None:
+        """dulwich 0.24 skips every path that starts with ``.git``.
+
+        That includes ``.gitignore``. The file never reaches the disk or the
+        index, so the next commit drops it from the project.
+        """
+        repo = self._repo()
+        store = repo.object_store
+        old_files = _regular_tree_files(store, old_tree)
+        new_files = _regular_tree_files(store, new_tree)
+        index = repo.open_index()
+        touched = False
+        for rel, (raw_path, blob_id) in new_files.items():
+            if not _skipped_dotgit_file(rel):
+                continue
+            _guard_rel(rel)
+            full = os.path.join(self.root, *rel.split("/"))
+            parent = os.path.dirname(full)
+            if parent:
+                os.makedirs(parent, exist_ok=True)
+            data = _blob_bytes(store, blob_id)
+            if os.path.lexists(full):
+                if os.path.islink(full) or not os.path.isfile(full):
+                    raise OSError(f"Cannot replace {rel} with the shared file.")
+                with open(full, "rb") as handle:
+                    current = handle.read()
+                previous_id = old_files.get(rel, (b"", b""))[1]
+                if current != data:
+                    if not previous_id or current != _blob_bytes(store, previous_id):
+                        raise OSError(f"Local changes to {rel} would be overwritten.")
+                    with open(full, "wb") as handle:
+                        handle.write(data)
+            else:
+                with open(full, "wb") as handle:
+                    handle.write(data)
+            index[raw_path] = index_entry_from_stat(os.lstat(full), blob_id)
+            touched = True
+        for rel, (raw_path, blob_id) in old_files.items():
+            if rel in new_files or not _skipped_dotgit_file(rel):
+                continue
+            _guard_rel(rel)
+            full = os.path.join(self.root, *rel.split("/"))
+            if os.path.lexists(full):
+                if os.path.islink(full) or not os.path.isfile(full):
+                    raise OSError(f"Cannot remove {rel}.")
+                with open(full, "rb") as handle:
+                    current = handle.read()
+                if current != _blob_bytes(store, blob_id):
+                    raise OSError(f"Local changes to {rel} would be overwritten.")
+                os.remove(full)
+            try:
+                del index[raw_path]
+            except KeyError:
+                pass
+            touched = True
+        if touched:
+            index.write()
+
     def _assert_tree_paths(self, tree_sha: bytes) -> None:
         for entry in iter_tree_contents(self._repo().object_store, tree_sha):
             if entry.path is None:
@@ -847,6 +910,26 @@ class TeamRepo:
                 continue
             else:
                 raise TeamSyncError("The bundle contains an object Team Sync does not accept.")
+
+
+def _skipped_dotgit_file(rel: str) -> bool:
+    """True for names dulwich drops, and false for the ``.git`` directory itself."""
+    if rel == ".git" or rel.startswith(".git/"):
+        return False
+    return rel.startswith(".git")
+
+
+def _regular_tree_files(store: object, tree_sha: Optional[bytes]) -> Dict[str, Tuple[bytes, bytes]]:
+    if not tree_sha:
+        return {}
+    found: Dict[str, Tuple[bytes, bytes]] = {}
+    for entry in iter_tree_contents(store, tree_sha):  # type: ignore[arg-type]
+        if entry.path is None or entry.sha is None or entry.mode is None:
+            continue
+        if not stat.S_ISREG(entry.mode):
+            continue
+        found[entry.path.decode("utf-8", "surrogateescape")] = (entry.path, entry.sha)
+    return found
 
 
 def _guard_rel(path: str) -> str:

@@ -64,6 +64,67 @@ def test_full_and_incremental_round_trip(tmp_path: Path) -> None:
     assert second in next_repo.new_commit_ids(inc_refs["refs/heads/main"], full_refs["refs/heads/main"])
 
 
+def test_checkout_writes_gitignore(tmp_path: Path) -> None:
+    origin_root = tmp_path / "origin"
+    origin_root.mkdir()
+    (origin_root / "main.py").write_text("print(1)\n", encoding="utf-8")
+    (origin_root / ".gitignore").write_text("*.pyc\n", encoding="utf-8")
+    origin = TeamRepo(str(origin_root))
+    origin.init_repo()
+    origin.commit("start", "Sam", "sam@example.test", "aaaa1111", "shop-pc", _now())
+    bundle = origin.create_bundle("main", [])
+
+    dest_root = tmp_path / "dest"
+    dest = TeamRepo(str(dest_root))
+    dest.init_repo()
+    refs = dest.import_pack(bundle)
+    dest.checkout(refs["refs/heads/main"], "main")
+
+    assert (dest_root / ".gitignore").read_text(encoding="utf-8") == "*.pyc\n"
+    (dest_root / "cbcs").mkdir()
+    (dest_root / "cbcs" / "team.json").write_text("{}\n", encoding="utf-8")
+    dest.commit(
+        "joined",
+        "Ana",
+        "ana@example.test",
+        "bbbb2222",
+        "cart",
+        _now(),
+        paths=["cbcs/team.json"],
+    )
+    assert dest.file_bytes(dest.head_sha() or "", ".gitignore") == b"*.pyc\n"
+
+
+def test_checkout_removes_gitignore_when_the_commit_does(tmp_path: Path) -> None:
+    origin_root = tmp_path / "origin"
+    origin_root.mkdir()
+    (origin_root / "main.py").write_text("print(1)\n", encoding="utf-8")
+    (origin_root / ".gitignore").write_text("*.pyc\n", encoding="utf-8")
+    origin = TeamRepo(str(origin_root))
+    origin.init_repo()
+    origin.commit("start", "Sam", "sam@example.test", "aaaa1111", "shop-pc", _now())
+    (origin_root / ".gitignore").unlink()
+    removed = origin.commit(
+        "drop ignore",
+        "Sam",
+        "sam@example.test",
+        "aaaa1111",
+        "shop-pc",
+        _now(),
+        paths=[".gitignore"],
+    )
+    bundle = origin.create_bundle("main", [])
+
+    dest_root = tmp_path / "dest"
+    dest = TeamRepo(str(dest_root))
+    dest.init_repo()
+    refs = dest.import_pack(bundle)
+    dest.checkout(refs["refs/heads/main"], "main")
+
+    assert not (dest_root / ".gitignore").exists()
+    assert dest.file_bytes(removed, ".gitignore") is None
+
+
 def test_real_git_delta_bundle_imports_every_commit(tmp_path: Path) -> None:
     repo = TeamRepo(str(tmp_path / "git"))
     repo.init_repo()
