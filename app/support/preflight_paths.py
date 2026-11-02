@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-_PREFLIGHT_EXCLUDED_CBCS_SUBTREES = ("runs", "logs", "cache")
+_PREFLIGHT_EXCLUDED_CBCS_SUBTREES = ("runs", "logs", "cache", "schema")
 
 
 def sanitize_project_name(name: str) -> str:

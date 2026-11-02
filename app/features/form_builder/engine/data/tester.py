@@ -30,6 +30,30 @@ def connection_tester() -> Optional[Tester]:
     return _tester
 
 
+def failure_sentence(connection: Connection, kind: str, reason: str) -> str:
+    """Settings copy for a failed PostgreSQL test (UX §13.5.9).
+
+    ``unreachable`` is the host-down sentence, including a timeout. The footer
+    shows ``reason`` itself, so ``took too long`` stays on that line only.
+    """
+
+    if kind == "auth":
+        return "The password for %s was not accepted." % (connection.user or "")
+    if kind == "unreachable":
+        port = connection.port if isinstance(connection.port, int) else 5432
+        return (
+            "Can't reach %s:%s. Check the address and that the database server is running."
+            % (connection.host or "", port)
+        )
+    if kind == "no_database":
+        return "%s has no database named %s." % (connection.host or "", connection.database or "")
+    if kind == "no_driver":
+        return "No PostgreSQL driver could be loaded (tried psycopg, pg8000)."
+    if kind == "cancelled":
+        return ""
+    return reason or "Can't connect."
+
+
 def probe_sqlite(path: str) -> str:
     """``✓ Connected · SQLite · {n} tables``, or the first line of the error. A missing file fails."""
 

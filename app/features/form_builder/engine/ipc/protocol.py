@@ -263,6 +263,48 @@ class Shutdown:
     type: Literal["shutdown"] = "shutdown"
 
 
+@dataclass(frozen=True)
+class TestConnection:
+    """Ask the schema helper to open one PostgreSQL connection. No secret field."""
+
+    request_id: str
+    connection: Dict[str, object]
+    project_root: str
+    project_slug: str
+    type: Literal["test"] = "test"
+
+
+@dataclass(frozen=True)
+class ReadSchema:
+    """Ask the schema helper for one connection's tables and columns."""
+
+    request_id: str
+    connection: Dict[str, object]
+    project_root: str
+    project_slug: str
+    type: Literal["schema"] = "schema"
+
+
+@dataclass(frozen=True)
+class ProbeSelect:
+    """Ask the schema helper for the columns of a read-only select."""
+
+    request_id: str
+    connection: Dict[str, object]
+    sql: str
+    project_root: str
+    project_slug: str
+    type: Literal["probe_select"] = "probe_select"
+
+
+@dataclass(frozen=True)
+class CancelHelper:
+    """The helper exits 0 and writes nothing."""
+
+    request_id: str
+    type: Literal["cancel"] = "cancel"
+
+
 # =============================================================================
 # Child -> host
 # =============================================================================
@@ -348,6 +390,15 @@ class NeedSecret:
     type: Literal["need_secret"] = "need_secret"
 
 
+@dataclass(frozen=True)
+class HelperProgress:
+    """The helper has a live connection. ``phase`` is ``connected`` after open."""
+
+    request_id: str
+    phase: str
+    type: Literal["helper_progress"] = "helper_progress"
+
+
 HostMessage = Union[
     Hello,
     LoadForm,
@@ -360,8 +411,21 @@ HostMessage = Union[
     CloseView,
     Ping,
     Shutdown,
+    TestConnection,
+    ReadSchema,
+    ProbeSelect,
+    CancelHelper,
 ]
-ChildMessage = Union[Response, Ready, Log, ViewClosed, ErrorReport, CrashReport, NeedSecret]
+ChildMessage = Union[
+    Response,
+    Ready,
+    Log,
+    ViewClosed,
+    ErrorReport,
+    CrashReport,
+    NeedSecret,
+    HelperProgress,
+]
 
 ERROR_CODES = (
     "protocol_mismatch",
@@ -402,6 +466,11 @@ _MESSAGE_TYPES: Dict[str, type] = {
     "close_view": CloseView,
     "ping": Ping,
     "shutdown": Shutdown,
+    "test": TestConnection,
+    "schema": ReadSchema,
+    "probe_select": ProbeSelect,
+    "cancel": CancelHelper,
+    "helper_progress": HelperProgress,
     "response": Response,
     "ready": Ready,
     "log": Log,
