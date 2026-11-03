@@ -8,6 +8,7 @@ from app.features.form_builder.engine.data.connections import load_connections
 from app.features.form_builder.engine.data.schema import schema_for
 from app.features.form_builder.engine.data.source import (
     Hooks,
+    ListSource,
     RecordSource,
     has_data_source,
     read_bind,
@@ -95,6 +96,23 @@ def dialect_of(session: object, name: str, host: object = None) -> str:
         if item.name == name and item.engine in ("sqlite", "postgres"):
             return str(item.engine)
     return "sqlite"
+
+
+def list_source(document: object) -> Optional[ListSource]:
+    """The form's list source, or None when this form is not a list."""
+
+    if not has_data_source(document):
+        return None
+    root = getattr(document, "root", None)
+    entry = root.prop("cbcsData") if root is not None and hasattr(root, "prop") else None
+    value = getattr(entry, "value", None)
+    text = getattr(value, "text", "")
+    if not isinstance(text, str):
+        return None
+    found = read_data(text).value
+    if isinstance(found, ListSource):
+        return found
+    return None
 
 
 def record_source(document: object) -> Optional[RecordSource]:

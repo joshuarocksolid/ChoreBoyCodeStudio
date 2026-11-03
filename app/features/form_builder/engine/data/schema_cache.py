@@ -312,7 +312,11 @@ def _probe_sqlite(project_root: str, connection: Connection, sql: str) -> ProbeO
         lines = str(exc).strip().splitlines()
         return ProbeOutcome(False, (), "other", lines[0] if lines else "Can't open the database.", False)
     try:
-        cursor = opened.execute("SELECT * FROM (%s) AS q LIMIT 0" % sql)
+        from app.features.form_builder.engine.data.sql import select_subquery, user_sql_for_wrap
+
+        cursor = opened.execute(
+            "SELECT * FROM %s LIMIT 0" % select_subquery(user_sql_for_wrap("sqlite", sql))
+        )
         description = cursor.description or ()
         columns = tuple(
             ProbeColumn(str(item[0]), "" if item[1] is None else str(item[1])) for item in description

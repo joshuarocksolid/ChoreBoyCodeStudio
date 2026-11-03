@@ -6,7 +6,6 @@ from typing import Any
 
 from app.qt.QtWidgets import QHBoxLayout, QLabel, QMenu, QPushButton, QWidget
 
-from app.features.form_builder.engine.data.source import has_data_source
 from app.features.form_builder.qtside.data_panel.host import session_of
 from app.features.form_builder.qtside.data_panel.model import connection_title, record_source
 from app.features.form_builder.qtside.data_panel.sections_ext import PanelSection
@@ -81,7 +80,7 @@ def _menu(host: Any, which: str) -> None:
 
 
 def _applies(doc: Any) -> bool:
-    return has_data_source(doc)
+    return record_source(doc) is not None
 
 
 def register(registry: Any) -> None:

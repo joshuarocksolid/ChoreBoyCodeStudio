@@ -113,9 +113,9 @@ class DataPage(QWidget):
             widget = self._built.get(section.section_id)
             if widget is None:
                 # Building a focusable editor before this tab is on screen pulls
-                # keyboard focus off the canvas and Insert (the source list, and
-                # the lookup combos).
-                if section.section_id in ("form-source", "lookup") and not self.isVisible():
+                # keyboard focus off the canvas and Insert (the source list, the
+                # lookup combos, and the list screen's columns and filters).
+                if section.section_id in ("form-source", "lookup", "listing") and not self.isVisible():
                     continue
                 widget = section.create(self)
                 self._built[section.section_id] = widget

@@ -1,4 +1,4 @@
-"""FB301–FB321 (CONTRACTS.md section 19.8).
+"""FB301–FB322 (CONTRACTS.md section 19.8).
 
 M8.0s declares them. The lane that produces a code imports it from here and
 does not declare it again.
@@ -33,3 +33,4 @@ declare("FB318", Severity.ERROR, "Records steps need this form connected to a ta
 declare("FB319", Severity.WARNING, "Saving a new {record} will fail: {column} is required and no field is bound to it.")
 declare("FB320", Severity.ERROR, "A form has one lines grid in this version. Use a method for more.")
 declare("FB321", Severity.WARNING, "This password file can be read by other users of this computer. [Fix]")
+declare("FB322", Severity.WARNING, "{form} is keyed by {target}, not {key}.")

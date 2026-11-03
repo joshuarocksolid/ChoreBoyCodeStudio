@@ -5,7 +5,6 @@ from __future__ import annotations
 from typing import Any, Optional
 
 from app.features.form_builder.engine.commands.base import CommandRejected
-from app.features.form_builder.engine.data.source import has_data_source
 from app.features.form_builder.engine.query.selection import SelectionSource
 from app.features.form_builder.engine.ui4.nodes import WidgetNode
 from app.features.form_builder.qtside.canvas.mime_hooks import register_mime_hook, unregister_mime_hook
@@ -213,7 +212,7 @@ def _create(host: Any) -> QWidget:
 
 
 def _applies(doc: Any) -> bool:
-    return has_data_source(doc)
+    return record_source(doc) is not None
 
 
 def register(registry: Any) -> None:

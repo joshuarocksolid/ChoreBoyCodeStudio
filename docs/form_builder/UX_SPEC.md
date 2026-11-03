@@ -3263,6 +3263,7 @@ Sentences, en_US, following UX-M6-001 and UX-M7-001. `{record}` is the record wo
 | App, position | "Record {n} of {count}" / "New {record}" |
 | App, find narrowed | "Showing {n} matches. [Show all]" |
 | List, cut off | "Showing the first {limit} of {count}. Type more to narrow the list." |
+| List, pg8000 scan | "This SQL can't be searched with the pg8000 driver. Remove the quote or comment that confuses it." |
 | Try, banner | "Try: changes to {connection} are rolled back. While a save runs, other people using it may wait up to 2 seconds." |
 | Try, own connection | "This form uses your own connection method, so Try only shows what it would run." |
 | App, password prompt | "Password for {user} on {connection}" with "Remember on this machine" when the policy allows it |

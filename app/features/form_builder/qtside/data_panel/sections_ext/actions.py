@@ -5,8 +5,8 @@ from __future__ import annotations
 from typing import Any
 
 from app.features.form_builder.engine.commands.base import CommandRejected
-from app.features.form_builder.engine.data.source import has_data_source
 from app.features.form_builder.qtside.data_panel.edits import insert_record_toolbar
+from app.features.form_builder.qtside.data_panel.model import record_source
 from app.features.form_builder.qtside.data_panel.host import narrate, session_of
 from app.features.form_builder.qtside.data_panel.sections_ext import PanelSection
 from app.qt.QtWidgets import QHBoxLayout, QPushButton, QWidget
@@ -46,7 +46,7 @@ def _toolbar(host: Any) -> None:
 
 
 def _applies(doc: Any) -> bool:
-    return has_data_source(doc)
+    return record_source(doc) is not None
 
 
 def register(registry: Any) -> None:

@@ -9,12 +9,36 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from typing import Sequence, Tuple
+from typing import List, Optional, Sequence, Tuple
 
 from app.features.form_builder.engine.data.source import singular
 
 _IDENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 _DIALECTS = ("sqlite", "postgres")
+_BANNED_SQL = frozenset(
+    {
+        "INSERT",
+        "UPDATE",
+        "DELETE",
+        "DROP",
+        "ALTER",
+        "CREATE",
+        "PRAGMA",
+        "ATTACH",
+        "DETACH",
+        "COPY",
+        "GRANT",
+        "REVOKE",
+        "VACUUM",
+        "TRUNCATE",
+        "CALL",
+        "EXECUTE",
+        "BEGIN",
+        "COMMIT",
+        "ROLLBACK",
+        "INTO",
+    }
+)
 
 
 class IdentifierError(ValueError):
@@ -227,6 +251,157 @@ def set_line_position(dialect: str, table: str, position: str, key: str) -> Stat
     text = update_head(dialect, table) + " " + assignment_piece(dialect, position) + key_clause(dialect, key)
     return Statement(text, ("position", "key"), "Number %s" % singular(table))
 
+def like_pattern(text: str) -> str:
+    """Contains-search value. ``\\``, ``%`` and ``_`` are escaped, then wrapped in ``%``.
+
+    The generated form repeats this escape. ``like_piece`` only writes the SQL.
+    """
+
+    escaped = text.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    return "%" + escaped + "%"
+
+
+def user_sql_for_wrap(dialect: str, sql: str) -> str:
+    """The person's statement, ready to sit inside a subquery.
+
+    One trailing ``;`` is removed when only comments and whitespace follow it.
+    Percent signs stay as written. ``adapt_user_sql`` encodes them when a
+    driver would otherwise consume them.
+    """
+
+    _dialect(dialect)
+    return _strip_trailing_semicolon(sql.strip())
+
+
+def select_subquery(sql: str) -> str:
+    """``(sql) AS q`` with the statement on its own lines.
+
+    A trailing ``--`` comment then stays inside the subquery.
+    """
+
+    return "(\n%s\n) AS q" % sql
+
+
+def adapt_user_sql(_driver: str, _sql: str, _has_params: bool) -> str:
+    """User SQL to embed in a statement ``_driver`` will execute.
+
+    With no parameters both drivers send the text unchanged, so nothing is
+    doubled. psycopg with parameters turns every ``%%`` into ``%``, including
+    inside quotes, so every ``%`` is doubled. pg8000 turns ``%%`` into ``%``
+    only outside quotes and comments, so only those are doubled.
+    """
+
+    if not _has_params or _driver not in ("psycopg", "pg8000"):
+        return _sql
+    if _driver == "psycopg":
+        return _sql.replace("%", "%%")
+    return _double_percent_outside(_sql)
+
+
+def select_source_error(sql: str) -> Optional[str]:
+    """The FB314 sentence when ``sql`` is not one read-only SELECT. ``None`` when it is.
+
+    One statement, starting with SELECT or WITH. Subqueries are allowed.
+    ``SELECT … INTO``, a row lock (``FOR UPDATE``, ``FOR SHARE``,
+    ``FOR KEY SHARE``, ``FOR NO KEY UPDATE``), unbalanced parentheses, and a
+    second statement are not.
+    """
+
+    sentence = "Only a single SELECT can be a list's source."
+    words = _sql_words(sql)
+    if not words:
+        return sentence
+    if ";" in words:
+        if words.count(";") != 1 or words[-1] != ";":
+            return sentence
+        words = [word for word in words if word != ";"]
+    significant = [word for word in words if word != "("]
+    if not significant:
+        return sentence
+    upper = [word.upper() for word in significant]
+    if upper[0] not in ("SELECT", "WITH"):
+        return sentence
+    if "SELECT" not in upper:
+        return sentence
+    if any(word in _BANNED_SQL for word in upper):
+        return sentence
+    if _has_row_lock(upper) or not _parens_balance(words):
+        return sentence
+    return None
+
+
+@dataclass(frozen=True)
+class ListRead:
+    """The row statement and the matching count. Both bind ``params_order`` the same way."""
+
+    rows: Statement
+    total: Statement
+    columns: Tuple[str, ...]
+    key: str
+    inner: str = ""
+    count_tail: str = ""
+    row_tail: str = ""
+    plain_tail: str = ""
+
+
+def list_read(
+    dialect: str,
+    table: str,
+    columns: Sequence[str],
+    user_sql: str,
+    search: Sequence[str],
+    filters: Sequence[str],
+    order: Sequence[Sequence[str]],
+    limit: Optional[int],
+    key: str = "",
+) -> ListRead:
+    """One page of a list, and the count of rows that match before the limit.
+
+    A non-empty ``user_sql`` is wrapped. Search and filters are parameters.
+    An empty search, or a blank filter, matches every row, including NULL.
+    """
+
+    _dialect(dialect)
+    if isinstance(limit, bool) or (limit is not None and (not isinstance(limit, int) or limit < 0)):
+        raise ValueError("limit must be a whole number")
+    shown = tuple(columns)
+    for name in shown:
+        quote_ident(name)
+    for name in tuple(search) + tuple(filters):
+        quote_ident(name)
+    if key:
+        quote_ident(key)
+    inner = user_sql_for_wrap(dialect, user_sql) if user_sql.strip() else ""
+    if inner:
+        source_sql = select_subquery(inner)
+        select_sql = "*"
+    else:
+        if not table:
+            raise ValueError("a list needs a table or a select")
+        fetched = list(shown)
+        if key and key not in fetched:
+            fetched.append(key)
+        if not fetched:
+            raise ValueError("a list needs a column")
+        source_sql = quote_ident(table)
+        select_sql = ", ".join(quote_ident(name) for name in fetched)
+    where, params = _list_where(dialect, search, filters)
+    order_sql = _list_order(order, "" if inner else key)
+    limit_sql = "" if limit is None else " LIMIT %d" % limit
+    noun = singular(table) if table else "row"
+    rows = "SELECT %s FROM %s%s%s%s" % (select_sql, source_sql, where, order_sql, limit_sql)
+    total = "SELECT COUNT(*) FROM %s%s" % (source_sql, where)
+    return ListRead(
+        Statement(rows, params, "List %s" % noun),
+        Statement(total, params, "Count %s" % noun),
+        shown,
+        key,
+        inner,
+        where,
+        where + order_sql + limit_sql,
+        order_sql + limit_sql,
+    )
+
 
 def find_keys(
     dialect: str,
@@ -300,6 +475,354 @@ def _direction(text: str) -> str:
     raise ValueError("order direction must be asc or desc")
 
 
+def _list_where(dialect: str, search: Sequence[str], filters: Sequence[str]) -> Tuple[str, Tuple[str, ...]]:
+    parts: List[str] = []
+    params: List[str] = []
+    if search:
+        likes = " OR ".join(_list_like(dialect, column) for column in search)
+        parts.append("(%s OR %s = 1)" % (likes, placeholder(dialect)))
+        params.extend(["search"] * len(tuple(search)))
+        params.append("search_any")
+    for column in filters:
+        quoted = quote_ident(column)
+        mark = placeholder(dialect)
+        parts.append("(%s = %s OR %s = 1)" % (quoted, mark, mark))
+        params.append("filter:" + column)
+        params.append("filter_any:" + column)
+    if not parts:
+        return "", tuple(params)
+    return " WHERE " + " AND ".join(parts), tuple(params)
+
+
+def _list_like(dialect: str, column: str) -> str:
+    """``like_piece`` for a list. PostgreSQL's escape is a dollar quote.
+
+    ``E'\\'`` does not end for pg8000's placeholder scan, so a ``%s`` written
+    after it stays in the statement. ``$$\\$$`` is one backslash on PostgreSQL
+    9.3, and the scan leaves the quote. SQLite keeps ``like_piece``.
+    """
+
+    if _dialect(dialect) != "postgres":
+        return like_piece(dialect, column)
+    return "CAST(%s AS TEXT) ILIKE %s ESCAPE $$\\$$" % (quote_ident(column), placeholder(dialect))
+
+
+def _list_order(order: Sequence[Sequence[str]], key: str) -> str:
+    parts = []
+    seen = []
+    for item in order:
+        if len(item) != 2:
+            raise ValueError("an order entry is a column and a direction")
+        column = str(item[0])
+        parts.append("%s %s" % (quote_ident(column), _direction(str(item[1]))))
+        seen.append(column)
+    if key and key not in seen:
+        parts.append("%s ASC" % quote_ident(key))
+    if not parts:
+        return ""
+    return " ORDER BY " + ", ".join(parts)
+
+
+PG8000_SCAN_SENTENCE = (
+    "This SQL can't be searched with the pg8000 driver. "
+    "Remove the quote or comment that confuses it."
+)
+
+
+def pg8000_scan_closed(sql: str) -> bool:
+    """True when pg8000 would be outside quotes before a placeholder.
+
+    The wrap writes a newline after the statement, and that newline ends a
+    ``--`` comment. A quote or comment that is still open after that newline
+    would swallow the search placeholders.
+    """
+
+    body = user_sql_for_wrap("postgres", sql)
+    _text, closed = _pg8000_walk(body + "\n")
+    return closed
+
+
+def _double_percent_outside(_sql: str) -> str:
+    """Double ``%`` that pg8000 would read as a placeholder."""
+
+    text, _closed = _pg8000_walk(_sql)
+    return text
+
+
+def _pg8000_walk(_sql: str) -> Tuple[str, bool]:
+    """pg8000 1.31.5 ``convert_paramstyle``, and whether it finished outside.
+
+    No block-comment state, only untagged ``$$``, only an uppercase ``E'``.
+    An escape string ends at a quote whose previous character is not a
+    backslash. The body is copied into the generated form.
+    """
+
+    outside = 0
+    inside_sq = 1
+    inside_qi = 2
+    inside_es = 3
+    inside_co = 5
+    inside_dq = 6
+    in_quote_escape = False
+    state = outside
+    prev = None
+    out = []
+    length = len(_sql)
+    for index, char in enumerate(_sql):
+        nxt = _sql[index + 1] if index + 1 < length else None
+        if state == outside:
+            if char == "'":
+                out.append(char)
+                state = inside_es if prev == "E" else inside_sq
+            elif char == '"':
+                out.append(char)
+                state = inside_qi
+            elif char == "-":
+                out.append(char)
+                if prev == "-":
+                    state = inside_co
+            elif char == "$":
+                out.append(char)
+                if prev == "$":
+                    state = inside_dq
+            elif char == "%":
+                out.append("%%")
+            else:
+                out.append(char)
+        elif state == inside_sq:
+            if char == "'":
+                if in_quote_escape:
+                    in_quote_escape = False
+                elif nxt == "'":
+                    in_quote_escape = True
+                else:
+                    state = outside
+            out.append(char)
+        elif state == inside_qi:
+            if char == '"':
+                state = outside
+            out.append(char)
+        elif state == inside_es:
+            if char == "'" and prev != "\\":
+                state = outside
+            out.append(char)
+        elif state == inside_dq:
+            if char == "$" and prev == "$":
+                state = outside
+            out.append(char)
+        elif state == inside_co:
+            out.append(char)
+            if char == "\n":
+                state = outside
+        prev = char
+    return "".join(out), state == outside
+
+
+def _sql_words(sql: str) -> Optional[List[str]]:
+    """Words outside quotes and comments. ``None`` when a quote or comment is unfinished."""
+
+    if not sql or not sql.strip():
+        return []
+    found: List[str] = []
+    word: List[str] = []
+    index = 0
+    length = len(sql)
+
+    def flush() -> None:
+        if word:
+            found.append("".join(word))
+            del word[:]
+
+    while index < length:
+        char = sql[index]
+        nxt = sql[index + 1] if index + 1 < length else ""
+        if char == "-" and nxt == "-":
+            flush()
+            index = sql.find("\n", index + 2)
+            if index < 0:
+                return found
+            continue
+        if char == "/" and nxt == "*":
+            flush()
+            end = sql.find("*/", index + 2)
+            if end < 0:
+                return None
+            index = end + 2
+            continue
+        if char in ("E", "e") and nxt == "'" and not _ident_before(sql, index):
+            flush()
+            end = _end_escape_string(sql, index + 2)
+            if end > length:
+                return None
+            index = end
+            continue
+        tag = _dollar_tag(sql, index)
+        if tag is not None:
+            flush()
+            closer = "$%s$" % tag
+            end = sql.find(closer, index + len(closer))
+            if end < 0:
+                return None
+            index = end + len(closer)
+            continue
+        if char in ("'", '"'):
+            flush()
+            end = _end_quote(sql, index + 1, char)
+            if end > length:
+                return None
+            index = end
+            continue
+        if char == ";":
+            flush()
+            found.append(";")
+            index += 1
+            continue
+        if char == "(" or char == ")":
+            flush()
+            found.append(char)
+            index += 1
+            continue
+        if char.isalnum() or char == "_":
+            word.append(char)
+            index += 1
+            continue
+        flush()
+        index += 1
+    flush()
+    return found
+
+
+def _ident_before(sql: str, index: int) -> bool:
+    if index <= 0:
+        return False
+    prev = sql[index - 1]
+    return prev.isalnum() or prev == "_"
+
+
+def _dollar_tag(sql: str, index: int) -> Optional[str]:
+    if index >= len(sql) or sql[index] != "$":
+        return None
+    cursor = index + 1
+    while cursor < len(sql) and (sql[cursor].isalnum() or sql[cursor] == "_"):
+        cursor += 1
+    if cursor < len(sql) and sql[cursor] == "$":
+        return sql[index + 1:cursor]
+    return None
+
+
+def _end_quote(sql: str, index: int, quote: str) -> int:
+    length = len(sql)
+    while index < length:
+        if sql[index] == quote:
+            if index + 1 < length and sql[index + 1] == quote:
+                index += 2
+                continue
+            return index + 1
+        index += 1
+    return length + 1
+
+
+def _end_escape_string(sql: str, index: int) -> int:
+    length = len(sql)
+    while index < length:
+        if sql[index] == "\\":
+            index += 2 if index + 1 < length else 1
+            continue
+        if sql[index] == "'":
+            return index + 1
+        index += 1
+    return length + 1
+
+
+def _strip_trailing_semicolon(sql: str) -> str:
+    """Drop one ``;`` outside quotes when the rest is comments and whitespace."""
+
+    cut = -1
+    index = 0
+    length = len(sql)
+    while index < length:
+        char = sql[index]
+        nxt = sql[index + 1] if index + 1 < length else ""
+        if char == "-" and nxt == "-":
+            end = sql.find("\n", index + 2)
+            index = length if end < 0 else end + 1
+            continue
+        if char == "/" and nxt == "*":
+            end = sql.find("*/", index + 2)
+            if end < 0:
+                return sql
+            index = end + 2
+            continue
+        if char in ("E", "e") and nxt == "'" and not _ident_before(sql, index):
+            end = _end_escape_string(sql, index + 2)
+            if end > length:
+                return sql
+            index = end
+            continue
+        tag = _dollar_tag(sql, index)
+        if tag is not None:
+            closer = "$%s$" % tag
+            end = sql.find(closer, index + len(closer))
+            if end < 0:
+                return sql
+            index = end + len(closer)
+            continue
+        if char in ("'", '"'):
+            end = _end_quote(sql, index + 1, char)
+            if end > length:
+                return sql
+            index = end
+            continue
+        if char == ";":
+            cut = index
+            index += 1
+            continue
+        if char.isspace():
+            index += 1
+            continue
+        cut = -1
+        index += 1
+    if cut < 0:
+        return sql
+    return sql[:cut].rstrip()
+
+
+def _has_row_lock(upper: Sequence[str]) -> bool:
+    index = 0
+    size = len(upper)
+    while index < size:
+        if upper[index] == "FOR" and _lock_tail(upper, index + 1):
+            return True
+        index += 1
+    return False
+
+
+def _lock_tail(upper: Sequence[str], index: int) -> bool:
+    size = len(upper)
+    if index >= size:
+        return False
+    word = upper[index]
+    if word in ("UPDATE", "SHARE"):
+        return True
+    if word == "KEY" and index + 1 < size and upper[index + 1] == "SHARE":
+        return True
+    if word == "NO" and index + 2 < size and upper[index + 1] == "KEY" and upper[index + 2] == "UPDATE":
+        return True
+    return False
+
+
+def _parens_balance(words: Sequence[str]) -> bool:
+    depth = 0
+    for word in words:
+        if word == "(":
+            depth += 1
+        elif word == ")":
+            depth -= 1
+            if depth < 0:
+                return False
+    return depth == 0
+
+
 def _order_by(key: str, order: Sequence[Sequence[str]]) -> str:
     parts = []
     last = "ASC"
@@ -328,14 +851,23 @@ __all__ = [
     "insert_row",
     "is_identifier",
     "key_clause",
+    "ListRead",
+    "adapt_user_sql",
+    "like_pattern",
     "like_piece",
+    "list_read",
     "load_one",
+    "PG8000_SCAN_SENTENCE",
+    "pg8000_scan_closed",
     "placeholder",
     "quote_ident",
     "select_keys",
     "select_lines",
     "select_lookup",
+    "select_source_error",
+    "select_subquery",
     "set_line_position",
     "update_changed",
     "update_head",
+    "user_sql_for_wrap",
 ]

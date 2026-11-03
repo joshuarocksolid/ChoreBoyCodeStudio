@@ -7,7 +7,7 @@ from typing import Optional
 from app.features.form_builder.engine.commands.base import CommandRejected
 from app.features.form_builder.qtside.data_panel.edits import connect_form
 from app.features.form_builder.qtside.data_panel.host import narrate, session_of
-from app.features.form_builder.qtside.data_panel.model import record_source
+from app.features.form_builder.qtside.data_panel.model import list_source, record_source
 from app.features.form_builder.qtside.data_panel.sheets import SourceForm
 from app.features.form_builder.qtside.inspector.data_ext import DataSection
 from app.qt.QtWidgets import QPushButton, QVBoxLayout, QWidget
@@ -29,6 +29,10 @@ class _FormSource(QWidget):
         session = session_of(self)
         if session is None:
             return
+        if list_source(session.document) is not None:
+            self.hide()
+            return
+        self.show()
         if self._form is None:
             self._form = SourceForm(self, session)
             self.layout().insertWidget(0, self._form)  # type: ignore[union-attr]
