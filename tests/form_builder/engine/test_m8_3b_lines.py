@@ -16,11 +16,11 @@ import pytest
 from app.features.form_builder.engine.data.check import run_checks
 from app.features.form_builder.engine.data.lines import line_plan_source, plan_lines
 from app.features.form_builder.engine.data.schema import Column, Reference, Schema, Table, set_schema_reader
-from app.features.form_builder.engine.data.source import CalcColumn, DataColumn, Lookup, RecordSource, Rows, read_rows, write_rows
+from app.features.form_builder.engine.data.source import CalcColumn, DataColumn, Lookup, RecordSource, Rows, read_rows, write_data, write_rows
 from app.features.form_builder.engine.logic.codec import parse_steps
 from app.features.form_builder.engine.logic.storage import signal_property
 from app.features.form_builder.engine.ui4.values import StringValue
-from tests.form_builder.engine.test_m8_2_scenario import _document, _xml, record_window
+from tests.form_builder.engine.test_m8_2_scenario import _document, _generate, _xml, record_window
 
 pytestmark = pytest.mark.unit
 
@@ -80,6 +80,11 @@ def test_plan_covers_edits_nulls_and_keys() -> None:
     assert removed[0] == ("delete", "L1")
     added = plan_lines(snap, same + ({"id": None, "qty": Decimal("3"), "note": ""},), (), "id", "line_no", ("qty", "note"), False)
     assert added[-1][0] == "insert"
+    replaced = (same[1], {"id": None, "qty": Decimal("3"), "note": ""})
+    rebuilt = plan_lines(snap, replaced, ("L1",), "id", "line_no", ("qty", "note"), False)
+    kinds = [op[0] for op in rebuilt]
+    assert "position" in kinds and "insert" in kinds
+    assert kinds.index("position") < kinds.index("insert")
     inserted = added[-1][1]
     assert isinstance(inserted, tuple) and ("note", "") in inserted
     with pytest.raises(ValueError):
@@ -225,6 +230,220 @@ def test_a_text_line_key_updates_on_sqlite(tmp_path: Path) -> None:
         assert found == [("L1", "changed")]
 
 
+def test_a_record_without_lines_omits_the_line_hooks(tmp_path: Path) -> None:
+    plain = _xml(
+        RecordSource("shop", "invoices", "id"),
+        (("QLineEdit", "invoiceNoEdit", "invoice_no", ""), ("QPushButton", "saveButton", "", "")),
+    )
+    kept = _xml(
+        RecordSource("shop", "invoices", "id", delete_lines=False),
+        (("QLineEdit", "invoiceNoEdit", "invoice_no", ""), ("QPushButton", "saveButton", "", "")),
+    )
+    root = tmp_path / "plain"
+    forms = root / "forms"
+    forms.mkdir(parents=True)
+    from app.features.form_builder.engine.data.connections import Connection, ConnectionSet, save_connections
+
+    save_connections(str(root), ConnectionSet((Connection("shop", "Shop", "sqlite", file="data/shop.db"),)))
+    first = forms / "plain.ui"
+    first.write_text(plain, encoding="utf-8")
+    second = forms / "kept.ui"
+    second.write_text(kept, encoding="utf-8")
+    generated = _generate_text(root, first, plain)
+    other = _generate_text(root, second, kept)
+    assert "_cbcs_clear_lines" not in generated
+    assert "_drop_lines" not in generated
+    assert "_cbcs_clear_lines" not in other
+    assert "_drop_lines" not in other
+    lined = _generate_text(root, forms / "lines.ui", _ui())
+    assert "_clear_lines" in lined
+    assert "_drop_lines" in lined
+    quiet = _ui().replace(escape(write_data(RecordSource("shop", "invoices", "id"))), escape(write_data(RecordSource("shop", "invoices", "id", delete_lines=False))))
+    skipped = _generate_text(root, forms / "quiet.ui", quiet)
+    assert "_clear_lines" in skipped
+    assert "_drop_lines" not in skipped
+
+
+def test_editors_keep_nulls_bools_and_dates(tmp_path: Path) -> None:
+    with record_window(tmp_path, _typed_ui(), _prepare_typed, schema=_typed_schema()) as (host, db):
+        ui = host.ui
+        assert ui._cbcs_is_dirty() is False
+        _edit(ui, 0, "due")
+        assert ui._cbcs_is_dirty() is False
+        assert _value(ui, 0, "due") == date(2026, 4, 2)
+        _edit(ui, 0, "amount")
+        assert ui._cbcs_is_dirty() is False
+        assert _value(ui, 0, "amount") is None
+        _edit(ui, 0, "flag", lambda editor: editor.setChecked(False))
+        assert ui.cbcs_save() is True
+        connection = sqlite3.connect(str(db))
+        try:
+            flag = connection.execute("SELECT flag FROM typed_lines").fetchone()
+        finally:
+            connection.close()
+        assert flag == (0,)
+        _edit(ui, 0, "amount", lambda editor: editor.setValue(editor.minimum()))
+        assert _value(ui, 0, "amount") is None
+        assert ui.cbcs_save() is True
+        connection = sqlite3.connect(str(db))
+        try:
+            amount = connection.execute("SELECT amount FROM typed_lines").fetchone()
+        finally:
+            connection.close()
+        assert amount == (None,)
+
+
+def test_a_new_invoice_saves_its_lines(tmp_path: Path) -> None:
+    with record_window(tmp_path, _ui(), _prepare, schema=_invoice_schema()) as (host, db):
+        ui = host.ui
+        ui.cbcs_new()
+        ui.invoiceNoEdit.setText("INV-NEW")
+        ui.customerIdSpin.setValue(1)
+        ui.invoiceDateEdit.setText("2026-04-03")
+        ui._cbcs_add_row()
+        _edit(ui, 0, "description", lambda editor: editor.setText("fresh"))
+        _edit(ui, 0, "price", lambda editor: editor.setValue(1.25))
+        assert ui.cbcs_save() is True
+        connection = sqlite3.connect(str(db))
+        try:
+            parent = connection.execute("SELECT id FROM invoices WHERE invoice_no = 'INV-NEW'").fetchone()
+            lines = connection.execute(
+                "SELECT invoice_id, description FROM invoice_lines WHERE invoice_id = ?",
+                (parent[0],),
+            ).fetchall()
+        finally:
+            connection.close()
+        assert parent is not None
+        assert lines == [(parent[0], "fresh")]
+
+
+def test_lookups_and_defaults_on_a_new_record(tmp_path: Path) -> None:
+    with record_window(tmp_path, _ui(), _prepare, schema=_invoice_schema()) as (host, _db):
+        ui = host.ui
+        ui.cbcs_new()
+        ui._cbcs_add_row()
+        seen = {}
+
+        def pick(editor: Any) -> None:
+            seen["count"] = editor.count()
+            editor.setCurrentIndex(editor.findData(1))
+
+        _edit(ui, 0, "product_id", pick)
+        assert seen["count"] > 1
+        assert _value(ui, 0, "price") == Decimal("1.50")
+        _edit(ui, 0, "price", lambda editor: editor.setValue(9))
+        _edit(ui, 0, "product_id", lambda editor: editor.setCurrentIndex(editor.findData(2)))
+        assert _value(ui, 0, "price") == Decimal("9") or _value(ui, 0, "price") == Decimal("9.00")
+
+
+def test_division_by_zero_stays_in_the_cell(tmp_path: Path) -> None:
+    rows = replace(
+        _ROWS,
+        columns=_ROWS.columns[:-1] + (CalcColumn("lineTotal", "qty / price", "Line total", "money"),),
+    )
+    extra = _rows_xml(rows)
+    ui_text = _ui().replace(_rows_xml(_spec()), extra)
+    with record_window(tmp_path, ui_text, _prepare, schema=_invoice_schema()) as (host, _db):
+        ui = host.ui
+        _edit(ui, 0, "price", lambda editor: editor.setValue(0))
+        item = ui.linesView.model().item(0, _index(ui, "lineTotal"))
+        assert item.text() == ""
+        assert item.toolTip() == "Can't divide by zero"
+        assert ui.cbcs_save() is True
+
+
+def test_a_bad_line_formula_is_a_diagnostic() -> None:
+    rows = replace(_ROWS, columns=_ROWS.columns[:-1] + (CalcColumn("lineTotal", "qty /", "Line total", "money"),))
+    doc = _document(_xml(RecordSource("shop", "invoices", "id"), (("QTableView", "linesView", "", _rows_xml(rows)),)))
+    codes = [item.code for item in run_checks(doc, None, _invoice_schema())]
+    assert "FB108" in codes or "FB101" in codes
+
+
+def test_add_lines_steps_follow_a_renamed_button(qapp, tmp_path: Path) -> None:
+    del qapp
+    from app.features.form_builder.engine.data.connections import Connection, ConnectionSet, save_connections
+    from app.features.form_builder.engine.project.forms import FormScope
+    from app.features.form_builder.engine.session import FormSession
+    from app.features.form_builder.qtside.data_panel.edits import connect_form
+    from app.features.form_builder.qtside.data_panel.lines_sheet import add_lines
+
+    set_schema_reader(lambda _doc, _name: _invoice_schema())
+    try:
+        save_connections(str(tmp_path), ConnectionSet((Connection("office", "Office", "sqlite", file="shop.db"),)))
+        session = FormSession.open(
+            _xml(
+                RecordSource("office", "invoices", "id"),
+                (
+                    ("QPushButton", "addLineButton", "", ""),
+                    ("QPushButton", "deleteLineButton", "", ""),
+                    ("QLineEdit", "notesEdit", "notes", ""),
+                ),
+            ),
+            path=str(tmp_path / "invoice.ui"),
+            scope=FormScope(kind="external", ui_path=str(tmp_path / "invoice.ui"), project_root=str(tmp_path)),
+        )
+        connect_form(session, RecordSource("office", "invoices", "id"))
+        add_lines(session, Rows("invoice_lines", "invoice_id", "id", (DataColumn("qty", "Qty", "whole", None, "1"),), "line_no", "line_no"))
+        owners = []
+        for node in session.document.iter_widgets():
+            clicked = node.prop(signal_property("clicked"))
+            if clicked is not None and isinstance(clicked.value, StringValue) and "addRow" in clicked.value.text:
+                owners.append(node.object_name)
+        assert owners
+        assert owners[0] != "addLineButton"
+    finally:
+        set_schema_reader(None)
+
+
+def test_a_carried_column_is_typed_from_the_lookup_table() -> None:
+    from app.features.form_builder.engine.logic.formula.check import analyze
+    from app.features.form_builder.engine.logic.formula.env import FormulaEnv, SlotKind
+    from app.features.form_builder.engine.logic.formula.types import ANY, MONEY, WHOLE
+
+    columns = {"product_id": WHOLE}
+    money = FormulaEnv.for_test(row_columns=columns, row_attrs={"product_id": {"unit_cost": MONEY}})
+    whole = FormulaEnv.for_test(row_columns=columns, row_attrs={"product_id": {"price": WHOLE}})
+    unknown = FormulaEnv.for_test(row_columns=columns)
+    assert analyze("product_id.unit_cost", money, SlotKind.value(MONEY)).type == MONEY
+    assert analyze("product_id.price", whole, SlotKind.value(WHOLE)).type == WHOLE
+    assert analyze("product_id.price", unknown, SlotKind.value(ANY)).type == ANY
+
+
+def test_a_parent_lookup_and_a_line_lookup_both_load(tmp_path: Path) -> None:
+    from app.features.form_builder.engine.data.source import write_lookup
+
+    lookup = (
+        '    <property name="cbcsLookup" stdset="0"><string notr="true">%s</string></property>\n'
+        % escape(write_lookup(Lookup("customers", "id", "name", "name")))
+    )
+    ui_text = _xml(
+        RecordSource("shop", "invoices", "id"),
+        (
+            ("QLineEdit", "invoiceNoEdit", "invoice_no", ""),
+            ("QComboBox", "customerCombo", "customer_id", lookup),
+            ("QTableView", "linesView", "", _rows_xml(_ROWS)),
+            ("QPushButton", "saveButton", "", ""),
+        ),
+    )
+    with record_window(tmp_path, ui_text, _prepare, schema=_invoice_schema()) as (host, _db):
+        ui = host.ui
+        assert ui.customerCombo.count() > 1
+        ui._cbcs_add_row()
+        seen = {}
+
+        def pick(editor: Any) -> None:
+            seen["count"] = editor.count()
+
+        _edit(ui, ui.linesView.model().rowCount() - 1, "product_id", pick)
+        assert seen["count"] > 1
+
+
+def test_a_text_key_without_a_schema_opens(tmp_path: Path) -> None:
+    with record_window(tmp_path, _text_ui(), _prepare_text, schema=None) as (host, _db):
+        assert host.ui.linesView.model().rowCount() == 1
+        assert host.ui.cbcs_read_lines()[0]["id"] == "L1"
+
+
 def _story(host: Any, read: Callable[[], Sequence[Tuple[Any, ...]]]) -> None:
     ui = host.ui
     assert ui.linesView.model().rowCount() == 3
@@ -234,7 +453,10 @@ def _story(host: Any, read: Callable[[], Sequence[Tuple[Any, ...]]]) -> None:
     assert _value(ui, 0, "price") == Decimal("1.50")
     assert ui.cbcs_read_lines()[0]["id"] == 1
     total = ui.totalLabel.text()
-    assert "7" in total
+    assert "7.00" in total
+    assert ui.linesView.model().item(0, _index(ui, "price")).text() == "1.50"
+    assert ui.linesView.model().item(0, _index(ui, "lineTotal")).text() == "1.50"
+    assert ui.linesView.model().item(1, _index(ui, "lineTotal")).text() == "4.00"
     _set(ui, 0, "qty", 5)
     _set(ui, 0, "qty", 1)
     assert ui._cbcs_is_dirty() is False
@@ -520,19 +742,70 @@ def _ui(parent: str = "invoices", lines: str = "invoice_lines", products: str = 
     rows = '    <property name="cbcsRows" stdset="0"><string notr="true">%s</string></property>\n' % escape(
         write_rows(_spec(lines, products))
     )
-    total = '    <property name="cbcsValue" stdset="0"><string notr="true">sum(linesView.lineTotal)</string></property>\n'
-    return _xml(
-        RecordSource("shop", parent, "id"),
-        (
-            ("QLineEdit", "invoiceNoEdit", "invoice_no", ""),
-            ("QSpinBox", "customerIdSpin", "customer_id", ""),
-            ("QLineEdit", "invoiceDateEdit", "invoice_date", ""),
-            ("QLineEdit", "notesEdit", "notes", ""),
-            ("QTableView", "linesView", "", rows),
-            ("QLabel", "totalLabel", "", total),
-            ("QPushButton", "saveButton", "", ""),
-        ),
+    total = (
+        '    <property name="cbcsValue" stdset="0"><string notr="true">sum(linesView.lineTotal)</string></property>\n'
+        '    <property name="cbcsFormat" stdset="0"><string notr="true">number:2</string></property>\n'
+        '    <property name="alignment"><set>Qt::AlignRight|Qt::AlignVCenter</set></property>\n'
     )
+    fields = (
+        ("Number", "QLineEdit", "invoiceNoEdit", "invoice_no", ""),
+        ("Customer", "QSpinBox", "customerIdSpin", "customer_id", ""),
+        ("Date", "QLineEdit", "invoiceDateEdit", "invoice_date", ""),
+        ("Notes", "QLineEdit", "notesEdit", "notes", ""),
+    )
+    parts = [
+        '<?xml version="1.0" encoding="UTF-8"?>\n<ui version="4.0">\n <class>Invoice</class>\n',
+        ' <widget class="QDialog" name="Invoice">\n',
+        '  <property name="cbcsData" stdset="0"><string notr="true">%s</string></property>\n' % escape(write_data(RecordSource("shop", parent, "id"))),
+        '  <layout class="QFormLayout" name="formLayout">\n',
+    ]
+    for row, (label, class_name, name, column, extra) in enumerate(fields):
+        bind = '    <property name="cbcsBind" stdset="0"><string notr="true">%s</string></property>\n' % escape(column)
+        parts.append(
+            '   <item row="%d" column="0"><widget class="QLabel" name="%sLabel"><property name="text"><string>%s</string></property></widget></item>\n'
+            % (row, name, label)
+        )
+        parts.append(
+            '   <item row="%d" column="1"><widget class="%s" name="%s">\n%s%s    </widget></item>\n'
+            % (row, class_name, name, bind, extra)
+        )
+    parts.append(
+        '   <item row="4" column="0" colspan="2"><widget class="QTableView" name="linesView">\n%s    </widget></item>\n' % rows
+    )
+    parts.append(
+        '   <item row="5" column="0" colspan="2"><layout class="QHBoxLayout" name="lineButtons">\n'
+        '    <item><widget class="QPushButton" name="addLineButton"><property name="text"><string>Add line</string></property></widget></item>\n'
+        '    <item><widget class="QPushButton" name="deleteLineButton"><property name="text"><string>Delete line</string></property></widget></item>\n'
+        '    <item><spacer name="lineSpacer"><property name="orientation"><enum>Qt::Horizontal</enum></property></spacer></item>\n'
+        "   </layout></item>\n"
+    )
+    parts.append(
+        '   <item row="6" column="0" colspan="2"><layout class="QHBoxLayout" name="totalRow">\n'
+        '    <item><widget class="QLabel" name="totalCaption"><property name="text"><string>Total</string></property></widget></item>\n'
+        '    <item><spacer name="totalSpacer"><property name="orientation"><enum>Qt::Horizontal</enum></property></spacer></item>\n'
+        '    <item><widget class="QLabel" name="totalLabel">\n%s    </widget></item>\n'
+        "   </layout></item>\n" % total
+    )
+    bar = (
+        ("firstButton", "First"),
+        ("previousButton", "Previous"),
+        ("nextButton", "Next"),
+        ("lastButton", "Last"),
+        ("newButton", "New"),
+        ("saveButton", "Save"),
+        ("revertButton", "Revert"),
+        ("deleteButton", "Delete"),
+        ("findButton", "Find"),
+    )
+    buttons = "".join(
+        '    <item><widget class="QPushButton" name="%s"><property name="text"><string>%s</string></property></widget></item>\n' % item
+        for item in bar
+    )
+    parts.append(
+        '   <item row="7" column="0" colspan="2"><layout class="QHBoxLayout" name="recordBar">\n%s   </layout></item>\n' % buttons
+    )
+    parts.append("  </layout>\n </widget>\n <resources/>\n <connections/>\n</ui>\n")
+    return "".join(parts)
 
 
 def _text_ui() -> str:
@@ -584,6 +857,122 @@ def _set(ui: Any, row: int, name: str, value: Any) -> None:
     item = ui.linesView.model().item(row, _index(ui, name))
     item.setData(value, ui._cbcs_line_role)
     item.setText("" if value is None else str(value))
+
+
+def _generate_text(root: Path, ui_path: Path, ui_text: str) -> str:
+    ui_path.parent.mkdir(parents=True, exist_ok=True)
+    ui_path.write_text(ui_text, encoding="utf-8")
+    return _generate(root, ui_path, ui_text)
+
+
+def _edit(ui: Any, row: int, name: str, change: Optional[Callable[[Any], None]] = None) -> None:
+    from PySide6.QtWidgets import QApplication, QStyleOptionViewItem
+
+    index = ui.linesView.model().index(row, _index(ui, name))
+    ui.linesView.setCurrentIndex(index)
+    ui.linesView.edit(index)
+    app = QApplication.instance()
+    if app is not None:
+        app.processEvents()
+    editor = ui.linesView.indexWidget(index)
+    delegate = ui.linesView.itemDelegate()
+    opened = editor is not None
+    if editor is None:
+        editor = delegate.createEditor(ui.linesView.viewport(), QStyleOptionViewItem(), index)
+        delegate.setEditorData(editor, index)
+    assert editor is not None
+    if change is not None:
+        change(editor)
+    if opened:
+        delegate.commitData.emit(editor)
+        delegate.closeEditor.emit(editor, 0)
+    else:
+        delegate.setModelData(editor, ui.linesView.model(), index)
+    if app is not None:
+        app.processEvents()
+
+
+def _typed_schema() -> Schema:
+    return Schema(
+        "shop",
+        "sqlite",
+        "",
+        "2026-04-02T00:00:00",
+        "sqlite3",
+        (
+            Table(
+                "invoices",
+                (
+                    Column("id", "INTEGER", False),
+                    Column("invoice_no", "TEXT", False),
+                ),
+                key="id",
+            ),
+            Table(
+                "typed_lines",
+                (
+                    Column("id", "INTEGER", False),
+                    Column("invoice_id", "INTEGER", False, references=Reference("invoices", "id")),
+                    Column("line_no", "INTEGER", False),
+                    Column("flag", "BOOLEAN", True),
+                    Column("due", "DATE", True),
+                    Column("amount", "NUMERIC", True),
+                ),
+                key="id",
+            ),
+        ),
+    )
+
+
+def _typed_ui() -> str:
+    rows = Rows(
+        "typed_lines",
+        "invoice_id",
+        "id",
+        (
+            DataColumn("flag", "Flag", "yesno"),
+            DataColumn("due", "When"),
+            DataColumn("amount", "Amount", "money"),
+        ),
+        "line_no",
+        "line_no",
+    )
+    return _xml(
+        RecordSource("shop", "invoices", "id"),
+        (
+            ("QLineEdit", "invoiceNoEdit", "invoice_no", ""),
+            ("QTableView", "linesView", "", _rows_xml(rows)),
+            ("QPushButton", "saveButton", "", ""),
+        ),
+    )
+
+
+def _prepare_typed(root: Path) -> Path:
+    path = root / "data" / "shop.db"
+    path.parent.mkdir(parents=True)
+    connection = sqlite3.connect(str(path))
+    try:
+        connection.executescript(
+            """
+            CREATE TABLE invoices (id INTEGER PRIMARY KEY, invoice_no TEXT NOT NULL);
+            CREATE TABLE typed_lines (
+                id INTEGER PRIMARY KEY,
+                invoice_id INTEGER NOT NULL,
+                line_no INTEGER NOT NULL,
+                flag BOOLEAN,
+                due DATE,
+                amount NUMERIC
+            );
+            """
+        )
+        connection.execute("INSERT INTO invoices (id, invoice_no) VALUES (1, 'INV-1')")
+        connection.execute(
+            "INSERT INTO typed_lines (id, invoice_id, line_no, flag, due, amount) VALUES (1, 1, 1, 1, '2026-04-02', NULL)"
+        )
+        connection.commit()
+    finally:
+        connection.close()
+    return path
 
 
 def _move(ui: Any, source: int, target: int) -> None:

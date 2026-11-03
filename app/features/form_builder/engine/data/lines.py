@@ -7,7 +7,24 @@ the running module and the tests share one algorithm.
 from __future__ import annotations
 
 import inspect
-from typing import Mapping, Sequence, Tuple
+from typing import Mapping, Optional, Sequence, Tuple
+
+from app.features.form_builder.engine.diagnostics import CODES, Severity
+from app.features.form_builder.engine.logic.formula.check import analyze
+from app.features.form_builder.engine.logic.formula.compile import compile_formula
+from app.features.form_builder.engine.logic.formula.env import FormulaEnv, SlotKind
+from app.features.form_builder.engine.logic.formula.nodes import Bin
+from app.features.form_builder.engine.logic.formula.types import (
+    DATE,
+    DATETIME,
+    MONEY,
+    NUMBER,
+    TEXT,
+    TIME,
+    WHOLE,
+    YESNO,
+    FType,
+)
 
 
 def _cbcs_plan_lines(
@@ -19,7 +36,7 @@ def _cbcs_plan_lines(
     stored_columns,
     unique_pair,
 ):
-    """Deletes, data updates, parks, inserts, then final positions.
+    """Deletes, data updates, parks, final positions, then inserts.
 
     ``snapshot`` rows carry the loaded key and the loaded position. ``current``
     is visual order. A new row has no key. Position on a current row is ignored.
@@ -86,6 +103,8 @@ def _cbcs_plan_lines(
                 floor = pos
         for ordinal, pair in enumerate(movers):
             ops.append(("park", pair[0], floor - 1 - ordinal))
+    for key, final in movers:
+        ops.append(("position", key, final))
     for index, row in enumerate(current):
         if row.get(key_column) is not None:
             continue
@@ -95,8 +114,6 @@ def _cbcs_plan_lines(
         if position_column:
             values.append((position_column, index + 1))
         ops.append(("insert", tuple(values)))
-    for key, final in movers:
-        ops.append(("position", key, final))
     return tuple(ops)
 
 
@@ -116,6 +133,115 @@ def line_plan_source() -> str:
     """The two functions, as the generated module will define them."""
 
     return inspect.getsource(_cbcs_plan_lines) + "\n" + inspect.getsource(_cbcs_lines_differ)
+
+
+_KIND_TYPE = {
+    "whole": WHOLE,
+    "int": WHOLE,
+    "money": MONEY,
+    "decimal": NUMBER,
+    "number": NUMBER,
+    "yesno": YESNO,
+    "bool": YESNO,
+    "date": DATE,
+    "time": TIME,
+    "datetime": DATETIME,
+    "text": TEXT,
+    "calc": NUMBER,
+}
+
+
+def column_type(kind: str) -> FType:
+    return _KIND_TYPE.get(kind, TEXT)
+
+
+def type_for_kind(kind_name: str) -> FType:
+    """The formula type for a schema column kind. Unknown kinds stay text."""
+
+    return {
+        "whole": WHOLE,
+        "number": NUMBER,
+        "money": MONEY,
+        "text": TEXT,
+        "date": DATE,
+        "time": TIME,
+        "datetime": DATETIME,
+        "yesno": YESNO,
+    }.get(kind_name, TEXT)
+
+
+def compile_line_formula(
+    text: str,
+    columns: Sequence[Tuple[str, str]],
+    target_kind: str,
+    attrs: Optional[Mapping[str, Mapping[str, FType]]] = None,
+) -> Tuple[str, Tuple[str, ...], Tuple[Tuple[str, str], ...], Tuple[str, ...], Tuple[str, ...]]:
+    """Compile one grid formula. Problems are design-time codes. Source is empty then.
+
+    The result is ``(source, helper ids, imports, problem codes, denominator sources)``.
+    """
+
+    stripped = text.strip()
+    if not stripped:
+        return ("", (), (), (), ())
+    mapping = {name: column_type(kind) for name, kind in columns}
+    env = FormulaEnv.for_test(row_columns=mapping, row_attrs=attrs or {})
+    analysis = analyze(stripped, env, SlotKind.value(column_type(target_kind)))
+    problems = []
+    for problem in analysis.problems:
+        spec = CODES.get(problem.code)
+        if spec is None or spec.severity == Severity.ERROR:
+            problems.append(problem.code)
+    if problems or analysis.tree is None:
+        return ("", (), (), tuple(problems), ())
+    try:
+        emitted = compile_formula(analysis, env)
+    except ValueError:
+        return ("", (), (), ("FB108",), ())
+    denoms = []
+
+    def walk(node: object) -> None:
+        if isinstance(node, Bin) and node.op == "/":
+            denoms.append(_node_source(node.b, env))
+        for child in _formula_children(node):
+            walk(child)
+
+    walk(analysis.tree)
+    return (emitted.source, tuple(emitted.helpers), tuple(emitted.imports), (), tuple(item for item in denoms if item))
+
+
+def _node_source(node: object, env: FormulaEnv) -> str:
+    from app.features.form_builder.engine.logic.formula.nodes import Analysis
+
+    sub = Analysis(
+        text="",
+        tree=node,  # type: ignore[arg-type]
+        type=getattr(node, "type", None),
+        problems=(),
+        fixes=(),
+        reads=frozenset(),
+        window_calls=(),
+        bool_wraps=(),
+    )
+    try:
+        return compile_formula(sub, env).source
+    except ValueError:
+        return ""
+
+
+def _formula_children(node: object) -> Tuple[object, ...]:
+    if isinstance(node, Bin):
+        return (node.a, node.b)
+    args = getattr(node, "args", None)
+    if args is not None:
+        return tuple(args)
+    child = getattr(node, "x", None)
+    if child is not None:
+        return (child,)
+    test = getattr(node, "test", None)
+    if test is not None:
+        return (test, getattr(node, "then", None), getattr(node, "other", None))
+    return ()
 
 
 def link_position_unique(unique_keys: Sequence[Sequence[str]], link: str, position: str) -> bool:

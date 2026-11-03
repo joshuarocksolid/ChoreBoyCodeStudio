@@ -208,9 +208,18 @@ def _decimal_source(value: Any) -> str:
     return 'Decimal("%s")' % body
 
 
+def _row_columns(env: Any):
+    found = getattr(env, "row_columns", None)
+    if found is None or not hasattr(found, "get"):
+        return {}
+    return found
+
+
 def _emit_ref(node: Any, env: Any, self_name: str) -> _Piece:
     name = node.name
     _reject_hidden_name(name)
+    if name in _row_columns(env) and env.widgets.get(name) is None:
+        return _Piece("_row.get(%s)" % repr(name), PREC_ATOM, True)
     facts = env.widgets.get(name)
     if facts is None:
         pages = env.page_names() if hasattr(env, "page_names") else ()
@@ -352,6 +361,13 @@ def _grid_columns(env: Any, widget: str):
 
 def _emit_attr(node: Any, self_name: str, env: Any = None) -> _Piece:
     base = node.base
+    if isinstance(getattr(base, "name", None), str) and base.name in _row_columns(env):
+        column = base.name
+        return _Piece(
+            "self._cbcs_line_also(%s, _row.get(%s), %s)" % (repr(column), repr(column), repr(node.name)),
+            PREC_ATOM,
+            True,
+        )
     if isinstance(base, str):
         widget = base
     elif hasattr(base, "name"):

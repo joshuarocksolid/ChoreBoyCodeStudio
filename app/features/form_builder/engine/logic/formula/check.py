@@ -49,6 +49,7 @@ from app.features.form_builder.engine.logic.formula.types import (
     DATE,
     FKind,
     FType,
+    MONEY,
     NUMBER,
     TEXT,
     WHOLE,
@@ -257,6 +258,10 @@ def _check_ref(state: _State, node: Ref, ctx: _Ctx) -> Ref:
     if is_reserved_word(name, env.reserved):
         _problem(state, "FB106", node.span, "That name is reserved.")
         return replace(node, type=ANY)
+    row_columns = getattr(env, "row_columns", None) or {}
+    if name in row_columns and env.widgets.get(name) is None:
+        state.reads.add(name)
+        return replace(node, type=row_columns[name])
     facts = env.widgets.get(name)
     if facts is None:
         if name in env.page_names():
@@ -317,6 +322,12 @@ def _check_attr(state: _State, node: Attr, ctx: _Ctx) -> Node:
             _problem(state, "FB114", node.span, "record has no %s." % node.name)
             return replace(node, type=ANY)
         return replace(node, type=column)
+    row_columns = getattr(state.env, "row_columns", None) or {}
+    if base_name in row_columns and node.sub is None and state.env.widgets.get(base_name) is None:
+        state.reads.add(base_name)
+        typed = replace(node.base, type=row_columns[base_name])
+        known = (getattr(state.env, "row_attrs", None) or {}).get(base_name) or {}
+        return replace(node, base=typed, type=known.get(node.name, ANY))
     facts = state.env.widgets.get(base_name)
     if facts is None:
         typed = _check_ref(state, node.base, ctx)

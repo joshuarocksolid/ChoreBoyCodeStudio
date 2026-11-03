@@ -13,7 +13,7 @@ from app.features.form_builder.engine.data.schema import write_schema
 from app.features.form_builder.engine.data.schema_cache import install_schema_reader, set_schema_reader
 from tests.form_builder.engine.test_m8_2_pg93 import _connection, _driver, _fields
 from tests.form_builder.engine.test_m8_2_scenario import _generate, _install_boxes, _load_module, _ui_class
-from tests.form_builder.engine.test_m8_3b_lines import _invoice_schema, _story, _ui
+from tests.form_builder.engine.test_m8_3b_lines import _edit, _invoice_schema, _story, _ui
 
 pytestmark = pytest.mark.pg93
 
@@ -80,6 +80,23 @@ def test_lines_round_trip_on_postgres(tmp_path: Path) -> None:
             with module.work("shop") as connection:
                 host.ui._cbcs_delete_lines(connection, host.ui.cbcs_current_key())
             assert _count(side) == 0
+            host.ui.cbcs_new()
+            host.ui.invoiceNoEdit.setText("INV-NEW")
+            host.ui.customerIdSpin.setValue(1)
+            host.ui.invoiceDateEdit.setText("2026-04-03")
+            host.ui._cbcs_add_row()
+            _edit(host.ui, 0, "description", lambda editor: editor.setText("fresh"))
+            _edit(host.ui, 0, "price", lambda editor: editor.setValue(1.25))
+            assert host.ui.cbcs_save() is True
+            with module.work("shop") as connection:
+                cursor = connection.cursor()
+                cursor.execute("SELECT id FROM %s WHERE invoice_no = %%s" % _PARENT, ("INV-NEW",))
+                parent = cursor.fetchone()
+                cursor.execute(
+                    "SELECT invoice_id, description FROM %s WHERE invoice_id = %%s" % _LINES,
+                    (parent[0],),
+                )
+                assert cursor.fetchall() == [(parent[0], "fresh")]
             host.close()
             host.deleteLater()
             app.processEvents()

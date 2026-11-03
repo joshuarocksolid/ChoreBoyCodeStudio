@@ -104,10 +104,10 @@ def add_lines(session: object, rows: Rows, view_name: str = "") -> str:
         else:
             final = name
             view_id = selected.id
-            _insert_buttons(txn, document, layout)
+            mapping = _insert_buttons(txn, document, layout)
         txn.execute(SetLogic(view_id, "cbcsRows", write_rows(rows)))
-        _steps(txn, document, "addLineButton", "addRow", final)
-        _steps(txn, document, "deleteLineButton", "deleteRow", final)
+        _steps(txn, document, mapping.get("addLineButton", "addLineButton"), "addRow", final)
+        _steps(txn, document, mapping.get("deleteLineButton", "deleteLineButton"), "deleteRow", final)
     return final
 
 
@@ -379,18 +379,16 @@ def _button_row() -> NodeSpec:
     )
 
 
-def _insert_buttons(txn: object, document: object, layout: LayoutNode) -> None:
-    if document.by_name("addLineButton"):
-        return
-    txn.execute(InsertFragment(_box_placement(layout), Fragment((_button_row(),)), undo_label="Add lines"))
+def _insert_buttons(txn: object, document: object, layout: LayoutNode) -> dict:
+    del document
+    result = txn.execute(InsertFragment(_box_placement(layout), Fragment((_button_row(),)), undo_label="Add lines"))
+    return dict(getattr(result, "renames", ()) or ())
 
 
 def _steps(txn: object, document: object, button: str, verb: str, view: str) -> None:
     ids = document.by_name(button)
     if not ids:
         return
-    names = document.by_name(button)
-    del names
     node = document.node(ids[0])
     final = getattr(node, "object_name", button) or button
     txn.execute(

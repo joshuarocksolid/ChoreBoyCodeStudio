@@ -126,6 +126,7 @@ class RecordExpander:
         allow_keep = bool(source.allow_overwrite or source.conflicts == "overwrite")
         hooks = source.hooks or Hooks()
         rowid = _uses_rowid(engine, _schema_table(doc, source), source.key, fields)
+        has_lines = _has_lines(doc)
         prelude = []
         for fn in _OPEN_HOOKS:
             extra = fn(doc, ctx)
@@ -133,7 +134,7 @@ class RecordExpander:
                 prelude.extend(extra)
         also = _also_families(doc, ctx, engine)
         methods = _methods(
-            source, fields, engine, record_word, order, search, check, hooks, allow_keep, rowid, prelude, also
+            source, fields, engine, record_word, order, search, check, hooks, allow_keep, rowid, has_lines, prelude, also
         )
         imports = _imports(fields, not _closing_generates(doc), also)
         setup: List[str] = []
@@ -168,7 +169,7 @@ class RecordExpander:
         )
 
 
-def _methods(source, fields, engine, record_word, order, search, check, hooks, allow_keep, rowid, prelude=(), also=()) -> List[Method]:
+def _methods(source, fields, engine, record_word, order, search, check, hooks, allow_keep, rowid, has_lines: bool = False, prelude=(), also=()) -> List[Method]:
     noun = record_word
     table = source.table
     key = source.key
@@ -183,7 +184,7 @@ def _methods(source, fields, engine, record_word, order, search, check, hooks, a
     bodies = {
         "cbcs_open": ("key=None", _open_body(pieces, connection, prelude)),
         "_cbcs_show": ("_index", _show_body(pieces, connection, fields, hooks)),
-        "_cbcs_start_new": ("", _new_body(fields, hooks)),
+        "_cbcs_start_new": ("", _new_body(fields, hooks, has_lines)),
         "cbcs_read_fields": ("", _read_body(fields)),
         "cbcs_write_fields": ("_row", _write_body(fields)),
         "_cbcs_snapshot": ("", ["return getattr(self, %s, {})" % _q("_cbcs_saved_fields")]),
@@ -205,7 +206,7 @@ def _methods(source, fields, engine, record_word, order, search, check, hooks, a
         "_cbcs_conflict": ("", _conflict_body(noun, allow_keep)),
         "cbcs_save": ("", _save_body(hooks)),
         "_cbcs_write": ("_overwrite", _write_sql_body(pieces, connection, fields, writable, check, hooks)),
-        "cbcs_delete": ("", _delete_body(pieces, connection, hooks, source.delete_lines is not False)),
+        "cbcs_delete": ("", _delete_body(pieces, connection, hooks, has_lines and source.delete_lines is not False)),
         "cbcs_new": ("", _verb_new()),
         "cbcs_revert": ("", _revert_body()),
         "cbcs_reload": ("", ["self.cbcs_revert()"]),
@@ -331,7 +332,7 @@ def _show_body(pieces, connection, fields, hooks) -> List[str]:
     return lines
 
 
-def _new_body(fields, hooks) -> List[str]:
+def _new_body(fields, hooks, clear_lines: bool = False) -> List[str]:
     lines = [
         "self._cbcs_new = True",
         "self._cbcs_key = None",
@@ -341,11 +342,16 @@ def _new_body(fields, hooks) -> List[str]:
         "self._cbcs_clear_errors()",
         "self.cbcs_write_fields({})",
         "self._cbcs_saved_fields = self.cbcs_read_fields()",
-        "_clear_lines = getattr(self, %s, None)" % _q("_cbcs_clear_lines"),
-        "if _clear_lines is not None:",
-        "    _clear_lines()",
-        "self._cbcs_ready = True",
     ]
+    if clear_lines:
+        lines.extend(
+            [
+                "_clear_lines = getattr(self, %s, None)" % _q("_cbcs_clear_lines"),
+                "if _clear_lines is not None:",
+                "    _clear_lines()",
+            ]
+        )
+    lines.append("self._cbcs_ready = True")
     lines.extend(_call_event("cbcsOnNewRecord", False))
     lines.extend(_call_hook(hooks.new_record, False))
     lines.extend(_refresh_call())
@@ -1641,12 +1647,13 @@ def _also_families(doc: UiDocument, ctx: CodegenContext, engine: str) -> List[Tu
 
     from app.features.form_builder.engine.codegen.lookup_plan import lookup_plans
     from app.features.form_builder.engine.data.schema import schema_for
-    from app.features.form_builder.engine.data.types import describe
 
     plans = lookup_plans(doc, ctx.attribute_names)
-    if not plans:
+    source = _source(doc)
+    connection = plans[0].connection if plans else (source.connection if source is not None else "")
+    if not connection:
         return []
-    schema = schema_for(doc, plans[0].connection)
+    schema = schema_for(doc, connection)
     found: List[Tuple[str, str]] = []
     seen = set()
     for plan in plans:
@@ -1657,18 +1664,52 @@ def _also_families(doc: UiDocument, ctx: CodegenContext, engine: str) -> List[Tu
                     columns = {column.name: column for column in table.columns}
                     break
         for name in plan.also:
-            if name in seen or name not in columns:
+            _remember_also(found, seen, columns, name, engine)
+    from app.features.form_builder.engine.data.source import DataColumn, read_rows
+
+    try:
+        nodes = tuple(doc.iter_widgets())
+    except Exception:
+        nodes = ()
+    for node in nodes:
+        prop = getattr(node, "prop", None)
+        entry = prop("cbcsRows") if callable(prop) else None
+        value = getattr(entry, "value", None)
+        text = getattr(value, "text", "")
+        if not isinstance(text, str) or not text.strip():
+            continue
+        rows, error = read_rows(text)
+        if error is not None or rows is None:
+            continue
+        line_columns = {}
+        wanted = {item.lookup.table for item in rows.columns if isinstance(item, DataColumn) and item.lookup is not None}
+        if schema is not None:
+            for table in schema.tables:
+                if table.name in wanted:
+                    line_columns[table.name] = {column.name: column for column in table.columns}
+        for item in rows.columns:
+            if not isinstance(item, DataColumn) or item.lookup is None:
                 continue
-            seen.add(name)
-            column = columns[name]
-            kind = describe(
-                column.type,
-                engine=engine if engine in ("sqlite", "postgres") else "sqlite",
-                column_name=name,
-                nullable=column.nullable,
-            )
-            found.append((name, kind.direction or "text"))
+            columns = line_columns.get(item.lookup.table, {})
+            for name in item.lookup.also:
+                _remember_also(found, seen, columns, name, engine)
     return found
+
+
+def _remember_also(found: List[Tuple[str, str]], seen: set, columns: dict, name: str, engine: str) -> None:
+    from app.features.form_builder.engine.data.types import describe
+
+    if name in seen or name not in columns:
+        return
+    seen.add(name)
+    column = columns[name]
+    kind = describe(
+        column.type,
+        engine=engine if engine in ("sqlite", "postgres") else "sqlite",
+        column_name=name,
+        nullable=column.nullable,
+    )
+    found.append((name, kind.direction or "text"))
 
 
 def _schema_table(doc: UiDocument, source: RecordSource):
@@ -1791,6 +1832,28 @@ def _project_root(forms_dir: Optional[str]) -> Optional[str]:
             break
         path = parent
     return forms_dir
+
+
+def _has_lines(doc: UiDocument) -> bool:
+    """True when a widget carries a lines grid. Delete and New stay quiet without one."""
+
+    walk = getattr(doc, "iter_widgets", None)
+    if not callable(walk):
+        return False
+    try:
+        nodes = tuple(walk())
+    except Exception:
+        return False
+    for node in nodes:
+        prop = getattr(node, "prop", None)
+        if not callable(prop):
+            continue
+        entry = prop("cbcsRows")
+        value = getattr(entry, "value", None)
+        text = getattr(value, "text", "")
+        if isinstance(text, str) and text.strip():
+            return True
+    return False
 
 
 def _source(doc: UiDocument) -> Optional[RecordSource]:

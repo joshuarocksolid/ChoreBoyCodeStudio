@@ -6,13 +6,13 @@ load, save, and dirty already call the method names this module fills in.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import List, Optional, Sequence, Tuple
+from dataclasses import dataclass, replace
+from typing import List, Mapping, Optional, Sequence, Tuple
 
 from app.features.form_builder.engine.codegen.expanders.record import _engine
 from app.features.form_builder.engine.codegen.literals import py_string
 from app.features.form_builder.engine.codegen.logic_hooks import CodegenContext, Contribution, Method
-from app.features.form_builder.engine.data.lines import link_position_unique
+from app.features.form_builder.engine.data.lines import compile_line_formula, link_position_unique, type_for_kind
 from app.features.form_builder.engine.data.schema import schema_for
 from app.features.form_builder.engine.data.source import (
     CalcColumn,
@@ -37,9 +37,6 @@ from app.features.form_builder.engine.data.sql import (
 )
 from app.features.form_builder.engine.data.types import describe
 from app.features.form_builder.engine.logic import compat
-from app.features.form_builder.engine.logic.formula.env import FormulaEnv
-from app.features.form_builder.engine.logic.formula.nodes import Attr, Bin, Lit, Ref, Unary
-from app.features.form_builder.engine.logic.formula.parse import parse_text
 from app.features.form_builder.engine.ui4.document import UiDocument
 from app.features.form_builder.engine.ui4.values import StringValue
 
@@ -56,6 +53,7 @@ class _Col:
     formula: str
     default: str
     lookup: Optional[Lookup]
+    scale: int = -1
 
 
 class RowsExpander:
@@ -88,12 +86,23 @@ class RowsExpander:
             rows,
             columns,
             engine,
+            source.connection,
             link_position_unique(keys, rows.link, rows.position),
             table,
+            _row_attrs(doc, source.connection, columns, engine),
         )
 
 
-def _contribution(view: str, rows: Rows, columns: Sequence[_Col], engine: str, unique: bool, table: object) -> Contribution:
+def _contribution(
+    view: str,
+    rows: Rows,
+    columns: Sequence[_Col],
+    engine: str,
+    connection: str,
+    unique: bool,
+    table: object,
+    attrs: Optional[Mapping[str, Mapping[str, object]]] = None,
+) -> Contribution:
     hidden = {rows.key, rows.link, rows.position}
     stored = tuple(column.name for column in columns if not column.calculated and column.name not in hidden)
     select_names = (rows.key,) + stored
@@ -106,10 +115,10 @@ def _contribution(view: str, rows: Rows, columns: Sequence[_Col], engine: str, u
         _method("_cbcs_load_lines", "_conn, _key", _load_body(view)),
         _method("_cbcs_save_lines", "_conn, _parent", _save_body(view, engine, rows, stored)),
         _method("_cbcs_lines_dirty", "", _dirty_body()),
-        _method("_cbcs_clear_lines", "", _clear_body(view)),
+        _method("_cbcs_clear_lines", "", _clear_body(view, connection)),
         _method("_cbcs_delete_lines", "_conn, _key", _delete_link_body()),
         _method("_cbcs_validate_lines", "", _validate_body(view)),
-        _method("_cbcs_add_row", "", _add_body(view, columns)),
+        _method("_cbcs_add_row", "", _add_body(view, columns, attrs or {})),
         _method("_cbcs_delete_row", "", _delete_row_body(view)),
         _method("cbcs_read_lines", "", _read_body(view)),
         _method("_cbcs_grid_column", "_name", _grid_body(view)),
@@ -117,11 +126,13 @@ def _contribution(view: str, rows: Rows, columns: Sequence[_Col], engine: str, u
         _method("_cbcs_line_dict", "_r", _dict_body(view)),
         _method("_cbcs_line_out", "_column, _value", _convert_body(families, nulls, engine, True)),
         _method("_cbcs_line_in", "_column, _value", _convert_body(families, nulls, engine, False)),
-        _method("_cbcs_recompute_lines", "", _recompute_body(view, columns)),
+        _method("_cbcs_recompute_lines", "", _recompute_body(view, columns, attrs or {})),
         _method("_cbcs_line_changed", "*_args", _changed_body()),
         _method("_cbcs_line_editor", "_parent, _index", _editor_body()),
         _method("_cbcs_line_editor_data", "_editor, _index", _editor_data_body()),
         _method("_cbcs_line_commit", "_editor, _model, _index", _commit_body()),
+        _method("_cbcs_line_show", "_column, _value", _show_body()),
+        _method("_cbcs_line_defaults", "_row_index, _before", _defaults_body(view, columns, attrs or {})),
         _method("_cbcs_line_also", "_column, _key, _name", _also_body()),
         _method("_cbcs_line_lookup_label", "_name, _key", _label_body()),
         _method("_cbcs_load_line_lookups", "_conn", _lookup_body(columns, engine)),
@@ -135,24 +146,41 @@ def _contribution(view: str, rows: Rows, columns: Sequence[_Col], engine: str, u
         ("PySide6.QtGui", "QShortcut"),
         ("PySide6.QtGui", "QStandardItem"),
         ("PySide6.QtGui", "QStandardItemModel"),
+        ("PySide6.QtWidgets", "QCheckBox"),
         ("PySide6.QtWidgets", "QComboBox"),
+        ("PySide6.QtWidgets", "QDateEdit"),
+        ("PySide6.QtWidgets", "QDateTimeEdit"),
         ("PySide6.QtWidgets", "QDoubleSpinBox"),
         ("PySide6.QtWidgets", "QLineEdit"),
         ("PySide6.QtWidgets", "QMessageBox"),
         ("PySide6.QtWidgets", "QSpinBox"),
         ("PySide6.QtWidgets", "QStyledItemDelegate"),
+        ("PySide6.QtWidgets", "QTimeEdit"),
+        ("PySide6.QtCore", "QDate"),
+        ("PySide6.QtCore", "QDateTime"),
+        ("PySide6.QtCore", "QTime"),
     ]
     families_used = set(families.values())
-    if "decimal" in families_used or any(column.kind == "decimal" for column in columns):
+    if "decimal" in families_used or any(column.scale >= 0 or column.kind == "decimal" for column in columns):
         imports.append(("decimal", "Decimal"))
-    if families_used.intersection(("date", "time", "datetime")):
+    if families_used.intersection(("date", "time", "datetime")) or any(column.kind in ("date", "time", "datetime") for column in columns):
         imports.extend((("datetime", "date"), ("datetime", "datetime"), ("datetime", "time")))
+    helpers = ["_cbcs_line_plan"]
+    for _column, compiled in _formulas(columns, attrs or {}):
+        for helper in compiled[1]:
+            if helper not in helpers:
+                helpers.append(helper)
+        if compiled[4] and "_cbcs_is_blank" not in helpers:
+            helpers.append("_cbcs_is_blank")
+        for imported in compiled[2]:
+            if imported not in imports:
+                imports.append(imported)
     setup = _setup(view, rows, columns, select_names, stored, unique, select_sql, engine)
     return Contribution(
         imports=tuple(imports),
         setup_lines=tuple(setup),
         methods=tuple(methods),
-        helpers=("_cbcs_line_plan",),
+        helpers=tuple(helpers),
         needs_form=True,
     )
 
@@ -167,6 +195,7 @@ def _setup(view, rows, columns, select_names, stored, unique, select_sql, engine
     kinds = ", ".join(py_string(column.kind) for column in columns)
     nullable = ", ".join("True" if column.nullable else "False" for column in columns)
     locked = ", ".join("True" if column.locked or column.calculated else "False" for column in columns)
+    scales = ", ".join(str(column.scale) for column in columns)
     select_list = ", ".join(py_string(name) for name in select_names)
     stored_list = ", ".join(py_string(name) for name in stored)
     assign = []
@@ -184,6 +213,7 @@ def _setup(view, rows, columns, select_names, stored, unique, select_sql, engine
             column.lookup.key,
             column.lookup.show,
             column.lookup.also,
+            column.lookup.order,
         )
         if column.lookup.also:
             also = "(%s,)" % ", ".join(py_string(name) for name in column.lookup.also)
@@ -204,10 +234,17 @@ def _setup(view, rows, columns, select_names, stored, unique, select_sql, engine
         "        self._ui._cbcs_line_editor_data(editor, index)",
         "    def setModelData(self, editor, model, index):",
         "        self._ui._cbcs_line_commit(editor, model, index)",
+        "    def initStyleOption(self, option, index):",
+        "        super(_CbcsLineDelegate, self).initStyleOption(option, index)",
+        "        if self._ui._cbcs_line_kinds[index.column()] == %s:" % py_string("calc"),
+        "            _color = option.palette.color(QPalette.ColorGroup.Disabled, QPalette.ColorRole.PlaceholderText)",
+        "            option.palette.setColor(QPalette.ColorGroup.Active, QPalette.ColorRole.Text, _color)",
+        "            option.palette.setColor(QPalette.ColorGroup.Inactive, QPalette.ColorRole.Text, _color)",
         "_model = QStandardItemModel(self.%s)" % view,
         "_model.setHorizontalHeaderLabels((%s,))" % headers,
         "self.%s.setModel(_model)" % view,
         "self.%s.setItemDelegate(_CbcsLineDelegate(self))" % view,
+        "self.%s.horizontalHeader().setStretchLastSection(True)" % view,
         "_model.dataChanged.connect(self._cbcs_line_changed)",
         "_model.rowsInserted.connect(self._cbcs_line_changed)",
         "_model.rowsRemoved.connect(self._cbcs_line_changed)",
@@ -223,6 +260,10 @@ def _setup(view, rows, columns, select_names, stored, unique, select_sql, engine
         "self._cbcs_line_kinds = (%s,)" % kinds,
         "self._cbcs_line_nullable = (%s,)" % nullable,
         "self._cbcs_line_locked = (%s,)" % locked,
+        "self._cbcs_line_scales = (%s,)" % scales,
+        "for _i, _scale in enumerate(self._cbcs_line_scales):",
+        "    if _scale >= 0:",
+        "        _model.setHeaderData(_i, Qt.Orientation.Horizontal, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter, Qt.ItemDataRole.TextAlignmentRole)",
         "self._cbcs_line_stored = (%s,)" % stored_list,
         "self._cbcs_line_select_names = (%s,)" % select_list,
         "self._cbcs_line_select = %s" % py_string(select_sql.text),
@@ -288,7 +329,7 @@ def _load_body(view: str) -> List[str]:
         "    for _i, _name in enumerate(self._cbcs_line_names):",
         "        _kind = self._cbcs_line_kinds[_i]",
         "        _value = None if _kind == %s else _raw.get(_name)" % py_string("calc"),
-        "        _text = %s if _value is None else str(_value)" % py_string(""),
+        "        _text = self._cbcs_line_show(_i, _value)",
         "        if _kind == %s:" % py_string("lookup"),
         "            _label = self._cbcs_line_lookup_label(_name, _value)",
         "            if _label:",
@@ -298,8 +339,8 @@ def _load_body(view: str) -> List[str]:
         "        _cell.setData(_raw.get(self._cbcs_line_key), self._cbcs_line_key_role)",
         "        if _kind == %s or self._cbcs_line_locked[_i]:" % py_string("calc"),
         "            _cell.setEditable(False)",
-        "        if _kind == %s:" % py_string("calc"),
-        "            _cell.setForeground(self.%s.palette().color(QPalette.ColorGroup.Disabled, QPalette.ColorRole.Text))" % view,
+        "        if self._cbcs_line_scales[_i] >= 0:",
+        "            _cell.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)",
         "        _cells.append(_cell)",
         "    _model.appendRow(_cells)",
         "_model.blockSignals(False)",
@@ -353,7 +394,7 @@ def _dirty_body() -> List[str]:
     ]
 
 
-def _clear_body(view: str) -> List[str]:
+def _clear_body(view: str, connection: str) -> List[str]:
     return [
         "self._cbcs_deleted_line_keys = []",
         "_model = self.%s.model()" % view,
@@ -362,6 +403,12 @@ def _clear_body(view: str) -> List[str]:
         "    _model.removeRows(0, _model.rowCount())",
         "    _model.blockSignals(False)",
         "self._cbcs_line_snapshot = ()",
+        "import cbcs_connections",
+        "try:",
+        "    with cbcs_connections.work(%s) as _conn:" % py_string(connection),
+        "        self._cbcs_load_line_lookups(_conn)",
+        "except Exception:",
+        "    pass",
     ]
 
 
@@ -400,8 +447,7 @@ def _validate_body(view: str) -> List[str]:
     ]
 
 
-def _add_body(view: str, columns: Sequence[_Col]) -> List[str]:
-    names = [column.name for column in columns if not column.calculated]
+def _add_body(view: str, columns: Sequence[_Col], attrs: Optional[Mapping[str, Mapping[str, object]]] = None) -> List[str]:
     lines = [
         "_model = self.%s.model()" % view,
         "if _model is None:",
@@ -411,7 +457,10 @@ def _add_body(view: str, columns: Sequence[_Col]) -> List[str]:
     for column in columns:
         if column.calculated:
             continue
-        expr = _row_expr(column.default, names) if column.default else "None"
+        expr = "None"
+        if column.default:
+            compiled = _compiled(column.default, columns, _type_kind(column), attrs)
+            expr = compiled[0] or "None"
         lines.append("_row[%s] = %s" % (py_string(column.name), expr))
     lines.extend(
         [
@@ -419,7 +468,7 @@ def _add_body(view: str, columns: Sequence[_Col]) -> List[str]:
             "for _i, _name in enumerate(self._cbcs_line_names):",
             "    _kind = self._cbcs_line_kinds[_i]",
             "    _value = None if _kind == %s else _row.get(_name)" % py_string("calc"),
-            "    _text = %s if _value is None else str(_value)" % py_string(""),
+            "    _text = self._cbcs_line_show(_i, _value)",
             "    if _kind == %s and _value is not None:" % py_string("lookup"),
             "        _label = self._cbcs_line_lookup_label(_name, _value)",
             "        if _label:",
@@ -429,8 +478,8 @@ def _add_body(view: str, columns: Sequence[_Col]) -> List[str]:
             "    _cell.setData(None, self._cbcs_line_key_role)",
             "    if _kind == %s or self._cbcs_line_locked[_i]:" % py_string("calc"),
             "        _cell.setEditable(False)",
-            "    if _kind == %s:" % py_string("calc"),
-            "        _cell.setForeground(self.%s.palette().color(QPalette.ColorGroup.Disabled, QPalette.ColorRole.Text))" % view,
+            "    if self._cbcs_line_scales[_i] >= 0:",
+            "        _cell.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)",
             "    _cells.append(_cell)",
             "_model.appendRow(_cells)",
             "_index = _model.index(_model.rowCount() - 1, 0)",
@@ -626,8 +675,7 @@ def _family_lines(family: str, nullable: bool, engine: str, outbound: bool) -> L
     return ["return _value"]
 
 
-def _recompute_body(view: str, columns: Sequence[_Col]) -> List[str]:
-    names = [column.name for column in columns]
+def _recompute_body(view: str, columns: Sequence[_Col], attrs: Optional[Mapping[str, Mapping[str, object]]] = None) -> List[str]:
     lines = [
         "_model = self.%s.model()" % view,
         "if _model is None:",
@@ -643,17 +691,41 @@ def _recompute_body(view: str, columns: Sequence[_Col]) -> List[str]:
         if not column.calculated:
             continue
         emitted = True
-        expr = _row_expr(column.formula, names)
+        compiled = _compiled(column.formula, columns, _type_kind(column), attrs)
+        expr = compiled[0] or "None"
         lines.extend(
             [
-                "        _value = %s" % expr,
+                "        try:",
+                "            _value = %s" % expr,
+                "            _tip = %s" % py_string(""),
+            ]
+        )
+        for denom in compiled[4]:
+            lines.extend(
+                [
+                    "            if not _cbcs_is_blank(%s) and Decimal(%s) == 0:" % (denom, denom),
+                    "                _value = None",
+                    "                _tip = %s" % py_string("Can't divide by zero"),
+                ]
+            )
+        lines.extend(
+            [
+                "        except Exception as _error:",
+                "            _value = None",
+                "            _tip = str(_error)",
+                "            if %s in _tip.lower():" % py_string("zero"),
+                "                _tip = %s" % py_string("Can't divide by zero"),
+            ]
+        )
+        lines.extend(
+            [
                 "        _row[%s] = _value" % py_string(column.name),
                 "        _cell = _model.item(_r, %d)" % index,
                 "        if _cell is not None:",
                 "            _cell.setData(_value, self._cbcs_line_role)",
-                "            _cell.setText(%s if _value is None else str(_value))" % py_string(""),
+                "            _cell.setText(self._cbcs_line_show(%d, _value))" % index,
+                "            _cell.setToolTip(_tip)",
                 "            _cell.setEditable(False)",
-                "            _cell.setForeground(self.%s.palette().color(QPalette.ColorGroup.Disabled, QPalette.ColorRole.Text))" % view,
             ]
         )
     if not emitted:
@@ -679,21 +751,54 @@ def _editor_body() -> List[str]:
     return [
         "_kind = self._cbcs_line_kinds[_index.column()]",
         "_name = self._cbcs_line_names[_index.column()]",
+        "_nullable = self._cbcs_line_nullable[_index.column()]",
+        "_scale = self._cbcs_line_scales[_index.column()]",
         "if _kind == %s:" % py_string("lookup"),
         "    _box = QComboBox(_parent)",
         "    _box.addItem(%s, None)" % py_string("(choose)"),
         "    for _key, _label in self._cbcs_line_lookup.get(_name, ()):",
         "        _box.addItem(str(_label), _key)",
         "    return _box",
+        "if _kind == %s:" % py_string("bool"),
+        "    _check = QCheckBox(_parent)",
+        "    if _nullable:",
+        "        _check.setTristate(True)",
+        "    return _check",
         "if _kind == %s:" % py_string("int"),
         "    _spin = QSpinBox(_parent)",
         "    _spin.setRange(-2147483647, 2147483647)",
+        "    if _nullable:",
+        "        _spin.setMinimum(_spin.minimum() - 1)",
+        "        _spin.setSpecialValueText(%s)" % py_string(" "),
         "    return _spin",
         "if _kind == %s:" % py_string("decimal"),
         "    _spin = QDoubleSpinBox(_parent)",
-        "    _spin.setDecimals(2)",
+        "    _spin.setDecimals(_scale if _scale > 0 else 2)",
         "    _spin.setRange(-1000000000000, 1000000000000)",
+        "    if _nullable:",
+        "        _spin.setMinimum(_spin.minimum() - _spin.singleStep())",
+        "        _spin.setSpecialValueText(%s)" % py_string(" "),
         "    return _spin",
+        "if _kind == %s:" % py_string("date"),
+        "    _edit = QDateEdit(_parent)",
+        "    _edit.setDisplayFormat(%s)" % py_string("yyyy-MM-dd"),
+        "    _edit.setCalendarPopup(True)",
+        "    if _nullable:",
+        "        _edit.setMinimumDate(_edit.minimumDate().addDays(-1))",
+        "        _edit.setSpecialValueText(%s)" % py_string(" "),
+        "    return _edit",
+        "if _kind == %s:" % py_string("time"),
+        "    _edit = QTimeEdit(_parent)",
+        "    _edit.setDisplayFormat(%s)" % py_string("HH:mm:ss"),
+        "    return _edit",
+        "if _kind == %s:" % py_string("datetime"),
+        "    _edit = QDateTimeEdit(_parent)",
+        "    _edit.setDisplayFormat(%s)" % py_string("yyyy-MM-dd HH:mm:ss"),
+        "    _edit.setCalendarPopup(True)",
+        "    if _nullable:",
+        "        _edit.setMinimumDateTime(_edit.minimumDateTime().addSecs(-1))",
+        "        _edit.setSpecialValueText(%s)" % py_string(" "),
+        "    return _edit",
         "return QLineEdit(_parent)",
     ]
 
@@ -702,11 +807,42 @@ def _editor_data_body() -> List[str]:
     return [
         "_value = _index.data(self._cbcs_line_role)",
         "_kind = self._cbcs_line_kinds[_index.column()]",
+        "_nullable = self._cbcs_line_nullable[_index.column()]",
+        "if _kind == %s:" % py_string("bool"),
+        "    if _value is None and _nullable:",
+        "        _editor.setCheckState(Qt.CheckState.PartiallyChecked)",
+        "    else:",
+        "        _editor.setChecked(True if _value else False)",
+        "    return",
         "if _kind == %s:" % py_string("int"),
-        "    _editor.setValue(0 if _value is None else int(_value))",
+        "    if _value is None and _nullable:",
+        "        _editor.setValue(_editor.minimum())",
+        "    else:",
+        "        _editor.setValue(0 if _value is None else int(_value))",
         "    return",
         "if _kind == %s:" % py_string("decimal"),
-        "    _editor.setValue(0 if _value is None else float(_value))",
+        "    if _value is None and _nullable:",
+        "        _editor.setValue(_editor.minimum())",
+        "    else:",
+        "        _editor.setValue(0.0 if _value is None else float(_value))",
+        "    return",
+        "if _kind == %s:" % py_string("date"),
+        "    if _value is None and _nullable:",
+        "        _editor.setDate(_editor.minimumDate())",
+        "    else:",
+        "        _day = _value if isinstance(_value, date) else date.fromisoformat(str(_value)[:10])",
+        "        _editor.setDate(QDate(_day.year, _day.month, _day.day))",
+        "    return",
+        "if _kind == %s:" % py_string("time"),
+        "    _clock = _value if isinstance(_value, time) else time.fromisoformat(str(_value or '00:00:00'))",
+        "    _editor.setTime(QTime(_clock.hour, _clock.minute, _clock.second))",
+        "    return",
+        "if _kind == %s:" % py_string("datetime"),
+        "    if _value is None and _nullable:",
+        "        _editor.setDateTime(_editor.minimumDateTime())",
+        "    else:",
+        "        _stamp = _value if isinstance(_value, datetime) else datetime.fromisoformat(str(_value).replace('T', ' '))",
+        "        _editor.setDateTime(QDateTime(_stamp.year, _stamp.month, _stamp.day, _stamp.hour, _stamp.minute, _stamp.second))",
         "    return",
         "if _kind == %s:" % py_string("lookup"),
         "    _found = _editor.findData(_value)",
@@ -720,24 +856,56 @@ def _commit_body() -> List[str]:
     return [
         "_kind = self._cbcs_line_kinds[_index.column()]",
         "_nullable = self._cbcs_line_nullable[_index.column()]",
-        "if _kind == %s:" % py_string("int"),
-        "    _value = int(_editor.value())",
-        "    _text = str(_value)",
+        "_before = self._cbcs_line_dict(_index.row())",
+        "if _kind == %s:" % py_string("bool"),
+        "    _state = _editor.checkState()",
+        "    if _nullable and _state == Qt.CheckState.PartiallyChecked:",
+        "        _value = None",
+        "    else:",
+        "        _value = True if _editor.isChecked() else False",
+        "elif _kind == %s:" % py_string("int"),
+        "    if _nullable and _editor.value() == _editor.minimum():",
+        "        _value = None",
+        "    else:",
+        "        _value = int(_editor.value())",
         "elif _kind == %s:" % py_string("decimal"),
-        "    _value = Decimal(str(_editor.value()))",
-        "    _text = str(_value)",
+        "    if _nullable and _editor.value() == _editor.minimum():",
+        "        _value = None",
+        "    else:",
+        "        _value = Decimal(str(_editor.value()))",
+        "elif _kind == %s:" % py_string("date"),
+        "    _day = _editor.date()",
+        "    if _nullable and _day == _editor.minimumDate():",
+        "        _value = None",
+        "    elif _day.isValid():",
+        "        _value = _day.toPython()",
+        "    else:",
+        "        _value = None if _nullable else _index.data(self._cbcs_line_role)",
+        "elif _kind == %s:" % py_string("time"),
+        "    _value = _editor.time().toPython()",
+        "elif _kind == %s:" % py_string("datetime"),
+        "    _stamp = _editor.dateTime()",
+        "    if _nullable and _stamp == _editor.minimumDateTime():",
+        "        _value = None",
+        "    elif _stamp.isValid():",
+        "        _value = _stamp.toPython()",
+        "    else:",
+        "        _value = None if _nullable else _index.data(self._cbcs_line_role)",
         "elif _kind == %s:" % py_string("lookup"),
         "    _value = _editor.currentData()",
-        "    _text = %s if _value is None else _editor.currentText()" % py_string(""),
         "else:",
-        "    _text = _editor.text()",
-        "    _value = None if _text == %s and _nullable else _text" % py_string(""),
+        "    _text_in = _editor.text()",
+        "    _value = None if _text_in == %s and _nullable else _text_in" % py_string(""),
+        "_text = self._cbcs_line_show(_index.column(), _value)",
         "_model.blockSignals(True)",
         "_cell = _model.item(_index.row(), _index.column())",
         "if _cell is not None:",
         "    _cell.setData(_value, self._cbcs_line_role)",
         "    _cell.setText(_text)",
+        "    if self._cbcs_line_scales[_index.column()] >= 0:",
+        "        _cell.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)",
         "_model.blockSignals(False)",
+        "self._cbcs_line_defaults(_index.row(), _before)",
         "self._cbcs_line_changed()",
     ]
 
@@ -770,7 +938,7 @@ def _lookup_body(columns: Sequence[_Col], engine: str) -> List[str]:
         "        _pairs.append((_key, _label))",
         "        for _offset, _also_name in enumerate(_also):",
         "            _raw = _item[_offset + 2] if len(_item) > _offset + 2 else None",
-        "            self._cbcs_line_also_map[(_name, _key, _also_name)] = _raw",
+        "            self._cbcs_line_also_map[(_name, _key, _also_name)] = self._cbcs_from(_also_name, _raw)",
         "    self._cbcs_line_lookup[_name] = tuple(_pairs)",
     ]
 
@@ -854,6 +1022,12 @@ def _columns(doc: UiDocument, source: RecordSource, rows: Rows, engine: str) -> 
         )
         family = kind.direction or "text"
         editor = _editor_kind(column, family)
+        scale = -1
+        if editor == "int":
+            scale = 0
+        elif editor == "decimal":
+            shown = getattr(kind, "decimals", None)
+            scale = 2 if shown is None else int(shown)
         found.append(
             _Col(
                 column.column,
@@ -866,14 +1040,30 @@ def _columns(doc: UiDocument, source: RecordSource, rows: Rows, engine: str) -> 
                 "",
                 column.default,
                 column.lookup,
+                scale,
             )
         )
-    return tuple(found)
+    number_scales = [item.scale for item in found if item.scale > 0]
+    finished = []
+    for item in found:
+        if item.calculated and item.family == "decimal":
+            finished.append(replace(item, scale=max(number_scales) if number_scales else 2))
+        else:
+            finished.append(item)
+    return tuple(finished)
 
 
 def _editor_kind(column: DataColumn, family: str) -> str:
     if column.lookup is not None:
         return "lookup"
+    if family == "bool" or column.kind == "yesno":
+        return "bool"
+    if family == "date":
+        return "date"
+    if family == "time":
+        return "time"
+    if family == "datetime":
+        return "datetime"
     if column.kind == "whole" or family == "int":
         return "int"
     if column.kind in ("money", "decimal", "number") or family == "decimal":
@@ -882,16 +1072,15 @@ def _editor_kind(column: DataColumn, family: str) -> str:
 
 
 def _family_of(name: str, columns: Sequence[_Col], rows: Rows, table: object, engine: str) -> str:
+    del rows
     for column in columns:
         if column.name == name:
             return column.family
     schema_column = _schema_column(table, name)
-    if schema_column is not None:
-        kind = describe(schema_column.type, engine=engine, column_name=name, nullable=schema_column.nullable)
-        return kind.direction or "text"
-    if name in (rows.key, rows.position, rows.link):
-        return "int"
-    return "text"
+    if schema_column is None:
+        return ""
+    kind = describe(schema_column.type, engine=engine, column_name=name, nullable=schema_column.nullable)
+    return kind.direction or ""
 
 
 def _nullable_of(name: str, columns: Sequence[_Col], rows: Rows) -> bool:
@@ -901,6 +1090,27 @@ def _nullable_of(name: str, columns: Sequence[_Col], rows: Rows) -> bool:
     if name == rows.key:
         return False
     return True
+
+
+def _row_attrs(doc: UiDocument, connection: str, columns: Sequence[_Col], engine: str) -> dict:
+    """Lookup-table types for ``column.attr``. A missing schema leaves the map empty."""
+
+    found = {}
+    chosen = engine if engine in ("sqlite", "postgres") else "sqlite"
+    for column in columns:
+        lookup = column.lookup
+        if lookup is None or not lookup.also:
+            continue
+        table = _line_table(doc, connection, lookup.table)
+        typed = {}
+        for name in lookup.also:
+            spec = _schema_column(table, name)
+            if spec is None:
+                continue
+            kind = describe(spec.type, engine=chosen, column_name=name, nullable=spec.nullable)
+            typed[name] = type_for_kind(kind.kind)
+        found[column.name] = typed
+    return found
 
 
 def _line_table(doc: UiDocument, connection: str, table: str):
@@ -922,52 +1132,94 @@ def _schema_column(table, name: str):
     return None
 
 
-def _row_expr(text: str, names: Sequence[str]) -> str:
-    stripped = text.strip()
-    if not stripped:
-        return "None"
-    try:
-        parsed = parse_text(stripped, FormulaEnv.for_test())
-        if parsed.tree is None:
-            raise ValueError(stripped)
-        return _walk(parsed.tree, set(names))
-    except Exception:
-        return "None"
+def _type_kind(column: _Col) -> str:
+    if column.calculated:
+        return "money" if column.scale >= 0 else "text"
+    if column.kind == "int":
+        return "whole"
+    if column.kind == "decimal":
+        return "money" if column.scale == 2 else "decimal"
+    if column.kind == "bool":
+        return "yesno"
+    return column.kind or "text"
 
 
-def _walk(node: object, names: set) -> str:
-    if isinstance(node, Lit):
-        return _lit(node.value)
-    if isinstance(node, Ref):
-        if node.name not in names:
-            raise ValueError(node.name)
-        return "_row.get(%s)" % py_string(node.name)
-    if isinstance(node, Attr) and isinstance(node.base, Ref) and node.base.name in names:
-        return "self._cbcs_line_also(%s, _row.get(%s), %s)" % (
-            py_string(node.base.name),
-            py_string(node.base.name),
-            py_string(node.name),
+def _pairs(columns: Sequence[_Col]) -> Tuple[Tuple[str, str], ...]:
+    return tuple((column.name, _type_kind(column)) for column in columns)
+
+
+def _compiled(text: str, columns: Sequence[_Col], target: str, attrs: Optional[Mapping[str, Mapping[str, object]]] = None):
+    return compile_line_formula(text, _pairs(columns), target, attrs)
+
+
+def _formulas(columns: Sequence[_Col], attrs: Optional[Mapping[str, Mapping[str, object]]] = None):
+    found = []
+    for column in columns:
+        text = column.formula or column.default
+        if text:
+            found.append((column, _compiled(text, columns, _type_kind(column), attrs)))
+    return found
+
+
+def _show_body() -> List[str]:
+    return [
+        "if _value is None:",
+        "    return %s" % py_string(""),
+        "_scale = self._cbcs_line_scales[_column]",
+        "if _scale < 0:",
+        "    if isinstance(_value, bool):",
+        "        return %s if _value else %s" % (py_string("Yes"), py_string("No")),
+        "    if hasattr(_value, 'isoformat'):",
+        "        return _value.isoformat()",
+        "    return str(_value)",
+        "if _scale == 0:",
+        "    return str(int(_value))",
+        "_number = _value if isinstance(_value, Decimal) else Decimal(str(_value))",
+        "_places = Decimal('1').scaleb(-_scale)",
+        "return format(_number.quantize(_places), 'f')",
+    ]
+
+
+def _defaults_body(view: str, columns: Sequence[_Col], attrs: Optional[Mapping[str, Mapping[str, object]]] = None) -> List[str]:
+    lines = [
+        "_model = self.%s.model()" % view,
+        "if _model is None:",
+        "    return",
+        "_row = self._cbcs_line_dict(_row_index)",
+    ]
+    emitted = False
+    for index, column in enumerate(columns):
+        if not column.default or column.calculated:
+            continue
+        compiled = _compiled(column.default, columns, _type_kind(column), attrs)
+        reads = [name for name, _kind in _pairs(columns) if name in column.default and name != column.name]
+        if not compiled[0] or not reads:
+            continue
+        emitted = True
+        lines.append("_changed = False")
+        for name in reads:
+            lines.append(
+                "if _before.get(%s) != _row.get(%s):" % (py_string(name), py_string(name))
+            )
+            lines.append("    _changed = True")
+        lines.extend(
+            [
+                "if _changed:",
+                "    _old_row = _row",
+                "    _row = _before",
+                "    _previous = %s" % compiled[0],
+                "    _row = _old_row",
+                "    _next = %s" % compiled[0],
+                "    _cell = _model.item(_row_index, %d)" % index,
+                "    _current = None if _cell is None else _cell.data(self._cbcs_line_role)",
+                "    if _cell is not None and (_current is None or _current == %s or _current == _previous):" % py_string(""),
+                "        _cell.setData(_next, self._cbcs_line_role)",
+                "        _cell.setText(self._cbcs_line_show(%d, _next))" % index,
+            ]
         )
-    if isinstance(node, Unary) and node.op == "-":
-        inner = _walk(node.x, names)
-        return "(None if (%s) is None else -(%s))" % (inner, inner)
-    if isinstance(node, Bin) and node.op in ("*", "+", "-", "/"):
-        left = _walk(node.a, names)
-        right = _walk(node.b, names)
-        return "(None if (%s) is None or (%s) is None else (%s) %s (%s))" % (left, right, left, node.op, right)
-    raise ValueError("column formula")
-
-
-def _lit(value: object) -> str:
-    if value is None:
-        return "None"
-    if isinstance(value, bool):
-        return "True" if value else "False"
-    if isinstance(value, (int, float)):
-        return repr(value)
-    if isinstance(value, str):
-        return py_string(value)
-    return "None"
+    if not emitted:
+        lines.append("return")
+    return lines
 
 
 def _widgets(doc: UiDocument):

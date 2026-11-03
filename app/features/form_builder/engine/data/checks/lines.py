@@ -10,10 +10,13 @@ from typing import Iterable, Optional
 
 from app.features.form_builder.engine.data.check import DataCheck
 from app.features.form_builder.engine.data.schema import schema_for
-from app.features.form_builder.engine.data.source import read_data, read_rows
+from app.features.form_builder.engine.data.lines import compile_line_formula, type_for_kind
+from app.features.form_builder.engine.data.types import describe
+from app.features.form_builder.engine.data.source import CalcColumn, DataColumn, read_data, read_rows
 from app.features.form_builder.engine.diagnostics import CODES, DiagnosticLocation, FormDiagnostic
 from app.features.form_builder.engine.ui4.values import StringValue
 
+import app.features.form_builder.engine.diagnostic_codes.fb1xx_formula  # noqa: F401
 import app.features.form_builder.engine.diagnostic_codes.fb3xx_data  # noqa: F401
 
 
@@ -22,6 +25,7 @@ def register(registry: object) -> None:
     if not callable(add):
         return
     add(DataCheck("lines-link", _link, 260))
+    add(DataCheck("lines-formula", _formulas, 270))
 
 
 def _link(doc: object, connections: object, schema: object) -> Iterable[FormDiagnostic]:
@@ -99,6 +103,35 @@ def _grids(doc: object):
     return tuple(found)
 
 
+def _lookup_attrs(schema: object, rows: object) -> dict:
+    found = {}
+    engine = getattr(schema, "engine", "sqlite")
+    chosen = engine if engine in ("sqlite", "postgres") else "sqlite"
+    for column in getattr(rows, "columns", ()) or ():
+        lookup = getattr(column, "lookup", None)
+        if lookup is None or not getattr(lookup, "also", ()):
+            continue
+        table = _table(schema, lookup.table)
+        typed = {}
+        for name in lookup.also:
+            spec = None
+            for item in getattr(table, "columns", ()) or ():
+                if getattr(item, "name", None) == name:
+                    spec = item
+                    break
+            if spec is None:
+                continue
+            kind = describe(
+                spec.type,
+                engine=chosen,
+                column_name=name,
+                nullable=getattr(spec, "nullable", True),
+            )
+            typed[name] = type_for_kind(kind.kind)
+        found[column.column] = typed
+    return found
+
+
 def _table(schema: object, name: Optional[str]):
     if name is None:
         return None
@@ -106,6 +139,48 @@ def _table(schema: object, name: Optional[str]):
         if getattr(table, "name", None) == name:
             return table
     return None
+
+
+def _formulas(doc: object, connections: object, schema: object) -> Iterable[FormDiagnostic]:
+    del connections
+    found = []
+    for node, rows in _grids(doc):
+        attrs = _lookup_attrs(schema, rows)
+        pairs = []
+        pending = []
+        for column in rows.columns:
+            if isinstance(column, DataColumn):
+                kind = column.kind or "text"
+                pairs.append((column.column, kind))
+                if column.default:
+                    pending.append((column.default, kind))
+            elif isinstance(column, CalcColumn):
+                kind = "money" if column.kind == "money" else "text"
+                pairs.append((column.name, kind))
+                pending.append((column.formula, kind))
+        for text, kind in pending:
+            if not text:
+                continue
+            _source, _helpers, _imports, problems, _denoms = compile_line_formula(text, pairs, kind, attrs)
+            for code in problems:
+                info = CODES.get(code)
+                if info is None:
+                    continue
+                found.append(
+                    FormDiagnostic(
+                        info.code,
+                        info.severity,
+                        info.title,
+                        DiagnosticLocation(
+                            getattr(node, "id", None),
+                            getattr(node, "object_name", None),
+                            "cbcsRows",
+                            ("cbcsRows",),
+                        ),
+                        "data.check",
+                    )
+                )
+    return found
 
 
 def _column(table: object, name: str):

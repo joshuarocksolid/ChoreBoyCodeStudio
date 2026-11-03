@@ -23,7 +23,7 @@ from app.features.form_builder.qtside.data_panel.edits import connect_form
 from app.features.form_builder.qtside.data_panel.lines_sheet import add_lines
 from app.features.form_builder.qtside.data_panel.panel import DataPanel
 from app.qt.QtCore import QTimer
-from app.qt.QtWidgets import QApplication, QDialog, QWidget
+from app.qt.QtWidgets import QApplication, QDialog, QLabel, QPushButton, QWidget
 from app.shell.theme_tokens import tokens_from_palette
 from tests.form_builder.engine.test_m8_2_scenario import _generate, _load_module, _ui_class, _xml
 from tests.form_builder.engine.test_m8_3b_lines import _index, _invoice_schema, _prepare, _set, _ui
@@ -49,18 +49,18 @@ def test_lines_shots(tmp_path: Path, qapp: QApplication) -> None:
 
 
 def _section(tmp_path: Path, qapp: QApplication, root: Path) -> None:
-    schema = _invoice_schema()
-    set_schema_reader(lambda _doc, _name: schema)
+    project = tmp_path / "section"
+    _prepare(project)
     try:
-        save_connections(str(tmp_path), ConnectionSet((Connection("shop", "Shop", "sqlite", file="data/shop.db"),)))
+        save_connections(str(project), ConnectionSet((Connection("shop", "Shop", "sqlite", file="data/shop.db"),)))
         session = FormSession.open(
             _xml(RecordSource("shop", "invoices", "id"), (("QLineEdit", "notesEdit", "notes", ""),)),
-            path=str(tmp_path / "invoice.ui"),
-            scope=FormScope(kind="external", ui_path=str(tmp_path / "invoice.ui"), project_root=str(tmp_path)),
+            path=str(project / "invoice.ui"),
+            scope=FormScope(kind="external", ui_path=str(project / "invoice.ui"), project_root=str(project)),
         )
         host = QWidget()
         host.session = session
-        host.project_root = str(tmp_path)
+        host.project_root = str(project)
         connect_form(session, RecordSource("shop", "invoices", "id"))
         add_lines(
             session,
@@ -68,9 +68,19 @@ def _section(tmp_path: Path, qapp: QApplication, root: Path) -> None:
         )
         panel = DataPanel(host)
         panel.reload()
+        refresh = panel.findChild(QPushButton, "formBuilder.data.schemaRefresh")
+        assert refresh is not None
+        refresh.click()
+        sentence = panel.findChild(QLabel, "formBuilder.data.schemaSentence")
+        for _ in range(40):
+            qapp.processEvents()
+            time.sleep(0.05)
+            if sentence is not None and "haven't" not in sentence.text():
+                break
+        panel.reload()
         for mode in _MODES:
             panel.apply_theme(tokens_from_palette(panel.palette(), force_mode=mode))
-            panel.resize(420, 220)
+            panel.resize(520, 420)
             panel.show()
             _settle(qapp)
             panel.grab().save(str(root / ("lines-section-%s.png" % mode)))
@@ -113,7 +123,7 @@ def _running(tmp_path: Path, qapp: QApplication, root: Path) -> None:
                     self.ui.setupUi(self)
 
             host = Host()
-            host.resize(720, 420)
+            host.resize(760, 520)
             for mode in _MODES:
                 _paint(host, mode)
                 host.show()
@@ -168,8 +178,10 @@ def _running(tmp_path: Path, qapp: QApplication, root: Path) -> None:
 def _paint(widget: QWidget, mode: str) -> None:
     tokens = tokens_from_palette(widget.palette(), force_mode=mode)
     widget.setStyleSheet(
-        "QDialog, QWidget { background: %s; color: %s; } QLabel, QTableView, QHeaderView { color: %s; background: %s; }"
-        % (tokens.window_bg, tokens.text_primary, tokens.text_primary, tokens.editor_bg)
+        "QDialog, QWidget { background: %s; color: %s; } "
+        "QLabel, QTableView, QHeaderView, QLineEdit, QSpinBox, QDateEdit { color: %s; background: %s; } "
+        "QPushButton { color: %s; background: %s; }"
+        % (tokens.window_bg, tokens.text_primary, tokens.text_primary, tokens.editor_bg, tokens.text_primary, tokens.window_bg)
     )
 
 
