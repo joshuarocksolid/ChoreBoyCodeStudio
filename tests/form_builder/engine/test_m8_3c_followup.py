@@ -256,13 +256,18 @@ def _convert_paramstyle() -> Any:
 
 def _generated_adapt() -> Any:
     from app.features.form_builder.engine.codegen.expanders.listing import _copied_body
-    from app.features.form_builder.engine.data.sql import _double_percent_outside, adapt_user_sql
+    from app.features.form_builder.engine.data.sql import _double_percent_outside, _pg8000_walk, adapt_user_sql
 
     def block(name: str, params: str, lines: List[str]) -> str:
         body = "\n".join(("        " + line) if line else "" for line in lines)
         return "    def %s(self, %s):\n%s" % (name, params, body)
 
-    percent = block("_cbcs_double_percent", "_sql", _copied_body(_double_percent_outside, ()))
+    walk = block("_cbcs_pg8000_walk", "_sql", _copied_body(_pg8000_walk, ()))
+    percent = block(
+        "_cbcs_double_percent",
+        "_sql",
+        _copied_body(_double_percent_outside, (("_pg8000_walk(", "self._cbcs_pg8000_walk("),)),
+    )
     replacements = (("_double_percent_outside(", "self._cbcs_double_percent("),)
     adapt = block(
         "_cbcs_adapt_user_sql",
@@ -270,5 +275,22 @@ def _generated_adapt() -> Any:
         _copied_body(adapt_user_sql, replacements),
     )
     namespace: dict = {}
-    exec("class _Gen:\n%s\n%s" % (percent, adapt), namespace)  # noqa: S102
+    exec("class _Gen:\n%s\n%s\n%s" % (walk, percent, adapt), namespace)  # noqa: S102
     return namespace["_Gen"]()
+
+
+def test_sql_pg8000_cannot_leave_is_refused_on_postgres_only() -> None:
+    from app.features.form_builder.engine.data.sql import PG8000_SCAN_SENTENCE
+
+    postgres = ConnectionSet((Connection("shop", "Shop", "postgres", host="db", database="shop", user="shop"),))
+    sqlite = ConnectionSet((Connection("shop", "Shop", "sqlite", file="data/shop.db"),))
+    for sql in _OPEN:
+        assert select_source_error(sql) is None
+        document = _doc(_source(10, sql=sql))
+        pg = [item.message for item in run_checks(document, postgres) if item.code == "FB314"]
+        lite = [item.message for item in run_checks(document, sqlite) if item.code == "FB314"]
+        assert pg == [PG8000_SCAN_SENTENCE]
+        assert lite == []
+    kept = "SELECT id, name FROM t ORDER BY name DESC -- keep"
+    document = _doc(_source(10, sql=kept))
+    assert [item for item in run_checks(document, postgres) if item.code == "FB314"] == []

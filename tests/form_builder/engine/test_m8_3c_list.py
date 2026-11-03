@@ -139,6 +139,61 @@ def test_an_open_record_form_comes_forward(tmp_path: Path) -> None:
         assert len(CustomerWindow.opened) == 2
 
 
+def test_pg8000_runs_a_stuck_select_without_search(tmp_path: Path) -> None:
+    import sys
+    import types
+
+    source = _source(10, sql="SELECT id, name /* don't */ FROM customers")
+    with _open(tmp_path, limit=10, source=source) as (host, _db):
+        calls: List[Tuple[str, Any]] = []
+
+        class _Cursor:
+            description = (("id",), ("name",))
+
+            def execute(self, sql: str, params: Any = None) -> None:
+                calls.append((sql, params))
+
+            def fetchone(self) -> Tuple[int]:
+                return (2,)
+
+            def fetchall(self) -> List[Tuple[str, str]]:
+                return [("A1", "Ann"), ("A2", "Bob")]
+
+        class _Conn:
+            def cursor(self) -> _Cursor:
+                return _Cursor()
+
+        _Conn.__module__ = "pg8000.dbapi"
+
+        class _Work:
+            def __enter__(self) -> _Conn:
+                return _Conn()
+
+            def __exit__(self, *_args: object) -> bool:
+                return False
+
+        module = types.ModuleType("cbcs_connections")
+        module.work = lambda _name: _Work()  # type: ignore[attr-defined]
+        previous = sys.modules.get("cbcs_connections")
+        sys.modules["cbcs_connections"] = module
+        try:
+            host.ui.searchEdit.setText("zzz")
+            host.ui.cbcs_refresh_list()
+        finally:
+            if previous is None:
+                sys.modules.pop("cbcs_connections", None)
+            else:
+                sys.modules["cbcs_connections"] = previous
+        assert len(calls) == 2
+        for sql, params in calls:
+            assert "%s" not in sql
+            assert params is None
+            assert "WHERE" not in sql
+        assert "LIMIT 10" in calls[1][0]
+        assert "ORDER BY" in calls[1][0]
+        assert _names(host) == ["Ann", "Bob"]
+
+
 def test_own_sql_with_a_percent_returns_the_matching_rows(tmp_path: Path) -> None:
     source = _source(10, sql="SELECT id, name, price, when_on FROM customers WHERE note LIKE '%keep%'")
     with _open(tmp_path, limit=10, source=source) as (host, db):

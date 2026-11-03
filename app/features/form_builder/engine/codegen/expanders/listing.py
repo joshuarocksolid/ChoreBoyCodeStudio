@@ -21,6 +21,7 @@ from app.features.form_builder.engine.data.source import ListSource, read_data
 from app.features.form_builder.engine.data.sql import (
     IdentifierError,
     _double_percent_outside,
+    _pg8000_walk,
     adapt_user_sql,
     list_read,
     select_source_error,
@@ -88,8 +89,9 @@ class ListingExpander:
         if search:
             methods.append(_method("_cbcs_like_pattern", _pattern_body(), "_text"))
         if made.inner:
+            methods.append(_method("_cbcs_pg8000_walk", _copied_body(_pg8000_walk, ()), "_sql"))
             methods.append(_method("_cbcs_adapt_user_sql", _copied_body(adapt_user_sql, (("_double_percent_outside(", "self._cbcs_double_percent("),)), "_driver, _sql, _has_params"))
-            methods.append(_method("_cbcs_double_percent", _copied_body(_double_percent_outside, ()), "_sql"))
+            methods.append(_method("_cbcs_double_percent", _copied_body(_double_percent_outside, (("_pg8000_walk(", "self._cbcs_pg8000_walk("),)), "_sql"))
         return Contribution(
             imports=_imports(),
             methods=tuple(methods),
@@ -178,9 +180,16 @@ def _refresh_inner_body(made, connection: str) -> List[str]:
         "            _driver = %s" % py_string("pg8000"),
         "        elif %s in _module:" % py_string("psycopg"),
         "            _driver = %s" % py_string("psycopg"),
+        "        _closed = self._cbcs_pg8000_walk(%s + %s)[1]" % (user, py_string("\n")),
+        "        if _driver == %s and not _closed:" % py_string("pg8000"),
+        "            _params = ()",
         "        _inner = self._cbcs_adapt_user_sql(_driver, %s, bool(_params))" % user,
-        "        _count_sql = %s + _inner + %s + %s" % (py_string("SELECT COUNT(*) FROM (\n"), py_string("\n) AS q"), count_tail),
-        "        _rows_sql = %s + _inner + %s + %s" % (py_string("SELECT * FROM (\n"), py_string("\n) AS q"), row_tail),
+        "        if _driver == %s and not _closed:" % py_string("pg8000"),
+        "            _count_sql = %s + _inner + %s" % (py_string("SELECT COUNT(*) FROM (\n"), py_string("\n) AS q")),
+        "            _rows_sql = %s + _inner + %s + %s" % (py_string("SELECT * FROM (\n"), py_string("\n) AS q"), py_string(made.plain_tail)),
+        "        else:",
+        "            _count_sql = %s + _inner + %s + %s" % (py_string("SELECT COUNT(*) FROM (\n"), py_string("\n) AS q"), count_tail),
+        "            _rows_sql = %s + _inner + %s + %s" % (py_string("SELECT * FROM (\n"), py_string("\n) AS q"), row_tail),
     ]
     lines.extend(_execute("_count_sql", "        "))
     lines.extend(

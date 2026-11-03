@@ -341,6 +341,7 @@ class ListRead:
     inner: str = ""
     count_tail: str = ""
     row_tail: str = ""
+    plain_tail: str = ""
 
 
 def list_read(
@@ -398,6 +399,7 @@ def list_read(
         inner,
         where,
         where + order_sql + limit_sql,
+        order_sql + limit_sql,
     )
 
 
@@ -521,13 +523,38 @@ def _list_order(order: Sequence[Sequence[str]], key: str) -> str:
     return " ORDER BY " + ", ".join(parts)
 
 
-def _double_percent_outside(_sql: str) -> str:
-    """Double ``%`` that pg8000 would read as a placeholder.
+PG8000_SCAN_SENTENCE = (
+    "This SQL can't be searched with the pg8000 driver. "
+    "Remove the quote or comment that confuses it."
+)
 
-    States match ``convert_paramstyle`` in pg8000 1.31.5 (``pg8000/dbapi.py``).
-    That scanner has no block-comment state, only untagged ``$$``, only an
-    uppercase ``E'``, and an escape string ends at a quote whose previous
-    character is not a backslash. The body is copied into the generated form.
+
+def pg8000_scan_closed(sql: str) -> bool:
+    """True when pg8000 would be outside quotes before a placeholder.
+
+    The wrap writes a newline after the statement, and that newline ends a
+    ``--`` comment. A quote or comment that is still open after that newline
+    would swallow the search placeholders.
+    """
+
+    body = user_sql_for_wrap("postgres", sql)
+    _text, closed = _pg8000_walk(body + "\n")
+    return closed
+
+
+def _double_percent_outside(_sql: str) -> str:
+    """Double ``%`` that pg8000 would read as a placeholder."""
+
+    text, _closed = _pg8000_walk(_sql)
+    return text
+
+
+def _pg8000_walk(_sql: str) -> Tuple[str, bool]:
+    """pg8000 1.31.5 ``convert_paramstyle``, and whether it finished outside.
+
+    No block-comment state, only untagged ``$$``, only an uppercase ``E'``.
+    An escape string ends at a quote whose previous character is not a
+    backslash. The body is copied into the generated form.
     """
 
     outside = 0
@@ -588,7 +615,7 @@ def _double_percent_outside(_sql: str) -> str:
             if char == "\n":
                 state = outside
         prev = char
-    return "".join(out)
+    return "".join(out), state == outside
 
 
 def _sql_words(sql: str) -> Optional[List[str]]:
@@ -830,6 +857,8 @@ __all__ = [
     "like_piece",
     "list_read",
     "load_one",
+    "PG8000_SCAN_SENTENCE",
+    "pg8000_scan_closed",
     "placeholder",
     "quote_ident",
     "select_keys",

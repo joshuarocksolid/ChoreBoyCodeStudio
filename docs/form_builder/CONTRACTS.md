@@ -1429,7 +1429,7 @@ LOGIC §2.9's FB301–FB303 examples are superseded: their cases are FB303 (miss
 | FB311 | Error | A lookup's table, key, show or also column is missing | The missing name |
 | FB312 | Info | A lookup table has over 2,000 rows | UX-LKP-001 sentence |
 | FB313 | Error | A lines link column doesn't point to the form's table | "{link} in {table} doesn't point to {source table}." |
-| FB314 | Error | A list screen's own SQL isn't a single SELECT, or `probe_select` failed | UX-LIST-001 sentence, or the database's message |
+| FB314 | Error | A list screen's own SQL isn't a single SELECT, `probe_select` failed, or pg8000 would still be inside a quote when the search placeholders follow | UX-LIST-001 sentence, the database's message, or the §13.5.9 pg8000 scan sentence |
 | FB315 | Warning | A list's search box isn't a line edit, or a filter widget can't give a value | The widget and the reason |
 | FB316 | Warning | A data hook names a method the window file doesn't have | As FB209's style, with Create method |
 | FB317 | Warning | A connection's setup function isn't in `connection_setup.py` | Create function |

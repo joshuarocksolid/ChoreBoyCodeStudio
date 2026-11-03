@@ -7,7 +7,11 @@ from typing import Iterable, List, Optional, cast
 from app.features.form_builder.engine.data.listing import VALUE_READ
 from app.features.form_builder.engine.data.schema import schema_for
 from app.features.form_builder.engine.data.source import ListFilter, ListSource
-from app.features.form_builder.engine.data.sql import select_source_error
+from app.features.form_builder.engine.data.sql import (
+    PG8000_SCAN_SENTENCE,
+    pg8000_scan_closed,
+    select_source_error,
+)
 from app.features.form_builder.qtside.data_panel.host import project_root_of, session_of
 from app.features.form_builder.qtside.data_panel.listing_edits import (
     clear_own_sql,
@@ -50,9 +54,10 @@ from app.qt.qt_compat import enum_value, exec_qt
 class OwnSqlDialog(QDialog):
     """The person's SELECT. A bad statement stays on screen with the FB314 sentence."""
 
-    def __init__(self, parent: QWidget, text: str, probe: Optional[object] = None) -> None:
+    def __init__(self, parent: QWidget, text: str, probe: Optional[object] = None, engine: str = "") -> None:
         super().__init__(parent)
         self._probe = probe
+        self._engine = engine
         self.setObjectName("formBuilder.data.ownSqlDialog")
         self.setWindowTitle("Use my own SQL")
         layout = QVBoxLayout(self)
@@ -85,7 +90,16 @@ class OwnSqlDialog(QDialog):
         return self._edit.toPlainText().strip()
 
     def _show_problem(self) -> None:
-        self._mark(select_source_error(self._edit.toPlainText()) or "")
+        self._mark(self._grammar())
+
+    def _grammar(self) -> str:
+        text = self._edit.toPlainText()
+        found = select_source_error(text)
+        if found:
+            return found
+        if self._engine == "postgres" and text.strip() and not pg8000_scan_closed(text):
+            return PG8000_SCAN_SENTENCE
+        return ""
 
     def _mark(self, problem: str) -> None:
         self._problem.setText(problem)
@@ -97,7 +111,7 @@ class OwnSqlDialog(QDialog):
             self._ok.setEnabled(not problem)
 
     def _accept(self) -> None:
-        problem = select_source_error(self._edit.toPlainText())
+        problem = self._grammar()
         if problem:
             self._mark(problem)
             return
@@ -434,7 +448,12 @@ class ListingPage(QWidget):
         source = self._source()
         if session is None or source is None:
             return
-        dialog = OwnSqlDialog(self, source.sql, lambda sql: _probe_problem(session, source, sql, self))
+        dialog = OwnSqlDialog(
+            self,
+            source.sql,
+            lambda sql: _probe_problem(session, source, sql, self),
+            _connection_engine(session, source, self),
+        )
         if exec_qt(dialog) != enum_value(QDialog.DialogCode.Accepted):
             return
         columns = _probe_columns(session, source, dialog.sql(), self)
@@ -451,6 +470,12 @@ class ListingPage(QWidget):
 
     def _show_sql(self) -> None:
         open_sql_sheet(self)
+
+
+def _connection_engine(session: object, source: ListSource, host: QWidget) -> str:
+    found = connection_named(session, source.connection, host)
+    engine = getattr(found, "engine", "")
+    return engine if isinstance(engine, str) else ""
 
 
 def _fill_list(widget: QListWidget, names: tuple, selected: tuple, check: bool) -> None:

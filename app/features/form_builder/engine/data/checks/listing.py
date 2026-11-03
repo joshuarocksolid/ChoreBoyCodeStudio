@@ -9,7 +9,12 @@ from typing import Dict, Iterable, Optional, Sequence, cast
 from app.features.form_builder.engine.data.check import DataCheck
 from app.features.form_builder.engine.data.listing import VALUE_READ
 from app.features.form_builder.engine.data.source import ListSource, RecordSource, read_data
-from app.features.form_builder.engine.data.sql import is_identifier, select_source_error
+from app.features.form_builder.engine.data.sql import (
+    PG8000_SCAN_SENTENCE,
+    is_identifier,
+    pg8000_scan_closed,
+    select_source_error,
+)
 from app.features.form_builder.engine.diagnostics import CODES, DiagnosticLocation, FormDiagnostic
 from app.features.form_builder.engine.ui4.values import StringValue
 
@@ -56,13 +61,15 @@ def register(registry: object) -> None:
 
 
 def _sql(doc: object, connections: object, schema: object) -> Iterable[FormDiagnostic]:
-    del connections, schema
+    del schema
     source = _list(doc)
     if source is None or not source.sql.strip():
         return ()
     grammar = select_source_error(source.sql)
     if grammar:
         return (_at(doc, "FB314", grammar, _root(doc)),)
+    if _postgres(connections, source.connection) and not pg8000_scan_closed(source.sql):
+        return (_at(doc, "FB314", PG8000_SCAN_SENTENCE, _root(doc)),)
     outcome = cached_list_probe(doc, source.sql)
     kind = getattr(outcome, "kind", "")
     if outcome is None or getattr(outcome, "ok", False) or kind in ("no_driver", "cancelled"):
@@ -153,6 +160,16 @@ def _record_key(stem: str) -> str:
     if isinstance(found, RecordSource):
         return found.key
     return ""
+
+
+def _postgres(connections: object, name: str) -> bool:
+    items = getattr(connections, "connections", None)
+    if not isinstance(items, (tuple, list)):
+        return False
+    for item in items:
+        if getattr(item, "name", None) == name and getattr(item, "engine", None) == "postgres":
+            return True
+    return False
 
 
 def _list(doc: object) -> Optional[ListSource]:
