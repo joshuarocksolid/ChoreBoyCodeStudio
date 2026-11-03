@@ -11,6 +11,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Optional, Sequence, Tuple
 
+import app.features.form_builder.engine.diagnostic_codes.fb3xx_data  # noqa: F401
 from app.features.form_builder.engine.codegen.lookup_plan import suggest_lookup
 from app.features.form_builder.engine.data.lines import link_position_unique
 from app.features.form_builder.engine.data.schema import Column, Schema, Table
@@ -22,7 +23,9 @@ from app.features.form_builder.engine.data.source import (
     Rows,
     singular,
 )
-from app.features.form_builder.engine.data.types import describe
+from app.features.form_builder.engine.data.sql import name_usable
+from app.features.form_builder.engine.data.types import describe, stores_whole_integer
+from app.features.form_builder.engine.diagnostics import CODES
 from app.features.form_builder.engine.project.table_form import (
     SqliteColumn,
     default_shows_as,
@@ -105,10 +108,15 @@ def linking_columns(child: Table, parent: str) -> Tuple[Column, ...]:
     return tuple(column for column in child.columns if _points(column, parent))
 
 
-def position_name(child: Table) -> str:
-    names = [column.name for column in child.columns]
+def position_name(child: Table, engine: str = "sqlite") -> str:
+    """The integer column that orders lines. A text column with that name is not one."""
+
+    chosen = engine if engine in ("sqlite", "postgres") else "sqlite"
     for candidate in ("line_no", "position", "sort"):
-        if candidate in names:
+        column = next((item for item in child.columns if item.name == candidate), None)
+        if column is None or not name_usable(candidate):
+            continue
+        if stores_whole_integer(column.type, chosen):
             return candidate
     return ""
 
@@ -124,7 +132,8 @@ def default_lines(schema: Schema, parent: str, child: Table) -> bool:
     links = linking_columns(child, parent)
     if len(links) != 1 or links[0].nullable:
         return False
-    position = position_name(child)
+    engine = schema.engine if schema.engine in ("sqlite", "postgres") else "sqlite"
+    position = position_name(child, engine)
     if position:
         return link_position_unique(child.unique_keys, links[0].name, position)
     return not child_tables(schema, child.name)
@@ -255,10 +264,11 @@ def _list(
 def _lines(
     schema: Schema, parent: Table, child_name: str, engine: str, link_name: str = ""
 ) -> Tuple[Optional[Rows], str]:
-    del engine
     child = _table(schema, child_name)
     if child is None:
         return None, "%s isn't in this database." % child_name
+    if not name_usable(child.name):
+        return None, _refused_name(child.name)
     links = linking_columns(child, parent.name)
     chosen = None
     if link_name:
@@ -274,13 +284,20 @@ def _lines(
     key = child.key or ("rowid" if schema.engine == "sqlite" else "")
     if not key:
         return None, NO_LINE_KEY % child.name
-    stored_position = position_name(child)
+    if not name_usable(key):
+        return None, _refused_name(key)
+    if not name_usable(link):
+        return None, _refused_name(link)
+    chosen_engine = engine if engine in ("sqlite", "postgres") else "sqlite"
+    stored_position = position_name(child, chosen_engine)
     renumber = bool(stored_position) and link_position_unique(child.unique_keys, link, stored_position)
     position = stored_position if renumber else ""
     order = stored_position or key
     columns = []
     for column in child.columns:
         if column.name in (key, link, stored_position):
+            continue
+        if not name_usable(column.name):
             continue
         lookup = None
         ref = getattr(column.references, "table", "") if column.references is not None else ""
@@ -290,6 +307,10 @@ def _lines(
     if not columns:
         return None, NO_LINE_COLUMNS % child.name
     return Rows(child.name, link, key, tuple(columns), order, position), ""
+
+
+def _refused_name(name: str) -> str:
+    return CODES["FB307"].title.format(name=name)
 
 
 def _text(column: Column, engine: str) -> bool:

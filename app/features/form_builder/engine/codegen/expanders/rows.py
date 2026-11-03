@@ -31,13 +31,13 @@ from app.features.form_builder.engine.data.sql import (
     insert_line_at_next_position,
     insert_row,
     key_clause,
-    quote_ident,
+    name_usable,
     select_lines,
     select_lookup,
     set_line_position,
     update_head,
 )
-from app.features.form_builder.engine.data.types import describe
+from app.features.form_builder.engine.data.types import describe, stores_whole_integer
 from app.features.form_builder.engine.logic import compat
 from app.features.form_builder.engine.ui4.document import UiDocument
 from app.features.form_builder.engine.ui4.values import StringValue
@@ -109,7 +109,7 @@ def _contribution(
 ) -> Contribution:
     hidden = {rows.key, rows.link, rows.position}
     stored = tuple(column.name for column in columns if not column.calculated and column.name not in hidden)
-    stamp = _append_position(rows, table)
+    stamp = _append_position(rows, table, engine)
     select_names = (rows.key,) + stored
     if rows.position and rows.position not in select_names:
         select_names = select_names + (rows.position,)
@@ -322,8 +322,13 @@ def _setup(view, rows, columns, select_names, stored, unique, select_sql, engine
     return lines
 
 
-def _append_position(rows: Rows, table: object) -> str:
-    """A NOT NULL position column that is not renumbered. Empty when there is none."""
+def _append_position(rows: Rows, table: object, engine: str) -> str:
+    """An integer position column that is not renumbered. Empty when there is none.
+
+    Nullable and NOT NULL share this path, so a new line gets
+    ``COALESCE(MAX(position), 0) + 1`` instead of NULL. A text column with
+    the same name stays an ordinary grid column.
+    """
 
     if rows.position or table is None:
         return ""
@@ -336,10 +341,11 @@ def _append_position(rows: Rows, table: object) -> str:
     by_name = {column.name: column for column in getattr(table, "columns", ()) or ()}
     for candidate in ("line_no", "position", "sort"):
         column = by_name.get(candidate)
-        if column is None or candidate in shown or bool(getattr(column, "nullable", True)):
+        if column is None or candidate in shown or not name_usable(candidate):
             continue
-        if not _quotable(candidate):
-            return ""
+        declared = str(getattr(column, "type", "") or "")
+        if not stores_whole_integer(declared, engine):
+            continue
         return candidate
     return ""
 
@@ -1092,15 +1098,7 @@ def _names_ok(rows: Rows, view: str) -> bool:
             names.append(column.column)
         elif isinstance(column, CalcColumn):
             names.append(column.name)
-    return all(_quotable(name) for name in names if name)
-
-
-def _quotable(name: str) -> bool:
-    try:
-        quote_ident(name)
-    except Exception:
-        return False
-    return True
+    return all(name_usable(name) for name in names if name)
 
 
 def _stretch_index(columns: Sequence[_Col]) -> int:

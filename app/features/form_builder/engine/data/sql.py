@@ -61,8 +61,14 @@ def is_identifier(name: str) -> bool:
 
 
 def name_usable(name: str) -> bool:
-    """True when ``quote_ident`` will quote ``name``. Spaces and hyphens pass. A quote does not."""
+    """True when ``quote_ident`` will quote ``name`` and the name is not only whitespace.
 
+    A space or hyphen inside a real name passes. Leading and trailing spaces
+    around other text pass. A name that is only spaces does not. A quote does not.
+    """
+
+    if not name or not name.strip():
+        return False
     try:
         quote_ident(name)
     except IdentifierError:

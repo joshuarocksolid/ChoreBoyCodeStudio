@@ -64,6 +64,19 @@ def is_sqlite_rowid(declared: str, *, without_rowid: bool = False) -> bool:
     return " ".join(declared.strip().lower().split()) == "integer"
 
 
+def stores_whole_integer(declared: str, engine: str) -> bool:
+    """True for the PostgreSQL integer and serial family, or SQLite INTEGER affinity.
+
+    ``numeric(10, 0)`` is not in that family. A text column is not, even when
+    its name is ``position``, ``line_no`` or ``sort``.
+    """
+
+    if engine == "postgres":
+        base = " ".join(declared.strip().lower().split()).split("(", 1)[0].strip()
+        return base in _INT
+    return sqlite_affinity(declared) == "INTEGER"
+
+
 def sqlite_affinity(declared: str) -> str:
     """SQLite's affinity of a declared type. Empty and blob stay ``BLOB``."""
 
@@ -263,5 +276,6 @@ __all__ = [
     "from_sql",
     "is_sqlite_rowid",
     "sqlite_affinity",
+    "stores_whole_integer",
     "to_sql",
 ]

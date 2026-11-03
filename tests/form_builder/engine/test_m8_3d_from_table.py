@@ -9,21 +9,27 @@ import time
 from decimal import Decimal
 from pathlib import Path
 from typing import Any, Callable, List, Optional, Tuple
+from xml.sax.saxutils import escape
 
 import pytest
 
+from app.features.form_builder.engine.data.check import run_checks
 from app.features.form_builder.engine.data.connections import Connection, ConnectionSet, save_connections
 from app.features.form_builder.engine.data.connections_module import render_connections_module
-from app.features.form_builder.engine.data.schema import Schema, write_schema
+from app.features.form_builder.engine.data.schema import Column, Schema, Table, write_schema
 from app.features.form_builder.engine.data.schema_cache import install_schema_reader, set_schema_reader
 from app.features.form_builder.engine.data.schema_sqlite import read_sqlite_file
 from app.features.form_builder.engine.data.source import (
+    DataColumn,
     ListSource,
     RecordSource,
+    Rows,
     read_data,
     read_lookup,
     read_rows,
+    write_rows,
 )
+from app.features.form_builder.engine.data.sql import name_usable
 from app.features.form_builder.engine.ids import IdAllocator
 from app.features.form_builder.engine.logic.codec import Step
 from app.features.form_builder.engine.logic.events_catalog import step_words
@@ -35,7 +41,14 @@ from app.features.form_builder.engine.ui4.writer import write_ui
 from app.features.form_builder.qtside.data_panel.column_insert_hooks import search_screen_command
 from app.features.form_builder.qtside.dialogs.search_screen import install as install_search_screen
 from app.features.form_builder.qtside.dialogs.table_apply import open_plan, render_plans
-from tests.form_builder.engine.test_m8_2_scenario import _generate, _install_boxes, _load_module, _ui_class
+from tests.form_builder.engine.test_m8_2_scenario import (
+    _document,
+    _generate,
+    _install_boxes,
+    _load_module,
+    _ui_class,
+    _xml,
+)
 from tests.form_builder.fixtures.m8.make_shop import build
 
 pytestmark = pytest.mark.unit
@@ -801,3 +814,371 @@ def test_a_list_module_without_a_screen_gets_a_free_name(tmp_path: Path) -> None
         window.close()
         session.dispose()
         set_schema_reader(None)
+
+
+def test_a_text_column_named_position_saves_what_you_type(tmp_path: Path) -> None:
+    root, schema = _staff_shop(tmp_path, "position TEXT NOT NULL")
+    request = _team_request()
+    planned = plan_forms(request, schema)
+    assert planned.forms and planned.forms[0].lines is not None
+    assert [column.column for column in planned.forms[0].lines.columns] == ["name", "position"]
+    _write_generated(root, _texts(root, schema, request))
+    with _hosts(root, "team") as (host, database):
+        host.ui.cbcs_open(1)
+        assert host.ui._cbcs_line_names == ("name", "position")
+        assert _grid_text(host.ui, 0, "position", "staffView") == "Manager"
+        host.ui._cbcs_add_row()
+        _line(host.ui, 1, "name", "Bob", "staffView")
+        _line(host.ui, 1, "position", "Clerk", "staffView")
+        assert host.ui.cbcs_save() is True
+        host.close()
+    assert _all(database, "SELECT id, team_id, name, position FROM staff ORDER BY id") == [
+        (1, 1, "Ann", "Manager"),
+        (2, 1, "Bob", "Clerk"),
+    ]
+
+
+def test_a_refused_line_column_is_left_out_and_the_note_still_saves(tmp_path: Path) -> None:
+    root = tmp_path / "proj"
+    (root / "forms").mkdir(parents=True)
+    (root / "data").mkdir()
+    database = root / "data" / "shop.db"
+    connection = sqlite3.connect(str(database))
+    connection.executescript(
+        "CREATE TABLE jobs (id INTEGER PRIMARY KEY, title TEXT);"
+        "INSERT INTO jobs VALUES (1, 'Roof');"
+        "CREATE TABLE job_lines ("
+        "id INTEGER PRIMARY KEY, "
+        "job_id INTEGER NOT NULL REFERENCES jobs(id), "
+        'note TEXT, "a""b" TEXT);'
+    )
+    connection.commit()
+    connection.close()
+    schema = read_sqlite_file(str(database), "shop", read_at="2026-11-03T00:00:00")
+    _save_schema(root, schema)
+    _save_connection(root)
+    request = TableRequest(
+        "shop",
+        "jobs",
+        (ColumnChoice("title", "QLineEdit", "Title"),),
+        "record",
+        "job_lines",
+        "job",
+        "yyyy-MM-dd",
+    )
+    planned = plan_forms(request, schema)
+    assert planned.disabled_reason == ""
+    assert planned.forms and planned.forms[0].lines is not None
+    assert [column.column for column in planned.forms[0].lines.columns] == ["note"]
+    _write_generated(root, _texts(root, schema, request))
+    with _hosts(root, "job") as (host, db):
+        host.ui.cbcs_open(1)
+        assert 'a"b' not in host.ui._cbcs_line_names
+        host.ui._cbcs_add_row()
+        _line(host.ui, 0, "note", "n", "job_linesView")
+        assert host.ui.cbcs_save() is True
+        host.close()
+    assert _all(db, "SELECT note FROM job_lines") == [("n",)]
+
+
+def test_a_hand_edited_refused_line_name_is_fb307() -> None:
+    rows = Rows("job_lines", "job_id", "id", (DataColumn('a"b'), DataColumn("note")))
+    extra = (
+        '    <property name="cbcsRows" stdset="0"><string notr="true">%s</string></property>\n'
+        % escape(write_rows(rows))
+    )
+    document = _document(
+        _xml(RecordSource("shop", "jobs", "id"), (("QTableView", "job_linesView", "", extra),))
+    )
+    found = [item.message for item in run_checks(document, None, None) if item.code == "FB307"]
+    assert any('a"b' in message for message in found)
+
+
+def test_a_refused_line_link_is_not_planned(tmp_path: Path) -> None:
+    root = tmp_path / "proj"
+    (root / "data").mkdir(parents=True)
+    database = root / "data" / "shop.db"
+    connection = sqlite3.connect(str(database))
+    connection.executescript(
+        "CREATE TABLE jobs (id INTEGER PRIMARY KEY, title TEXT);"
+        "CREATE TABLE job_lines ("
+        "id INTEGER PRIMARY KEY, "
+        '"a""b" INTEGER NOT NULL REFERENCES jobs(id), '
+        "note TEXT);"
+    )
+    connection.commit()
+    connection.close()
+    schema = read_sqlite_file(str(database), "shop", read_at="2026-11-03T00:00:00")
+    request = TableRequest(
+        "shop",
+        "jobs",
+        (ColumnChoice("title", "QLineEdit", "Title"),),
+        "record",
+        "job_lines",
+        "job",
+        "yyyy-MM-dd",
+    )
+    planned = plan_forms(request, schema)
+    assert planned.forms == ()
+    assert 'a"b' in planned.disabled_reason
+
+
+def test_a_whitespace_only_name_is_refused() -> None:
+    assert name_usable(" ") is False
+    assert name_usable("   ") is False
+    assert name_usable(" first name ") is True
+    assert name_usable("first name") is True
+    schema = Schema(
+        "shop",
+        "sqlite",
+        "",
+        "2026-11-03T00:00:00",
+        "sqlite3",
+        (
+            Table(
+                "things",
+                (
+                    Column("id", "INTEGER", False),
+                    Column(" ", "TEXT", True),
+                    Column(" first name ", "TEXT", True),
+                ),
+                key="id",
+            ),
+        ),
+    )
+    document = _document(_xml(RecordSource("shop", "things", "id"), ()))
+    messages = [item.message for item in run_checks(document, None, schema) if item.code == "FB307"]
+    assert messages == ["  can't be used as a table or column name."]
+
+
+def test_a_nullable_position_sorts_after_reload(tmp_path: Path) -> None:
+    root = tmp_path / "proj"
+    (root / "forms").mkdir(parents=True)
+    (root / "data").mkdir()
+    database = root / "data" / "shop.db"
+    connection = sqlite3.connect(str(database))
+    connection.executescript(
+        "CREATE TABLE jobs (id INTEGER PRIMARY KEY, title TEXT);"
+        "INSERT INTO jobs VALUES (1, 'Roof');"
+        "CREATE TABLE job_lines ("
+        "id INTEGER PRIMARY KEY, "
+        "job_id INTEGER NOT NULL REFERENCES jobs(id), "
+        "line_no INTEGER, "
+        "note TEXT);"
+        "INSERT INTO job_lines VALUES (1, 1, 5, 'a');"
+        "INSERT INTO job_lines VALUES (2, 1, 9, 'b');"
+    )
+    connection.commit()
+    connection.close()
+    schema = read_sqlite_file(str(database), "shop", read_at="2026-11-03T00:00:00")
+    _save_schema(root, schema)
+    _save_connection(root)
+    request = TableRequest(
+        "shop",
+        "jobs",
+        (ColumnChoice("title", "QLineEdit", "Title"),),
+        "record",
+        "job_lines",
+        "job",
+        "yyyy-MM-dd",
+        lines_link="job_id",
+    )
+    _write_generated(root, _texts(root, schema, request))
+    with _hosts(root, "job") as (host, db):
+        host.ui.cbcs_open(1)
+        host.ui._cbcs_add_row()
+        _line(host.ui, 2, "note", "c", "job_linesView")
+        assert host.ui.cbcs_save() is True
+        host.close()
+    with _hosts(root, "job") as (host, db):
+        host.ui.cbcs_open(1)
+        assert _grid_notes(host.ui, "job_linesView") == ["a", "b", "c"]
+        host.close()
+    assert _all(database, "SELECT line_no, note FROM job_lines ORDER BY line_no") == [(5, "a"), (9, "b"), (10, "c")]
+
+
+def test_a_missing_surface_writes_the_rendered_form(tmp_path: Path) -> None:
+    from app.features.form_builder.integration.new_form import NewFormSurface
+    from app.qt.QtWidgets import QApplication, QWidget
+    from app.shell.tab_content_providers import TabSurfaceRequest
+    from app.shell.theme_tokens import tokens_from_palette
+
+    root = tmp_path / "proj"
+    (root / "forms").mkdir(parents=True)
+    (root / "cbcs").mkdir()
+    schema = Schema(
+        "shop",
+        "sqlite",
+        "",
+        "2026-11-03T00:00:00",
+        "sqlite3",
+        (Table("teams", (Column("id", "INTEGER", False), Column("title", "TEXT", True)), key="id"),),
+    )
+    request = TableRequest(
+        "shop",
+        "teams",
+        (ColumnChoice("title", "QLineEdit", "Title"),),
+        "record",
+        "",
+        "team",
+        "yyyy-MM-dd",
+    )
+    text = render_plans(request, schema, str(root))[0][1]
+    planned = plan_forms(request, schema)
+    app = QApplication.instance() or QApplication([])
+    window = QWidget()
+
+    class Project:
+        def __init__(self, path: str) -> None:
+            self.project_root = path
+
+    class Registry:
+        def surface_for_path(self, path: str) -> None:
+            del path
+            return None
+
+    window._loaded_project = Project(str(root))  # type: ignore[attr-defined]
+    window._tab_content_registry = Registry()  # type: ignore[attr-defined]
+    surface = NewFormSurface(
+        TabSurfaceRequest(
+            file_path=str(root / "cbcs" / "new-form.cbcs-tab"),
+            initial_text="",
+            parent=window,
+            theme=tokens_from_palette(app.palette(), force_mode="light"),
+            create_source_editor=lambda: None,  # type: ignore[arg-type]
+            open_linked_file=lambda _path: None,
+            project_root=str(root),
+        ),
+        window,
+    )
+    try:
+        result = surface._create_planned("team", text, "record", planned, schema)  # noqa: SLF001
+        assert result.refused is None
+        written = (root / "forms" / "team.ui").read_text(encoding="utf-8")
+        assert "cbcsData" in written
+        assert "title" in written
+    finally:
+        window.close()
+
+
+def test_a_failed_rendered_write_removes_the_blank_form(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from app.features.form_builder.engine.project.fs import OsFileSystem
+    from app.features.form_builder.integration.new_form import NewFormSurface
+    from app.qt.QtWidgets import QApplication, QLabel, QWidget
+    from app.shell.tab_content_providers import TabSurfaceRequest
+    from app.shell.theme_tokens import tokens_from_palette
+
+    root = tmp_path / "proj"
+    (root / "forms").mkdir(parents=True)
+    (root / "cbcs").mkdir()
+    schema = Schema(
+        "shop",
+        "sqlite",
+        "",
+        "2026-11-03T00:00:00",
+        "sqlite3",
+        (Table("teams", (Column("id", "INTEGER", False), Column("title", "TEXT", True)), key="id"),),
+    )
+    request = TableRequest(
+        "shop",
+        "teams",
+        (ColumnChoice("title", "QLineEdit", "Title"),),
+        "record",
+        "",
+        "team",
+        "yyyy-MM-dd",
+    )
+    text = render_plans(request, schema, str(root))[0][1]
+    planned = plan_forms(request, schema)
+    original = OsFileSystem.write_bytes
+
+    def fail_rendered(self: OsFileSystem, path: str, data: bytes) -> None:
+        if path.endswith(".ui") and b"cbcsData" in data:
+            raise OSError("disk full")
+        original(self, path, data)
+
+    monkeypatch.setattr(OsFileSystem, "write_bytes", fail_rendered)
+    app = QApplication.instance() or QApplication([])
+    window = QWidget()
+
+    class Project:
+        def __init__(self, path: str) -> None:
+            self.project_root = path
+
+    class Registry:
+        def surface_for_path(self, path: str) -> None:
+            del path
+            return None
+
+    window._loaded_project = Project(str(root))  # type: ignore[attr-defined]
+    window._tab_content_registry = Registry()  # type: ignore[attr-defined]
+    surface = NewFormSurface(
+        TabSurfaceRequest(
+            file_path=str(root / "cbcs" / "new-form.cbcs-tab"),
+            initial_text="",
+            parent=window,
+            theme=tokens_from_palette(app.palette(), force_mode="light"),
+            create_source_editor=lambda: None,  # type: ignore[arg-type]
+            open_linked_file=lambda _path: None,
+            project_root=str(root),
+        ),
+        window,
+    )
+    try:
+        result = surface._create_planned("team", text, "record", planned, schema)  # noqa: SLF001
+        assert result.refused is not None and "disk full" in result.refused
+        assert not (root / "forms" / "team.ui").exists()
+        status = surface.widget().findChild(QLabel, "formBuilder.newForm.status")
+        assert status is not None and "disk full" in status.text()
+    finally:
+        window.close()
+
+
+def _staff_shop(tmp_path: Path, position_sql: str) -> Tuple[Path, Schema]:
+    root = tmp_path / "proj"
+    (root / "forms").mkdir(parents=True)
+    (root / "data").mkdir()
+    database = root / "data" / "shop.db"
+    connection = sqlite3.connect(str(database))
+    connection.executescript(
+        "CREATE TABLE teams (id INTEGER PRIMARY KEY, title TEXT);"
+        "INSERT INTO teams VALUES (1, 'A');"
+        "CREATE TABLE staff ("
+        "id INTEGER PRIMARY KEY, "
+        "team_id INTEGER NOT NULL REFERENCES teams(id), "
+        "name TEXT, "
+        + position_sql
+        + ");"
+        "INSERT INTO staff VALUES (1, 1, 'Ann', 'Manager');"
+    )
+    connection.commit()
+    connection.close()
+    schema = read_sqlite_file(str(database), "shop", read_at="2026-11-03T00:00:00")
+    _save_schema(root, schema)
+    _save_connection(root)
+    return root, schema
+
+
+def _team_request() -> TableRequest:
+    return TableRequest(
+        "shop",
+        "teams",
+        (ColumnChoice("title", "QLineEdit", "Title"),),
+        "record",
+        "staff",
+        "team",
+        "yyyy-MM-dd",
+    )
+
+
+def _grid_text(ui: Any, row: int, name: str, view_name: str) -> str:
+    view = getattr(ui, view_name)
+    column = ui._cbcs_line_names.index(name)
+    return str(view.model().item(row, column).text())
+
+
+def _grid_notes(ui: Any, view_name: str) -> List[str]:
+    view = getattr(ui, view_name)
+    column = ui._cbcs_line_names.index("note")
+    model = view.model()
+    return [str(model.item(row, column).text()) for row in range(model.rowCount())]

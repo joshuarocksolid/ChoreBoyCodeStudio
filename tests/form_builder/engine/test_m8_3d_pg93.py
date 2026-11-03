@@ -229,6 +229,85 @@ def test_postgres_line_without_a_unique_position_writes_the_next_number(
         _release(root, previous, module)
 
 
+@pytest.mark.parametrize("driver", ["psycopg", "pg8000"])
+def test_postgres_text_position_saves_the_typed_value(
+    tmp_path: Path, pg93_dsn: str, driver: str, connections_module
+) -> None:
+    _import(driver)
+    suffix = uuid.uuid4().hex[:8]
+    teams = "m83d_%s_teams" % suffix
+    staff = "m83d_%s_staff" % suffix
+    module = _module(tmp_path, _fields(pg93_dsn), driver, connections_module)
+    root = _project(tmp_path)
+    previous = sys.modules.get("cbcs_connections")
+    sys.modules["cbcs_connections"] = module
+    sys.path.insert(0, str(root))
+    try:
+        with module.work("shop") as connection:
+            cursor = connection.cursor()
+            cursor.execute("CREATE TABLE %s (id serial PRIMARY KEY, title text)" % teams)
+            cursor.execute(
+                "CREATE TABLE %s (id serial PRIMARY KEY, team_id integer NOT NULL REFERENCES %s (id), "
+                "name text, position text NOT NULL)" % (staff, teams)
+            )
+            cursor.execute("INSERT INTO %s (title) VALUES (%%s)" % teams, ("A",))
+            cursor.execute("SELECT id FROM %s" % teams)
+            team_id = int(cursor.fetchone()[0])
+            cursor.execute(
+                "INSERT INTO %s (team_id, name, position) VALUES (%%s, %%s, %%s)" % staff,
+                (team_id, "Ann", "Manager"),
+            )
+        schema = Schema(
+            "shop",
+            "postgres",
+            "PostgreSQL 9.3",
+            "2026-11-03T00:00:00",
+            driver,
+            (
+                Table(teams, (Column("id", "integer", False, unique=True), Column("title", "text", True)), key="id"),
+                Table(
+                    staff,
+                    (
+                        Column("id", "integer", False, unique=True),
+                        Column("team_id", "integer", False, references=Reference(teams, "id")),
+                        Column("name", "text", True),
+                        Column("position", "text", False),
+                    ),
+                    key="id",
+                ),
+            ),
+        )
+        _cache(root, schema)
+        save_connections(str(root), _value(_fields(pg93_dsn)))
+        request = TableRequest(
+            "shop",
+            teams,
+            (ColumnChoice("title", "QLineEdit", "Title"),),
+            "record",
+            staff,
+            "team",
+            "yyyy-MM-dd",
+        )
+        _write_generated(root, render_plans(request, schema, str(root)))
+        view = staff + "View"
+        with _form(root, "team") as host:
+            host.ui.cbcs_open(team_id)
+            assert "position" in host.ui._cbcs_line_names
+            host.ui._cbcs_add_row()
+            _line(host.ui, 1, "name", "Bob", view)
+            _line(host.ui, 1, "position", "Clerk", view)
+            assert host.ui.cbcs_save() is True
+        with module.work("shop") as connection:
+            cursor = connection.cursor()
+            cursor.execute("SELECT name, position FROM %s ORDER BY id" % staff)
+            rows = cursor.fetchall()
+        assert [(row[0], row[1]) for row in rows] == [("Ann", "Manager"), ("Bob", "Clerk")]
+    finally:
+        _drop(module, staff)
+        _drop(module, teams)
+        _release(root, previous, module)
+
+
 def _drive_invoice(root: Path, module: Any, names: Dict[str, str]) -> List[float]:
     samples: List[float] = []
     with _form(root, "invoice") as host:

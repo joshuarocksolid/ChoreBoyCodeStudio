@@ -483,14 +483,15 @@ class NewFormSurface:
         if app is not None:
             app.processEvents()
         surface = registry.surface_for_path(os.path.abspath(result.scope.ui_path))
-        session = getattr(surface, "session", None)
-        if session is None:
-            return result
+        session = getattr(surface, "session", None) if surface is not None else None
         from app.features.form_builder.engine.data.schema import Schema
 
-        if not isinstance(schema, Schema):
-            return result
-        apply_plan(session, plan, schema)
+        if session is None or not isinstance(schema, Schema):
+            return self._write_rendered(result, text)
+        try:
+            apply_plan(session, plan, schema)
+        except Exception:
+            return self._write_rendered(result, text)
         from app.features.form_builder.engine.project.fs import OsFileSystem
         from app.features.form_builder.engine.project.save import write_generated
         from app.features.form_builder.engine.ui4.writer import write_ui
@@ -502,6 +503,46 @@ class NewFormSurface:
         if callable(mark):
             mark(finished)
         return result
+
+    def _write_rendered(self, result: CreateResult, text: str) -> CreateResult:
+        """Replace the empty skeleton with the rendered form. Remove it if that write fails."""
+
+        scope = result.scope
+        if scope is None:
+            return result
+        from app.features.form_builder.engine.ids import IdAllocator
+        from app.features.form_builder.engine.project.fs import OsFileSystem, ProjectOpError
+        from app.features.form_builder.engine.project.save import write_generated
+        from app.features.form_builder.engine.ui4.reader import read_ui
+        from app.features.form_builder.engine.ui4.writer import write_ui
+
+        fs = OsFileSystem()
+        try:
+            document = read_ui(text, allocator=IdAllocator()).document
+            finished = write_ui(document).text
+            data = finished.encode("utf-8")
+            fs.write_bytes(scope.ui_path, data)
+            written = write_generated(scope, document, data, fs)
+            if not written.text_written:
+                detail = written.diagnostics[0].message if written.diagnostics else "the form could not be generated"
+                raise ProjectOpError(detail)
+        except Exception as exc:
+            self._remove_created(result)
+            reason = "The form could not be created: %s" % exc
+            self._panel.show_status(reason)
+            return CreateResult((), (), None, reason)
+        return result
+
+    def _remove_created(self, result: CreateResult) -> None:
+        from app.features.form_builder.engine.project.fs import OsFileSystem
+
+        fs = OsFileSystem()
+        for path in result.files:
+            try:
+                if path and os.path.lexists(path):
+                    fs.remove(path)
+            except OSError:
+                pass
 
     def _focus_data(self, path: str) -> None:
         from app.features.form_builder.qtside.inspector import TabId
