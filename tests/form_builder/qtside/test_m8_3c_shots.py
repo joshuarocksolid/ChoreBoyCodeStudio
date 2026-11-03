@@ -19,7 +19,7 @@ from app.features.form_builder.engine.project.forms import FormScope
 from app.features.form_builder.engine.session import FormSession
 from app.features.form_builder.qtside.data_panel.listing_page import OwnSqlDialog
 from app.features.form_builder.qtside.data_panel.panel import DataPanel
-from app.qt.QtWidgets import QLabel, QWidget
+from app.qt.QtWidgets import QDialogButtonBox, QLabel, QWidget
 from tests.form_builder.engine.test_m8_2_scenario import _xml, record_window
 from tests.form_builder.qtside.test_m8_2_shots import _shoot
 
@@ -104,7 +104,7 @@ def _data_tab(tmp_path: Path, qapp, folder: Path) -> None:
     sentence = panel.findChild(QLabel, "formBuilder.data.listSentence")
     assert sentence is not None
     assert sentence.text() == "List of customers in Shop database"
-    _shoot(panel, qapp, folder, "list-data", 420, 640)
+    _shoot(panel, qapp, folder, "list-data", 480, 720)
     from app.features.form_builder.engine.data.schema import set_schema_reader
 
     set_schema_reader(None)
@@ -113,21 +113,33 @@ def _data_tab(tmp_path: Path, qapp, folder: Path) -> None:
 def _running(tmp_path: Path, qapp, folder: Path) -> None:
     source = ListSource(
         "shop",
-        ("name",),
+        ("name", "phone", "city"),
         table="customers",
-        search=("name",),
+        search=("name", "phone", "city"),
         search_field="searchEdit",
+        filters=(ListFilter("statusCombo", "status"),),
         order=(("name", "asc"),),
-        limit=1,
+        limit=500,
         open=ListOpen("customer", "id"),
     )
-    ui = _xml(source, (("QLineEdit", "searchEdit", "", ""), ("QTableView", "customersView", "", "")))
+    ui = _xml(
+        source,
+        (
+            ("QLineEdit", "searchEdit", "", ""),
+            ("QComboBox", "statusCombo", "", ""),
+            ("QTableView", "customersView", "", ""),
+            ("QPushButton", "newButton", "", '     <property name="text"><string>New</string></property>\n'),
+            ("QPushButton", "openButton", "", '     <property name="text"><string>Open</string></property>\n'),
+        ),
+    )
     with record_window(tmp_path, ui, _rows) as (host, _db):
         host.ui.searchEdit.setText("a")
         host.ui._cbcs_list_timer.timeout.emit()
         assert host.ui.limitLabel.isVisible() is True
-        assert host.ui.limitLabel.text().startswith("Showing the first 1 of ")
-        _shoot(host, qapp, folder, "list-running", 420, 320)
+        assert host.ui.limitLabel.text().startswith("Showing the first 500 of ")
+        assert host.ui.newButton.text()
+        assert host.ui.openButton.text()
+        _shoot(host, qapp, folder, "list-running", 520, 420)
 
 
 def _problem(qapp, folder: Path) -> None:
@@ -136,7 +148,9 @@ def _problem(qapp, folder: Path) -> None:
     assert dialog.findChild(QLabel, "formBuilder.data.listSqlProblem").text() == (
         "Only a single SELECT can be a list's source."
     )
-    _shoot(dialog, qapp, folder, "list-sql-problem", 520, 320)
+    box = dialog.findChild(QDialogButtonBox)
+    assert box is not None and box.button(QDialogButtonBox.StandardButton.Ok).isEnabled() is False
+    _shoot(dialog, qapp, folder, "list-sql-problem", 520, 360)
     del qapp
 
 
@@ -146,10 +160,16 @@ def _rows(root: Path) -> Path:
     path = folder / "shop.db"
     connection = sqlite3.connect(str(path))
     try:
-        connection.execute("CREATE TABLE customers (id TEXT PRIMARY KEY, name TEXT)")
+        connection.execute(
+            "CREATE TABLE customers (id TEXT PRIMARY KEY, name TEXT, phone TEXT, city TEXT, status TEXT)"
+        )
+        rows = [
+            ("C%03d" % index, "Ada %03d" % index, "555-01%02d" % (index % 100), "Austin", "open")
+            for index in range(600)
+        ]
         connection.executemany(
-            "INSERT INTO customers (id, name) VALUES (?, ?)",
-            (("A1", "Ann"), ("A2", "Ada"), ("B1", "Bob")),
+            "INSERT INTO customers (id, name, phone, city, status) VALUES (?, ?, ?, ?, ?)",
+            rows,
         )
         connection.commit()
     finally:

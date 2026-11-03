@@ -1,12 +1,13 @@
-"""FB314 and FB315 for list screens."""
+"""FB314, FB315, and FB322 for list screens."""
 
 from __future__ import annotations
 
-from typing import Iterable, Optional, Sequence, cast
+import os
+from typing import Callable, Iterable, Optional, Sequence, cast
 
 from app.features.form_builder.engine.data.check import DataCheck
 from app.features.form_builder.engine.data.listing import VALUE_READ
-from app.features.form_builder.engine.data.source import ListSource, read_data
+from app.features.form_builder.engine.data.source import ListSource, RecordSource, read_data
 from app.features.form_builder.engine.data.sql import is_identifier, select_source_error
 from app.features.form_builder.engine.diagnostics import CODES, DiagnosticLocation, FormDiagnostic
 from app.features.form_builder.engine.ui4.values import StringValue
@@ -14,6 +15,14 @@ from app.features.form_builder.engine.ui4.values import StringValue
 import app.features.form_builder.engine.diagnostic_codes.fb3xx_data  # noqa: F401
 
 _SENTENCE = "Only a single SELECT can be a list's source."
+_SECRET: Optional[Callable[[object], str]] = None
+
+
+def set_list_probe_secret(ask: Optional[Callable[[object], str]]) -> None:
+    """Password for the live FB314 probe. The Data tab installs the session prompt."""
+
+    global _SECRET
+    _SECRET = ask
 
 
 def register(registry: object) -> None:
@@ -23,6 +32,7 @@ def register(registry: object) -> None:
     add(DataCheck("list-sql", _sql, 260))
     add(DataCheck("list-widgets", _widgets, 270))
     add(DataCheck("list-names", _names, 280))
+    add(DataCheck("list-open-key", _open_key, 290))
 
 
 def _sql(doc: object, connections: object, schema: object) -> Iterable[FormDiagnostic]:
@@ -86,7 +96,65 @@ def _probe(doc: object, connections: object, source: ListSource):
     root = installed_root()
     if not root:
         return None
-    return probe_select(root, item, source.sql, lambda _connection: "")
+    return probe_select(root, item, source.sql, _password)
+
+
+def _open_key(doc: object, connections: object, schema: object) -> Iterable[FormDiagnostic]:
+    del connections, schema
+    source = _list(doc)
+    if source is None or source.open is None or not source.open.form or not source.open.key:
+        return ()
+    target = _record_key(source.open.form)
+    if not target or target == source.open.key:
+        return ()
+    message = CODES["FB322"].title.format(
+        form="%s.ui" % source.open.form,
+        target=target,
+        key=source.open.key,
+    )
+    return (_at(doc, "FB322", message, _root(doc)),)
+
+
+def _record_key(stem: str) -> str:
+    from app.features.form_builder.engine.data.schema_cache import installed_root
+    from app.features.form_builder.engine.ids import IdAllocator
+    from app.features.form_builder.engine.ui4.reader import UiReadError, read_ui
+
+    root = installed_root()
+    if not root:
+        return ""
+    path = os.path.join(root, "forms", "%s.ui" % stem)
+    if not os.path.isfile(path):
+        return ""
+    try:
+        with open(path, encoding="utf-8") as handle:
+            text = handle.read()
+        document = read_ui(text, allocator=IdAllocator()).document
+    except (OSError, UnicodeError, UiReadError):
+        return ""
+    prop = getattr(document.root, "prop", None)
+    if not callable(prop):
+        return ""
+    entry = prop("cbcsData")
+    value = getattr(entry, "value", None)
+    raw = getattr(value, "text", "")
+    if not isinstance(raw, str) or not raw.strip():
+        return ""
+    found = read_data(raw).value
+    if isinstance(found, RecordSource):
+        return found.key
+    return ""
+
+
+def _password(connection: object) -> str:
+    ask = _SECRET
+    if ask is None:
+        return ""
+    try:
+        found = ask(connection)
+    except Exception:
+        return ""
+    return found if isinstance(found, str) else ""
 
 
 def _connection(connections: object, name: str):

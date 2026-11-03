@@ -10,28 +10,14 @@ from typing import Dict, Tuple
 
 # class name -> (getter, strftime-style pattern or "").
 # A date getter is turned into ``getter.toString(pattern)`` in generated code.
+# UX-LIST-001: a blank combo means any row, an empty line edit means any row.
+# A checkbox, spin box, or date always has a value, so it is not a filter.
 VALUE_READ: Dict[str, Tuple[str, str]] = {
     "QLineEdit": ("text()", ""),
-    "QPlainTextEdit": ("toPlainText()", ""),
-    "QTextEdit": ("toPlainText()", ""),
     "QComboBox": ("currentText()", ""),
-    "QSpinBox": ("value()", ""),
-    "QDoubleSpinBox": ("value()", ""),
-    "QCheckBox": ("isChecked()", ""),
-    "QDateEdit": ("date()", "yyyy-MM-dd"),
-    "QTimeEdit": ("time()", "HH:mm:ss"),
-    "QDateTimeEdit": ("dateTime()", "yyyy-MM-dd HH:mm:ss"),
 }
 
 FILTER_SIGNAL = {
     "QLineEdit": "textChanged",
-    "QPlainTextEdit": "textChanged",
-    "QTextEdit": "textChanged",
     "QComboBox": "currentTextChanged",
-    "QSpinBox": "valueChanged",
-    "QDoubleSpinBox": "valueChanged",
-    "QCheckBox": "toggled",
-    "QDateEdit": "dateChanged",
-    "QTimeEdit": "timeChanged",
-    "QDateTimeEdit": "dateTimeChanged",
 }

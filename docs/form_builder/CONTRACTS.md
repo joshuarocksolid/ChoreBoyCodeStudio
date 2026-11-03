@@ -1437,6 +1437,7 @@ LOGIC §2.9's FB301–FB303 examples are superseded: their cases are FB303 (miss
 | FB319 | Warning | A NOT NULL column with no default isn't bound on a record form | "Saving a new {record} will fail: {column} is required and no field is bound to it." |
 | FB320 | Error | A second lines grid, or a nested one | UX-LINES-003 sentence |
 | FB321 | Warning | The machine file can be read by other users | §19.3 sentence |
+| FB322 | Warning | A list opens a record form by a column that is not that form's key | "{form} is keyed by {target}, not {key}." |
 
 Codes run in `check.py` against the document, the connection set and the cache. They are cheap: ≤ 5 ms on the Mac for a 40-field form, and they reuse the structure memo as M7 does.
 

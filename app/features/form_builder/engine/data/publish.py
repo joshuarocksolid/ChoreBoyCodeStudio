@@ -26,7 +26,7 @@ def publish_session(session: object) -> None:
     current = getattr(diagnostics, "rows", None)
     if document is None or not callable(publish) or not callable(current):
         return
-    rows = tuple(run_checks(document))
+    rows = tuple(run_checks(document, connections=_project_connections()))
     marks: Dict[object, str] = {}
     for row in rows:
         node_id = row.location.node_id
@@ -40,6 +40,25 @@ def publish_session(session: object) -> None:
     if current(SOURCE) == rows:
         return
     publish(SOURCE, rows)
+
+
+def _project_connections() -> object:
+    """The project's connections, when ``connections.json`` is there.
+
+    A missing file stays ``None``. An empty set would say every form's
+    connection is unknown, including a form opened before that file exists.
+    """
+
+    import os
+
+    from app.features.form_builder.engine.data.connections import CONNECTIONS_FILENAME, load_connections
+    from app.features.form_builder.engine.data.schema_cache import installed_root
+
+    root = installed_root()
+    if not root or not os.path.isfile(os.path.join(root, CONNECTIONS_FILENAME)):
+        return None
+    loaded, _error = load_connections(root)
+    return loaded
 
 
 def warnings_of(document: object) -> Dict[object, str]:

@@ -5,7 +5,9 @@ Search, the cutoff line, and ``cbcs_open_record``. SQL text comes from ``sql.py`
 
 from __future__ import annotations
 
+import inspect
 import os
+import textwrap
 from typing import Iterable, List, Optional, Sequence, Tuple, cast
 
 from app.features.form_builder.engine.codegen.literals import py_string
@@ -18,6 +20,8 @@ from app.features.form_builder.engine.data.listing import FILTER_SIGNAL, VALUE_R
 from app.features.form_builder.engine.data.source import ListSource, read_data
 from app.features.form_builder.engine.data.sql import (
     IdentifierError,
+    _double_percent_outside,
+    adapt_user_sql,
     list_read,
     select_source_error,
 )
@@ -83,6 +87,9 @@ class ListingExpander:
         ]
         if search:
             methods.append(_method("_cbcs_like_pattern", _pattern_body(), "_text"))
+        if made.inner:
+            methods.append(_method("_cbcs_adapt_user_sql", _copied_body(adapt_user_sql, (("_double_percent_outside(", "self._cbcs_double_percent("),)), "_driver, _sql, _has_params"))
+            methods.append(_method("_cbcs_double_percent", _copied_body(_double_percent_outside, ()), "_sql"))
         return Contribution(
             imports=_imports(),
             methods=tuple(methods),
@@ -97,6 +104,8 @@ def _method(name: str, lines: Sequence[str], params: str = "") -> Method:
 
 def _imports() -> Tuple[Tuple[str, str], ...]:
     return (
+        ("PySide6.QtCore", "QEvent"),
+        ("PySide6.QtCore", "QObject"),
         ("PySide6.QtCore", "QTimer"),
         ("PySide6.QtCore", "Qt"),
         ("PySide6.QtGui", "QKeySequence"),
@@ -108,8 +117,19 @@ def _imports() -> Tuple[Tuple[str, str], ...]:
     )
 
 
+def _copied_body(func: object, replacements: Sequence[Tuple[str, str]]) -> List[str]:
+    text = textwrap.dedent(inspect.getsource(func))
+    lines = text.splitlines()[1:]
+    body = textwrap.dedent("\n".join(lines))
+    for old, new in replacements:
+        body = body.replace(old, new)
+    return body.splitlines()
+
+
 def _refresh_body(made, connection: str, limit: Optional[int]) -> List[str]:
     del limit
+    if made.inner:
+        return _refresh_inner_body(made, connection)
     count_sql = py_string(made.total.text)
     rows_sql = py_string(made.rows.text)
     lines = [
@@ -128,6 +148,48 @@ def _refresh_body(made, connection: str, limit: Optional[int]) -> List[str]:
         ]
     )
     lines.extend(_execute(rows_sql, "        "))
+    lines.extend(
+        [
+            "        _names = [(_item[0] if _item[0] is not None else %s) for _item in (_cursor.description or ())]" % py_string(""),
+            "        _fetched = _cursor.fetchall()",
+            "except Exception as _exc:",
+            "    self._cbcs_list_failed(_exc)",
+            "    return",
+            "self._cbcs_fill_list(_fetched, _names, _count, _keep)",
+        ]
+    )
+    return lines
+
+
+def _refresh_inner_body(made, connection: str) -> List[str]:
+    user = py_string(made.inner)
+    count_tail = py_string(made.count_tail)
+    row_tail = py_string(made.row_tail)
+    lines = [
+        "_keep = self._cbcs_selected_key()",
+        "_params = self._cbcs_list_params()",
+        "try:",
+        "    import cbcs_connections",
+        "    with cbcs_connections.work(%s) as _conn:" % py_string(connection),
+        "        _cursor = _conn.cursor()",
+        "        _driver = %s" % py_string(""),
+        "        _module = type(_conn).__module__",
+        "        if %s in _module:" % py_string("pg8000"),
+        "            _driver = %s" % py_string("pg8000"),
+        "        elif %s in _module:" % py_string("psycopg"),
+        "            _driver = %s" % py_string("psycopg"),
+        "        _inner = self._cbcs_adapt_user_sql(_driver, %s, bool(_params))" % user,
+        "        _count_sql = %s + _inner + %s + %s" % (py_string("SELECT COUNT(*) FROM (\n"), py_string("\n) AS q"), count_tail),
+        "        _rows_sql = %s + _inner + %s + %s" % (py_string("SELECT * FROM (\n"), py_string("\n) AS q"), row_tail),
+    ]
+    lines.extend(_execute("_count_sql", "        "))
+    lines.extend(
+        [
+            "        _row = _cursor.fetchone()",
+            "        _count = 0 if _row is None or _row[0] is None else int(_row[0])",
+        ]
+    )
+    lines.extend(_execute("_rows_sql", "        "))
     lines.extend(
         [
             "        _names = [(_item[0] if _item[0] is not None else %s) for _item in (_cursor.description or ())]" % py_string(""),
@@ -205,7 +267,11 @@ def _fill_body(columns: Sequence[str], key: str, limit: Optional[int], table: st
         "if _table is None:",
         "    return",
         "_shown = (%s,)" % shown if columns else "_shown = ()",
-        "_model = QStandardItemModel(self._form)",
+        "_model = getattr(self, %s, None)" % py_string("_cbcs_list_model"),
+        "if _model is None:",
+        "    _model = QStandardItemModel(self._form)",
+        "    self._cbcs_list_model = _model",
+        "_model.removeRows(0, _model.rowCount())",
         "_model.setHorizontalHeaderLabels(list(_shown))",
         "for _row in _fetched:",
         "    _mapped = {}",
@@ -222,7 +288,11 @@ def _fill_body(columns: Sequence[str], key: str, limit: Optional[int], table: st
     if key:
         lines.append("    _items[0].setData(_mapped.get(%s), Qt.ItemDataRole.UserRole)" % py_string(key))
     lines.append("    _model.appendRow(_items)")
-    lines.append("_table.setModel(_model)")
+    lines.append("if _table.model() is not _model:")
+    lines.append("    _table.setModel(_model)")
+    lines.append("_header = _table.horizontalHeader()")
+    lines.append("if _header is not None:")
+    lines.append("    _header.setStretchLastSection(True)")
     if limit is None:
         lines.extend(
             [
@@ -315,8 +385,15 @@ def _failed_body(table: str) -> List[str]:
         "self._cbcs_limit_label.setText(_message)",
         "self._cbcs_limit_label.show()",
         "_table = getattr(self, %s, None)" % py_string(table),
-        "if _table is not None:",
-        "    _table.setModel(QStandardItemModel(self._form))",
+        "if _table is None:",
+        "    return",
+        "_model = getattr(self, %s, None)" % py_string("_cbcs_list_model"),
+        "if _model is None:",
+        "    _model = QStandardItemModel(self._form)",
+        "    self._cbcs_list_model = _model",
+        "_model.removeRows(0, _model.rowCount())",
+        "if _table.model() is not _model:",
+        "    _table.setModel(_model)",
     ]
 
 
@@ -359,8 +436,15 @@ def _arm_body(ctx: CodegenContext, source: ListSource, table: str, filters: Sequ
                 "    _enter.setContext(Qt.ShortcutContext.WidgetShortcut)",
                 "    _enter.activated.connect(lambda: self.cbcs_open_record(%s))" % py_string("selected"),
                 "    self._cbcs_list_shortcuts = (_return, _enter)",
+                "    _header = _table.horizontalHeader()",
+                "    if _header is not None:",
+                "        _header.setStretchLastSection(True)",
             ]
         )
+    for name, which in (("newButton", "new"), ("openButton", "selected")):
+        if _class(ctx, name) == "QPushButton":
+            lines.append("if hasattr(self, %s):" % py_string(name))
+            lines.append("    self.%s.clicked.connect(lambda *_args: self.cbcs_open_record(%s))" % (name, py_string(which)))
     return lines
 
 
@@ -381,6 +465,16 @@ def _open_body(stem: str) -> List[str]:
         "_ui = getattr(_window, %s, None)" % py_string("ui"),
         "if _ui is None:",
         "    return",
+        "try:",
+        "    _visible = _window.isVisible()",
+        "except RuntimeError:",
+        "    return",
+        "if _visible:",
+        "    _leave = getattr(_ui, %s, None)" % py_string("_cbcs_confirm_leave"),
+        "    if _leave is not None and not _leave():",
+        "        _window.raise_()",
+        "        _window.activateWindow()",
+        "        return",
         "if which == %s:" % py_string("new"),
         "    _opener = getattr(_ui, %s, None)" % py_string("cbcs_new"),
         "    if _opener is None:",
@@ -427,11 +521,28 @@ def _window_body(stem: str) -> List[str]:
         "except Exception as _exc:",
         "    self._cbcs_list_failed(_exc)",
         "    return None",
-        "_window = %s(self._form)" % class_name,
+        "_window = %s(None)" % class_name,
+        "if not hasattr(_window, %s):" % py_string("exec"),
+        "    _window.setWindowFlag(Qt.Window)",
         "_found[%s] = _window" % py_string(stem),
         "_done = getattr(_window, %s, None)" % py_string("finished"),
         "if _done is not None:",
         "    _done.connect(lambda *_args: self._cbcs_after_record())",
+        "else:",
+        "    _owner = self",
+        "    class _CbcsCloseWatch(QObject):",
+        "        def eventFilter(_self, _watched, _event):",
+        "            if _event.type() == QEvent.Type.Close:",
+        "                def _later(_watched=_watched, _owner=_owner):",
+        "                    try:",
+        "                        if not _watched.isVisible():",
+        "                            _owner._cbcs_after_record()",
+        "                    except RuntimeError:",
+        "                        return None",
+        "                QTimer.singleShot(0, _later)",
+        "            return False",
+        "    _window._cbcs_close_watch = _CbcsCloseWatch(_window)",
+        "    _window.installEventFilter(_window._cbcs_close_watch)",
         "return _window",
     ]
 

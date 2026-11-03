@@ -115,6 +115,75 @@ def test_postgres_own_sql_keeps_a_percent_literal(tmp_path: Path, pg93_dsn: str,
     _run(tmp_path, pg93_dsn, driver, connections_module, table, ui, _schema(table), build, check)
 
 
+@pytest.mark.parametrize("driver", ["psycopg", "pg8000"])
+def test_postgres_user_sql_reaches_the_server_unchanged(tmp_path: Path, pg93_dsn: str, driver: str, connections_module) -> None:
+    _import(driver)
+    table = "m83u_%s" % uuid.uuid4().hex[:8]
+    sql = "SELECT id, name, '50%%' AS label FROM %s WHERE note = '100%%' ORDER BY name DESC -- keep" % table
+    source = ListSource(
+        "shop",
+        ("name", "label"),
+        table=table,
+        sql=sql,
+        search=("name",),
+        search_field="searchEdit",
+        limit=10,
+    )
+    ui = _xml(source, (("QLineEdit", "searchEdit", "", ""), ("QTableView", "customersView", "", "")))
+
+    def build(module: Any) -> None:
+        with module.work("shop") as connection:
+            cursor = connection.cursor()
+            cursor.execute("CREATE TABLE %s (id integer PRIMARY KEY, name text, note text)" % table)
+            cursor.execute("INSERT INTO %s (id, name, note) VALUES (1, 'Ada', '100%%')" % table)
+            cursor.execute("INSERT INTO %s (id, name, note) VALUES (2, 'Zoe', '100%%')" % table)
+            cursor.execute("INSERT INTO %s (id, name, note) VALUES (3, 'Ann', 'other')" % table)
+
+    def check(host: Any, module: Any) -> None:
+        assert _names(host)[0] == "Zoe"
+        assert _cell(host, 1) == "50%"
+        host.ui.searchEdit.setText("z")
+        host.ui._cbcs_list_timer.timeout.emit()
+        assert _names(host) == ["Zoe"]
+        assert _cell(host, 1) == "50%"
+        with module.work("shop") as connection:
+            cursor = connection.cursor()
+            cursor.execute("SELECT COUNT(*) FROM %s WHERE note = '100%%'" % table)
+            assert cursor.fetchone()[0] == 2
+
+    _run(tmp_path, pg93_dsn, driver, connections_module, table, ui, _schema(table), build, check)
+
+
+@pytest.mark.parametrize("driver", ["psycopg", "pg8000"])
+def test_postgres_modulo_without_parameters_stays_one_percent(tmp_path: Path, pg93_dsn: str, driver: str, connections_module) -> None:
+    _import(driver)
+    table = "m83m_%s" % uuid.uuid4().hex[:8]
+    source = ListSource(
+        "shop",
+        ("name",),
+        table=table,
+        sql="SELECT id, name FROM %s WHERE id %% 2 = 0" % table,
+        limit=10,
+    )
+    ui = _xml(source, (("QTableView", "customersView", "", ""),))
+
+    def build(module: Any) -> None:
+        with module.work("shop") as connection:
+            cursor = connection.cursor()
+            cursor.execute("CREATE TABLE %s (id integer PRIMARY KEY, name text)" % table)
+            cursor.execute("INSERT INTO %s (id, name) VALUES (1, 'Ann')" % table)
+            cursor.execute("INSERT INTO %s (id, name) VALUES (2, 'Bob')" % table)
+
+    def check(host: Any, module: Any) -> None:
+        assert _names(host) == ["Bob"]
+        with module.work("shop") as connection:
+            cursor = connection.cursor()
+            cursor.execute("SELECT COUNT(*) FROM %s" % table)
+            assert cursor.fetchone()[0] == 2
+
+    _run(tmp_path, pg93_dsn, driver, connections_module, table, ui, _schema(table), build, check)
+
+
 def _schema(name: str) -> Schema:
     return Schema(
         "shop",

@@ -20,7 +20,7 @@ from app.features.form_builder.engine.session import FormSession
 from app.features.form_builder.engine.ui4.values import StringValue
 from app.features.form_builder.qtside.data_panel.panel import DataPanel
 from app.qt.QtWidgets import QLabel, QWidget
-from tests.form_builder.engine.test_m8_2_scenario import _xml, record_window
+from tests.form_builder.engine.test_m8_2_scenario import _generate, _xml, record_window
 
 pytestmark = pytest.mark.unit
 
@@ -171,6 +171,107 @@ def test_fb314_reports_the_database_when_the_select_cannot_run(tmp_path: Path) -
     assert "missing_table" in found[0].message
 
 
+def test_replace_and_a_subquery_are_one_select() -> None:
+    from app.features.form_builder.engine.data.sql import select_source_error
+
+    assert select_source_error("SELECT replace(name, 'a', 'b') FROM customers") is None
+    assert select_source_error("SELECT id FROM customers WHERE id IN (SELECT id FROM customers)") is None
+    assert select_source_error("SELECT E'\\'' ) AS q; DELETE FROM customers; --'") is not None
+    assert select_source_error("WITH gone AS (SELECT 1) INSERT INTO customers SELECT 1") is not None
+
+
+def test_a_trailing_comment_keeps_the_authors_order(tmp_path: Path) -> None:
+    source = ListSource(
+        "shop",
+        ("name",),
+        table="customers",
+        sql="SELECT id, name FROM customers ORDER BY name DESC -- keep",
+        limit=10,
+    )
+    with _open(tmp_path, limit=10, source=source) as (host, db):
+        assert _names(host)[0] == "Bob"
+        assert _one(db, "SELECT COUNT(*) FROM customers") == (3,)
+
+
+def test_refreshing_the_list_keeps_one_model(tmp_path: Path) -> None:
+    from PySide6.QtGui import QStandardItemModel
+
+    with _open(tmp_path, limit=10) as (host, _db):
+        def form_models() -> List[QStandardItemModel]:
+            return [model for model in host.findChildren(QStandardItemModel) if model.parent() is host]
+
+        before = len(form_models())
+        for _index in range(20):
+            host.ui.cbcs_refresh_list()
+        assert len(form_models()) == before == 1
+
+
+def test_a_saved_record_form_refreshes_the_list(tmp_path: Path, qapp) -> None:
+    from PySide6.QtCore import Qt, QTimer
+
+    source = ListSource(
+        "shop",
+        ("name",),
+        table="customers",
+        limit=10,
+        open=ListOpen("customer", "id"),
+    )
+    with record_window(
+        tmp_path,
+        _xml(source, (("QTableView", "customersView", "", ""),)),
+        _prepare,
+        filename="customers.ui",
+    ) as (host, db):
+        del qapp
+        import sys
+
+        _write_record(db.parent.parent)
+        sys.modules.pop("forms.customer_window", None)
+        sys.modules.pop("forms.ui_customer", None)
+        sys.modules.pop("forms", None)
+        model = host.ui.customersView.model()
+        row = _row_named(model, "Ann")
+        host.ui.customersView.selectRow(row)
+        saved = {"ok": False}
+
+        def edit() -> None:
+            window = host.ui._cbcs_open_windows.get("customer")
+            try:
+                if window is None:
+                    return
+                window.ui.nameEdit.setText("Ann saved")
+                saved["ok"] = window.ui.cbcs_save() is True
+            finally:
+                if window is not None:
+                    window.accept()
+
+        QTimer.singleShot(0, edit)
+        host.ui.cbcs_open_record("selected")
+        assert saved["ok"] is True
+        assert "Ann saved" in _names(host)
+        picked = host.ui.customersView.selectionModel().selectedRows()
+        assert len(picked) == 1
+        kept = model.item(picked[0].row(), 0).data(Qt.ItemDataRole.UserRole)
+        assert kept == "A1"
+        assert _one(db, "SELECT name FROM customers WHERE id = 'A1'") == ("Ann saved",)
+
+
+def test_fb322_warns_when_the_open_key_is_not_the_record_key(tmp_path: Path) -> None:
+    root = tmp_path / "proj"
+    forms = root / "forms"
+    forms.mkdir(parents=True)
+    (forms / "customer.ui").write_text(_customer_xml("code"), encoding="utf-8")
+    install_schema_reader(str(root))
+    try:
+        found = [item for item in run_checks(_doc(_source(10))) if item.code == "FB322"]
+    finally:
+        from app.features.form_builder.engine.data.schema import set_schema_reader
+
+        set_schema_reader(None)
+    assert len(found) == 1
+    assert found[0].message == "customer.ui is keyed by code, not id."
+
+
 def test_fb315_warns_when_the_search_box_is_not_a_line_edit() -> None:
     source = _source(10)
     source = ListSource(
@@ -249,6 +350,56 @@ def _widgets() -> Tuple[Tuple[str, str, str, str], ...]:
         ("QLineEdit", "searchEdit", "", ""),
         ("QComboBox", "statusCombo", "", ""),
         ("QTableView", "customersView", "", ""),
+    )
+
+
+def _row_named(model: Any, name: str) -> int:
+    for row in range(model.rowCount()):
+        if model.item(row, 0).text() == name:
+            return row
+    raise AssertionError(name)
+
+
+def _write_record(root: Path) -> None:
+    forms = root / "forms"
+    ui = _customer_xml("id")
+    ui_path = forms / "customer.ui"
+    ui_path.write_text(ui, encoding="utf-8")
+    (forms / "ui_customer.py").write_text(_generate(root, ui_path, ui), encoding="utf-8")
+    from app.features.form_builder.engine.codegen.window_template import render_window_class
+    from app.features.form_builder.engine.ids import IdAllocator
+    from app.features.form_builder.engine.project.forms import FormScope
+    from app.features.form_builder.engine.ui4.reader import read_ui
+
+    document = read_ui(ui, allocator=IdAllocator()).document
+    scope = FormScope(
+        kind="project",
+        ui_path=str(ui_path),
+        project_root=str(root),
+        generated_path=str(forms / "ui_customer.py"),
+        window_path=str(forms / "customer_window.py"),
+        module_name="forms.ui_customer",
+    )
+    (forms / "customer_window.py").write_text(render_window_class(document, scope=scope), encoding="utf-8")
+    (forms / "__init__.py").write_text("", encoding="utf-8")
+
+
+def _customer_xml(key: str) -> str:
+    from xml.sax.saxutils import escape
+
+    from app.features.form_builder.engine.data.source import Bind, RecordSource, write_bind, write_data
+
+    data = escape(write_data(RecordSource("shop", "customers", key)))
+    bind = escape(write_bind(Bind("name")))
+    return (
+        '<?xml version="1.0" encoding="UTF-8"?>\n<ui version="4.0">\n <class>Customer</class>\n'
+        ' <widget class="QDialog" name="Customer">\n'
+        '  <property name="cbcsData" stdset="0"><string notr="true">%s</string></property>\n'
+        '  <layout class="QVBoxLayout" name="verticalLayout">\n'
+        '   <item>\n    <widget class="QLineEdit" name="nameEdit">\n'
+        '     <property name="cbcsBind" stdset="0"><string notr="true">%s</string></property>\n'
+        "    </widget>\n   </item>\n  </layout>\n </widget>\n <resources/>\n <connections/>\n</ui>\n"
+        % (data, bind)
     )
 
 
