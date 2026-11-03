@@ -261,6 +261,12 @@ def _number_places(facts: Any) -> int:
 def _emit_widget(name: str, facts: Any, self_name: str) -> _Piece:
     cls = _class_key(facts)
     target = "%s.%s" % (self_name, name)
+    if cls == "QTableView":
+        return _Piece(
+            "(%s.model().rowCount() if %s.model() is not None else 0)" % (target, target),
+            PREC_ATOM,
+            False,
+        )
     allow_blank = bool(getattr(facts, "allow_blank", False))
     kind = _kind_key(getattr(facts, "kind", None))
     if cls in ("QSlider", "QDial", "QProgressBar"):
@@ -333,6 +339,17 @@ def _emit_textish(target: str, style: str, kind: str, facts: Any, blank: bool) -
     return _Piece("_cbcs_read_%s%s(%s)" % (prefix, kind, target), PREC_ATOM, blank)
 
 
+def _grid_columns(env: Any, widget: str):
+    data = getattr(env, "data", None)
+    grids = getattr(data, "grids", None) if data is not None else None
+    if grids is None or not hasattr(grids, "get"):
+        return None
+    found = grids.get(widget)
+    if not found:
+        return None
+    return found
+
+
 def _emit_attr(node: Any, self_name: str, env: Any = None) -> _Piece:
     base = node.base
     if isinstance(base, str):
@@ -357,6 +374,9 @@ def _emit_attr(node: Any, self_name: str, env: Any = None) -> _Piece:
         if not _RECORD_NAME.match(name):
             raise ValueError("record column is not a name")
         return _Piece('%s._cbcs_record.get("%s")' % (self_name, name), PREC_ATOM, True)
+    columns = _grid_columns(env, widget)
+    if columns is not None and name in columns and name.isidentifier():
+        return _Piece('%s._cbcs_grid_column("%s")' % (self_name, name), PREC_ATOM, True)
     target = "%s.%s" % (self_name, widget)
     table = {
         "text": ("_cbcs_read_shown", True),

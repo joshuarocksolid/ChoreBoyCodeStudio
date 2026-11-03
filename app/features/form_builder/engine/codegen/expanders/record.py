@@ -205,7 +205,7 @@ def _methods(source, fields, engine, record_word, order, search, check, hooks, a
         "_cbcs_conflict": ("", _conflict_body(noun, allow_keep)),
         "cbcs_save": ("", _save_body(hooks)),
         "_cbcs_write": ("_overwrite", _write_sql_body(pieces, connection, fields, writable, check, hooks)),
-        "cbcs_delete": ("", _delete_body(pieces, connection, hooks)),
+        "cbcs_delete": ("", _delete_body(pieces, connection, hooks, source.delete_lines is not False)),
         "cbcs_new": ("", _verb_new()),
         "cbcs_revert": ("", _revert_body()),
         "cbcs_reload": ("", ["self.cbcs_revert()"]),
@@ -341,6 +341,9 @@ def _new_body(fields, hooks) -> List[str]:
         "self._cbcs_clear_errors()",
         "self.cbcs_write_fields({})",
         "self._cbcs_saved_fields = self.cbcs_read_fields()",
+        "_clear_lines = getattr(self, %s, None)" % _q("_cbcs_clear_lines"),
+        "if _clear_lines is not None:",
+        "    _clear_lines()",
         "self._cbcs_ready = True",
     ]
     lines.extend(_call_event("cbcsOnNewRecord", False))
@@ -1250,7 +1253,7 @@ def key_tail_only(pieces) -> str:
     return tail
 
 
-def _delete_body(pieces, connection, hooks) -> List[str]:
+def _delete_body(pieces, connection, hooks, delete_children: bool = False) -> List[str]:
     lines = [
         "if self._cbcs_new or self._cbcs_key is None:",
         "    return False",
@@ -1267,6 +1270,18 @@ def _delete_body(pieces, connection, hooks) -> List[str]:
             "try:",
             "    with cbcs_connections.work(%s) as _conn:" % _q(connection),
             "        _cursor = _conn.cursor()",
+        ]
+    )
+    if delete_children:
+        lines.extend(
+            [
+                "        _drop_lines = getattr(self, %s, None)" % _q("_cbcs_delete_lines"),
+                "        if _drop_lines is not None:",
+                "            _drop_lines(_conn, _key)",
+            ]
+        )
+    lines.extend(
+        [
             "        _cursor.execute(%s, (_key,))" % _q(pieces["delete"]),
             "except Exception as _error:",
             "    self._cbcs_show_db_error(_error)",
