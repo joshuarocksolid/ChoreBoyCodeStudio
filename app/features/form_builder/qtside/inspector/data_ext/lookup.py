@@ -59,6 +59,7 @@ class _Lookup(QWidget):
         self._show = self._combo("formBuilder.inspectorData.lookupShow", "Show")
         self._key = self._combo("formBuilder.inspectorData.lookupKey", "Save")
         self._order = self._combo("formBuilder.inspectorData.lookupOrder", "Order by")
+        layout.addWidget(QLabel("Also carry", self))
         row = QWidget(self)
         row.setObjectName("formBuilder.inspectorData.lookupAlsoRow")
         carried = QHBoxLayout(row)
@@ -141,6 +142,8 @@ class _Lookup(QWidget):
             self._rows.setProperty("fbProblem", "error")
         elif sentence:
             self._rows.setProperty("fbProblem", "warning")
+        self._rows.style().unpolish(self._rows)
+        self._rows.style().polish(self._rows)
         table_name = lookup.table if lookup is not None else ""
         show_name = lookup.show if lookup is not None else ""
         self.setAccessibleName(

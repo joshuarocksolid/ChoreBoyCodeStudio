@@ -69,8 +69,8 @@ class DataPage(QWidget):
             "%s QLabel { color: %s; background: transparent; }"
             "%s QLabel#formBuilder\\.inspectorData\\.sentence, %s QLabel#formBuilder\\.inspectorData\\.notBound,"
             " %s QLabel#formBuilder\\.inspectorData\\.typeWords, %s QLabel[fbFaint=\"true\"] { color: %s; background: transparent; }"
-            "%s QLabel#formBuilder\\.inspectorData\\.problem[fbProblem=\"warning\"] { color: %s; }"
-            "%s QLabel#formBuilder\\.inspectorData\\.problem[fbProblem=\"error\"] { color: %s; }"
+            "%s QLabel#formBuilder\\.inspectorData\\.problem[fbProblem=\"warning\"], %s QLabel#formBuilder\\.inspectorData\\.lookupRows[fbProblem=\"warning\"] { color: %s; }"
+            "%s QLabel#formBuilder\\.inspectorData\\.problem[fbProblem=\"error\"], %s QLabel#formBuilder\\.inspectorData\\.lookupRows[fbProblem=\"error\"] { color: %s; }"
             "%s QLineEdit, %s QComboBox, %s QListWidget, %s QPlainTextEdit { color: %s; background: %s; border: 1px solid %s; }"
             "%s QLineEdit:focus, %s QComboBox:focus, %s QListWidget:focus, %s QPlainTextEdit:focus { border: %dpx solid %s; }"
             "%s QCheckBox { color: %s; background: transparent; }"
@@ -82,8 +82,8 @@ class DataPage(QWidget):
                 body, panel, text,
                 body, text,
                 body, body, body, body, faint or text,
-                body, warning,
-                body, error,
+                body, body, warning,
+                body, body, error,
                 body, body, body, body, text, input_bg, border,
                 body, body, body, body, width, accent,
                 body, text,
