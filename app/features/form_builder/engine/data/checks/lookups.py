@@ -40,7 +40,11 @@ def _missing(doc: object, connections: object, schema: object) -> Iterable[FormD
             found.append(_problem(node, lookup.table))
             continue
         names = {column.name for column in table.columns}
-        for name in (lookup.key, lookup.show, *lookup.also):
+        wanted = []
+        for name in (lookup.key, lookup.show, lookup.order, *lookup.also):
+            if name and name not in wanted:
+                wanted.append(name)
+        for name in wanted:
             if name not in names:
                 found.append(_problem(node, name))
     return tuple(found)

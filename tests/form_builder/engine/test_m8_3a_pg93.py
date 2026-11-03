@@ -196,6 +196,150 @@ def _drop(side: object) -> None:
     return None
 
 
+def test_also_date_and_money_convert_on_postgres(tmp_path: Path) -> None:
+    from datetime import date
+    from decimal import Decimal
+
+    from app.features.form_builder.engine.data.schema import Column, Schema, Table, write_schema
+    from app.features.form_builder.engine.data.schema_cache import install_schema_reader
+    from app.features.form_builder.engine.data.source import Lookup, RecordSource, write_lookup
+
+    dsn, connect = _driver()
+    fields = _fields(dsn)
+    root = tmp_path / "proj"
+    forms = root / "forms"
+    forms.mkdir(parents=True)
+    party = "m83a_party"
+    note = "m83a_note"
+    lookup = write_lookup(Lookup(party, "code", "name", order="name", also=("since", "fee")))
+    year = '    <property name="cbcsValue" stdset="0"><string notr="true">year(customerCombo.also.since)</string></property>\n'
+    ui_text = """<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>Notes</class>
+ <widget class="QDialog" name="Notes">
+  <property name="cbcsData" stdset="0"><string notr="true">%s</string></property>
+  <layout class="QVBoxLayout" name="verticalLayout">
+   <item>
+    <widget class="QComboBox" name="customerCombo">
+     <property name="cbcsBind" stdset="0"><string notr="true">party_code</string></property>
+     <property name="cbcsLookup" stdset="0"><string notr="true">%s</string></property>
+    </widget>
+   </item>
+   <item>
+    <widget class="QLineEdit" name="amountEdit">
+     <property name="cbcsBind" stdset="0"><string notr="true">amount</string></property>
+    </widget>
+   </item>
+   <item>
+    <widget class="QLabel" name="yearLabel">
+%s    </widget>
+   </item>
+  </layout>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>
+""" % (escape(write_data(RecordSource("shop", note, "id"))), escape(lookup), year)
+    ui_path = forms / "notes.ui"
+    ui_path.write_text(ui_text, encoding="utf-8")
+    schema = Schema(
+        "shop",
+        "postgres",
+        "PostgreSQL 9.3",
+        "2026-11-02T00:00:00",
+        "psycopg",
+        (
+            Table(
+                note,
+                (Column("id", "integer", False), Column("party_code", "text", True), Column("amount", "numeric", True)),
+                key="id",
+            ),
+            Table(
+                party,
+                (
+                    Column("code", "text", False),
+                    Column("name", "text", True),
+                    Column("since", "date", True),
+                    Column("fee", "numeric", True),
+                ),
+                key="code",
+            ),
+        ),
+    )
+    folder = root / "cbcs" / "schema"
+    folder.mkdir(parents=True)
+    (folder / "shop.json").write_text(write_schema(schema), encoding="utf-8")
+    install_schema_reader(str(root))
+    value = _connection(fields)
+    save_connections(str(root), value)
+    (root / "cbcs_connections.py").write_text(render_connections_module(value, project_slug="m83a"), encoding="utf-8")
+    module = _load_module(root / "cbcs_connections.py", "cbcs_connections_m83a_also")
+    module.set_password("shop", fields["password"])
+    side = connect(dsn, fields)
+    try:
+        cursor = side.cursor()
+        cursor.execute("DROP TABLE IF EXISTS %s" % note)
+        cursor.execute("DROP TABLE IF EXISTS %s" % party)
+        cursor.execute("CREATE TABLE %s (code text PRIMARY KEY, name text, since date, fee numeric)" % party)
+        cursor.execute("CREATE TABLE %s (id serial PRIMARY KEY, party_code text, amount numeric)" % note)
+        cursor.execute(
+            "INSERT INTO %s (code, name, since, fee) VALUES ('acme', 'Acme', '2019-06-15', 10.5)" % party
+        )
+        cursor.execute("INSERT INTO %s (party_code, amount) VALUES ('acme', 2.25)" % note)
+        side.commit()
+        source = _generate(root, ui_path, ui_text)
+        generated = forms / "ui_notes.py"
+        generated.write_text(source, encoding="utf-8")
+        ui_module = _load_module(generated, "ui_notes_m83a")
+        _install_boxes(ui_module, [], None, lambda text: "Close", lambda: ("", False))
+        previous = sys.modules.get("cbcs_connections")
+        sys.modules["cbcs_connections"] = module
+        sys.path.insert(0, str(root))
+        try:
+            from PySide6.QtWidgets import QApplication, QDialog
+
+            app = QApplication.instance() or QApplication([])
+
+            class Host(QDialog):
+                def __init__(self) -> None:
+                    super().__init__()
+                    self.ui = _ui_class(ui_module)()
+                    self.ui.setupUi(self)
+
+            host = Host()
+            host.show()
+            app.processEvents()
+            ui = host.ui
+            assert ui._cbcs_also("customerCombo", "since") == date(2019, 6, 15)
+            assert ui.yearLabel.text() == "2019"
+            assert ui._cbcs_also("customerCombo", "fee") + ui._cbcs_record["amount"] == Decimal("12.75")
+            host.close()
+            host.deleteLater()
+            app.processEvents()
+        finally:
+            if previous is None:
+                sys.modules.pop("cbcs_connections", None)
+            else:
+                sys.modules["cbcs_connections"] = previous
+            if sys.path and sys.path[0] == str(root):
+                sys.path.pop(0)
+            module.close_all()
+    finally:
+        try:
+            cursor = side.cursor()
+            cursor.execute("DROP TABLE IF EXISTS %s" % note)
+            cursor.execute("DROP TABLE IF EXISTS %s" % party)
+            side.commit()
+        except Exception:
+            pass
+        from app.features.form_builder.engine.data.schema import set_schema_reader
+
+        set_schema_reader(None)
+        closer = getattr(side, "close", None)
+        if closer is not None:
+            closer()
+
+
 def _person(side: object, code: str):
     cursor = side.cursor()
     cursor.execute("SELECT email, started, balance FROM %s WHERE code = %%s" % _PEOPLE, (code,))

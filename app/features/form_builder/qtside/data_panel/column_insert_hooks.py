@@ -46,3 +46,19 @@ def register_after_insert(fn: Callable) -> None:
 def after_insert(txn: object, session: object, field_id: object, column: object, class_name: str, kind: object) -> None:
     for fn in _AFTER:
         fn(txn, session, field_id, column, class_name, kind)
+
+
+_SEARCH: List[Callable] = []
+
+
+def register_search_screen(fn: Callable) -> None:
+    """M8.3c registers the command behind "[Use a search screen instead]"."""
+
+    if fn not in _SEARCH:
+        _SEARCH.append(fn)
+
+
+def search_screen_command() -> Optional[Callable]:
+    if not _SEARCH:
+        return None
+    return _SEARCH[-1]

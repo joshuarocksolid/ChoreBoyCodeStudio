@@ -14,7 +14,7 @@ from app.features.form_builder.engine.project.forms import FormScope
 from app.features.form_builder.engine.query.selection import SelectionSource
 from app.features.form_builder.engine.session import FormSession
 from app.features.form_builder.qtside.inspector.data_page import DataPage
-from app.qt.QtWidgets import QApplication, QCheckBox, QComboBox, QLabel, QWidget
+from app.qt.QtWidgets import QApplication, QCheckBox, QComboBox, QLabel, QLineEdit, QToolButton, QWidget
 from tests.form_builder.qtside.test_m8_2_data_tab import _FORM, _column_row, _connect, _prop
 from xml.sax.saxutils import escape
 
@@ -79,7 +79,10 @@ def test_changing_show_is_one_undo_and_names_the_row_count(qapp, office) -> None
         typed = page.findChild(QCheckBox, "formBuilder.inspectorData.lookupType")
         assert show is not None and rows is not None and typed is not None
         assert show.currentData() == "name"
-        assert "12,480" in rows.text()
+        assert rows.text() == "customers has 12,480 rows. A search screen opens faster than a long list."
+        assert [label.text() for label in page.findChildren(QLabel) if "12,480" in label.text()] == [rows.text()]
+        problem = page.findChild(QLabel, "formBuilder.inspectorData.problem")
+        assert problem is None or not problem.isVisible()
         assert page.findChild(QWidget, "formBuilder.inspectorData.lookup").accessibleName() == "Lookup, fill from customers, show name"
         before = len(session.log.entries())
         show.setCurrentIndex(show.findData("email"))
@@ -133,9 +136,89 @@ def test_insert_focuses_show(qapp, office) -> None:
         session.dispose()
 
 
-def _combo_form() -> str:
+def test_fill_from_starts_on_none_and_clear_is_one_undo(qapp, office) -> None:
+    session, host = _open(_bare_combo(), office)
+    try:
+        combo_id = session.document.by_name("customerCombo")[0]
+        session.selection.set((combo_id,), source=SelectionSource.PROGRAM)
+        host.show()
+        page = DataPage(host)
+        page.show()
+        qapp.processEvents()
+        page.paint("QComboBox")
+        table = page.findChild(QComboBox, "formBuilder.inspectorData.lookupTable")
+        assert table is not None
+        assert table.itemText(0) == "(none)"
+        assert table.currentIndex() == 0
+        table.setCurrentIndex(table.findData("customers"))
+        found, error = read_lookup(_prop(session.document.node(combo_id), "cbcsLookup"))
+        assert error is None and found is not None and found.table == "customers"
+        before = len(session.log.entries())
+        table.setCurrentIndex(0)
+        assert len(session.log.entries()) == before + 1
+        assert session.log.undo_label() == "Clear lookup"
+        assert _prop(session.document.node(combo_id), "cbcsLookup") == ""
+    finally:
+        session.dispose()
+
+
+def test_nullable_first_item_stays_ticked_and_a_carried_column_is_a_chip(qapp, office) -> None:
+    session, host = _open(_combo_form(), office)
+    try:
+        combo_id = session.document.by_name("customerCombo")[0]
+        session.selection.set((combo_id,), source=SelectionSource.PROGRAM)
+        host.show()
+        page = DataPage(host)
+        page.show()
+        qapp.processEvents()
+        page.paint("QComboBox")
+        blank = page.findChild(QCheckBox, "formBuilder.inspectorData.lookupBlankOn")
+        edit = page.findChild(QLineEdit, "formBuilder.inspectorData.lookupBlank")
+        assert blank is not None and edit is not None
+        assert blank.isChecked() and not blank.isEnabled()
+        assert blank.toolTip() == "Kept because customer_id can be blank."
+        assert edit.isEnabled()
+        add = page.findChild(QToolButton, "formBuilder.inspectorData.lookupAlsoAdd")
+        assert add is not None and add.menu() is not None
+        add.menu().aboutToShow.emit()
+        labels = [action.text() for action in add.menu().actions()]
+        assert "email" in labels and "name" not in labels and "id" not in labels
+        for action in add.menu().actions():
+            if action.text() == "email":
+                action.trigger()
+        chips = page.findChildren(QToolButton, "formBuilder.inspectorData.lookupAlsoChip")
+        assert [chip.text() for chip in chips] == ["email ×"]
+        before = len(session.log.entries())
+        chips[0].click()
+        assert len(session.log.entries()) == before + 1
+        found, _error = read_lookup(_prop(session.document.node(combo_id), "cbcsLookup"))
+        assert found is not None and found.also == ()
+    finally:
+        session.dispose()
+
+
+def _bare_combo() -> str:
     source = write_data(RecordSource("office", "invoices", "id"))
-    lookup = write_lookup(Lookup("customers", "id", "name", order="name", blank="(choose a customer)"))
+    return """<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>Form</class>
+ <widget class="QWidget" name="Form">
+  <property name="cbcsData" stdset="0"><string notr="true">%s</string></property>
+  <layout class="QVBoxLayout" name="verticalLayout">
+   <item>
+    <widget class="QComboBox" name="customerCombo">
+     <property name="cbcsBind" stdset="0"><string notr="true">customer_id</string></property>
+    </widget>
+   </item>
+  </layout>
+ </widget>
+</ui>
+""" % escape(source)
+
+
+def _combo_form(also: tuple = ()) -> str:
+    source = write_data(RecordSource("office", "invoices", "id"))
+    lookup = write_lookup(Lookup("customers", "id", "name", order="name", also=also, blank="(choose a customer)"))
     return """<?xml version="1.0" encoding="UTF-8"?>
 <ui version="4.0">
  <class>Form</class>

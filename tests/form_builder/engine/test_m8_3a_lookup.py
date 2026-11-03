@@ -13,7 +13,7 @@ import pytest
 
 from app.features.form_builder.engine.data.check import run_checks
 from app.features.form_builder.engine.data.schema import Column, Reference, Schema, Table
-from app.features.form_builder.engine.data.source import Lookup, RecordSource, write_lookup
+from app.features.form_builder.engine.data.source import Lookup, RecordSource, write_data, write_lookup
 from app.features.form_builder.engine.data.sql import select_lookup
 from app.features.form_builder.engine.logic.formula import analyze, compile_formula
 from app.features.form_builder.engine.logic.formula.env import FormulaEnv, SlotKind, WidgetFacts
@@ -229,20 +229,293 @@ def test_two_thousand_row_lookup_loads_three_times(tmp_path: Path) -> None:
         print("LOOKUP_MS %0.2f %0.2f %0.2f" % (samples[0], samples[1], samples[2]))
 
 
-def _story_ui() -> str:
-    lookup = write_lookup(Lookup("customers", "id", "name", order="name", also=("email",), blank="(choose a customer)"))
-    combo = _lookup_xml(lookup) + '    <property name="editable"><bool>true</bool></property>\n'
-    email = '    <property name="cbcsValue" stdset="0"><string notr="true">customerCombo.also.email</string></property>\n'
-    reload_step = '    <property name="cbcsOnClicked" stdset="0"><string notr="true">[{"do": "refreshLookups"}]</string></property>\n'
-    return _xml(
+def test_a_record_form_without_a_lookup_matches_m82(tmp_path: Path) -> None:
+    from app.features.form_builder.engine.codegen.api import generate_form_module
+    from app.features.form_builder.engine.data.connections import Connection, ConnectionSet, save_connections
+    from app.features.form_builder.engine.ids import IdAllocator
+    from app.features.form_builder.engine.project.forms import FormScope
+    from app.features.form_builder.engine.ui4.reader import read_ui
+
+    source = write_data(RecordSource("shop", "invoices", "id"))
+    text = """<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>Invoice</class>
+ <widget class="QDialog" name="Invoice">
+  <property name="cbcsData" stdset="0"><string notr="true">%s</string></property>
+  <layout class="QVBoxLayout" name="verticalLayout">
+   <item>
+    <widget class="QLineEdit" name="notesEdit">
+     <property name="cbcsBind" stdset="0"><string notr="true">notes</string></property>
+    </widget>
+   </item>
+  </layout>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>
+""" % escape(source)
+    forms = tmp_path / "forms"
+    forms.mkdir()
+    path = forms / "invoice.ui"
+    path.write_text(text, encoding="utf-8")
+    save_connections(str(tmp_path), ConnectionSet((Connection("shop", "Shop", "sqlite", file="data/shop.db"),)))
+    read = read_ui(text, allocator=IdAllocator())
+    scope = FormScope(
+        kind="project",
+        ui_path=str(path),
+        project_root=str(tmp_path),
+        generated_path=str(forms / "ui_invoice.py"),
+        window_path=str(forms / "invoice_window.py"),
+        module_name="forms.ui_invoice",
+    )
+    result = generate_form_module(read.document, scope=scope, source_bytes=text.encode("utf-8"))
+    expected = (Path(__file__).parent / "fixtures" / "m82_plain_record.out").read_text(encoding="utf-8")
+    assert result.text == expected
+
+
+def test_a_mistyped_lookup_does_not_save_null(tmp_path: Path) -> None:
+    with record_window(tmp_path, _story_ui(), shop_with_three, choose=lambda text: "Close") as (host, db):
+        ui = host.ui
+        edit = ui.customerCombo.lineEdit()
+        assert edit is not None
+        edit.setText("Acmx")
+        edit.editingFinished.emit()
+        assert ui.customerCombo.currentData() == 1
+        assert ui.cbcs_save() is True
+        assert _invoice(db, "INV-1")[2] == 1
+
+
+def test_unknown_items_do_not_pile_up_or_move_to_another_record(tmp_path: Path) -> None:
+    def prepare(root: Path) -> Path:
+        path = root / "data" / "shop.db"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        connection = sqlite3.connect(str(path))
+        try:
+            connection.execute("CREATE TABLE customers (id INTEGER PRIMARY KEY, name TEXT, email TEXT)")
+            connection.execute("CREATE TABLE invoices (id INTEGER PRIMARY KEY, customer_id INTEGER, notes TEXT)")
+            connection.execute("INSERT INTO customers (id, name, email) VALUES (1, 'Acme', 'acme@example.com')")
+            connection.executemany(
+                "INSERT INTO invoices (id, customer_id, notes) VALUES (?, ?, '')",
+                ((1, 1), (2, 92), (3, 93), (4, 94)),
+            )
+            connection.commit()
+        finally:
+            connection.close()
+        return path
+
+    lookup = write_lookup(Lookup("customers", "id", "name", order="name", blank="(choose a customer)"))
+    ui_text = _xml(
         RecordSource("shop", "invoices", "id"),
         (
-            ("QComboBox", "customerCombo", "customer_id", combo),
+            ("QComboBox", "customerCombo", "customer_id", _lookup_xml(lookup)),
             ("QLineEdit", "notesEdit", "notes", ""),
-            ("QLabel", "emailLabel", "", email),
-            ("QPushButton", "reloadButton", "", reload_step),
         ),
     )
+    with record_window(tmp_path, ui_text, prepare, choose=lambda text: "Close") as (host, db):
+        ui = host.ui
+        for key, dead in ((2, 92), (3, 93), (4, 94)):
+            ui.cbcs_open(key)
+            assert _unknown_keys(ui.customerCombo) == [dead]
+        ui.cbcs_open(1)
+        assert _unknown_keys(ui.customerCombo) == []
+        assert ui.customerCombo.currentData() == 1
+        ui.notesEdit.setText("still acme")
+        assert ui.cbcs_save() is True
+        row = sqlite3.connect(str(db)).execute("SELECT customer_id, notes FROM invoices WHERE id = 1").fetchone()
+        assert row == (1, "still acme")
+
+
+def test_carried_date_and_money_match_record_values(tmp_path: Path) -> None:
+    from datetime import date
+
+    from app.features.form_builder.engine.data.schema import Column, Schema, Table
+
+    def prepare(root: Path) -> Path:
+        path = root / "data" / "shop.db"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        connection = sqlite3.connect(str(path))
+        try:
+            connection.execute("CREATE TABLE customers (id INTEGER PRIMARY KEY, name TEXT, since TEXT, fee NUMERIC)")
+            connection.execute("CREATE TABLE invoices (id INTEGER PRIMARY KEY, customer_id INTEGER, notes TEXT, amount NUMERIC)")
+            connection.execute(
+                "INSERT INTO customers (id, name, since, fee) VALUES (1, 'Acme', '2019-06-15', 10.5)"
+            )
+            connection.execute("INSERT INTO invoices (id, customer_id, notes, amount) VALUES (1, 1, '', 2.25)")
+            connection.commit()
+        finally:
+            connection.close()
+        return path
+
+    schema = Schema(
+        "shop",
+        "sqlite",
+        "",
+        "2026-11-02T00:00:00",
+        "sqlite3",
+        (
+            Table(
+                "invoices",
+                (
+                    Column("id", "integer", False),
+                    Column("customer_id", "integer", True),
+                    Column("notes", "text", True),
+                    Column("amount", "numeric", True),
+                ),
+                key="id",
+            ),
+            Table(
+                "customers",
+                (
+                    Column("id", "integer", False),
+                    Column("name", "text", True),
+                    Column("since", "date", True),
+                    Column("fee", "numeric", True),
+                ),
+                key="id",
+            ),
+        ),
+    )
+    lookup = write_lookup(Lookup("customers", "id", "name", order="name", also=("since", "fee"), blank="(choose a customer)"))
+    year = '    <property name="cbcsValue" stdset="0"><string notr="true">year(customerCombo.also.since)</string></property>\n'
+    ui_text = _xml(
+        RecordSource("shop", "invoices", "id"),
+        (
+            ("QComboBox", "customerCombo", "customer_id", _lookup_xml(lookup)),
+            ("QLineEdit", "amountEdit", "amount", ""),
+            ("QLineEdit", "notesEdit", "notes", ""),
+            ("QLabel", "yearLabel", "", year),
+        ),
+    )
+    with record_window(tmp_path, ui_text, prepare, choose=lambda text: "Close", schema=schema) as (host, _db):
+        ui = host.ui
+        assert ui._cbcs_also("customerCombo", "since") == date(2019, 6, 15)
+        assert ui.yearLabel.text() == "2019"
+        assert ui._cbcs_also("customerCombo", "fee") + ui._cbcs_record["amount"] == Decimal("12.75")
+
+
+def test_refresh_lookups_shows_the_new_email_and_stays_clean(tmp_path: Path) -> None:
+    with record_window(tmp_path, _story_ui(), shop_with_three, choose=lambda text: "Close") as (host, db):
+        ui = host.ui
+        assert ui.emailLabel.text() == "acme@example.com"
+        assert ui.cbcs_is_dirty() is False
+        connection = sqlite3.connect(str(db))
+        try:
+            connection.execute("UPDATE customers SET email = 'fresh@example.com' WHERE id = 1")
+            connection.commit()
+        finally:
+            connection.close()
+        ui.reloadButton.click()
+        from PySide6.QtWidgets import QApplication
+
+        app = QApplication.instance()
+        assert app is not None
+        app.processEvents()
+        assert ui.emailLabel.text() == "fresh@example.com"
+        assert ui.cbcs_is_dirty() is False
+
+
+def test_the_completer_is_kept_across_reloads(tmp_path: Path) -> None:
+    with record_window(tmp_path, _story_ui(), shop_with_three, choose=lambda text: "Close") as (host, _db):
+        ui = host.ui
+        first = ui.customerCombo.completer()
+        assert first is not None
+        ui.cbcs_load_lookups()
+        assert ui.customerCombo.completer() is first
+
+
+def test_fb311_includes_the_order_column() -> None:
+    lookup = write_lookup(Lookup("customers", "id", "name", order="missing_order"))
+    doc = _document(_xml(RecordSource("shop", "invoices", "id"), (("QComboBox", "customerCombo", "customer_id", _lookup_xml(lookup)),)))
+    schema = Schema(
+        "shop",
+        "sqlite",
+        "SQLite",
+        "2026-11-02T00:00:00",
+        "sqlite3",
+        (
+            Table("invoices", (Column("id", "INTEGER", False), Column("customer_id", "INTEGER", True)), key="id"),
+            Table("customers", (Column("id", "INTEGER", False), Column("name", "TEXT", True)), key="id"),
+        ),
+    )
+    codes = [item.message for item in run_checks(doc, None, schema) if item.code == "FB311"]
+    assert codes == ["missing_order is missing."]
+
+
+def _story_ui() -> str:
+    lookup = write_lookup(Lookup("customers", "id", "name", order="name", also=("email",), blank="(choose a customer)"))
+    source = escape(write_data(RecordSource("shop", "invoices", "id")))
+    combo = escape(lookup)
+    return """<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>Invoice</class>
+ <widget class="QDialog" name="Invoice">
+  <property name="cbcsData" stdset="0"><string notr="true">%s</string></property>
+  <layout class="QVBoxLayout" name="verticalLayout">
+   <item>
+    <layout class="QFormLayout" name="formLayout">
+     <item row="0" column="0">
+      <widget class="QLabel" name="customerLabel">
+       <property name="text"><string>Customer</string></property>
+      </widget>
+     </item>
+     <item row="0" column="1">
+      <widget class="QComboBox" name="customerCombo">
+       <property name="cbcsBind" stdset="0"><string notr="true">customer_id</string></property>
+       <property name="cbcsLookup" stdset="0"><string notr="true">%s</string></property>
+       <property name="editable"><bool>true</bool></property>
+      </widget>
+     </item>
+     <item row="1" column="0">
+      <widget class="QLabel" name="emailCaption">
+       <property name="text"><string>Email</string></property>
+      </widget>
+     </item>
+     <item row="1" column="1">
+      <widget class="QLineEdit" name="emailLabel">
+       <property name="readOnly"><bool>true</bool></property>
+       <property name="cbcsValue" stdset="0"><string notr="true">customerCombo.also.email</string></property>
+      </widget>
+     </item>
+     <item row="2" column="0">
+      <widget class="QLabel" name="notesLabel">
+       <property name="text"><string>Notes</string></property>
+      </widget>
+     </item>
+     <item row="2" column="1">
+      <widget class="QLineEdit" name="notesEdit">
+       <property name="cbcsBind" stdset="0"><string notr="true">notes</string></property>
+      </widget>
+     </item>
+    </layout>
+   </item>
+   <item>
+    <layout class="QHBoxLayout" name="recordBar">
+     <item><widget class="QPushButton" name="firstButton"><property name="text"><string>First</string></property></widget></item>
+     <item><widget class="QPushButton" name="previousButton"><property name="text"><string>Previous</string></property></widget></item>
+     <item><widget class="QLabel" name="positionLabel"><property name="text"><string>Record 1 of 1</string></property></widget></item>
+     <item><widget class="QPushButton" name="nextButton"><property name="text"><string>Next</string></property></widget></item>
+     <item><widget class="QPushButton" name="lastButton"><property name="text"><string>Last</string></property></widget></item>
+     <item><widget class="QPushButton" name="newButton"><property name="text"><string>New</string></property></widget></item>
+     <item><widget class="QPushButton" name="saveButton"><property name="text"><string>Save</string></property></widget></item>
+     <item><widget class="QPushButton" name="revertButton"><property name="text"><string>Revert</string></property></widget></item>
+     <item><widget class="QPushButton" name="deleteButton"><property name="text"><string>Delete</string></property></widget></item>
+     <item><widget class="QPushButton" name="findButton"><property name="text"><string>Find</string></property></widget></item>
+     <item><widget class="QPushButton" name="reloadButton"><property name="text"><string>Reload</string></property><property name="cbcsOnClicked" stdset="0"><string notr="true">[{"do": "refreshLookups"}]</string></property></widget></item>
+  </layout>
+ </item>
+ <item>
+  <spacer name="verticalSpacer">
+   <property name="orientation"><enum>Qt::Vertical</enum></property>
+   <property name="sizeType"><enum>QSizePolicy::Expanding</enum></property>
+   <property name="sizeHint" stdset="0"><size><width>20</width><height>0</height></size></property>
+  </spacer>
+ </item>
+</layout>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>
+""" % (source, combo)
 
 
 def _jobs_ui() -> str:
@@ -267,6 +540,16 @@ def _document(text: str):
     from app.features.form_builder.engine.ui4.reader import read_ui
 
     return read_ui(text, allocator=IdAllocator()).document
+
+
+def _unknown_keys(combo: object) -> list:
+    found = []
+    index = 0
+    while index < combo.count():
+        if str(combo.itemText(index)).startswith("(unknown #"):
+            found.append(combo.itemData(index))
+        index += 1
+    return found
 
 
 def _index(combo: object, key: object) -> int:

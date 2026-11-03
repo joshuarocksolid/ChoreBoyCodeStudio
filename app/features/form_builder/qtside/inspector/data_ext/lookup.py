@@ -14,6 +14,7 @@ from app.features.form_builder.engine.data.source import Lookup, read_lookup, si
 from app.features.form_builder.engine.diagnostics import Severity
 from app.features.form_builder.engine.ui4.nodes import WidgetNode
 from app.features.form_builder.engine.ui4.values import BoolValue, StringValue
+from app.features.form_builder.qtside.data_panel.column_insert_hooks import search_screen_command
 from app.features.form_builder.qtside.data_panel.host import narrate, session_of
 from app.features.form_builder.qtside.data_panel.lookup_columns import clear_show_focus, pending_show_focus
 from app.features.form_builder.qtside.data_panel.model import record_source
@@ -25,11 +26,14 @@ from app.qt.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
-    QListWidget,
-    QPushButton,
+    QMenu,
+    QSizePolicy,
+    QToolButton,
     QVBoxLayout,
     QWidget,
 )
+
+_SEARCH_ACTION = " [Use a search screen instead]"
 
 
 class _Lookup(QWidget):
@@ -41,46 +45,54 @@ class _Lookup(QWidget):
         self._title = QLabel("Lookup", self)
         layout.addWidget(self._title)
         self._table = self._combo("formBuilder.inspectorData.lookupTable", "Fill from")
-        self._show = self._combo("formBuilder.inspectorData.lookupShow", "Show")
-        self._key = self._combo("formBuilder.inspectorData.lookupKey", "Save")
-        self._order = self._combo("formBuilder.inspectorData.lookupOrder", "Order by")
-        layout.addWidget(QLabel("Also carry", self))
-        row = QWidget(self)
-        carried = QHBoxLayout(row)
-        carried.setContentsMargins(0, 0, 0, 0)
-        self._also_pick = QComboBox(row)
-        self._also_pick.setObjectName("formBuilder.inspectorData.lookupAlsoPick")
-        self._also_add = QPushButton("+", row)
-        self._also_add.setObjectName("formBuilder.inspectorData.lookupAlsoAdd")
-        carried.addWidget(self._also_pick, 1)
-        carried.addWidget(self._also_add)
-        layout.addWidget(row)
-        self._also = QListWidget(self)
-        self._also.setObjectName("formBuilder.inspectorData.lookupAlso")
-        layout.addWidget(self._also)
-        self._also_remove = QPushButton("Remove", self)
-        self._also_remove.setObjectName("formBuilder.inspectorData.lookupAlsoRemove")
-        layout.addWidget(self._also_remove)
-        self._blank_on = QCheckBox("First item", self)
-        self._blank_on.setObjectName("formBuilder.inspectorData.lookupBlankOn")
-        layout.addWidget(self._blank_on)
-        self._blank = QLineEdit(self)
-        self._blank.setObjectName("formBuilder.inspectorData.lookupBlank")
-        layout.addWidget(self._blank)
-        self._typed = QCheckBox("Let people type to search", self)
-        self._typed.setObjectName("formBuilder.inspectorData.lookupType")
-        layout.addWidget(self._typed)
         self._rows = QLabel(self)
         self._rows.setObjectName("formBuilder.inspectorData.lookupRows")
         self._rows.setWordWrap(True)
         self._rows.hide()
         layout.addWidget(self._rows)
+        self._search = QToolButton(self)
+        self._search.setObjectName("formBuilder.inspectorData.lookupSearch")
+        self._search.setText("[Use a search screen instead]")
+        self._search.hide()
+        self._search.clicked.connect(self._on_search)
+        layout.addWidget(self._search)
+        self._show = self._combo("formBuilder.inspectorData.lookupShow", "Show")
+        self._key = self._combo("formBuilder.inspectorData.lookupKey", "Save")
+        self._order = self._combo("formBuilder.inspectorData.lookupOrder", "Order by")
+        row = QWidget(self)
+        row.setObjectName("formBuilder.inspectorData.lookupAlsoRow")
+        carried = QHBoxLayout(row)
+        carried.setContentsMargins(0, 0, 0, 0)
+        self._also_row = carried
+        self._also_add = QToolButton(row)
+        self._also_add.setObjectName("formBuilder.inspectorData.lookupAlsoAdd")
+        self._also_add.setText("+")
+        self._also_add.setToolTip("Also carry")
+        self._also_add.setAccessibleName("Also carry")
+        self._also_add.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        self._also_menu = QMenu(self._also_add)
+        self._also_add.setMenu(self._also_menu)
+        self._also_menu.aboutToShow.connect(self._fill_also_menu)
+        carried.addWidget(self._also_add)
+        carried.addStretch(1)
+        layout.addWidget(row)
+        blank_row = QWidget(self)
+        blank_line = QHBoxLayout(blank_row)
+        blank_line.setContentsMargins(0, 0, 0, 0)
+        self._blank_on = QCheckBox("First item", blank_row)
+        self._blank_on.setObjectName("formBuilder.inspectorData.lookupBlankOn")
+        self._blank = QLineEdit(blank_row)
+        self._blank.setObjectName("formBuilder.inspectorData.lookupBlank")
+        blank_line.addWidget(self._blank_on)
+        blank_line.addWidget(self._blank, 1)
+        layout.addWidget(blank_row)
+        self._typed = QCheckBox("Let people type to search", self)
+        self._typed.setObjectName("formBuilder.inspectorData.lookupType")
+        layout.addWidget(self._typed)
         self._table.currentIndexChanged.connect(self._on_table)
         self._show.currentIndexChanged.connect(self._on_show)
         self._key.currentIndexChanged.connect(self._on_key)
         self._order.currentIndexChanged.connect(self._on_order)
-        self._also_add.clicked.connect(self._on_also_add)
-        self._also_remove.clicked.connect(self._on_also_remove)
         self._blank_on.toggled.connect(self._on_blank_on)
         self._blank.editingFinished.connect(self._on_blank)
         self._typed.toggled.connect(self._on_typed)
@@ -99,41 +111,42 @@ class _Lookup(QWidget):
         if session is not None:
             publish_session(session)
         self._filling = True
-        for combo in (self._table, self._show, self._key, self._order, self._also_pick):
+        for combo in (self._table, self._show, self._key, self._order):
             combo.blockSignals(True)
         self._blank_on.blockSignals(True)
         self._typed.blockSignals(True)
         node = _selected_combo(session)
         lookup = _read(node)
         tables, columns = _schema_lists(session, lookup.table if lookup is not None else "")
-        _fill(self._table, tables, lookup.table if lookup is not None else "")
+        _fill(self._table, tables, lookup.table if lookup is not None else "", "(none)")
         _fill(self._show, columns, lookup.show if lookup is not None else "")
         _fill(self._key, columns, lookup.key if lookup is not None else "")
         _fill(self._order, columns, (lookup.order or lookup.show) if lookup is not None else "")
-        self._also.clear()
-        carried = lookup.also if lookup is not None else ()
-        for name in carried:
-            self._also.addItem(name)
-        left = [name for name in columns if name not in carried]
-        _fill(self._also_pick, left, left[0] if left else "")
+        self._paint_chips(lookup.also if lookup is not None else ())
         blank = lookup.blank if lookup is not None else ""
-        self._blank_on.setChecked(bool(blank))
+        column, nullable = _bound_column(session, node)
+        kept = bool(nullable)
+        self._blank_on.setChecked(True if kept else bool(blank))
+        self._blank_on.setEnabled(not kept)
+        self._blank_on.setToolTip("Kept because %s can be blank." % column if kept and column else "")
         self._blank.setText(blank or _default_blank(lookup.table if lookup is not None else ""))
-        self._blank.setEnabled(bool(blank))
+        self._blank.setEnabled(kept or bool(blank))
         self._typed.setChecked(_editable(node))
         message, severity = _notice(session, node)
-        self._rows.setText(message)
-        self._rows.setVisible(bool(message))
+        sentence, action = _sentence(message)
+        self._rows.setText(sentence)
+        self._rows.setVisible(bool(sentence))
+        self._search.setVisible(bool(action))
         if severity is Severity.ERROR:
             self._rows.setProperty("fbProblem", "error")
-        elif message:
+        elif sentence:
             self._rows.setProperty("fbProblem", "warning")
         table_name = lookup.table if lookup is not None else ""
         show_name = lookup.show if lookup is not None else ""
         self.setAccessibleName(
             "Lookup, fill from %s, show %s" % (table_name or "a table", show_name or "a column")
         )
-        for combo in (self._table, self._show, self._key, self._order, self._also_pick):
+        for combo in (self._table, self._show, self._key, self._order):
             combo.blockSignals(False)
         self._blank_on.blockSignals(False)
         self._typed.blockSignals(False)
@@ -146,16 +159,21 @@ class _Lookup(QWidget):
         if self._filling:
             return
         name = str(self._table.currentData() or "")
+        if not name:
+            if self._current() is None:
+                return
+            self._store(None, "Clear lookup")
+            return
         session = session_of(self)
         _tables, columns = _schema_lists(session, name)
         target = _table_named(session, name)
         key = getattr(target, "key", None) or "id"
         column = SimpleNamespace(references=SimpleNamespace(table=name, column=key))
         tables = _tables_of(session)
-        suggested = suggest_lookup(column, tables) if name else None
-        if suggested is None and name:
+        suggested = suggest_lookup(column, tables)
+        if suggested is None:
             suggested = Lookup(name, key if key in columns else (columns[0] if columns else "id"), columns[0] if columns else "name")
-        self._store(suggested, "Fill from %s" % name if name else "Clear lookup")
+        self._store(suggested, "Fill from %s" % name)
 
     def _on_show(self, _index: int) -> None:
         self._replace("show", str(self._show.currentData() or ""), "Show %s" % (self._show.currentData() or ""))
@@ -166,24 +184,59 @@ class _Lookup(QWidget):
     def _on_order(self, _index: int) -> None:
         self._replace("order", str(self._order.currentData() or ""), "Order by %s" % (self._order.currentData() or ""))
 
-    def _on_also_add(self) -> None:
+    def _on_also_add(self, name: str) -> None:
         if self._filling:
             return
-        name = str(self._also_pick.currentData() or "")
         current = self._current()
         if not name or current is None or name in current.also:
             return
         self._store(replace(current, also=current.also + (name,)), "Also carry %s" % name)
 
-    def _on_also_remove(self) -> None:
+    def _on_also_remove(self, name: str) -> None:
         if self._filling:
             return
-        item = self._also.currentItem()
         current = self._current()
-        if item is None or current is None:
+        if current is None or name not in current.also:
             return
-        name = item.text()
         self._store(replace(current, also=tuple(column for column in current.also if column != name)), "Remove %s" % name)
+
+    def _fill_also_menu(self) -> None:
+        self._also_menu.clear()
+        current = self._current()
+        if current is None:
+            return
+        _tables, columns = _schema_lists(session_of(self), current.table)
+        excluded = {current.show, current.key, *current.also}
+        for name in columns:
+            if not name or name in excluded:
+                continue
+            action = self._also_menu.addAction(name)
+            action.triggered.connect(lambda _checked=False, column=name: self._on_also_add(column))
+
+    def _paint_chips(self, carried: Sequence[str]) -> None:
+        while self._also_row.count():
+            item = self._also_row.takeAt(0)
+            widget = item.widget()
+            if widget is not None and widget is not self._also_add:
+                widget.setParent(None)
+                widget.deleteLater()
+        for name in carried:
+            chip = QToolButton(self._also_add.parentWidget())
+            chip.setObjectName("formBuilder.inspectorData.lookupAlsoChip")
+            chip.setText("%s ×" % name)
+            chip.setToolTip("Remove %s" % name)
+            chip.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
+            chip.clicked.connect(lambda _checked=False, column=name: self._on_also_remove(column))
+            self._also_row.addWidget(chip)
+        self._also_row.addWidget(self._also_add)
+        self._also_row.addStretch(1)
+
+    def _on_search(self) -> None:
+        command = search_screen_command()
+        if command is None:
+            return
+        current = self._current()
+        command(current.table if current is not None else "")
 
     def _on_blank_on(self, checked: bool) -> None:
         if self._filling:
@@ -331,13 +384,18 @@ def _columns(tables: Sequence[object], table_name: str) -> Tuple[str, ...]:
     return ()
 
 
-def _fill(combo: QComboBox, names: Sequence[str], current: str) -> None:
+def _fill(combo: QComboBox, names: Sequence[str], current: str, placeholder: Optional[str] = None) -> None:
     combo.clear()
+    if placeholder is not None:
+        combo.addItem(placeholder, "")
     for name in names:
         combo.addItem(name, name)
     if current and combo.findData(current) < 0:
         combo.addItem(current, current)
-    found = combo.findData(current) if current else -1
+    if not current:
+        combo.setCurrentIndex(0)
+        return
+    found = combo.findData(current)
     combo.setCurrentIndex(found if found >= 0 else 0)
 
 
@@ -345,6 +403,46 @@ def _default_blank(table: str) -> str:
     if not table:
         return "(choose)"
     return "(choose a %s)" % singular(table)
+
+
+def _bound_column(session: object, node: Optional[WidgetNode]) -> Tuple[str, bool]:
+    if session is None or node is None:
+        return "", False
+    from app.features.form_builder.engine.data.source import read_bind
+
+    column = read_bind(_text_of(node, "cbcsBind")).column
+    if not column:
+        return "", False
+    source = record_source(session.document)
+    if source is None:
+        return column, False
+    for table in _tables_of(session):
+        if getattr(table, "name", "") != source.table:
+            continue
+        for item in getattr(table, "columns", ()) or ():
+            if getattr(item, "name", "") == column:
+                return column, bool(getattr(item, "nullable", False))
+    return column, False
+
+
+def _text_of(node: object, name: str) -> str:
+    prop = getattr(node, "prop", None)
+    if not callable(prop):
+        return ""
+    entry = prop(name)
+    value = getattr(entry, "value", None)
+    if isinstance(value, StringValue):
+        return value.text
+    return ""
+
+
+def _sentence(message: str) -> Tuple[str, bool]:
+    if not message:
+        return "", False
+    action = message.endswith(_SEARCH_ACTION) and search_screen_command() is not None
+    if message.endswith(_SEARCH_ACTION):
+        message = message[: -len(_SEARCH_ACTION)]
+    return message, bool(action)
 
 
 def _notice(session: object, node: Optional[WidgetNode]) -> tuple:

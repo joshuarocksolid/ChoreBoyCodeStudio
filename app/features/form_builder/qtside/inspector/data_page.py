@@ -74,6 +74,10 @@ class DataPage(QWidget):
             "%s QLineEdit, %s QComboBox, %s QListWidget, %s QPlainTextEdit { color: %s; background: %s; border: 1px solid %s; }"
             "%s QLineEdit:focus, %s QComboBox:focus, %s QListWidget:focus, %s QPlainTextEdit:focus { border: %dpx solid %s; }"
             "%s QCheckBox { color: %s; background: transparent; }"
+            "%s QPushButton, %s QToolButton { color: %s; background: %s; border: 1px solid %s; padding: 2px 8px; }"
+            "%s QPushButton:disabled, %s QToolButton:disabled { color: %s; }"
+            "%s QPushButton:focus, %s QToolButton:focus { border: %dpx solid %s; }"
+            "%s QToolButton#formBuilder\\.inspectorData\\.lookupAlsoAdd::menu-indicator { image: none; width: 0px; }"
             % (
                 body, panel, text,
                 body, text,
@@ -83,6 +87,10 @@ class DataPage(QWidget):
                 body, body, body, body, text, input_bg, border,
                 body, body, body, body, width, accent,
                 body, text,
+                body, body, text, input_bg, border,
+                body, body, faint or text,
+                body, body, width, accent,
+                body,
             )
         )
         marks = SimpleNamespace(

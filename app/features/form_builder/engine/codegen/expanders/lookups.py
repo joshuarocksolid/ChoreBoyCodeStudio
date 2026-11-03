@@ -68,21 +68,59 @@ class LookupsExpander:
             "self._cbcs_lookup_tables = {%s}" % tables,
             "if isinstance(fields, str):",
             "    fields = (fields,)",
+            "self._cbcs_lookup_filling = True",
+            "try:",
         ]
         for plan, sql, show_at, indexes in ready:
-            body.extend(_one_lookup(plan, sql, show_at, indexes))
-        return Contribution(
-            imports=tuple(imports),
-            methods=(
-                Method("cbcs_load_lookups", "\n".join(body), "cbcsLookup", params="fields=None"),
-                Method("_cbcs_select_lookup", "\n".join(_select_body()), "cbcsLookup", params="name, value"),
-                Method("_cbcs_same_key", "\n".join(_same_body()), "cbcsLookup", params="left, right"),
-                Method("_cbcs_also", "\n".join(_also_body()), "cbcsLookup", params="name, column"),
-            ),
+            body.extend(_indent(_one_lookup(plan, sql, show_at, indexes)))
+        body.extend(
+            [
+                "finally:",
+                "    self._cbcs_lookup_filling = False",
+                "if getattr(self, %s, False) and hasattr(self, %s) and not getattr(self, %s, False):"
+                % (py_string("_cbcs_ready"), py_string("cbcs_refresh"), py_string("_cbcs_refreshing")),
+                "    self.cbcs_refresh()",
+            ]
         )
+        methods = [
+            Method("cbcs_load_lookups", "\n".join(body), "cbcsLookup", params="fields=None"),
+            Method("_cbcs_select_lookup", "\n".join(_select_body()), "cbcsLookup", params="name, value"),
+            Method("_cbcs_drop_unknown", "\n".join(_drop_body()), "cbcsLookup", params="combo, value"),
+            Method("_cbcs_same_key", "\n".join(_same_body()), "cbcsLookup", params="left, right"),
+            Method("_cbcs_also", "\n".join(_also_body()), "cbcsLookup", params="name, column"),
+        ]
+        if any(plan.editable for plan, _sql, _show_at, _index in ready):
+            methods.append(Method("_cbcs_lookup_keep", "\n".join(_keep_body()), "cbcsLookup", params="combo"))
+        return Contribution(imports=tuple(imports), methods=tuple(methods))
 
 
 EXPANDER = LookupsExpander()
+
+
+def _open_lines(doc: UiDocument, ctx: CodegenContext) -> Tuple[str, ...]:
+    """Load lookups before the first show, and only when this form has one."""
+
+    if not lookup_plans(doc, ctx.attribute_names):
+        return ()
+    return (
+        "_load_lookups = getattr(self, %s, None)" % py_string("cbcs_load_lookups"),
+        "if _load_lookups is not None:",
+        "    _load_lookups()",
+    )
+
+
+def _install_open_hook() -> None:
+    from app.features.form_builder.engine.codegen.expanders.record import register_open_hook
+
+    register_open_hook(_open_lines)
+
+
+_install_open_hook()
+
+
+def _indent(lines: Sequence[str], spaces: int = 4) -> List[str]:
+    pad = " " * spaces
+    return [pad + line if line else line for line in lines]
 
 
 def _refresh_requested(doc: UiDocument) -> bool:
@@ -149,7 +187,10 @@ def _one_lookup(plan: LookupPlan, sql: str, show_at: int, indexes: Sequence[Tupl
         ]
     )
     for name, index in indexes:
-        lines.append("            _extra[%s] = _row[%d] if len(_row) > %d else None" % (py_string(name), index, index))
+        lines.append(
+            "            _extra[%s] = self._cbcs_from(%s, _row[%d] if len(_row) > %d else None)"
+            % (py_string(name), py_string(name), index, index)
+        )
     if indexes:
         lines.append("            _combo.setItemData(_combo.count() - 1, _extra, _CBCS_ALSO_ROLE)")
     lines.extend(
@@ -158,15 +199,7 @@ def _one_lookup(plan: LookupPlan, sql: str, show_at: int, indexes: Sequence[Tupl
         ]
     )
     if plan.editable:
-        lines.extend(
-            [
-                "        _completer = QCompleter(_combo.model(), _combo)",
-                "        _completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)",
-                "        _completer.setFilterMode(Qt.MatchFlag.MatchContains)",
-                "        _combo.setCompleter(_completer)",
-                "        _completer.setFilterMode(Qt.MatchFlag.MatchContains)",
-            ]
-        )
+        lines.extend(_editable_lines(plan.widget))
     lines.extend(
         [
             "    finally:",
@@ -176,11 +209,45 @@ def _one_lookup(plan: LookupPlan, sql: str, show_at: int, indexes: Sequence[Tupl
     return lines
 
 
+def _editable_lines(widget: str) -> List[str]:
+    return [
+        "        _policy = getattr(getattr(_combo.__class__, %s, _combo.__class__), %s, None)"
+        % (py_string("InsertPolicy"), py_string("NoInsert")),
+        "        if _policy is None:",
+        "            _policy = getattr(_combo.__class__, %s, None)" % py_string("NoInsert"),
+        "        if _policy is not None:",
+        "            _combo.setInsertPolicy(_policy)",
+        "        _guards = getattr(self, %s, None)" % py_string("_cbcs_lookup_guards"),
+        "        if _guards is None:",
+        "            _guards = {}",
+        "            self._cbcs_lookup_guards = _guards",
+        "        if not _guards.get(%s):" % py_string(widget),
+        "            _guards[%s] = True" % py_string(widget),
+        "            _edit = _combo.lineEdit()",
+        "            if _edit is not None:",
+        "                _edit.editingFinished.connect(lambda combo=_combo: self._cbcs_lookup_keep(combo))",
+        "        _known = getattr(self, %s, None)" % py_string("_cbcs_completers"),
+        "        if _known is None:",
+        "            _known = {}",
+        "            self._cbcs_completers = _known",
+        "        _completer = _known.get(%s)" % py_string(widget),
+        "        if _completer is None:",
+        "            _completer = QCompleter(_combo.model(), _combo)",
+        "            _completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)",
+        "            _completer.setFilterMode(Qt.MatchFlag.MatchContains)",
+        "            _combo.setCompleter(_completer)",
+        "            _known[%s] = _completer" % py_string(widget),
+        "        else:",
+        "            _completer.setModel(_combo.model())",
+    ]
+
+
 def _select_body() -> List[str]:
     return [
         "_combo = getattr(self, name, None)",
         "if _combo is None:",
         "    return",
+        "self._cbcs_drop_unknown(_combo, value)",
         "_found = -1",
         "_i = 0",
         "while _i < _combo.count():",
@@ -209,6 +276,38 @@ def _select_body() -> List[str]:
         "        _table = getattr(self, %s, {}).get(name, %s)" % (py_string("_cbcs_lookup_tables"), py_string("")),
         "        _trace(%s, name, %s %% (name, value, _table))"
         % (py_string("lookup"), py_string("Lookup %s: key %s isn't in %s")),
+    ]
+
+
+def _drop_body() -> List[str]:
+    return [
+        "_i = combo.count() - 1",
+        "while _i >= 0:",
+        "    _text = str(combo.itemText(_i))",
+        "    _data = combo.itemData(_i)",
+        "    _same = value is not None and (_data == value or self._cbcs_same_key(_data, value))",
+        "    if _text.startswith(%s) and not _same:" % py_string("(unknown #"),
+        "        combo.removeItem(_i)",
+        "    _i = _i - 1",
+    ]
+
+
+def _keep_body() -> List[str]:
+    return [
+        "if getattr(self, %s, False):" % py_string("_cbcs_lookup_filling"),
+        "    return",
+        "_edit = combo.lineEdit()",
+        "if _edit is None:",
+        "    return",
+        "_text = _edit.text()",
+        "_match = combo.findText(_text)",
+        "if _match >= 0:",
+        "    if combo.currentIndex() != _match:",
+        "        combo.setCurrentIndex(_match)",
+        "    return",
+        "_index = combo.currentIndex()",
+        "if _index >= 0:",
+        "    combo.setEditText(combo.itemText(_index))",
     ]
 
 

@@ -155,7 +155,7 @@ def _words(session: object, source: object, column: str) -> str:
 def _problem(session: object, node: Optional[WidgetNode]) -> tuple:
     if session is None or node is None:
         return "", None
-    rows = warning_rows(session, node.id)
+    rows = [row for row in warning_rows(session, node.id) if getattr(row, "code", "") != "FB312"]
     if not rows:
         return "", None
     row = rows[0]

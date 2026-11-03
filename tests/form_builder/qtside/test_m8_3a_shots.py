@@ -55,7 +55,7 @@ def test_lookup_shots(qapp, tmp_path: Path) -> None:
     )
     set_schema_reader(lambda _doc, _name: schema)
     try:
-        session, host = _open(_combo_form(), tmp_path)
+        session, host = _open(_combo_form(("email",)), tmp_path)
         try:
             combo_id = session.document.by_name("customerCombo")[0]
             session.selection.set((combo_id,), source=SelectionSource.PROGRAM)
@@ -69,7 +69,7 @@ def test_lookup_shots(qapp, tmp_path: Path) -> None:
             session.dispose()
         with record_window(tmp_path / "run", _story_ui(), shop_with_three, choose=lambda text: "Close") as (host, _db):
             window = host
-            window.resize(420, 280)
+            window.resize(720, 280)
             ui = host.ui
             for mode in _MODES:
                 _paint(window, mode)
