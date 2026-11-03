@@ -3234,7 +3234,7 @@ What ran logs each statement as "Ran: UPDATE "invoices" SET … (3 values)". The
 **UX-TRYD-002** `M8.4` `[T]` Tests prove the user's data is unchanged after a Try session of New, Save, Delete and line edits, on SQLite (file hash) and on PostgreSQL 9.3 (row count and an `md5` of the table, before and after). A test holds a row lock in another session and proves Try's save stops at the 2 s lock timeout with the §13.5.9 sentence, not a hang.
 
 **UX-EJECT-001** `M8.5` `[S T]` Eject to code (F14). The dialog lists:
-- "Adds {n} methods and {m} helpers to invoice_window.py: load_record, save_record, …" (the first 8 names, then "and {k} more");
+- "Adds {n} methods and {m} helpers to invoice_window.py." and, on the next line, the first 8 names, then "and {k} more";
 - "Removes the data settings from invoice.ui";
 - "Save, Delete and the toolbar buttons will call your methods".
 

@@ -157,7 +157,10 @@ def commit_eject(host: Any, plan: EjectPlan) -> str:
     bridge = surface.code_bridge
     current = _window_text(surface, path)
     if current is None:
-        return "Open %s, then eject, so Undo can restore it." % plan.window_filename
+        bridge.open_at(path, 1)
+        current = _window_text(surface, path)
+    if current is None:
+        return "Couldn't open %s." % plan.window_filename
     try:
         edit = window_edit(current, plan)
     except ValueError as exc:

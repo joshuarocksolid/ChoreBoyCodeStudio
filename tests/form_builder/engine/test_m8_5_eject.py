@@ -78,6 +78,15 @@ def test_undo_restores_the_form_and_the_window_file(tmp_path: Path) -> None:
         assert "def _cbcs_bind_ejected" not in edited
         assert "import cbcs_connections" in edited
         assert "from cbcs_connections import" not in edited
+        assert "\n    # record\n" not in edited
+        assert 'u"' not in edited
+        assert "getattr(self, \"load_lookups\"" not in edited
+        assert "self.load_lookups()" in edited
+        assert " as _conn" not in edited
+        assert " as conn:" in edited
+        assert "'SELECT \"id\"" in edited
+        write = edited.split("def write_fields(", 1)[1].split("\ndef ", 1)[0]
+        assert write.count("invoiceNoEdit.setText") == 1
         with session.log.transaction("Eject to code"):
             for command in plan.commands:
                 session.log.execute(command)
@@ -783,6 +792,58 @@ def test_commit_eject_undo_redo_and_a_changed_window_refuses(tmp_path: Path) -> 
         if editor is not None:
             editor.close()
             editor.deleteLater()
+        if shell is not None:
+            shell.close()
+            shell.deleteLater()
+        app = QApplication.instance()
+        if app is not None:
+            app.processEvents()
+        set_schema_reader(None)
+
+
+def test_commit_eject_opens_a_closed_window_file(tmp_path: Path, qapp: QApplication) -> None:
+    assert qapp is QApplication.instance()
+    from app.editors.code_editor_widget import CodeEditorWidget
+    from app.features.form_builder.integration.code_bridge import CodeBridge, ShellPort
+    from app.features.form_builder.qtside.data_panel.eject_cmd import commit_eject
+    from app.qt.QtWidgets import QWidget
+
+    editors = {}
+    shell = None
+    try:
+        root, scope, ui_text = _project(tmp_path, _scenario_ui(), _prepare, "invoice.ui", _invoice_schema())
+        session = FormSession.open(ui_text, path=scope.ui_path, scope=scope)
+        _arm_save(session)
+        document = read_ui(ui_text, allocator=IdAllocator()).document
+        window = render_window_class(document, scope=scope)
+        path = str(scope.window_path)
+        Path(path).write_text(window, encoding="utf-8")
+
+        def open_file_at_line(asked: str, _line: int, preview: bool = False) -> None:
+            editor = CodeEditorWidget()
+            editor.setPlainText(Path(asked).read_text(encoding="utf-8"))
+            editor.document().setModified(False)
+            editors[os.path.abspath(asked)] = editor
+
+        shell = QWidget()
+        shell.session = session
+        shell._editor_tab_workflow = type("W", (), {"open_file_at_line": staticmethod(open_file_at_line)})()
+        shell._workspace_controller = type(
+            "C",
+            (),
+            {"widget_for_path": lambda _self, asked: editors.get(os.path.abspath(asked))},
+        )()
+        shell.code_bridge = CodeBridge(str(root), ShellPort(shell))
+        plan = plan_eject(session.document, scope)
+        assert commit_eject(shell, plan) == ""
+        editor = editors[os.path.abspath(path)]
+        assert "def load_record(" in editor.toPlainText()
+        assert editor.document().isModified() is True
+        assert Path(path).read_text(encoding="utf-8") == window
+    finally:
+        for opened in editors.values():
+            opened.close()
+            opened.deleteLater()
         if shell is not None:
             shell.close()
             shell.deleteLater()

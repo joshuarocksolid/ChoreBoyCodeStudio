@@ -369,7 +369,11 @@ def _shoot(widget: QWidget, qapp: QApplication, root: Path, name: str, width: in
             )
         else:
             apply_chrome(widget, tokens)
-        widget.resize(width, height)
+        fit = getattr(widget, "fit_to_contents", None)
+        if callable(fit):
+            fit()
+        else:
+            widget.resize(width, height)
         widget.show()
         for _ in range(4):
             qapp.processEvents()

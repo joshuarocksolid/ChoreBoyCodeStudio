@@ -329,7 +329,7 @@ def _summary(filename: str, ui_name: str, names: Sequence[str], helpers: Sequenc
     if "save_record" not in names and "delete_record" not in names:
         third = "The toolbar buttons will call your methods"
     return (
-        "Adds %d methods and %d helpers to %s: %s" % (len(names), len(helpers), filename, _capped(names)),
+        "Adds %d methods and %d helpers to %s.\n%s" % (len(names), len(helpers), filename, _capped(names)),
         "Removes the data settings from %s" % ui_name,
         third,
     )

@@ -45,10 +45,7 @@ def test_eject_shots(tmp_path: Path, qapp: QApplication) -> None:
         parent = QWidget()
         parent.resize(640, 280)
         dialog = EjectDialog(parent, plan)
-        dialog.setFixedWidth(640)
-        laid = dialog.layout()
-        height = laid.totalHeightForWidth(640) if laid is not None else dialog.sizeHint().height()
-        _shoot(dialog, qapp, root, "eject-dialog", 640, max(int(height), 120))
+        _shoot(dialog, qapp, root, "eject-dialog", 520, max(dialog.height(), 160))
         with session.log.transaction("Eject to code"):
             for command in plan.commands:
                 session.log.execute(command)
@@ -69,6 +66,8 @@ def test_eject_shots(tmp_path: Path, qapp: QApplication) -> None:
         text = splice_window(window, plan)
         shell = _editor(text, plan.first_method)
         _shoot(shell, qapp, root, "window-load-record", 720, 480)
+        fields = _editor(text, "write_fields")
+        _shoot(fields, qapp, root, "window-write-fields", 720, 480)
         assert (root / "eject-dialog-light.png").is_file()
         assert (root / "eject-dialog-dark.png").is_file()
         assert (root / "data-tab-ejected-light.png").is_file()
