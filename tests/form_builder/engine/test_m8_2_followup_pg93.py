@@ -47,7 +47,7 @@ def test_postgres_unique_violation_uses_the_field_label(tmp_path: Path, pg93_dsn
         host.ui.cbcs_next()
         host.ui.codeEdit.setText("A")
         assert host.ui.cbcs_save() is False
-        assert host.ui.codeEditError.text() == "Another %s already uses this Code." % _noun(table)
+        assert host.ui.codeEditError.text() == "Another %s already uses this code." % _noun(table)
         assert host.ui.codeEditError.isVisible() is True
         with module.work("shop") as connection:
             cursor = connection.cursor()

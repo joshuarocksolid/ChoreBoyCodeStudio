@@ -858,7 +858,7 @@ def _error_body(noun: str, fields: Sequence[_Field]) -> List[str]:
         "_table = _points.get(_column, %s)" % _q(""),
         "_mapped = %s" % _q(""),
         "if _label and (_state == %s or %s in _text):" % (_q("23505"), _q("UNIQUE constraint failed")),
-        "    _mapped = %s %% _label" % _q(unique),
+        "    _mapped = %s %% (_label[:1].lower() + _label[1:])" % _q(unique),
         "elif _label and (_state == %s or %s in _text):" % (_q("23502"), _q("NOT NULL constraint failed")),
         "    _mapped = %s %% _label" % _q(required),
         "elif _label and _state == %s:" % _q("23503"),
@@ -976,11 +976,29 @@ def _show_field_body() -> List[str]:
     ]
 
 
+def _below_minimum(widget: str, io: str) -> List[str]:
+    if io == "int":
+        return [
+            "if %s.minimum() > -2147483648:" % widget,
+            "    %s.setMinimum(%s.minimum() - 1)" % (widget, widget),
+        ]
+    if io == "decimal":
+        return ["%s.setMinimum(%s.minimum() - %s.singleStep())" % (widget, widget, widget)]
+    if io == "date":
+        return ["%s.setMinimumDate(%s.minimumDate().addDays(-1))" % (widget, widget)]
+    if io == "datetime":
+        return ["%s.setMinimumDateTime(%s.minimumDateTime().addSecs(-1))" % (widget, widget)]
+    # QTime can't go below 00:00:00, so a nullable time keeps midnight as its blank.
+    return []
+
+
 def _null_markers(fields: Sequence[_Field]) -> List[str]:
     lines = []
     for field in fields:
         widget = "self.%s" % field.widget
         if field.nullable and field.io in ("int", "decimal", "date", "time", "datetime"):
+            # Blank sits one step below the designed minimum, so every real value stays saveable.
+            lines.extend(_below_minimum(widget, field.io))
             lines.append("%s.setSpecialValueText(%s)" % (widget, _q(_NULL_TEXT)))
         if field.nullable and field.io == "bool":
             lines.append("%s.setTristate(True)" % widget)

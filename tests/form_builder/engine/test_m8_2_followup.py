@@ -146,6 +146,29 @@ def test_a_nullable_spin_saves_null_not_zero(tmp_path: Path) -> None:
         assert _one(db, "SELECT customer_id FROM links") == (None,)
 
 
+def test_a_nullable_spin_keeps_a_real_zero(tmp_path: Path) -> None:
+    schema = _table_schema(
+        "stock",
+        (Column("id", "INTEGER", False), Column("quantity", "INTEGER", True)),
+        "id",
+    )
+    ui = _xml(
+        RecordSource("shop", "stock", "id", open_at="new"),
+        (("QSpinBox", "quantitySpin", "quantity", ""),),
+    )
+
+    def prepare(root: Path) -> Path:
+        return _sqlite(root, ("CREATE TABLE stock (id INTEGER PRIMARY KEY, quantity INTEGER)",), ())
+
+    with record_window(tmp_path, ui, prepare, schema=schema) as (host, db):
+        spin = host.ui.quantitySpin
+        assert spin.text().strip() == ""
+        spin.setValue(0)
+        assert spin.text().strip() == "0"
+        assert host.ui.cbcs_save() is True
+        assert _one(db, "SELECT quantity FROM stock") == (0,)
+
+
 def test_a_nullable_check_box_saves_null(tmp_path: Path) -> None:
     schema = _table_schema(
         "flags",
@@ -243,7 +266,7 @@ def test_unique_violation_uses_the_field_label(tmp_path: Path) -> None:
         host.ui.cbcs_next()
         host.ui.invoiceNoEdit.setText("INV-1")
         assert host.ui.cbcs_save() is False
-        assert host.ui.invoiceNoEditError.text() == "Another invoice already uses this Invoice number."
+        assert host.ui.invoiceNoEditError.text() == "Another invoice already uses this invoice number."
         assert host.ui.invoiceNoEditError.isVisible() is True
         assert _one(db, "SELECT invoice_no FROM invoices WHERE id = 2") == ("INV-2",)
 
