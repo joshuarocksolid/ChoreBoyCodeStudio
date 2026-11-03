@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import os
-from typing import Callable, Iterable, Optional, Sequence, cast
+import weakref
+from typing import Dict, Iterable, Optional, Sequence, cast
 
 from app.features.form_builder.engine.data.check import DataCheck
 from app.features.form_builder.engine.data.listing import VALUE_READ
@@ -15,14 +16,33 @@ from app.features.form_builder.engine.ui4.values import StringValue
 import app.features.form_builder.engine.diagnostic_codes.fb3xx_data  # noqa: F401
 
 _SENTENCE = "Only a single SELECT can be a list's source."
-_SECRET: Optional[Callable[[object], str]] = None
+_PROBES: "weakref.WeakKeyDictionary[object, Dict[str, object]]" = weakref.WeakKeyDictionary()
 
 
-def set_list_probe_secret(ask: Optional[Callable[[object], str]]) -> None:
-    """Password for the live FB314 probe. The Data tab installs the session prompt."""
+def remember_list_probe(document: object, sql: str, outcome: object) -> None:
+    """Keep a probe on the document. Publish reads this and does not connect."""
 
-    global _SECRET
-    _SECRET = ask
+    try:
+        bucket = _PROBES.get(document)
+    except TypeError:
+        return
+    if bucket is None:
+        bucket = {}
+        try:
+            _PROBES[document] = bucket
+        except TypeError:
+            return
+    bucket[sql] = outcome
+
+
+def cached_list_probe(document: object, sql: str) -> object:
+    try:
+        bucket = _PROBES.get(document)
+    except TypeError:
+        return None
+    if not isinstance(bucket, dict):
+        return None
+    return bucket.get(sql)
 
 
 def register(registry: object) -> None:
@@ -36,17 +56,18 @@ def register(registry: object) -> None:
 
 
 def _sql(doc: object, connections: object, schema: object) -> Iterable[FormDiagnostic]:
-    del schema
+    del connections, schema
     source = _list(doc)
     if source is None or not source.sql.strip():
         return ()
     grammar = select_source_error(source.sql)
     if grammar:
         return (_at(doc, "FB314", grammar, _root(doc)),)
-    outcome = _probe(doc, connections, source)
-    if outcome is None or outcome.ok or outcome.kind in ("no_driver", "cancelled"):
+    outcome = cached_list_probe(doc, source.sql)
+    kind = getattr(outcome, "kind", "")
+    if outcome is None or getattr(outcome, "ok", False) or kind in ("no_driver", "cancelled"):
         return ()
-    reason = outcome.reason.strip() or _SENTENCE
+    reason = str(getattr(outcome, "reason", "") or "").strip() or _SENTENCE
     return (_at(doc, "FB314", reason, _root(doc)),)
 
 
@@ -85,18 +106,6 @@ def _names(doc: object, connections: object, schema: object) -> Iterable[FormDia
     if source.open is not None and source.open.key and not is_identifier(source.open.key):
         bad.append(source.open.key)
     return tuple(_at(doc, "FB307", CODES["FB307"].title.format(name=name), _root(doc)) for name in bad)
-
-
-def _probe(doc: object, connections: object, source: ListSource):
-    item = _connection(connections, source.connection)
-    if item is None or getattr(item, "engine", "") not in ("sqlite", "postgres"):
-        return None
-    from app.features.form_builder.engine.data.schema_cache import installed_root, probe_select
-
-    root = installed_root()
-    if not root:
-        return None
-    return probe_select(root, item, source.sql, _password)
 
 
 def _open_key(doc: object, connections: object, schema: object) -> Iterable[FormDiagnostic]:
@@ -144,24 +153,6 @@ def _record_key(stem: str) -> str:
     if isinstance(found, RecordSource):
         return found.key
     return ""
-
-
-def _password(connection: object) -> str:
-    ask = _SECRET
-    if ask is None:
-        return ""
-    try:
-        found = ask(connection)
-    except Exception:
-        return ""
-    return found if isinstance(found, str) else ""
-
-
-def _connection(connections: object, name: str):
-    for item in getattr(connections, "connections", ()) or ():
-        if getattr(item, "name", "") == name:
-            return item
-    return None
 
 
 def _list(doc: object) -> Optional[ListSource]:

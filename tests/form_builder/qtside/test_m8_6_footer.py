@@ -12,7 +12,8 @@ import pytest
 from app.features.form_builder.engine.data.connections import Connection, ConnectionSet, save_connections
 from app.features.form_builder.engine.data.schema import Column, Schema, Table, set_schema_reader, write_schema
 from app.features.form_builder.engine.data.schema_cache import set_schema_runner
-from app.features.form_builder.engine.data.source import RecordSource, write_data
+from app.features.form_builder.engine.data.checks.listing import cached_list_probe
+from app.features.form_builder.engine.data.source import ListSource, RecordSource, write_data
 from app.features.form_builder.engine.ui4.values import StringValue
 from app.features.form_builder.qtside.data_panel.panel import DataPanel
 from app.features.form_builder.qtside.data_panel.sections_ext.schema_footer import FORCE_FOOTER
@@ -111,6 +112,30 @@ def test_a_failure_keeps_the_previous_day_and_the_reason(qapp, tmp_path: Path) -
         set_schema_reader(None)
 
 
+def test_refresh_probes_list_sql_once_and_remembers_it(qapp, tmp_path: Path, monkeypatch) -> None:
+    _save(tmp_path)
+    sql = "SELECT id FROM customers -- keep"
+    document = _Doc(write_data(ListSource("office", ("id",), table="customers", sql=sql)))
+    panel = DataPanel(_Workbench(document, str(tmp_path)))
+    runner = _Probe()
+    asks = []
+    import app.features.form_builder.qtside.data_panel.sections_ext.schema_footer as footer
+
+    monkeypatch.setattr(footer, "ask_connection_secret", lambda _root, item: asks.append(item) or "secret")
+    set_schema_runner(runner)
+    try:
+        panel.findChild(QWidget, "formBuilder.data.schemaRefresh").click()
+        _until(qapp, lambda: bool(runner.probes))
+    finally:
+        set_schema_runner(None)
+        set_schema_reader(None)
+    assert runner.probes == [sql]
+    assert len(asks) == 1
+    cached = cached_list_probe(document, sql)
+    assert cached is not None and cached.ok is False
+    assert cached.reason == "no such table"
+
+
 def test_the_stale_label_uses_the_warning_token(qapp, tmp_path: Path) -> None:
     del qapp
     _save(tmp_path)
@@ -156,6 +181,21 @@ class _Ok:
 
     def cancel(self) -> None:
         return None
+
+
+class _Probe(_Ok):
+    def __init__(self) -> None:
+        self.probes = []
+
+    def schema(self, root, connection, ask):
+        ask(connection)
+        return super().schema(root, connection, ask)
+
+    def probe_select(self, root, connection, sql, ask):
+        del root
+        self.probes.append(sql)
+        ask(connection)
+        return {"ok": False, "kind": "other", "message": "no such table"}
 
 
 class _Fail:

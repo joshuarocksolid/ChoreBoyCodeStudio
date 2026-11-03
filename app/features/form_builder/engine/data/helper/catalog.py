@@ -57,13 +57,17 @@ def read_postgres(
 
 
 def probe_postgres(connection: object, sql: str) -> Tuple[Tuple[str, str], ...]:
-    """``BEGIN``, read-only, ``SELECT * FROM (sql) AS q LIMIT 0``, then rollback."""
+    """``BEGIN``, read-only, the shared subquery wrap, ``LIMIT 0``, then rollback."""
 
     cursor = _cursor(connection)
     try:
         cursor.execute("BEGIN")
         cursor.execute("SET TRANSACTION READ ONLY")
-        cursor.execute("SELECT * FROM (%s) AS q LIMIT 0" % sql)
+        from app.features.form_builder.engine.data.sql import select_subquery, user_sql_for_wrap
+
+        cursor.execute(
+            "SELECT * FROM %s LIMIT 0" % select_subquery(user_sql_for_wrap("postgres", sql))
+        )
         description = list(cursor.description or ())
         found = []
         for column in description:

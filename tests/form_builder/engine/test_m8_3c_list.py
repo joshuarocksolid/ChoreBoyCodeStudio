@@ -160,8 +160,15 @@ def test_fb314_reports_the_database_when_the_select_cannot_run(tmp_path: Path) -
     sqlite3.connect(str(path)).close()
     install_schema_reader(str(root))
     try:
-        document = _doc(_source(10, sql="SELECT * FROM missing_table"))
-        connections = ConnectionSet((Connection("shop", "Shop", "sqlite", file="data/shop.db"),))
+        sql = "SELECT * FROM missing_table"
+        document = _doc(_source(10, sql=sql))
+        connection = Connection("shop", "Shop", "sqlite", file="data/shop.db")
+        from app.features.form_builder.engine.data.checks.listing import remember_list_probe
+        from app.features.form_builder.engine.data.schema_cache import probe_select
+
+        outcome = probe_select(str(root), connection, sql, lambda _item: "")
+        remember_list_probe(document, sql, outcome)
+        connections = ConnectionSet((connection,))
         found = [item for item in run_checks(document, connections) if item.code == "FB314"]
     finally:
         from app.features.form_builder.engine.data.schema import set_schema_reader

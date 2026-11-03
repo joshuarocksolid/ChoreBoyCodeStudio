@@ -538,11 +538,15 @@ def _probe_outcome(session: object, source: ListSource, sql: str, host: QWidget)
     root = project_root_of(host)
     if item is None or not root:
         return None
+    from app.features.form_builder.engine.data.checks.listing import remember_list_probe
     from app.features.form_builder.engine.data.schema_cache import probe_select
-
     from app.features.form_builder.qtside.schema_prompt import ask_connection_secret
 
-    return probe_select(root, item, sql, lambda connection: ask_connection_secret(root, connection))
+    outcome = probe_select(root, item, sql, lambda connection: ask_connection_secret(root, connection))
+    document = getattr(session, "document", None)
+    if document is not None:
+        remember_list_probe(document, sql, outcome)
+    return outcome
 
 
 def _probe_problem(session: object, source: ListSource, sql: str, host: QWidget) -> str:
@@ -553,8 +557,13 @@ def _probe_problem(session: object, source: ListSource, sql: str, host: QWidget)
 
 
 def _probe_columns(session: object, source: ListSource, sql: str, host: QWidget) -> tuple:
-    outcome = _probe_outcome(session, source, sql, host)
-    if outcome is None or not outcome.ok:
+    from app.features.form_builder.engine.data.checks.listing import cached_list_probe
+
+    document = getattr(session, "document", None)
+    outcome = cached_list_probe(document, sql) if document is not None else None
+    if outcome is None:
+        outcome = _probe_outcome(session, source, sql, host)
+    if outcome is None or not getattr(outcome, "ok", False):
         return source.columns
     return tuple(column.name for column in outcome.columns if column.name)
 

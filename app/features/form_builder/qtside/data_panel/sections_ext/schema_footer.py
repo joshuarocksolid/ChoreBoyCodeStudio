@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import datetime
 import weakref
-from typing import Any, Optional
+from typing import Any, Dict, Optional
 
 from app.features.form_builder.engine.data.connections import Connection, load_connections
 from app.features.form_builder.engine.data.schema import is_stale, schema_for
@@ -93,11 +93,24 @@ class _Footer(QWidget):
         self._stale.hide()
         self._install_filter()
         install_secret_marshal()
+        document = _document(self._host)
+        source = _source(document)
+        sql = str(getattr(source, "sql", "") or "")
+        asked: Dict[str, str] = {}
+
+        def ask(item: Connection) -> str:
+            if "secret" in asked:
+                return str(asked["secret"])
+            secret = ask_connection_secret(root, item)
+            asked["secret"] = secret
+            return secret
 
         def run() -> object:
             if connection is None or not root:
                 return None
-            return refresh(root, connection, lambda item: ask_connection_secret(root, item))
+            outcome = refresh(root, connection, ask)
+            _remember_list_sql(root, connection, document, sql, ask)
+            return outcome
 
         worker = _Worker(run, self)
         self._worker = worker
@@ -207,6 +220,17 @@ class _Footer(QWidget):
         if application is not None and self._filtered:
             application.removeEventFilter(self)
             self._filtered = False
+
+
+def _remember_list_sql(root: str, connection: Connection, document: object, sql: str, ask: Any) -> None:
+    """Probe after the schema read. The result is what publish shows later."""
+
+    if document is None or not sql.strip():
+        return
+    from app.features.form_builder.engine.data.checks.listing import remember_list_probe
+    from app.features.form_builder.engine.data.schema_cache import probe_select
+
+    remember_list_probe(document, sql, probe_select(root, connection, sql, ask))
 
 
 def _create(host: Any) -> QWidget:
