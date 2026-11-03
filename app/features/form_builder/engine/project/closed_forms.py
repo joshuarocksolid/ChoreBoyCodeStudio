@@ -39,10 +39,13 @@ def rewrite_forms(
     *,
     open_sessions: Dict[str, object],
     undo_label: str,
+    apply_open: bool = True,
 ) -> Tuple[str, ...]:
     """Edit every project form. Closed files are written when the text changes.
 
     ``open_sessions`` maps an absolute ``.ui`` path to an object with ``.log`` and ``.document``.
+    ``apply_open`` False leaves an open form's command log alone. The caller already
+    updated it. The file on disk stays untouched.
     """
 
     opened = {os.path.abspath(path): session for path, session in open_sessions.items()}
@@ -52,7 +55,7 @@ def rewrite_forms(
         absolute = os.path.abspath(path)
         session = opened.get(absolute)
         if session is not None:
-            if _rewrite_open(session, edit, undo_label):
+            if apply_open and _rewrite_open(session, edit, undo_label):
                 changed.append(absolute)
             continue
         if _rewrite_closed(absolute, edit, files):

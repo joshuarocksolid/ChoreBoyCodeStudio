@@ -6,6 +6,7 @@ from typing import Any
 
 from app.qt.QtWidgets import QLabel, QPushButton, QVBoxLayout, QWidget
 
+from app.features.form_builder.engine.codegen.eject import ejected_method
 from app.features.form_builder.engine.data.source import has_data_source
 from app.features.form_builder.qtside.data_panel.sections_ext import PanelSection
 from app.features.form_builder.qtside.data_panel.host import session_of
@@ -59,7 +60,7 @@ def _connect(host: Any) -> None:
 
 
 def _applies(doc: Any) -> bool:
-    return not has_data_source(doc)
+    return not has_data_source(doc) and ejected_method(doc) is None
 
 
 def register(registry: Any) -> None:

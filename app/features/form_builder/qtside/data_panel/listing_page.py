@@ -141,6 +141,7 @@ class ListingPage(QWidget):
         menu.addAction("Use my own SQL\u2026", self._own_sql)
         menu.addAction("Use the table", self._use_table)
         menu.addAction("Show SQL", self._show_sql)
+        menu.addAction("Eject to code\u2026", self._eject)
         more.setMenu(menu)
         head.addWidget(more)
         layout.addLayout(head)
@@ -468,6 +469,11 @@ class ListingPage(QWidget):
 
     def _show_sql(self) -> None:
         open_sql_sheet(self)
+
+    def _eject(self) -> None:
+        from app.features.form_builder.qtside.data_panel.eject_dialog import open_eject_dialog
+
+        open_eject_dialog(self)
 
 
 def _connection_engine(session: object, source: ListSource, host: QWidget) -> str:

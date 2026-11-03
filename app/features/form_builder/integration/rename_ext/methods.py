@@ -2,26 +2,13 @@
 
 from __future__ import annotations
 
-import io
 import os
-import tokenize
 from dataclasses import dataclass, is_dataclass, replace
 from typing import List, Optional, Sequence, Tuple
 
 from app.features.form_builder.engine.commands.base import CommandRejected
-from app.features.form_builder.engine.commands.catalog import SetFormSlots, SetLogic
-from app.features.form_builder.engine.commands.catalog_ext.events import SetEventSteps
-from app.features.form_builder.engine.logic.codec import parse_json, write_json
-from app.features.form_builder.engine.logic.compat import signature_text, split_signature
-from app.features.form_builder.engine.logic.events import read_events
-from app.features.form_builder.engine.logic.events_codec import EventStep
-from app.features.form_builder.engine.logic.refs import map_json_formulas
-from app.features.form_builder.engine.logic.storage import FORMULA_KEYS
+from app.features.form_builder.engine.project.method_forms import method_rename_commands as _method_rename_commands
 from app.features.form_builder.engine.project.handler_checks import shadow_sentence
-from app.features.form_builder.engine.ui4.document import UiDocument
-from app.features.form_builder.engine.ui4.nodes import WidgetNode
-from app.features.form_builder.engine.ui4.schema import SlotsDecl
-from app.features.form_builder.engine.ui4.values import CStringValue, StringValue
 from app.features.form_builder.qtside.outline.methods import window_methods
 
 
@@ -77,7 +64,6 @@ class MethodRename:
         sentence = self.refusal(window, old, new, seed.window_path)
         if sentence:
             return RenameFollowThrough(True, plan, sentence)
-        # A closed form on disk is left alone. Saving it would write a file the person has not opened.
         label = "Rename %s to %s" % (old, new)
         done: List[object] = []
         for surface in _surfaces(window):
@@ -99,6 +85,11 @@ class MethodRename:
                     _undo_if(earlier, label)
                 return RenameFollowThrough(True, plan, "The form could not be renamed.")
             done.append(surface)
+        closed = _rewrite_closed(window, old, new, label)
+        if closed:
+            for surface in done:
+                _undo_if(surface, label)
+            return RenameFollowThrough(True, plan, closed)
         status, updated_plan = _edit_window_file(window, seed.window_path, plan)
         if status == "fail":
             for surface in done:
@@ -107,163 +98,54 @@ class MethodRename:
         return RenameFollowThrough(False, updated_plan, "")
 
 
+def _rewrite_closed(window: object, old: str, new: str, label: str) -> str:
+    """Rewrite closed forms that name ``old``. Empty when there is nothing to do or it worked."""
+
+    if not old or not new or old == new:
+        return ""
+    root = _project_root(window)
+    if not root:
+        return ""
+    from app.features.form_builder.engine.project.closed_forms import rewrite_forms
+    from app.features.form_builder.engine.project.method_forms import rename_method_in_document
+
+    opened = {}
+    for surface in _surfaces(window):
+        session = getattr(surface, "session", None)
+        form = getattr(surface, "form_path", None)
+        path = str(form() or "") if callable(form) else ""
+        if session is not None and path:
+            opened[os.path.abspath(path)] = session
+    try:
+        rewrite_forms(
+            root,
+            lambda doc: rename_method_in_document(doc, old, new),
+            open_sessions=opened,
+            undo_label=label,
+            apply_open=False,
+        )
+    except CommandRejected:
+        return "A form that isn't open could not be renamed."
+    return ""
+
+
+def _project_root(window: object) -> str:
+    for surface in _surfaces(window):
+        request = getattr(surface, "_request", None)
+        root = str(getattr(request, "project_root", "") or "")
+        if root:
+            return root
+        scope = getattr(getattr(surface, "session", None), "scope", None)
+        root = str(getattr(scope, "project_root", "") or "")
+        if root:
+            return root
+    loaded = getattr(window, "loaded_project", None)
+    project = loaded() if callable(loaded) else None
+    return str(getattr(project, "project_root", "") or "")
+
+
 def register(window: object) -> None:
     window._form_builder_method_rename = MethodRename()  # type: ignore[attr-defined]
-
-
-def _method_rename_commands(doc: UiDocument, old: str, new: str) -> Tuple[object, ...]:
-    """One form's commands. Private to this module. The transaction label is applied by the caller."""
-    commands: List[object] = []
-    for node in doc.iter_preorder():
-        if not isinstance(node, WidgetNode):
-            continue
-        for key in FORMULA_KEYS:
-            text = _stored(node, key)
-            if not text:
-                continue
-            updated = _window_call(text, old, new)
-            if updated != text:
-                commands.append(SetLogic(node.id, key, updated))
-        validate = _stored(node, "cbcsValidate")
-        if validate:
-            updated_json = _rewrite_json(validate, old, new)
-            if updated_json != validate:
-                commands.append(SetLogic(node.id, "cbcsValidate", updated_json))
-    for state in read_events(doc):
-        steps = tuple(_rename_step(step, old, new) for step in state.steps)
-        if steps != state.steps:
-            commands.append(SetEventSteps(state.sender, state.signal_name, steps))
-    declared = doc.ui.field("form_slots")
-    if isinstance(declared, SlotsDecl):
-        slots: List[str] = []
-        changed = False
-        for signature in declared.slots:
-            name, params = split_signature(signature)
-            if name == old:
-                signature = signature_text(new, params)
-                changed = True
-            slots.append(signature)
-        if changed:
-            commands.append(SetFormSlots(tuple(declared.signals), tuple(slots)))
-    return tuple(commands)
-
-
-def _rename_step(step: EventStep, old: str, new: str) -> EventStep:
-    method = step.method
-    slot = step.slot
-    when = step.when
-    raw = step.raw
-    changed = False
-    if step.verb == "call" and method == old:
-        method = new
-        changed = True
-    if slot:
-        name, params = split_signature(slot)
-        if name == old:
-            slot = signature_text(new, params)
-            changed = True
-    if isinstance(when, str):
-        updated = _window_call(when, old, new)
-        if updated != when:
-            when = updated
-            changed = True
-    if raw is not None:
-        renamed = _rename_raw(raw, old, new)
-        if renamed is not raw:
-            raw = renamed
-            changed = True
-    if not changed:
-        return step
-    return replace(step, method=method, slot=slot, when=when, raw=raw)
-
-
-def _rename_raw(raw: object, old: str, new: str) -> object:
-    fields = getattr(raw, "fields", None)
-    when = getattr(raw, "when", None)
-    if not isinstance(fields, tuple):
-        return raw
-    updated_fields = []
-    changed = False
-    for key, value in fields:
-        if key == "method" and value == old:
-            value = new
-            changed = True
-        elif isinstance(value, str) and key in ("when", "formula"):
-            rewritten = _window_call(value, old, new)
-            if rewritten != value:
-                value = rewritten
-                changed = True
-        updated_fields.append((key, value))
-    new_when = _window_call(when, old, new) if isinstance(when, str) else when
-    if new_when != when:
-        changed = True
-    if not changed:
-        return raw
-    if is_dataclass(raw):
-        try:
-            return replace(raw, fields=tuple(updated_fields), when=new_when)  # type: ignore[type-var]
-        except TypeError:
-            return raw
-    return raw
-
-
-def _window_call(text: str, old: str, new: str) -> str:
-    """Replace ``window.old`` name tokens. ``rename_formula`` skips a name after a dot."""
-    if not text or not old or old == new or "window" not in text:
-        return text
-    try:
-        tokens = list(tokenize.generate_tokens(io.StringIO(text).readline))
-    except (tokenize.TokenError, SyntaxError, IndentationError):
-        return text
-    older = None
-    previous = None
-    chosen = []
-    for token in tokens:
-        if (
-            token.type == tokenize.NAME
-            and token.string == old
-            and previous is not None
-            and previous.type == tokenize.OP
-            and previous.string == "."
-            and older is not None
-            and older.type == tokenize.NAME
-            and older.string == "window"
-        ):
-            chosen.append(token)
-        older = previous
-        previous = token
-    if not chosen:
-        return text
-    starts: List[int] = []
-    offset = 0
-    for line in text.split("\n"):
-        starts.append(offset)
-        offset += len(line) + 1
-    pieces: List[Tuple[int, int]] = []
-    for token in chosen:
-        row, column = token.start
-        end_row, end_column = token.end
-        if row != end_row or row - 1 >= len(starts):
-            return text
-        begin = starts[row - 1] + column
-        end = starts[row - 1] + end_column
-        if text[begin:end] != token.string:
-            return text
-        pieces.append((begin, end))
-    result = text
-    for begin, end in sorted(pieces, reverse=True):
-        result = result[:begin] + new + result[end:]
-    return result
-
-
-def _rewrite_json(text: str, old: str, new: str) -> str:
-    parsed = parse_json(text)
-    if parsed.error is not None or parsed.value is None:
-        return text
-    mapped = map_json_formulas(parsed.value, lambda formula: _window_call(formula, old, new))
-    if mapped == parsed.value:
-        return text
-    return write_json(mapped)
 
 
 def _edit_window_file(window: object, path: str, plan: object) -> Tuple[str, object]:
@@ -408,15 +290,6 @@ def _cursor(source: str, method: str) -> int:
         return 0
     return found.end() - len(method)
 
-
-def _stored(node: object, key: str) -> Optional[str]:
-    try:
-        value = node.value(key)  # type: ignore[attr-defined]
-    except Exception:
-        return None
-    if isinstance(value, (StringValue, CStringValue)):
-        return value.text
-    return None
 
 
 def _same(left: str, right: str) -> bool:

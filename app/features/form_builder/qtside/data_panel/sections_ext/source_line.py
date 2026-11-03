@@ -68,7 +68,9 @@ def _menu(host: Any, which: str) -> None:
         open_hooks_sheet(host)
         return
     if which == "eject":
-        narrate(host, "Eject to code is not available on this form yet.")
+        from app.features.form_builder.qtside.data_panel.eject_dialog import open_eject_dialog
+
+        open_eject_dialog(host)
         return
     session = owner_session(host)
     if session is None:
