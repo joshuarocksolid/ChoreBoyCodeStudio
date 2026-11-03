@@ -436,3 +436,27 @@ def test_known_receiver_paints_before_fast_or_infer(monkeypatch: pytest.MonkeyPa
     assert "fast" in calls
     assert "infer" in calls
     session.shutdown()
+
+
+def test_buffer_warmup_remembers_dotted_receiver_and_prefetches_target() -> None:
+    class _FacadeStub:
+        def warm_open_buffer(self, **_kwargs: object) -> str:
+            return "PySide2.QtWidgets.QLabel"
+
+    session = SemanticSession(dispatch_to_main_thread=lambda callback: callback(), cache_db_path=":memory:")
+    session._semantic_facade = _FacadeStub()  # type: ignore[assignment]
+    prefetched: list[str] = []
+    done = threading.Event()
+    source = "w = make()\nw."
+
+    session.request_buffer_warmup(
+        project_root=None,
+        current_file_path="/tmp/example.py",
+        source_text=source,
+        cursor_position=len(source),
+        prefetch_target=lambda target: (prefetched.append(target), done.set()),
+    )
+
+    assert done.wait(timeout=2.0) is True
+    assert prefetched == ["PySide2.QtWidgets.QLabel"]
+    session.shutdown()

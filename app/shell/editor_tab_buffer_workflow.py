@@ -109,7 +109,11 @@ class EditorTabBufferWorkflow:
 
     def handle_editor_tab_changed(self, tab_index: int) -> None:
         editor_tabs_widget = self._host.editor_tabs_widget()
-        if tab_index < 0 or editor_tabs_widget is None:
+        if editor_tabs_widget is None:
+            return
+        if tab_index < 0:
+            if not any(tabs.count() for tabs in self._editor_tabs_coordinator.all_tab_widgets()):
+                self.reset_editor_status_for_no_tabs()
             return
 
         tab_path = self._editor_tabs_coordinator.file_path_for_tab_index(tab_index)
@@ -125,6 +129,21 @@ class EditorTabBufferWorkflow:
         self._host.render_lint_diagnostics_for_file(tab_path, trigger="tab_change")
         self._outline_workflow.handle_active_tab_changed()
         self._host.reveal_project_tree_path(tab_path)
+
+    def reset_editor_status_for_no_tabs(self) -> None:
+        """Clear per-file status and the Outline once the last tab closes.
+
+        Qt reports the empty tab widget before the manager drops the buffer, so
+        this must not read ``active_tab()``.
+        """
+        status_controller = self._host.status_controller()
+        if status_controller is not None:
+            status_controller.set_editor_status(file_name=None, line=None, column=None, is_dirty=False)
+            status_controller.set_diagnostics_counts(0, 0)
+        self._tab_workflow.update_indent_status_for_path(None)
+        self._outline_workflow.clear_for_no_tabs()
+        self._host.refresh_save_action_states()
+        self._host.refresh_run_action_states()
 
 
 __all__ = ["EditorTabBufferWorkflow"]
