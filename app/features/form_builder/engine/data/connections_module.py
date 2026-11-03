@@ -89,6 +89,9 @@ def set_password(name, password):
 def open_connection(name):
     """One connection per name for this process."""
 
+    reason = os.environ.get("CBCS_TRY_CLOSED")
+    if reason:
+        raise CbcsConnectionError(reason)
     existing = _OPEN.get(name)
     if existing is not None:
         return existing

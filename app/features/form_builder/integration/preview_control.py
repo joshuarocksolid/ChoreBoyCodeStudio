@@ -290,10 +290,17 @@ class PreviewControl:
             watch.close()
             self._watch = None
         self._open = False
+        closer = getattr(self._notices, "close", None)
+        if callable(closer):
+            closer()
 
     def _on_child(self, message: ChildMessage) -> None:
         if isinstance(message, ViewClosed):
             self._open = False
+            if getattr(self._notices, "_trying", False):
+                closer = getattr(self._notices, "close", None)
+                if callable(closer):
+                    closer()
             return
         if isinstance(message, Log) and message.kind == "run_behavior":
             self.set_run_behavior(message.text != "off")

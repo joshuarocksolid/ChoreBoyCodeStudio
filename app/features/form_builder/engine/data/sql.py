@@ -580,6 +580,134 @@ PG8000_SCAN_SENTENCE = (
 )
 
 
+def has_unicode_escape(sql: str) -> bool:
+    """True when a ``U&`` identifier or ``U&`` string sits outside comments and quotes."""
+
+    index = 0
+    length = len(sql)
+    while index < length:
+        char = sql[index]
+        nxt = sql[index + 1] if index + 1 < length else ""
+        if char == "-" and nxt == "-":
+            index = _line_comment_end(sql, index)
+            continue
+        if char == "/" and nxt == "*":
+            end = _block_comment_end(sql, index)
+            index = length if end is None else end
+            continue
+        if char in ("E", "e") and nxt == "'" and not _ident_before(sql, index):
+            index = _end_escape_string(sql, index + 2)
+            continue
+        tag = _dollar_tag(sql, index)
+        if tag is not None:
+            closer = "$%s$" % tag
+            end = sql.find(closer, index + len(closer))
+            index = length if end < 0 else end + len(closer)
+            continue
+        if char in ("'", '"'):
+            index = _end_quote(sql, index + 1, char)
+            continue
+        if char in ("U", "u") and nxt == "&" and not _ident_before(sql, index):
+            quote = sql[index + 2] if index + 2 < length else ""
+            if quote in ("'", '"'):
+                return True
+        index += 1
+    return False
+
+
+def embedded_semicolon(sql: str) -> bool:
+    """True when ``;`` appears anywhere except one trailing semicolon.
+
+    A semicolon inside a literal is refused too. Try runs one statement at a time.
+    """
+
+    body = sql.rstrip()
+    if body.endswith(";"):
+        body = body[:-1]
+    return ";" in body
+
+
+def statement_words(sql: str) -> Optional[Tuple[str, ...]]:
+    """Words outside quotes and comments, with ``;`` kept as its own word.
+
+    ``None`` when a quote or a block comment is unfinished. ``SELECT '--'; COMMIT``
+    is ``("SELECT", ";", "COMMIT")``.
+    """
+
+    words = _sql_words(sql)
+    if words is None:
+        return None
+    return tuple(words)
+
+
+def has_extra_statement(sql: str) -> bool:
+    """True when another statement follows a semicolon, or a quote is unfinished.
+
+    A single trailing semicolon is still one statement.
+    """
+
+    words = statement_words(sql)
+    if words is None:
+        return True
+    seen_word = False
+    after = False
+    for word in words:
+        if word == ";":
+            if seen_word:
+                after = True
+            continue
+        if word in ("(", ")"):
+            if after:
+                return True
+            continue
+        if after:
+            return True
+        seen_word = True
+    return False
+
+
+def sql_without_comments(sql: str) -> str:
+    """SQL with ``--`` and ``/* */`` removed. Quotes, including ``E'…'`` and ``$tag$``, stay."""
+
+    out: List[str] = []
+    index = 0
+    length = len(sql)
+    while index < length:
+        char = sql[index]
+        nxt = sql[index + 1] if index + 1 < length else ""
+        if char == "-" and nxt == "-":
+            index = _line_comment_end(sql, index)
+            continue
+        if char == "/" and nxt == "*":
+            end = _block_comment_end(sql, index)
+            index = length if end is None else end
+            continue
+        if char in ("E", "e") and nxt == "'" and not _ident_before(sql, index):
+            end = _end_escape_string(sql, index + 2)
+            out.append(sql[index:min(end, length)])
+            index = end
+            continue
+        tag = _dollar_tag(sql, index)
+        if tag is not None:
+            closer = "$%s$" % tag
+            end = sql.find(closer, index + len(closer))
+            if end < 0:
+                out.append(sql[index:])
+                break
+            end = end + len(closer)
+            out.append(sql[index:end])
+            index = end
+            continue
+        if char in ("'", '"'):
+            end = _end_quote(sql, index + 1, char)
+            out.append(sql[index:min(end, length)])
+            index = end
+            continue
+        out.append(char)
+        index += 1
+    return "".join(out).strip()
+
+
 def pg8000_scan_closed(sql: str) -> bool:
     """True when pg8000 would be outside quotes before a placeholder.
 
@@ -689,16 +817,16 @@ def _sql_words(sql: str) -> Optional[List[str]]:
         nxt = sql[index + 1] if index + 1 < length else ""
         if char == "-" and nxt == "-":
             flush()
-            index = sql.find("\n", index + 2)
-            if index < 0:
+            index = _line_comment_end(sql, index)
+            if index >= length:
                 return found
             continue
         if char == "/" and nxt == "*":
             flush()
-            end = sql.find("*/", index + 2)
-            if end < 0:
+            end = _block_comment_end(sql, index)
+            if end is None:
                 return None
-            index = end + 2
+            index = end
             continue
         if char in ("E", "e") and nxt == "'" and not _ident_before(sql, index):
             flush()
@@ -743,15 +871,51 @@ def _sql_words(sql: str) -> Optional[List[str]]:
     return found
 
 
+def _line_comment_end(sql: str, index: int) -> int:
+    """Index of the ``\\n`` or ``\\r`` that ends a ``--`` comment, or the string length."""
+
+    index += 2
+    length = len(sql)
+    while index < length and sql[index] not in ("\n", "\r"):
+        index += 1
+    return index
+
+
+def _block_comment_end(sql: str, index: int) -> Optional[int]:
+    """Index after a nested ``/* */`` comment, or None when it is unfinished."""
+
+    depth = 1
+    index += 2
+    length = len(sql)
+    while index < length and depth:
+        pair = sql[index:index + 2]
+        if pair == "/*":
+            depth += 1
+            index += 2
+            continue
+        if pair == "*/":
+            depth -= 1
+            index += 2
+            continue
+        index += 1
+    if depth:
+        return None
+    return index
+
+
 def _ident_before(sql: str, index: int) -> bool:
     if index <= 0:
         return False
     prev = sql[index - 1]
-    return prev.isalnum() or prev == "_"
+    return prev.isalnum() or prev in ("_", "$")
 
 
 def _dollar_tag(sql: str, index: int) -> Optional[str]:
     if index >= len(sql) or sql[index] != "$":
+        return None
+    if _ident_before(sql, index):
+        return None
+    if index + 1 < len(sql) and sql[index + 1].isdigit():
         return None
     cursor = index + 1
     while cursor < len(sql) and (sql[cursor].isalnum() or sql[cursor] == "_"):
@@ -795,14 +959,15 @@ def _strip_trailing_semicolon(sql: str) -> str:
         char = sql[index]
         nxt = sql[index + 1] if index + 1 < length else ""
         if char == "-" and nxt == "-":
-            end = sql.find("\n", index + 2)
-            index = length if end < 0 else end + 1
+            index = _line_comment_end(sql, index)
+            if index < length and sql[index] in ("\n", "\r"):
+                index += 1
             continue
         if char == "/" and nxt == "*":
-            end = sql.find("*/", index + 2)
-            if end < 0:
+            end = _block_comment_end(sql, index)
+            if end is None:
                 return sql
-            index = end + 2
+            index = end
             continue
         if char in ("E", "e") and nxt == "'" and not _ident_before(sql, index):
             end = _end_escape_string(sql, index + 2)

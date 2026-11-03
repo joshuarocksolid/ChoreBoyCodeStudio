@@ -8,6 +8,7 @@ stopped sentence. The widget only paints these lines.
 
 from __future__ import annotations
 
+import datetime
 import re
 from dataclasses import dataclass
 from typing import Dict, List, Mapping, Optional, Sequence, Tuple
@@ -229,6 +230,23 @@ def fold(
                 )
             )
             continue
+        if item.kind == "sql":
+            payload = item.value if isinstance(item.value, dict) else {}
+            sentence = str(payload.get("sentence") or item.value or "")
+            raw_values = payload.get("values") or ()
+            details = tuple(
+                "%d. %s" % (index, _sql_value(piece)) for index, piece in enumerate(raw_values, 1)
+            )
+            lines.append(
+                TryLine(
+                    sentence=sentence,
+                    ref=item.ref,
+                    source=SourceRef(),
+                    kind="sql",
+                    details=details,
+                )
+            )
+            continue
         if item.kind == "needs_value":
             lines.append(
                 TryLine(
@@ -248,6 +266,20 @@ def fold(
         if len(group) < expected and "stops here" in words:
             lines.append(_stopped(ref, words, len(group), labels))
     return tuple(lines)
+
+
+def _sql_value(value: object) -> str:
+    """One expanded What ran value: NULL, quoted text, or an ISO date."""
+
+    if value is None:
+        return "NULL"
+    if isinstance(value, datetime.datetime):
+        return value.isoformat()
+    if isinstance(value, datetime.date):
+        return value.isoformat()
+    if isinstance(value, str):
+        return "'%s'" % value.replace("'", "''")
+    return str(value)
 
 
 def _naming(

@@ -27,6 +27,7 @@ from app.features.form_builder.engine.ipc.protocol import (
     Ping,
     PromotedClass,
     ProtocolViolation,
+    NeedSecret,
     ProvideSecret,
     Response,
     SetAppearance,
@@ -108,6 +109,8 @@ class ChildSession:
         self._materializer = FormMaterializer()
         self._secrets: Dict[str, Optional[str]] = {}
         self._current_view: Optional[str] = None
+        self._try_run: Dict[str, str] = {}
+        self._stop_pin: Dict[str, Optional[str]] = {}
         self._exit_code = 0
         self._closed = False
         self._last_view_change = time.monotonic()
@@ -253,6 +256,21 @@ class ChildSession:
             purge_project_modules(self._previous_root)
             self._previous_root = message.project_root
             self._sys_path = replace_sys_path(self._sys_path, message.sys_path)
+            from app.features.form_builder.qtside.preview.child.try_connections import (
+                begin_try,
+                end_try,
+                remember_password,
+                set_secret_asker,
+            )
+
+            set_secret_asker(self._ask_secret)
+            if try_message is not None:
+                for name, secret in self._secrets.items():
+                    if secret:
+                        remember_password(name, secret)
+                begin_try(try_message)
+            else:
+                end_try(message.view_id)
             for resource in message.resource_modules:
                 install_resource_module(resource.name, resource.source)
             classes: Dict[str, type] = {}
@@ -305,6 +323,9 @@ class ChildSession:
             self._replace_view(message.view_id, built.widget, message.revision, scale)
             self._dress(message.view_id, message.appearance, first=True)
         except Exception:
+            from app.features.form_builder.qtside.preview.child.try_connections import end_try
+
+            end_try(message.view_id)
             self._writer.send(
                 Response(
                     request_id=message.request_id,
@@ -382,10 +403,22 @@ class ChildSession:
         ``show_form`` is Preview with behavior: the same load as a form, on the
         stand-in, with the What ran pane. The window file is not imported.
         """
+        self._try_run[message.view_id] = message.request_id
         if message.show_form:
             self._load(_load_from_try(message), message)
             return
+        from app.features.form_builder.qtside.preview.child.try_connections import (
+            begin_try,
+            remember_password,
+            set_secret_asker,
+        )
+
         self._current_view = message.view_id
+        set_secret_asker(self._ask_secret)
+        for name, secret in self._secrets.items():
+            if secret:
+                remember_password(name, secret)
+        begin_try(message)
         try:
             standin = _window_standin(message.window_class_name, message.base_class, message.window_values)
             module = types.ModuleType(message.module_name)
@@ -395,6 +428,9 @@ class ChildSession:
             exec(compile(message.module_source, module.__file__, "exec"), module.__dict__)
         except Exception:
             detail = traceback.format_exc()
+            from app.features.form_builder.qtside.preview.child.try_connections import end_try
+
+            end_try(message.view_id)
             self._writer.send(
                 ErrorReport(
                     view_id=message.view_id,
@@ -421,11 +457,63 @@ class ChildSession:
         )
 
     def _try_stop(self, message: TryStop) -> None:
+        from app.features.form_builder.qtside.preview.child.try_connections import end_try
+
+        pinned = self._stop_pin.pop(message.view_id, None)
+        current = self._try_run.get(message.view_id)
+        if pinned is not None and pinned != current:
+            self._writer.send(
+                Response(request_id=message.request_id, ok=True, result={"stopped": False})
+            )
+            return
+        self._try_run.pop(message.view_id, None)
+        end_try(message.view_id)
         self._writer.send(Response(request_id=message.request_id, ok=True, result={"stopped": True}))
+
+    def _ask_secret(self, name: str) -> str:
+        """Ask the host once. A secret already stored for this session is reused."""
+
+        cached = self._secrets.get(name)
+        if isinstance(cached, str) and cached:
+            return cached
+        self._writer.send(NeedSecret(view_id=self._current_view or "", connection=name))
+        deadline = time.monotonic() + 120
+        held: list[str] = []
+        while time.monotonic() < deadline:
+            self._app.processEvents()
+            try:
+                line = self._queue.get(timeout=0.05)
+            except queue.Empty:
+                continue
+            if line is None:
+                self._queue.put(None)
+                break
+            decoded = decode_line(line.rstrip("\r\n"))
+            if isinstance(decoded, TryStop):
+                self._stop_pin[decoded.view_id] = self._try_run.get(decoded.view_id)
+                held.append(line)
+                continue
+            if isinstance(decoded, ProvideSecret) and decoded.connection == name:
+                self._provide_secret(decoded)
+                self._requeue(held)
+                return decoded.secret or ""
+            self._handle_line(line)
+        self._requeue(held)
+        from app.features.form_builder.qtside.preview.child.try_connections import CbcsConnectionError
+
+        raise CbcsConnectionError("Try needs the password for %s." % name)
+
+    def _requeue(self, held: list) -> None:
+        for line in held:
+            self._queue.put(line)
 
     def _provide_secret(self, message: ProvideSecret) -> None:
         # The secret stays in memory. It is not written to a log frame.
         self._secrets[message.connection] = message.secret
+        if message.secret:
+            from app.features.form_builder.qtside.preview.child.try_connections import remember_password
+
+            remember_password(message.connection, message.secret)
         self._writer.send(
             Response(request_id=message.request_id, ok=True, result={"stored": message.secret is not None})
         )
@@ -444,6 +532,9 @@ class ChildSession:
         self._writer.send(Response(request_id=message.request_id, ok=True, result={"png_base64": encoded}))
 
     def _close(self, message: CloseView) -> None:
+        from app.features.form_builder.qtside.preview.child.try_connections import end_try
+
+        end_try(message.view_id)
         view = self._views.pop(message.view_id, None)
         if view is not None:
             view.widget.hide()
@@ -454,6 +545,9 @@ class ChildSession:
         self._writer.send(Response(request_id=message.request_id, ok=True, result={"closed": view is not None}))
 
     def _shutdown(self, message: Shutdown) -> None:
+        from app.features.form_builder.qtside.preview.child.try_connections import end_all
+
+        end_all()
         for view_id in list(self._views):
             view = self._views.pop(view_id)
             view.widget.hide()
@@ -530,6 +624,9 @@ class ChildSession:
         """A preview window was closed by the user: forget it and tell the editor."""
         for view_id, view in list(self._views.items()):
             if view.widget is widget:
+                from app.features.form_builder.qtside.preview.child.try_connections import end_try
+
+                end_try(view_id)
                 self._views.pop(view_id)
                 widget.deleteLater()
                 self._last_view_change = time.monotonic()
