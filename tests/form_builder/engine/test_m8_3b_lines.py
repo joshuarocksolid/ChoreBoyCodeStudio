@@ -427,7 +427,8 @@ def test_a_parent_lookup_and_a_line_lookup_both_load(tmp_path: Path) -> None:
     )
     with record_window(tmp_path, ui_text, _prepare, schema=_invoice_schema()) as (host, _db):
         ui = host.ui
-        assert ui.customerCombo.count() > 1
+        labels = [ui.customerCombo.itemText(index) for index in range(ui.customerCombo.count())]
+        assert "Acme" in labels
         ui._cbcs_add_row()
         seen = {}
 

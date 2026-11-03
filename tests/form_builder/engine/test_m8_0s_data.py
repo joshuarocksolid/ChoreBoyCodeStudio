@@ -183,7 +183,7 @@ def test_a_lane_check_is_loaded_and_the_builtin_checks_fire(tmp_path: Path, monk
     assert any(item.code == "FB320" for item in run_checks(two))
 
 
-def test_record_verbs_stay_untyped_and_a_lane_verb_is_used(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_line_verbs_are_typed_and_a_lane_verb_is_used(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     save = verbs.default_registry().get("save")
     assert save is not None and save.editable is True and save.group_id == "records"
     assert save.blocks_list(None) is False
@@ -194,9 +194,9 @@ def test_record_verbs_stay_untyped_and_a_lane_verb_is_used(tmp_path: Path, monke
     assert held.blocks_list(None) is False
     assert "refreshLookups" in TYPED_VERBS
     add_row = verbs.default_registry().get("addRow")
-    assert add_row is not None and add_row.editable is False
-    assert add_row.blocks_list(None) is True
-    assert "addRow" not in TYPED_VERBS
+    assert add_row is not None and add_row.editable is True
+    assert add_row.blocks_list(None) is False
+    assert "addRow" in TYPED_VERBS
     package = make_package(
         tmp_path,
         monkeypatch,
