@@ -85,48 +85,39 @@ class MethodRename:
                     _undo_if(earlier, label)
                 return RenameFollowThrough(True, plan, "The form could not be renamed.")
             done.append(surface)
-        closed = _rewrite_closed(window, old, new, label)
-        if closed:
+        try:
+            closed = _closed_edits(window, old, new, seed.window_path)
+        except CommandRejected:
             for surface in done:
                 _undo_if(surface, label)
-            return RenameFollowThrough(True, plan, closed)
+            return RenameFollowThrough(True, plan, "A form that isn't open could not be renamed.")
         status, updated_plan = _edit_window_file(window, seed.window_path, plan)
         if status == "fail":
             for surface in done:
                 _undo_if(surface, label)
             return RenameFollowThrough(True, plan, "The window file could not be edited.")
+        written = _write_closed(closed)
+        if written is None:
+            _restore_window(window, seed)
+            for surface in done:
+                _undo_if(surface, label)
+            return RenameFollowThrough(True, plan, "A form that isn't open could not be renamed.")
+        for surface in done:
+            _arm_closed(surface, label, written)
         return RenameFollowThrough(False, updated_plan, "")
 
+    def closed_note(self, window: object, seed: MethodSeed, plan: object) -> str:
+        """The preview sentence for closed forms this rename will change."""
 
-def _rewrite_closed(window: object, old: str, new: str, label: str) -> str:
-    """Rewrite closed forms that name ``old``. Empty when there is nothing to do or it worked."""
-
-    if not old or not new or old == new:
-        return ""
-    root = _project_root(window)
-    if not root:
-        return ""
-    from app.features.form_builder.engine.project.closed_forms import rewrite_forms
-    from app.features.form_builder.engine.project.method_forms import rename_method_in_document
-
-    opened = {}
-    for surface in _surfaces(window):
-        session = getattr(surface, "session", None)
-        form = getattr(surface, "form_path", None)
-        path = str(form() or "") if callable(form) else ""
-        if session is not None and path:
-            opened[os.path.abspath(path)] = session
-    try:
-        rewrite_forms(
-            root,
-            lambda doc: rename_method_in_document(doc, old, new),
-            open_sessions=opened,
-            undo_label=label,
-            apply_open=False,
-        )
-    except CommandRejected:
-        return "A form that isn't open could not be renamed."
-    return ""
+        new = str(getattr(plan, "new_symbol", "") or "")
+        try:
+            edits = _closed_edits(window, seed.old_name, new, seed.window_path)
+        except CommandRejected:
+            return ""
+        names = [os.path.basename(edit.path) for edit in edits]
+        if not names:
+            return ""
+        return "Also changes %s (closed)" % ", ".join(names)
 
 
 def _project_root(window: object) -> str:
@@ -142,6 +133,147 @@ def _project_root(window: object) -> str:
     loaded = getattr(window, "loaded_project", None)
     project = loaded() if callable(loaded) else None
     return str(getattr(project, "project_root", "") or "")
+
+
+@dataclass(frozen=True)
+class _ClosedEdit:
+    path: str
+    original: bytes
+    text: str
+
+
+class _ClosedBook:
+    def __init__(self) -> None:
+        self.memos: dict = {}
+
+    def arm(self, log: object, entry: object, edits: Sequence[_ClosedEdit]) -> None:
+        self.memos[id(entry)] = (entry, edits)
+        if getattr(log, "_cbcs_closed_armed", False):
+            return
+        previous_undo = log.undo
+        previous_redo = log.redo
+        book = self
+
+        def undo() -> bool:
+            entries = log.entries()
+            tip = entries[-1] if entries else None
+            memo = book.memos.get(id(tip)) if tip is not None else None
+            ok = bool(previous_undo())
+            if ok and memo is not None:
+                _write_bytes(memo[1], restore=True)
+            return ok
+
+        def redo() -> bool:
+            pending = log._redo[-1] if getattr(log, "_redo", None) else None
+            memo = book.memos.get(id(pending)) if pending is not None else None
+            ok = bool(previous_redo())
+            if ok and memo is not None:
+                _write_bytes(memo[1], restore=False)
+            return ok
+
+        log.undo = undo  # type: ignore[method-assign]
+        log.redo = redo  # type: ignore[method-assign]
+        log._cbcs_closed_armed = True
+
+
+_CLOSED = _ClosedBook()
+
+
+def _closed_edits(window: object, old: str, new: str, window_path: str) -> List[_ClosedEdit]:
+    """Closed forms whose window file is ``window_path``. Nothing is written."""
+
+    if not old or not new or old == new or not window_path:
+        return []
+    root = _project_root(window)
+    if not root:
+        return []
+    from app.features.form_builder.engine.ids import IdAllocator
+    from app.features.form_builder.engine.project.forms import classify_form
+    from app.features.form_builder.engine.project.fs import OsFileSystem
+    from app.features.form_builder.engine.project.method_forms import rename_method_in_document
+    from app.features.form_builder.engine.project.save import project_ui_files
+    from app.features.form_builder.engine.ui4.reader import UiReadError, read_ui
+    from app.features.form_builder.engine.ui4.writer import write_ui
+
+    opened = set()
+    for surface in _surfaces(window):
+        form = getattr(surface, "form_path", None)
+        path = str(form() or "") if callable(form) else ""
+        if path:
+            opened.add(os.path.abspath(path))
+    wanted = os.path.abspath(window_path)
+    files = OsFileSystem()
+    found: List[_ClosedEdit] = []
+    for path in project_ui_files(root):
+        absolute = os.path.abspath(path)
+        if absolute in opened:
+            continue
+        scope = classify_form(absolute, project_root=root)
+        if not _same(str(getattr(scope, "window_path", "") or ""), wanted):
+            continue
+        try:
+            current = files.read_bytes(absolute)
+            document = read_ui(current.decode("utf-8"), allocator=IdAllocator()).document
+        except (OSError, UnicodeError, UiReadError):
+            continue
+        edited = rename_method_in_document(document, old, new)
+        if edited is None:
+            continue
+        text = write_ui(edited).text
+        if text.encode("utf-8") == current:
+            continue
+        found.append(_ClosedEdit(absolute, current, text))
+    return found
+
+
+def _write_closed(edits: Sequence[_ClosedEdit]) -> Optional[List[_ClosedEdit]]:
+    from app.features.form_builder.engine.project.fs import OsFileSystem
+    from app.features.form_builder.engine.project.written_files import note_written_files
+
+    files = OsFileSystem()
+    written: List[_ClosedEdit] = []
+    try:
+        for edit in edits:
+            files.write_text(edit.path, edit.text)
+            written.append(edit)
+    except OSError:
+        _write_bytes(written, restore=True)
+        return None
+    if written:
+        note_written_files(tuple(edit.path for edit in written))
+    return written
+
+
+def _write_bytes(edits: Sequence[_ClosedEdit], *, restore: bool) -> None:
+    for edit in edits:
+        payload = edit.original if restore else edit.text.encode("utf-8")
+        try:
+            with open(edit.path, "wb") as handle:
+                handle.write(payload)
+        except OSError:
+            continue
+
+
+def _restore_window(window: object, seed: MethodSeed) -> None:
+    from app.features.form_builder.integration.code_bridge import ShellPort
+
+    port = ShellPort(window)
+    current = port.open_text(seed.window_path)
+    if current is None or current == seed.source:
+        return
+    port.replace_range(seed.window_path, 0, len(current), seed.source)
+
+
+def _arm_closed(surface: object, label: str, edits: Sequence[_ClosedEdit]) -> None:
+    if not edits:
+        return
+    log = getattr(getattr(surface, "session", None), "log", None)
+    if log is None or log.undo_label() != label:
+        return
+    entries = log.entries()
+    if not entries:
+        return
+    _CLOSED.arm(log, entries[-1], edits)
 
 
 def register(window: object) -> None:

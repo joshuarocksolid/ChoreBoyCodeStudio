@@ -104,6 +104,11 @@ class SemanticRenameWorkflow:
 
             preview_chunks = [patch.diff_text for patch in plan.preview_patches[:3]]
             preview_body = "\n\n".join(chunk for chunk in preview_chunks if chunk)
+            if seed is not None and hook is not None:
+                note_of = getattr(hook, "closed_note", None)
+                closed_note = note_of(parent, seed, plan) if callable(note_of) else ""
+                if closed_note:
+                    preview_body = closed_note + ("\n\n" + preview_body if preview_body else "")
             if len(plan.preview_patches) > 3:
                 preview_body += f"\n\n... and {len(plan.preview_patches) - 3} more file patch(es)"
             confidence_text = ""

@@ -156,17 +156,26 @@ class CodeBridge:
 
     # ------------------------------------------------------------------ writing
 
-    def apply(self, path: str, edit: TextEditLike, *, base_text: Optional[str] = None) -> BridgeResult:
+    def apply(
+        self, path: str, edit: TextEditLike, *, base_text: Optional[str] = None, keep_dirty: bool = False
+    ) -> BridgeResult:
         if not self._allowed(path):
             return refused(OUTSIDE)
         start, end, text = int(edit.start), int(edit.end), str(edit.text)
         open_text = self._port.open_text(path)
         if open_text is not None:
-            return self._apply_in_tab(path, open_text, start, end, text, base_text)
+            return self._apply_in_tab(path, open_text, start, end, text, base_text, keep_dirty)
         return self._apply_on_disk(path, start, end, text, base_text)
 
     def _apply_in_tab(
-        self, path: str, current: str, start: int, end: int, text: str, base_text: Optional[str]
+        self,
+        path: str,
+        current: str,
+        start: int,
+        end: int,
+        text: str,
+        base_text: Optional[str],
+        keep_dirty: bool = False,
     ) -> BridgeResult:
         if base_text is not None and base_text != current:
             return refused(CHANGED)
@@ -176,6 +185,8 @@ class CodeBridge:
         if not self._port.replace_range(path, start, end, text):
             return refused(CHANGED)
         saved = False
+        if keep_dirty:
+            return BridgeResult(True, "tab", saved=False, inverse=BridgeEdit(start, start + len(text), current[start:end]))
         if not was_dirty:
             saved = bool(self._port.save(path))
             if not saved:

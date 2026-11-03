@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+import html
 from typing import Any
 
 from app.qt.QtCore import Qt
-from app.qt.QtWidgets import QLabel, QVBoxLayout, QWidget
+from app.qt.QtWidgets import QLabel, QSizePolicy, QVBoxLayout, QWidget
 
 from app.features.form_builder.engine.codegen.eject import ejected_method, method_line
 from app.features.form_builder.qtside.data_panel.host import narrate, session_of, surface_of
@@ -17,14 +18,17 @@ def _create(host: Any) -> QWidget:
     body.setObjectName("formBuilder.data.ejected")
     layout = QVBoxLayout(body)
     layout.setContentsMargins(0, 0, 0, 0)
+    layout.setAlignment(Qt.AlignmentFlag.AlignTop)
     sentence = QLabel(body)
     sentence.setObjectName("formBuilder.data.ejectedText")
     sentence.setWordWrap(True)
     sentence.setTextFormat(Qt.TextFormat.RichText)
     sentence.setTextInteractionFlags(Qt.TextInteractionFlag.TextBrowserInteraction)
     sentence.setOpenExternalLinks(False)
-    sentence.setProperty("fbLink", True)
-    layout.addWidget(sentence)
+    sentence.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
+    sentence.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Maximum)
+    layout.addWidget(sentence, 0, Qt.AlignmentFlag.AlignTop)
+    layout.addStretch(1)
 
     def refresh() -> None:
         session = session_of(host)
@@ -33,9 +37,17 @@ def _create(host: Any) -> QWidget:
             sentence.setText("")
             return
         filename = _filename(session)
-        sentence.setText(
-            'This form\'s data code is in <a href="%s">%s</a>.' % (method, filename)
-        )
+        color = _link_color(host)
+        link = html.escape(filename)
+        if color:
+            link = '<a href="%s" style="color:%s;">%s</a>' % (
+                html.escape(method),
+                html.escape(color),
+                link,
+            )
+        else:
+            link = '<a href="%s">%s</a>' % (html.escape(method), link)
+        sentence.setText("This form's data code is in %s." % link)
 
     def open_link(method: str) -> None:
         session = session_of(host)
@@ -48,19 +60,32 @@ def _create(host: Any) -> QWidget:
         if not path or bridge is None:
             narrate(host, "Open the window file to see %s." % method)
             return
-        current = bridge.open_text(path)
-        if current is None:
-            try:
-                with open(path, encoding="utf-8") as handle:
-                    current = handle.read()
-            except OSError:
-                current = ""
-        bridge.open_at(path, method_line(current or "", method))
+        current = _text(bridge, path)
+        if not current:
+            narrate(host, "Open the window file to see %s." % method)
+            return
+        bridge.open_at(path, method_line(current, method))
 
     sentence.linkActivated.connect(open_link)
     body.refresh = refresh  # type: ignore[attr-defined]
     refresh()
     return body
+
+
+def _text(bridge: Any, path: str) -> str:
+    reader = getattr(bridge, "text_of", None)
+    if callable(reader):
+        found = reader(path)
+        return "" if found is None else str(found)
+    return ""
+
+
+def _link_color(host: Any) -> str:
+    tokens = getattr(host, "_tokens", None)
+    accent = getattr(tokens, "accent", None) if tokens is not None else None
+    if isinstance(accent, str) and accent:
+        return accent
+    return ""
 
 
 def _filename(session: Any) -> str:

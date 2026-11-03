@@ -98,18 +98,23 @@ def _invoice(tmp_path: Path, dsn: str, driver: str, connections_module: Any, nam
             from app.features.form_builder.engine.codegen.eject import plan_eject
 
             plan = plan_eject(session.document, scope)
+            with session.log.transaction("Eject to code"):
+                for command in plan.commands:
+                    session.log.execute(command)
             host = _host_ejected(root, scope, session.text(), plan, module, choose)
             ui = host.ui
+            owner = host
             save, delete, add, find = host.save_record, host.delete_record, host.add_line, host.find_record
         else:
             host = _host_bound(root, scope, session.text(), module, choose)
             ui = host.ui
+            owner = ui
             save, delete, add, find = ui.cbcs_save, ui.cbcs_delete, ui._cbcs_add_row, ui.cbcs_find
         fields = (ui.invoiceNoEdit.text(), ui.customerCombo.currentText())
-        lines = _line_values(ui)
+        lines = _line_values(owner)
         find()
         add()
-        _set_product(ui, 1)
+        _set_product(owner, 1)
         assert save() is True
         saved = _fetch(module, "SELECT product_id, description, qty, price, needed FROM %s ORDER BY line_no" % names["lines"])
         assert delete() is True
@@ -172,6 +177,9 @@ def _list(tmp_path: Path, dsn: str, driver: str, connections_module: Any, table:
             from app.features.form_builder.engine.codegen.eject import plan_eject
 
             plan = plan_eject(session.document, scope)
+            with session.log.transaction("Eject to code"):
+                for command in plan.commands:
+                    session.log.execute(command)
             host = _host_ejected(root, scope, session.text(), plan, module, lambda _text: "Close")
             host.ui.customersView.selectRow(0)
             host.open_record("selected")

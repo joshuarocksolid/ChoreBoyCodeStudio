@@ -45,7 +45,10 @@ def test_eject_shots(tmp_path: Path, qapp: QApplication) -> None:
         parent = QWidget()
         parent.resize(640, 280)
         dialog = EjectDialog(parent, plan)
-        _shoot(dialog, qapp, root, "eject-dialog", 640, 280)
+        dialog.setFixedWidth(640)
+        laid = dialog.layout()
+        height = laid.totalHeightForWidth(640) if laid is not None else dialog.sizeHint().height()
+        _shoot(dialog, qapp, root, "eject-dialog", 640, max(int(height), 120))
         with session.log.transaction("Eject to code"):
             for command in plan.commands:
                 session.log.execute(command)

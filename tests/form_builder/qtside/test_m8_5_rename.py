@@ -54,7 +54,7 @@ def test_a_closed_form_is_rewritten_and_an_untouched_file_is_not(tmp_path: Path,
     root = tmp_path / "proj"
     forms = root / "forms"
     forms.mkdir(parents=True)
-    ui_path = forms / "invoice.ui"
+    ui_path = forms / "notes.ui"
     window_path = str(forms / "invoice_window.py")
     ui_path.write_text(_UI, encoding="utf-8")
     session = FormSession.open(
@@ -70,13 +70,16 @@ def test_a_closed_form_is_rewritten_and_an_untouched_file_is_not(tmp_path: Path,
         session.log.execute(SetEventSteps("otherButton", "clicked", (listed,)))
         session.log.execute(SetLogic(note, "cbcsValue", "window.save_invoice()"))
     surface = _Surface(session, str(ui_path), window_path)
-    closed = forms / "other.ui"
+    closed = forms / "invoice.ui"
+    other = forms / "other.ui"
     untouched = forms / "plain.ui"
-    closed.write_bytes(_CLOSED.encode("utf-8"))
+    closed.write_bytes(_CLOSED.replace("Other", "Invoice").encode("utf-8"))
+    other.write_bytes(_CLOSED.encode("utf-8"))
     untouched.write_bytes(_UNTOUCHED.encode("utf-8"))
     before_closed = closed.read_bytes()
+    before_other = other.read_bytes()
     before_plain = untouched.read_bytes()
-    before_open = (forms / "invoice.ui").read_bytes()
+    before_open = ui_path.read_bytes()
     source = "class InvoiceWindow(object):\n    def save_invoice(self):\n        return None\n"
     updated = source.replace("save_invoice", "save_more")
     editor = QPlainTextEdit()
@@ -89,14 +92,19 @@ def test_a_closed_form_is_rewritten_and_an_untouched_file_is_not(tmp_path: Path,
     )()
     window._form_undo_surface = surface  # type: ignore[attr-defined]
     plan = _Plan("save_invoice", "save_more", [object()], [_Patch(window_path, updated, "invoice_window.py")])
-    follow = MethodRename().apply_paired(window, MethodSeed("save_invoice", window_path, source, 0), plan)
+    rename = MethodRename()
+    note = rename.closed_note(window, MethodSeed("save_invoice", window_path, source, 0), plan)
+    assert note == "Also changes invoice.ui (closed)"
+    follow = rename.apply_paired(window, MethodSeed("save_invoice", window_path, source, 0), plan)
     assert follow.blocked is False
     assert "save_more" in closed.read_text(encoding="utf-8")
     assert "save_invoice" not in closed.read_text(encoding="utf-8")
     assert closed.read_bytes() != before_closed
+    assert other.read_bytes() == before_other
     assert untouched.read_bytes() == before_plain
-    assert (forms / "invoice.ui").read_bytes() == before_open
+    assert ui_path.read_bytes() == before_open
     assert session.log.undo_label() == "Rename save_invoice to save_more"
     assert session.log.undo() is True
     assert "save_invoice" in _names(session)
     assert "save_more" not in _names(session)
+    assert closed.read_bytes() == before_closed

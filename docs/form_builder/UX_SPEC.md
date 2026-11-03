@@ -3234,11 +3234,11 @@ What ran logs each statement as "Ran: UPDATE "invoices" SET … (3 values)". The
 **UX-TRYD-002** `M8.4` `[T]` Tests prove the user's data is unchanged after a Try session of New, Save, Delete and line edits, on SQLite (file hash) and on PostgreSQL 9.3 (row count and an `md5` of the table, before and after). A test holds a row lock in another session and proves Try's save stops at the 2 s lock timeout with the §13.5.9 sentence, not a hang.
 
 **UX-EJECT-001** `M8.5` `[S T]` Eject to code (F14). The dialog lists:
-- "Adds {n} methods to invoice_window.py: load_record, save_record, …";
+- "Adds {n} methods and {m} helpers to invoice_window.py: load_record, save_record, …" (the first 8 names, then "and {k} more");
 - "Removes the data settings from invoice.ui";
 - "Save, Delete and the toolbar buttons will call your methods".
 
-After ejecting, the Data tab reads "This form's data code is in invoice_window.py." with a link to the first method. A test proves the ejected form behaves identically: the same SQL, the same field values after load, save and delete, on SQLite and PostgreSQL.
+After ejecting, the Data tab reads "This form's data code is in invoice_window.py." with a link to the first method. The sentence is body text. Only the file name is a link, in the theme's link colour, at the top of the page. If the window file changed after Eject, Undo says "{file} changed after Eject, so Eject can't be undone. Undo your edits there first." and changes neither file. A test proves the ejected form behaves identically: the same SQL, the same field values after load, save and delete, on SQLite and PostgreSQL.
 
 **UX-SCH-001** `M8.6` `[S T]` Refresh shows "Reading columns…" with Esc to cancel. When it completes, the Data tab updates in place and keeps scroll and selection. The editor stays responsive during a PostgreSQL refresh, because the helper is a separate process. If the database can't be reached, the cached columns stay in use, with the note "Using columns read 2 Nov. Can't reach Shop database: {reason}". Bindings to columns that disappeared get FB303 on Refresh, never silently removed.
 

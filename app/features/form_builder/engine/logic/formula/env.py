@@ -124,6 +124,8 @@ class FormulaEnv:
     row_columns: Mapping[str, FType] = field(default_factory=dict)
     # ``product_id.price`` types come from the lookup table. An unknown column stays untyped.
     row_attrs: Mapping[str, Mapping[str, FType]] = field(default_factory=dict)
+    # True after Eject. Form facts then read the window, not the generated Ui.
+    ejected: bool = False
 
     @staticmethod
     def for_test(

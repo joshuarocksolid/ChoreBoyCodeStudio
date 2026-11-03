@@ -8,7 +8,7 @@ from typing import Callable, Dict, Iterator, Optional, Tuple, cast
 
 import pytest
 
-from app.qt.QtCore import QEvent, QPoint, QRect, Qt
+from app.qt.QtCore import QEvent, QPoint, QRect, Qt, QTimer
 from app.qt.QtGui import QColor, QImage, QKeyEvent, QPainter
 from app.qt.QtTest import QTest
 from app.qt.qt_compat import enum_value
@@ -148,6 +148,11 @@ def _opened(
     pane.setGeometry(0, 0, width, height)
     session = open_session(text, "/tmp/cbcs-outline-%s.ui" % name)
     opened["session"] = session
+    for timer in qapp.findChildren(QTimer):
+        timer.stop()
+    for widget in list(qapp.topLevelWidgets()):
+        if widget is not parent:
+            widget.hide()
     parent.show()
     qapp.setActiveWindow(parent)
     pane.attach(session, place or (lambda _key: None))

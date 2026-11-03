@@ -373,6 +373,18 @@ class record_window:
         return host, db
 
     def __exit__(self, *_exc: object) -> None:
+        host = self.host
+        if host is not None:
+            timer = getattr(getattr(host, "ui", None), "_cbcs_list_timer", None)
+            if timer is not None:
+                timer.stop()
+            host.hide()
+            host.deleteLater()
+            from app.qt import QtWidgets
+
+            app = getattr(QtWidgets, "QApplication").instance()
+            if app is not None:
+                app.processEvents()
         if self._restore is not None:
             self._restore()
 
