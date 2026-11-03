@@ -296,10 +296,7 @@ def _points(column: Column, parent: str) -> bool:
 
 
 def _header(name: str) -> str:
-    words = name.replace("_", " ").strip()
-    if not words:
-        return name
-    return words[:1].upper() + words[1:]
+    return label_from_column(name)
 
 
 def choice_for(column: Column, engine: str) -> ColumnChoice:

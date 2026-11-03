@@ -24,21 +24,14 @@ class DataPage(QWidget):
         self._class_name = ""
 
     def paint(self, class_name: str) -> None:
-        changed = class_name != self._class_name or not self._built
         self._class_name = class_name
         self._show(class_name)
-        if not changed:
-            return
-        for widget in self._built.values():
-            if widget.isHidden():
-                continue
-            refresh = getattr(widget, "refresh", None)
-            if callable(refresh):
-                refresh()
+        self._refresh_visible()
 
     def showEvent(self, event: object) -> None:  # noqa: N802
         super().showEvent(event)  # type: ignore[arg-type]
         self._show(self._class_name)
+        self._refresh_visible()
         note_data_tab(self, "inspector", True)
 
     def hideEvent(self, event: object) -> None:  # noqa: N802
@@ -121,6 +114,14 @@ class DataPage(QWidget):
                 self._built[section.section_id] = widget
                 self._layout.insertWidget(self._layout.count() - 1, widget)
             widget.show()
+
+    def _refresh_visible(self) -> None:
+        for widget in self._built.values():
+            if widget.isHidden():
+                continue
+            refresh = getattr(widget, "refresh", None)
+            if callable(refresh):
+                refresh()
 
 
 def selected_class(document: object, ids: Sequence[object]) -> str:

@@ -17,6 +17,7 @@ from app.features.form_builder.engine.data.source import (
     write_rows,
 )
 from app.features.form_builder.engine.data.types import describe
+from app.features.form_builder.engine.project.table_form import label_from_column
 from app.features.form_builder.engine.logic.codec import Step
 from app.features.form_builder.engine.logic.events_codec import EventStep
 from app.features.form_builder.engine.ui4.nodes import LayoutNode, WidgetNode
@@ -471,10 +472,7 @@ def _prefer(box: QComboBox, name: str) -> None:
 
 
 def _header(name: str) -> str:
-    words = name.replace("_", " ").strip()
-    if not words:
-        return name
-    return words[:1].upper() + words[1:]
+    return label_from_column(name)
 
 
 def _named(table: object, name: str):

@@ -551,6 +551,81 @@ def _open_selected(host: Any, name: str, stem: str) -> Any:
     return opened
 
 
+def test_the_form_tab_shows_record_sections_or_list_sections(tmp_path: Path, qapp) -> None:
+    from app.features.form_builder.integration.provider import FormTabProvider
+    from app.features.form_builder.qtside.inspector.pane import TabId
+    from app.qt.QtWidgets import QLabel, QPlainTextEdit, QWidget
+    from app.shell.tab_content_providers import TabSurfaceRequest
+    from app.shell.theme_tokens import tokens_from_palette
+
+    root, schema = _shop(tmp_path)
+    texts = _texts(root, schema, _invoice_request()) + _texts(root, schema, _customer_request())
+    _write_generated(root, texts)
+    record = _form_tab(root, qapp, "invoice", QWidget, QPlainTextEdit, TabSurfaceRequest, tokens_from_palette, FormTabProvider)
+    listing = _form_tab(root, qapp, "customer_list", QWidget, QPlainTextEdit, TabSurfaceRequest, tokens_from_palette, FormTabProvider)
+    try:
+        for _pass in range(2):
+            record.workbench.focus_inspector_tab(TabId.DATA)
+            record.workbench.inspector.data.paint("@form")
+            qapp.processEvents()
+        assert _shown(record, "formBuilder.inspectorData.formSource")
+        assert not _shown(record, "formBuilder.data.listing")
+        panel = record.workbench.section_widget("data")
+        lines = panel.findChild(QLabel, "formBuilder.data.linesText")
+        assert lines is not None and not lines.isHidden() and "invoice_lines" in lines.text()
+        for _pass in range(2):
+            listing.workbench.focus_inspector_tab(TabId.DATA)
+            listing.workbench.inspector.data.paint("@form")
+            qapp.processEvents()
+        assert _shown(listing, "formBuilder.data.listing")
+        assert not _shown(listing, "formBuilder.inspectorData.formSource")
+    finally:
+        for surface in (record, listing):
+            parent = surface.parent()
+            surface.close()
+            if parent is not None:
+                parent.close()
+        set_schema_reader(None)
+
+
+def _form_tab(root, qapp, stem, widget_type, editor_type, request_type, tokens_from_palette, provider):
+    parent = widget_type()
+    path = root / "forms" / ("%s.ui" % stem)
+    text = path.read_text(encoding="utf-8")
+
+    def create_source_editor():
+        editor = editor_type(parent)
+        editor.setObjectName("shell.editorTabs.textEditor")
+        return editor
+
+    surface = provider().create_surface(
+        request_type(
+            file_path=str(path),
+            initial_text=text,
+            parent=parent,
+            theme=tokens_from_palette(qapp.palette(), force_mode="light"),
+            create_source_editor=create_source_editor,
+            open_linked_file=lambda _linked: None,
+            project_root=str(root),
+        )
+    )
+    parent.resize(1200, 800)
+    parent.show()
+    surface.resize(1200, 800)
+    surface.show()
+    qapp.processEvents()
+    surface.workbench.focus_section("data")
+    qapp.processEvents()
+    return surface
+
+
+def _shown(surface, name: str) -> bool:
+    from app.qt.QtWidgets import QWidget
+
+    found = surface.findChildren(QWidget, name)
+    return any(not widget.isHidden() for widget in found)
+
+
 def _prop(node: Any, name: str) -> str:
     entry = node.prop(name) if hasattr(node, "prop") else None
     value = getattr(entry, "value", None)

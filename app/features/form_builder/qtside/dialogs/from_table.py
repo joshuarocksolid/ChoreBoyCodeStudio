@@ -23,6 +23,7 @@ from app.qt.QtWidgets import (
     QLabel,
     QListWidget,
     QPushButton,
+    QSizePolicy,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
@@ -562,6 +563,7 @@ class FromTableDialog(QDialog):
 
     def _shows_as_combo(self, widget_class: str) -> QComboBox:
         combo = QComboBox(self._mapping)
+        combo.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Fixed)
         chosen = 0
         for index, (qt_name, word) in enumerate(_SHOWS_AS_WORDS):
             combo.addItem(word, qt_name)
@@ -608,48 +610,41 @@ class FromTableDialog(QDialog):
     def _fit_columns_now(self) -> None:
         table = self._mapping
         header = table.horizontalHeader()
-        count = table.columnCount()
-        last = count - 1
-        if last < 1:
+        if table.columnCount() < 5:
             return
         viewport = table.viewport().width()
         if viewport < 80:
-            viewport = 720
+            return
+        resize = getattr(QHeaderView, "ResizeMode", QHeaderView)
+        contents = getattr(resize, "ResizeToContents")
+        fixed = getattr(resize, "Fixed")
+        stretch = getattr(resize, "Stretch")
         measured = []
-        for column in range(count):
-            header.setSectionResizeMode(column, QHeaderView.ResizeToContents)
+        for column in range(5):
+            header.setSectionResizeMode(column, contents)
             table.resizeColumnToContents(column)
             measured.append(max(16, header.sectionSize(column)))
-        label_width = max(48, measured[last])
-        others = measured[:last]
-        spare = viewport - label_width
-        if spare < 16 * last:
-            spare = 16 * last
-            label_width = max(48, viewport - spare)
-        if sum(others) > spare and sum(others) > 0:
-            scaled = [max(16, int(width * spare / sum(others))) for width in others]
-            overflow = sum(scaled) - spare
-            guard = 0
-            while overflow > 0 and guard < 64:
-                victim = max(range(last), key=lambda index: scaled[index])
-                if scaled[victim] <= 16:
-                    break
-                scaled[victim] -= 1
-                overflow -= 1
-                guard += 1
-            others = scaled
-        label_width = viewport - sum(others)
-        if label_width < 48:
-            label_width = 48
+        for row in range(table.rowCount()):
+            editor = table.cellWidget(row, 3)
+            if editor is not None:
+                measured[3] = max(measured[3], editor.sizeHint().width())
+        include, column, type_width, shows = measured[:4]
+        column = max(48, column)
+        spare = viewport - include - type_width - shows - column
+        if spare < 64:
+            column = max(48, viewport - include - type_width - shows - 64)
         header.setStretchLastSection(False)
-        for column, width in enumerate(others):
-            header.setSectionResizeMode(column, QHeaderView.Fixed)
-            header.resizeSection(column, width)
-        header.setSectionResizeMode(last, QHeaderView.Fixed)
-        header.resizeSection(last, label_width)
-        header.setSectionResizeMode(0, QHeaderView.Fixed)
-        header.resizeSection(0, max(36, others[0] if others else 36))
+        for index, width in ((0, include), (1, column), (2, type_width), (3, shows)):
+            header.setSectionResizeMode(index, fixed)
+            header.resizeSection(index, width)
+        header.setSectionResizeMode(4, stretch)
         table.updateGeometries()
+        for row in range(table.rowCount()):
+            editor = table.cellWidget(row, 3)
+            if editor is None:
+                continue
+            rect = table.visualRect(table.model().index(row, 3))
+            editor.setFixedWidth(max(rect.width(), 1))
 
     def _sync_button(self) -> None:
         count = self.included_count()
@@ -816,12 +811,17 @@ class FromTableDialog(QDialog):
         proxy = form.graphicsProxyWidget()
         if proxy is None:
             return
-        width = view.viewport().width()
-        height = form.heightForWidth(width) if form.hasHeightForWidth() else -1
-        if height <= 0:
-            height = form.minimumSizeHint().height()
-        proxy.resize(width, max(view.viewport().height(), height))
-        view.setSceneRect(0, 0, width, max(view.viewport().height(), height))
+        hint = form.sizeHint()
+        width = max(form.minimumSizeHint().width(), hint.width(), 1)
+        height = max(form.minimumSizeHint().height(), hint.height(), 1)
+        proxy.resize(width, height)
+        view.setSceneRect(0, 0, width, height)
+        avail_w = max(view.viewport().width(), 1)
+        avail_h = max(view.viewport().height(), 1)
+        scale = min(1.0, avail_w / float(width), avail_h / float(height))
+        view.resetTransform()
+        view.scale(scale, scale)
+        view.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
 
     def _show_preview_message(self, text: str) -> None:
         label = QLabel(text, self)

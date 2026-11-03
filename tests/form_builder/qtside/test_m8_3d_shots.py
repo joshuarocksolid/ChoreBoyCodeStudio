@@ -12,16 +12,12 @@ import pytest
 pytest.importorskip("app.qt.QtWidgets", exc_type=ImportError)
 
 from app.core import constants
-from app.features.form_builder.engine.project.forms import FormScope
-from app.features.form_builder.engine.query.selection import SelectionSource
-from app.features.form_builder.engine.session import FormSession
 from app.features.form_builder.integration.chrome import chrome_for
+from app.features.form_builder.integration.provider import FormTabProvider
 from app.features.form_builder.qtside.dialogs.from_table import FromTableDialog
-from app.features.form_builder.qtside.inspector.pane import InspectorPane, TabId
-from app.features.form_builder.qtside.realize import Realizer
 from app.qt.QtCore import QDate
-from app.qt.QtUiTools import QUiLoader
-from app.qt.QtWidgets import QApplication, QHBoxLayout, QWidget
+from app.qt.QtWidgets import QApplication, QPlainTextEdit, QWidget
+from app.shell.tab_content_providers import TabSurfaceRequest
 from app.shell.theme_tokens import tokens_from_palette
 from tests.form_builder.engine.test_m8_3d_from_table import (
     _customer_request,
@@ -57,9 +53,8 @@ def test_from_table_screenshots(tmp_path: Path, qapp) -> None:
     _dialogs(root, qapp, folder)
     texts = _texts(root, schema, _invoice_request()) + _texts(root, schema, _customer_request())
     _write_generated(root, texts)
-    by_stem = dict(texts)
-    _editor(root, by_stem["invoice"], qapp, folder, "invoice-editor")
-    _editor(root, by_stem["customer_list"], qapp, folder, "customer-list-editor")
+    _editor(root, "invoice", qapp, folder, "invoice-editor")
+    _editor(root, "customer_list", qapp, folder, "customer-list-editor")
     _running(root, qapp, folder)
 
 
@@ -84,48 +79,36 @@ def _dialogs(root: Path, qapp, folder: Path) -> None:
     dialog.close()
 
 
-def _editor(root: Path, text: str, qapp, folder: Path, name: str) -> None:
-    ui_path = root / "forms" / ("%s.ui" % name)
-    ui_path.parent.mkdir(parents=True, exist_ok=True)
-    ui_path.write_text(text, encoding="utf-8")
-    scope = FormScope(
-        kind="project",
-        ui_path=str(ui_path),
-        project_root=str(root),
-        generated_path=str(root / "forms" / "ui_shot.py"),
-        window_path=str(root / "forms" / "shot_window.py"),
-        module_name="forms.ui_shot",
+def _editor(root: Path, stem: str, qapp, folder: Path, name: str) -> None:
+    path = root / "forms" / ("%s.ui" % stem)
+    parent = QWidget()
+
+    def create_source_editor() -> QPlainTextEdit:
+        editor = QPlainTextEdit(parent)
+        editor.setObjectName("shell.editorTabs.textEditor")
+        return editor
+
+    surface = FormTabProvider().create_surface(
+        TabSurfaceRequest(
+            file_path=str(path),
+            initial_text=path.read_text(encoding="utf-8"),
+            parent=parent,
+            theme=tokens_from_palette(qapp.palette(), force_mode=constants.UI_THEME_MODE_LIGHT),
+            create_source_editor=create_source_editor,
+            open_linked_file=lambda _linked: None,
+            project_root=str(root),
+        )
     )
-    session = FormSession.open(text, path=str(ui_path), scope=scope)
-    session.selection.set((session.document.root.id,), source=SelectionSource.PROGRAM)
-    realizer = Realizer(session)
-    realizer.build()
-    frame = QWidget()
-    frame.session = session
-    frame.project_root = str(root)
-    pane = InspectorPane(session, realizer, data_tab=True, on_leave=lambda: None, parent=frame)
-    canvas = QUiLoader().load(str(ui_path), frame)
-    assert canvas is not None
-    layout = QHBoxLayout(frame)
-    layout.setContentsMargins(0, 0, 0, 0)
-    layout.addWidget(pane, 1)
-    layout.addWidget(canvas, 1)
-    pane.focus_tab(TabId.DATA)
-    frame.resize(1100, 720)
-    frame.show()
+    surface.resize(1200, 800)
+    surface.show()
     qapp.processEvents()
-    pane.focus_tab(TabId.DATA)
-    for mode in _MODES:
-        tokens = tokens_from_palette(frame.palette(), force_mode=mode)
-        pane.apply_chrome(chrome_for(tokens))
-        frame.resize(1100, 720)
-        frame.show()
-        for _index in range(4):
-            qapp.processEvents()
-            time.sleep(0.01)
-        frame.grab().save(str(folder / ("%s-%s.png" % (name, mode))))
-    pane.dispose()
-    session.dispose()
+    surface.workbench.focus_section("data")
+    panel = surface.workbench.section_widget("data")
+    assert panel is not None
+    panel.setParent(None)
+    _shoot(panel, qapp, folder, name, 640, 760)
+    panel.close()
+    surface.close()
 
 
 def _running(root: Path, qapp, folder: Path) -> None:

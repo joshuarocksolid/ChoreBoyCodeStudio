@@ -238,6 +238,7 @@ def _setup(view, rows, columns, select_names, stored, unique, select_sql, engine
                 also,
             )
         )
+    stretch_at = _stretch_index(columns)
     lines = [
         "class _CbcsLineDelegate(QStyledItemDelegate):",
         "    def __init__(self, ui):",
@@ -275,15 +276,11 @@ def _setup(view, rows, columns, select_names, stored, unique, select_sql, engine
         "_resize = getattr(QHeaderView, 'ResizeMode', QHeaderView)",
         "_stretch = getattr(_resize, 'Stretch')",
         "_interactive = getattr(_resize, 'Interactive')",
-        "_desc = self._cbcs_line_names.index('description') if 'description' in self._cbcs_line_names else -1",
+        "_header.setSectionResizeMode(%d, _stretch)" % stretch_at,
         "for _i in range(len(self._cbcs_line_names)):",
-        "    if _i == _desc:",
-        "        _header.setSectionResizeMode(_i, _stretch)",
-        "    else:",
+        "    if _i != %d:" % stretch_at,
         "        self.%s.resizeColumnToContents(_i)" % view,
         "        _header.setSectionResizeMode(_i, _interactive)",
-        "if _desc < 0 and self._cbcs_line_names:",
-        "    _header.setSectionResizeMode(len(self._cbcs_line_names) - 1, _stretch)",
         "self._cbcs_line_headers = (%s,)" % headers,
         "self._cbcs_line_kinds = (%s,)" % kinds,
         "self._cbcs_line_nullable = (%s,)" % nullable,
@@ -1070,6 +1067,15 @@ def _quotable(name: str) -> bool:
     except Exception:
         return False
     return True
+
+
+def _stretch_index(columns: Sequence[_Col]) -> int:
+    """The first text column that is not a lookup. The last column when there is none."""
+
+    for index, column in enumerate(columns):
+        if column.kind != "lookup" and column.family == "text":
+            return index
+    return max(0, len(columns) - 1)
 
 
 def _columns(doc: UiDocument, source: RecordSource, rows: Rows, engine: str) -> Tuple[_Col, ...]:
