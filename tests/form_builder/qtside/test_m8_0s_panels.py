@@ -99,11 +99,11 @@ def test_empty_data_surfaces_say_the_unbound_sentences(qapp) -> None:
     sentence = panel.findChild(QLabel, "formBuilder.data.sentence")
     assert sentence is not None and sentence.text() == "This form isn't connected to a database."
     connect = panel.findChild(QWidget, "formBuilder.data.connect")
-    assert connect is not None and connect.isEnabled() is False
+    assert connect is not None and connect.isEnabled() is True
     page = DataPage(panel)
     page.paint("QLabel")
     assert page.findChild(QLabel, "formBuilder.inspectorData.sentence").text() == (
         "Labels and layouts aren't bound. Select a field."
     )
     page.paint("QLineEdit")
-    assert page.findChild(QLabel, "formBuilder.inspectorData.notBound").text() == "Not bound"
+    assert page.findChild(QWidget, "formBuilder.inspectorData.column") is not None

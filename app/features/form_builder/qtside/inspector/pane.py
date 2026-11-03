@@ -217,7 +217,17 @@ class InspectorPane(QWidget):
         viewport.setPalette(viewport_palette)
         data = self.data
         if data is not None and hasattr(data, "apply_colors"):
-            data.apply_colors(chrome.panel, chrome.faint, chrome.faint)
+            data.apply_colors(
+                chrome.panel,
+                chrome.text,
+                chrome.faint,
+                chrome.warning,
+                chrome.error,
+                chrome.accent,
+                chrome.input,
+                chrome.border,
+                chrome.focus_width,
+            )
         window = self.window()
         for popover in window.findChildren(QWidget, "formBuilder.rowPopover") if window is not None else ():
             # A popover left open on a closed tab outlives its row; skip it.

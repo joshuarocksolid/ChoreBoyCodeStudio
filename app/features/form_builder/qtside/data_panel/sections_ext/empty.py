@@ -1,4 +1,4 @@
-"""UX-DATA-001, the only left-pane Data section M8.0s ships."""
+"""UX-DATA-001. Connect opens the sheet. Add a connection stays for an empty project."""
 
 from __future__ import annotations
 
@@ -8,9 +8,10 @@ from app.qt.QtWidgets import QLabel, QPushButton, QVBoxLayout, QWidget
 
 from app.features.form_builder.engine.data.source import has_data_source
 from app.features.form_builder.qtside.data_panel.sections_ext import PanelSection
+from app.features.form_builder.qtside.data_panel.host import session_of
+from app.features.form_builder.qtside.data_panel.model import connections_of
 
 _SENTENCE = "This form isn't connected to a database."
-_LATER = "Arrives with the data lanes"
 
 
 def _create(host: Any) -> QWidget:
@@ -25,9 +26,9 @@ def _create(host: Any) -> QWidget:
     connect = QPushButton("Connect to a table\u2026", body)
     connect.setObjectName("formBuilder.data.connect")
     connect.setAccessibleName("Connect to a table")
-    connect.setEnabled(False)
-    connect.setToolTip(_LATER)
-    connect.clicked.connect(host.connect_requested.emit)
+    connect.setEnabled(True)
+    connect.setToolTip("")
+    connect.clicked.connect(lambda: _connect(host))
     layout.addWidget(connect)
     add = QPushButton("Add a connection\u2026", body)
     add.setObjectName("formBuilder.data.addConnection")
@@ -37,7 +38,24 @@ def _create(host: Any) -> QWidget:
     add.clicked.connect(host.add_connection_requested.emit)
     layout.addWidget(add)
     layout.addStretch(1)
+
+    def refresh() -> None:
+        session = session_of(host)
+        has_connection = bool(connections_of(session, host)) if session is not None else False
+        add.setVisible(not has_connection)
+
+    body.refresh = refresh  # type: ignore[attr-defined]
+    refresh()
     return body
+
+
+def _connect(host: Any) -> None:
+    from app.features.form_builder.qtside.data_panel.sheets import open_connect_sheet
+
+    open_connect_sheet(host)
+    emit = getattr(host, "connect_requested", None)
+    if emit is not None:
+        emit.emit()
 
 
 def _applies(doc: Any) -> bool:
