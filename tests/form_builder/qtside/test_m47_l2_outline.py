@@ -152,7 +152,7 @@ def test_outline_item_text_screenshots(qapp: QApplication, tmp_path) -> None:  #
     from tests.form_builder.qtside.test_m4_pages_keyboard import _flush
     from tests.unit.features.form_builder.test_workbench import _open
 
-    folder = os.environ.get("CBCS_FB_SCREENSHOT_DIR")
+    folder = os.environ.get("CBCS_FB_SCREENSHOT_DIR") or ""
     if not folder:
         pytest.skip("CBCS_FB_SCREENSHOT_DIR is not set")
     out = Path(folder)

@@ -182,11 +182,16 @@ def test_a_table_without_one_key_is_fb306() -> None:
     assert [item.code for item in run_checks(typed, None, text_key) if item.code == "FB306"] == []
 
 
-def test_a_symbol_in_a_name_is_fb307() -> None:
-    doc = _document(_xml(RecordSource("shop", "invoice items", "id"), (("QLineEdit", "notesEdit", "bad-name", ""),)))
-    found = [item.message for item in run_checks(doc, None, None) if item.code == "FB307"]
-    assert any("invoice items" in message for message in found)
-    assert any("bad-name" in message for message in found)
+def test_a_quote_in_a_name_is_fb307_and_a_space_is_not() -> None:
+    spaced = _document(
+        _xml(RecordSource("shop", "invoice items", "id"), (("QLineEdit", "notesEdit", "bad-name", ""),))
+    )
+    assert [item.code for item in run_checks(spaced, None, None) if item.code == "FB307"] == []
+    quoted = _document(
+        _xml(RecordSource("shop", 'say"hi', "id"), (("QLineEdit", "notesEdit", "notes", ""),))
+    )
+    found = [item.message for item in run_checks(quoted, None, None) if item.code == "FB307"]
+    assert any('say"hi' in message for message in found)
 
 
 def test_two_fields_on_one_column_is_fb308() -> None:

@@ -62,6 +62,7 @@ def test_compiled_highlight_queries_are_shared_per_language() -> None:
     resolved = default_tree_sitter_language_registry().resolve_for_path(file_path="x.py")
     if resolved is None:
         pytest.skip("python grammar missing")
+    assert resolved is not None
     first = shared_compiled_query(resolved.language_key, resolved.language, resolved.highlights_query_source)
     second = shared_compiled_query(resolved.language_key, resolved.language, resolved.highlights_query_source)
     assert first is second

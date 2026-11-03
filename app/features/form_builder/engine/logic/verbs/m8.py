@@ -151,6 +151,18 @@ def _allow(step: Any) -> bool:
     return False
 
 
+def _open_words(step: Any, w: Any, is_form: bool = False, target_chain: Tuple[str, ...] = ()) -> str:
+    """List buttons say which record they open. A step with no ``which`` stays the short name."""
+
+    del w, is_form, target_chain
+    which = _which(step)
+    if which == "new":
+        return "Open record form (new)"
+    if which == "selected":
+        return "Open record form (selected)"
+    return "Open record form"
+
+
 def _spec(
     name: str,
     fields: Tuple[FieldSpec, ...] = (),
@@ -159,6 +171,7 @@ def _spec(
     emit: Any,
     block: Any,
     validate: Any = None,
+    words: Any = None,
 ) -> VerbSpec:
     return VerbSpec(
         name,
@@ -168,7 +181,7 @@ def _spec(
         emit,
         block,
         "records",
-        _words(_WORDS[name]),
+        words or _words(_WORDS[name]),
         editable,
     )
 
@@ -189,5 +202,6 @@ def register(registry: Any) -> None:
             emit=_emit_open,
             block=_allow,
             validate=_validate_open,
+            words=_open_words,
         )
     )

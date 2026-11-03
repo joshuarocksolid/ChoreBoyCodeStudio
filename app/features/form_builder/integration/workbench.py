@@ -2622,6 +2622,7 @@ class FormWorkbench(QWidget):
     ) -> None:
         super().__init__(parent)
         self.setObjectName("formBuilder.workbench")
+        self.session = session
         self._session = session
         self._on_pin_left = on_pin_left
         self._on_pin_inspector = on_pin_inspector

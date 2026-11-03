@@ -1,7 +1,10 @@
-"""FB313. The lines link must point at the form's table.
+"""FB313 and FB307 for a lines grid.
 
-FB320 already lives in ``engine/data/check.py``. Skipped when the schema cache
-is absent, same as the other schema checks.
+FB313: the lines link must point at the form's table.
+FB307: a name in ``cbcsRows`` that ``quote_ident`` refuses, including a
+whitespace-only name, is reported on that grid.
+FB320 already lives in ``engine/data/check.py``. The link check is skipped
+when the schema cache is absent, same as the other schema checks.
 """
 
 from __future__ import annotations
@@ -13,6 +16,7 @@ from app.features.form_builder.engine.data.schema import schema_for
 from app.features.form_builder.engine.data.lines import compile_line_formula, type_for_kind
 from app.features.form_builder.engine.data.types import describe
 from app.features.form_builder.engine.data.source import CalcColumn, DataColumn, read_data, read_rows
+from app.features.form_builder.engine.data.sql import name_usable
 from app.features.form_builder.engine.diagnostics import CODES, DiagnosticLocation, FormDiagnostic
 from app.features.form_builder.engine.ui4.values import StringValue
 
@@ -24,8 +28,48 @@ def register(registry: object) -> None:
     add = getattr(registry, "add", None)
     if not callable(add):
         return
+    add(DataCheck("lines-names", _names, 250))
     add(DataCheck("lines-link", _link, 260))
     add(DataCheck("lines-formula", _formulas, 270))
+
+
+def _names(doc: object, connections: object, schema: object) -> Iterable[FormDiagnostic]:
+    del connections, schema
+    info = CODES["FB307"]
+    found = []
+    for node, rows in _grids(doc):
+        for name in _row_names(rows):
+            if name_usable(name):
+                continue
+            found.append(
+                FormDiagnostic(
+                    info.code,
+                    info.severity,
+                    info.title.format(name=name),
+                    DiagnosticLocation(
+                        getattr(node, "id", None),
+                        getattr(node, "object_name", None),
+                        "cbcsRows",
+                        ("cbcsRows",),
+                    ),
+                    "data.check",
+                )
+            )
+    return tuple(found)
+
+
+def _row_names(rows: object) -> Iterable[str]:
+    names = []
+    for field in ("table", "link", "key", "order", "position"):
+        value = getattr(rows, field, "")
+        if isinstance(value, str) and value:
+            names.append(value)
+    for column in getattr(rows, "columns", ()) or ():
+        if isinstance(column, DataColumn) and column.column:
+            names.append(column.column)
+        elif isinstance(column, CalcColumn) and column.name:
+            names.append(column.name)
+    return names
 
 
 def _link(doc: object, connections: object, schema: object) -> Iterable[FormDiagnostic]:

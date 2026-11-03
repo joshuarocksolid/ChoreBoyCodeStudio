@@ -5,7 +5,7 @@ from __future__ import annotations
 import keyword
 import os
 import re
-from typing import Optional
+from typing import Optional, Sequence
 
 from app.features.form_builder.engine.codegen.names import module_stem_ok
 from app.features.form_builder.engine.project.fs import OsFileSystem
@@ -48,6 +48,16 @@ def explain_form_name(name: str, *, folder: str, fs: OsFileSystem) -> Optional[s
             "The folder already has %s. Pick a name that does not match an existing module."
             % clash
         )
+    return None
+
+
+def first_name_clash(folder: str, stems: Sequence[str], fs: OsFileSystem) -> Optional[str]:
+    """The first stem that cannot be created, naming the file already in the folder."""
+
+    for stem in stems:
+        reason = explain_form_name(stem, folder=folder, fs=fs)
+        if reason is not None:
+            return reason
     return None
 
 

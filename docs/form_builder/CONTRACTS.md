@@ -1345,7 +1345,7 @@ Behaviour (MUST):
 
 - **The dialect is fixed at generate time** from the source's connection engine. A form whose connection changes engine is regenerated (FB305 until it is). `sql.py` returns `Statement(text, params_order, caption)`. The record expander and Show SQL both call it, so the two never differ (UX-DATA-006).
 - **Statements** follow LOGIC §5.8 exactly:
-  - double-quoted identifiers checked against the name rule (FB307);
+  - double-quoted identifiers; a name `quote_ident` accepts (spaces and hyphens included) is usable, and FB307 fires only when `quote_ident` refuses it;
   - placeholders `?` or `%s`;
   - `RETURNING` for PostgreSQL inserts, `lastrowid` for SQLite;
   - no upsert;
@@ -1422,7 +1422,7 @@ LOGIC §2.9's FB301–FB303 examples are superseded: their cases are FB303 (miss
 | FB304 | Warning | A binding's widget doesn't fit the column type | UX "Bind, type". Fixes per UX-BIND-002 |
 | FB305 | Warning | `cbcs_connections.py`, or a form's generated data code, was generated from a different `connections.json`. Each generated file embeds the hash of the canonical `connections.json` it came from, never file times (git checkouts change those) | Regenerated on the next save. The note says so |
 | FB306 | Error | The source table has no single-column key | UX-DATA-002 sentence |
-| FB307 | Error | A table or column name fails `^[A-Za-z_][A-Za-z0-9_]*$` | "{name} can't be used: names with spaces or symbols aren't supported." |
+| FB307 | Error | `quote_ident` refuses the table or column name | "{name} can't be used as a table or column name." |
 | FB308 | Warning | Two fields bound to one column | "{column} is bound to both {a} and {b}." |
 | FB309 | Info | No schema cache for the connection | "Columns haven't been read yet. [Read now]" |
 | FB310 | Info | The schema cache is stale | UX "Schema, stale" |

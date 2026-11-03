@@ -45,7 +45,13 @@ _BAR = (
     ("deleteButton", "QPushButton", "Delete", "", "not form.isNew", "delete"),
     ("findButton", "QPushButton", "Find", "Ctrl+F", "", "find"),
 )
-_POSITION = '"Record " + text(form.position) + " of " + text(form.count)'
+def position_formula(record: str) -> str:
+    """The position label. ``record`` is the record word, for example "invoice"."""
+
+    word = (record or "").strip() or "record"
+    if '"' in word or "\\" in word:
+        word = "record"
+    return '"New %s" if form.isNew else "Record " + text(form.position) + " of " + text(form.count)' % word
 
 
 def connect_form(session: object, source: RecordSource) -> None:
@@ -98,8 +104,9 @@ def insert_column_field(session: object, column: object) -> object:
         raise CommandRejected("This form has no layout to put the field in.")
     engine = column_engine(document, source, session)
     class_name, kind = widget_class_for(column, engine)
-    name = str(getattr(column, "name", "") or "")
-    caption = caption_for(name)
+    raw = str(getattr(column, "name", "") or "")
+    name = _fresh_widget_name(document, raw)
+    caption = caption_for(raw)
     own_text = class_name in _OWN_TEXT
     spec = _field_spec(
         class_name,
@@ -119,7 +126,7 @@ def insert_column_field(session: object, column: object) -> object:
                 txn.execute(SetProperty(label_id, "text", StringValue(caption)))
         else:
             field_id = _insert_labelled(txn, document, layout, spec, name, caption, own_text)
-        txn.execute(SetLogic(field_id, "cbcsBind", name))
+        txn.execute(SetLogic(field_id, "cbcsBind", raw))
         if getattr(kind, "read_only", False):
             txn.execute(SetLogic(field_id, "cbcsBindMode", "readOnly"))
         after_insert(txn, session, field_id, column, class_name, kind)
@@ -168,7 +175,9 @@ def insert_record_toolbar(session: object) -> None:
             if formula:
                 txn.execute(SetLogic(ids[0], "cbcsEnabledWhen", formula))
             if name == "positionLabel":
-                txn.execute(SetLogic(ids[0], "cbcsValue", _POSITION))
+                source = record_source(document)
+                word = source.record_word or singular(source.table) if source is not None else "record"
+                txn.execute(SetLogic(ids[0], "cbcsValue", position_formula(word)))
             if verb:
                 txn.execute(
                     SetEventSteps(
@@ -271,6 +280,7 @@ def _field_spec(class_name: str, object_name: str, text: Optional[str], max_leng
     props = []
     if text:
         props.append(PropertyEntry("property", "text", StringValue(text)))
+    props.append(PropertyEntry("property", "sizePolicy", SizePolicyValue("Expanding", "Fixed")))
     if max_length and class_name == "QLineEdit":
         props.append(PropertyEntry("property", "maxLength", NumberValue(int(max_length))))
     return NodeSpec(
@@ -402,3 +412,15 @@ def bind_text_of(session: object, column: str) -> str:
 
 def default_record_word(table: str) -> str:
     return singular(table)
+
+
+def _fresh_widget_name(document: object, column: str) -> str:
+    from app.features.form_builder.engine.project.table_form import column_widget_name
+
+    used: list = []
+    name = column_widget_name(column, used)
+    by_name = getattr(document, "by_name", None)
+    while callable(by_name) and by_name(name):
+        used.append(name)
+        name = column_widget_name(column, used)
+    return name

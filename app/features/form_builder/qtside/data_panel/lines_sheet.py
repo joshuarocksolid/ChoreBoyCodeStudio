@@ -17,11 +17,18 @@ from app.features.form_builder.engine.data.source import (
     write_rows,
 )
 from app.features.form_builder.engine.data.types import describe
+from app.features.form_builder.engine.project.table_form import label_from_column
 from app.features.form_builder.engine.logic.codec import Step
 from app.features.form_builder.engine.logic.events_codec import EventStep
 from app.features.form_builder.engine.ui4.nodes import LayoutNode, WidgetNode
 from app.features.form_builder.engine.ui4.spec import Fragment, NodeSpec, PropertyEntry
-from app.features.form_builder.engine.ui4.values import NumberValue, StringValue
+from app.features.form_builder.engine.ui4.values import (
+    EnumValue,
+    NumberValue,
+    SizePolicyValue,
+    SizeValue,
+    StringValue,
+)
 from app.features.form_builder.qtside.data_panel.edits import _box_placement
 from app.features.form_builder.qtside.data_panel.host import narrate, session_of
 from app.features.form_builder.qtside.data_panel.model import column_engine, record_source
@@ -340,7 +347,15 @@ class LinesSheet(QDialog):
 
 
 def _lines_box(view: str) -> NodeSpec:
-    grid = NodeSpec("widget", None, (("class_name", "QTableView"), ("object_name", view)), ())
+    grid = NodeSpec(
+        "widget",
+        None,
+        (("class_name", "QTableView"), ("object_name", view)),
+        (
+            PropertyEntry("property", "minimumHeight", NumberValue(120)),
+            PropertyEntry("property", "sizePolicy", SizePolicyValue("Expanding", "Expanding")),
+        ),
+    )
     buttons = _button_row()
     items = tuple(
         NodeSpec("layoutitem", None, (), (), (), (("content", (widget,)),)) for widget in (grid, buttons)
@@ -356,19 +371,21 @@ def _lines_box(view: str) -> NodeSpec:
 
 
 def _button_row() -> NodeSpec:
-    add = NodeSpec(
-        "widget",
+    add = _line_button("addLineButton", "Add line")
+    delete = _line_button("deleteLineButton", "Delete line")
+    spacer = NodeSpec(
+        "spacer",
         None,
-        (("class_name", "QPushButton"), ("object_name", "addLineButton")),
-        (PropertyEntry("property", "text", StringValue("Add line")),),
+        (("name", "lineButtonSpacer"),),
+        (
+            PropertyEntry("property", "orientation", EnumValue("Qt::Horizontal")),
+            PropertyEntry("property", "sizeHint", SizeValue(40, 20)),
+        ),
     )
-    delete = NodeSpec(
-        "widget",
-        None,
-        (("class_name", "QPushButton"), ("object_name", "deleteLineButton")),
-        (PropertyEntry("property", "text", StringValue("Delete line")),),
+    items = tuple(
+        NodeSpec("layoutitem", None, (), (), (), (("content", (widget,)),))
+        for widget in (spacer, add, delete)
     )
-    items = tuple(NodeSpec("layoutitem", None, (), (), (), (("content", (widget,)),)) for widget in (add, delete))
     return NodeSpec(
         "layout",
         None,
@@ -417,7 +434,21 @@ def _selected_view(session: object) -> Optional[WidgetNode]:
 
 
 def _view_name(table: str) -> str:
-    return "%sView" % table
+    from app.features.form_builder.engine.project.table_form import column_widget_name
+
+    return "%sView" % column_widget_name(table, ())
+
+
+def _line_button(object_name: str, text: str) -> NodeSpec:
+    return NodeSpec(
+        "widget",
+        None,
+        (("class_name", "QPushButton"), ("object_name", object_name)),
+        (
+            PropertyEntry("property", "text", StringValue(text)),
+            PropertyEntry("property", "sizePolicy", SizePolicyValue("Fixed", "Fixed")),
+        ),
+    )
 
 
 def _points(column: object, parent: str) -> bool:
@@ -441,10 +472,7 @@ def _prefer(box: QComboBox, name: str) -> None:
 
 
 def _header(name: str) -> str:
-    words = name.replace("_", " ").strip()
-    if not words:
-        return name
-    return words[:1].upper() + words[1:]
+    return label_from_column(name)
 
 
 def _named(table: object, name: str):

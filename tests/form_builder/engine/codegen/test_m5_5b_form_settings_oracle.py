@@ -151,7 +151,8 @@ def _layouts_after_setup(source: str, legacy_set_margin: bool) -> dict:
     """Run a generated module with ``spacing_for`` and ``margin_for`` defined: each layout's gaps and margins."""
     from PySide6.QtWidgets import QApplication, QLayout, QWidget
 
-    QApplication.instance() or QApplication([])
+    if QApplication.instance() is None:
+        QApplication([])
     if legacy_set_margin:
         # uic 6.8's setMargin(fn()) is Qt 5 only; give uic's text alone the Qt 5 meaning (all four sides).
         source = re.sub(r"\.setMargin\(([A-Za-z_][\w.]*\(\))\)$", r".setContentsMargins(*[\1] * 4)", source, flags=re.M)

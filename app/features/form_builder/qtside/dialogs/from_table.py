@@ -1,27 +1,29 @@
-"""Build a form from a SQLite table. Preview uses QUiLoader on our own XML.
+"""Build a bound form from a named connection.
 
-``qtside/realize`` is not on this base, so the preview is not the canvas
-realizer. Nothing here loads or runs the user's code.
+The preview is still the column layout via QUiLoader. Create writes each file
+through the Data-tab editors, one undo step per file.
 """
 
 from __future__ import annotations
 
+import datetime
 import os
 import sqlite3
-from typing import Callable, Dict, List, Optional
+from typing import Callable, Dict, List, Optional, Tuple
 
 from app.qt.QtCore import QBuffer, QEvent, QIODevice, QLocale, QTimer, Qt, Signal
 from app.qt.QtUiTools import QUiLoader
 from app.qt.QtWidgets import (
+    QCheckBox,
     QComboBox,
     QDialog,
-    QFileDialog,
     QGraphicsView,
     QHBoxLayout,
     QHeaderView,
     QLabel,
     QListWidget,
     QPushButton,
+    QSizePolicy,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
@@ -29,21 +31,39 @@ from app.qt.QtWidgets import (
 )
 from app.qt.qt_compat import enum_value
 
+from app.features.form_builder.engine.data.connections import Connection, load_connections
+from app.features.form_builder.engine.data.schema import Column, Schema, Table
+from app.features.form_builder.engine.data.schema_cache import (
+    footer_text,
+    install_schema_reader,
+    refresh,
+    store_schema,
+)
+from app.features.form_builder.engine.data.schema_sqlite import read_sqlite_file
+from app.features.form_builder.engine.project.from_table_plan import (
+    ColumnChoice,
+    TableRequest,
+    button_sentence,
+    child_tables,
+    choice_for,
+    default_lines,
+    include_column,
+    linking_columns,
+    plan_forms,
+)
 from app.features.form_builder.engine.project.names import class_name_for_stem
 from app.features.form_builder.engine.project.table_form import (
     BuiltTableForm,
     TableColumn,
     build_table_form_ui,
     four_digit_year_format,
-    included_by_default,
-    sqlite_columns,
-    sqlite_tables,
 )
+from app.features.form_builder.qtside.schema_prompt import ask_connection_secret
 from app.features.form_builder.qtside.theme.chrome import FormChrome
 from app.features.form_builder.qtside.theme.runtime import host_form
 
 _INCLUDE_REASON = "Include at least one column"
-_CHOOSE_DATABASE = "Choose a SQLite file"
+_CHOOSE_CONNECTION = "Choose a connection"
 _HEADERS = ("Include", "Column", "Type", "Shows as", "Label")
 _SHOWS_AS_WORDS = (
     ("QLineEdit", "Text"),
@@ -54,6 +74,11 @@ _SHOWS_AS_WORDS = (
     ("QDateEdit", "Date"),
     ("QDateTimeEdit", "Date and time"),
     ("QComboBox", "Choice list"),
+)
+_MAKES = (
+    ("record", "Record form"),
+    ("list", "List screen"),
+    ("both", "List screen and record form"),
 )
 
 
@@ -77,6 +102,7 @@ class FromTableDialog(QDialog):
         date_format: str,
         name_reason: Callable[[], Optional[str]],
         parent: Optional[QWidget] = None,
+        add_connection: Optional[Callable[[], None]] = None,
     ) -> None:
         super().__init__(parent)
         self.setObjectName("formBuilder.fromTable")
@@ -87,34 +113,85 @@ class FromTableDialog(QDialog):
         self._chrome = chrome
         self._date_format = four_digit_year_format(date_format)
         self._name_reason = name_reason
+        self._add_connection = add_connection
         self._database = ""
+        self._connection_name = ""
+        self._connections: Dict[str, Connection] = {}
+        self._schema: Optional[Schema] = None
         self._mappings: Dict[str, List[TableColumn]] = {}
         self._loading = False
+        self._disabled = ""
+        self._footer = ""
+        self._read_reason = ""
+        self._current_table = ""
+        self._line_memory: Dict[Tuple[str, str], Tuple[bool, str, str]] = {}
+        self._schema_tokens: Dict[str, Tuple[object, ...]] = {}
         self._preview_widget: Optional[QWidget] = None
         self._preview_view: Optional[QGraphicsView] = None
         self._build()
         self._apply_chrome()
+        self._load_saved_connections()
         self._sync_button()
 
-    def set_database(self, path: str) -> None:
+    def set_database(self, path: str, connection: str = "") -> None:
+        """Point the dialog at a SQLite file under a real connection name."""
+
         self._database = os.path.abspath(path)
         self._show_path(self._database)
-        self._tables.clear()
-        self._mappings.clear()
-        self._mapping.setRowCount(0)
+        self._connection_name = connection or str(self._connection.currentData() or "")
+        if not self._connection_name:
+            self._schema = None
+            self._read_reason = _CHOOSE_CONNECTION
+            self._tables.clear()
+            self._mappings.clear()
+            self._mapping.setRowCount(0)
+            self._show_preview_message(_CHOOSE_CONNECTION)
+            self._sync_button()
+            return
         try:
-            names = sqlite_tables(self._database)
+            schema = read_sqlite_file(self._database, self._connection_name, read_at=_now())
         except sqlite3.Error as exc:
+            self._schema = None
+            self._read_reason = "Could not read that database: %s" % exc
+            self._tables.clear()
+            self._mappings.clear()
+            self._mapping.setRowCount(0)
             self._show_preview_message("Could not read that database: %s" % exc)
             self._sync_button()
             return
-        if not names:
-            self._show_preview_message("This database has no tables.")
-            self._sync_button()
-            return
-        for name in names:
-            self._tables.addItem(name)
-        self._tables.setCurrentRow(0)
+        store_schema(self._project_root, schema)
+        install_schema_reader(self._project_root)
+        self._read_reason = ""
+        self._footer = ""
+        self._use_schema(schema)
+
+    def schema(self) -> Optional[Schema]:
+        return self._schema
+
+    def request(self) -> Optional[TableRequest]:
+        if self._disabled:
+            return None
+        return self._draft()
+
+    def _draft(self) -> Optional[TableRequest]:
+        table = self._tables.currentItem()
+        if table is None or self._schema is None or not self._connection_name:
+            return None
+        lines = ""
+        link = ""
+        if str(self._make.currentData() or "record") != "list" and self._lines.isChecked():
+            lines = str(self._lines_table.currentData() or "")
+            link = str(self._lines_link.currentData() or "")
+        return TableRequest(
+            self._connection_name,
+            table.text(),
+            self._choices(),
+            str(self._make.currentData() or "record"),
+            lines,
+            self._stem,
+            self._date_format,
+            lines_link=link,
+        )
 
     def set_included(self, column: str, included: bool) -> None:
         row = self._row_for(column)
@@ -133,7 +210,7 @@ class FromTableDialog(QDialog):
         return sum(1 for column in self._current_columns() if column.include)
 
     def disabled_reason(self) -> str:
-        return self._reason.text()
+        return self._disabled
 
     def create_button(self) -> QPushButton:
         return self._create
@@ -154,17 +231,49 @@ class FromTableDialog(QDialog):
     def _build(self) -> None:
         root = QVBoxLayout(self)
         path_row = QHBoxLayout()
-        database = QLabel("Database", self)
+        database = QLabel("Connection", self)
         database.setObjectName("formBuilder.fromTable.databaseLabel")
         path_row.addWidget(database)
-        self._path = QLabel("Choose a SQLite file", self)
+        self._connection = QComboBox(self)
+        self._connection.setObjectName("formBuilder.fromTable.connection")
+        self._connection.currentIndexChanged.connect(self._on_connection)
+        path_row.addWidget(self._connection, 1)
+        add = QPushButton("Add connection…", self)
+        add.setObjectName("formBuilder.fromTable.addConnection")
+        add.clicked.connect(self._on_add_connection)
+        path_row.addWidget(add)
+        self._path = QLabel("", self)
         self._path.setObjectName("formBuilder.fromTable.path")
-        path_row.addWidget(self._path, 1)
-        browse = QPushButton("Browse…", self)
-        browse.setObjectName("formBuilder.fromTable.browse")
-        browse.clicked.connect(self._browse)
-        path_row.addWidget(browse)
+        path_row.addWidget(self._path)
         root.addLayout(path_row)
+
+        options = QHBoxLayout()
+        make_label = QLabel("Make", self)
+        make_label.setObjectName("formBuilder.fromTable.makeLabel")
+        options.addWidget(make_label)
+        self._make = QComboBox(self)
+        self._make.setObjectName("formBuilder.fromTable.make")
+        for key, label in _MAKES:
+            self._make.addItem(label, key)
+        self._make.currentIndexChanged.connect(lambda _index: self._on_make())
+        options.addWidget(self._make)
+        self._lines = QCheckBox("Include lines from", self)
+        self._lines.setObjectName("formBuilder.fromTable.lines")
+        self._lines.toggled.connect(lambda _checked: self._on_lines_toggled())
+        options.addWidget(self._lines)
+        self._lines_table = QComboBox(self)
+        self._lines_table.setObjectName("formBuilder.fromTable.linesTable")
+        self._lines_table.currentIndexChanged.connect(lambda _index: self._on_lines_table())
+        options.addWidget(self._lines_table)
+        self._link_label = QLabel("Lines linked by", self)
+        self._link_label.setObjectName("formBuilder.fromTable.linkLabel")
+        options.addWidget(self._link_label)
+        self._lines_link = QComboBox(self)
+        self._lines_link.setObjectName("formBuilder.fromTable.linesLink")
+        self._lines_link.currentIndexChanged.connect(lambda _index: self._sync_button())
+        options.addWidget(self._lines_link)
+        options.addStretch(1)
+        root.addLayout(options)
 
         body = QHBoxLayout()
         root.addLayout(body, 1)
@@ -211,15 +320,22 @@ class FromTableDialog(QDialog):
 
     def _apply_chrome(self) -> None:
         chrome = self._chrome
+        focus = max(1, int(getattr(chrome, "focus_width", 1) or 1))
         self.setStyleSheet(
             "QDialog#formBuilder\\.fromTable { background: %s; color: %s; }"
-            "QLabel#formBuilder\\.fromTable\\.databaseLabel { color: %s; }"
-            "QLabel#formBuilder\\.fromTable\\.path { color: %s; }"
-            "QLabel#formBuilder\\.fromTable\\.reason,"
-            "QLabel#formBuilder\\.fromTable\\.previewMessage { color: %s; }"
+            "QDialog#formBuilder\\.fromTable QLabel { color: %s; background: transparent; }"
+            "QLabel#formBuilder\\.fromTable\\.path,"
+            "QLabel#formBuilder\\.fromTable\\.reason { color: %s; }"
+            "QDialog#formBuilder\\.fromTable QCheckBox { color: %s; background: transparent; }"
+            "QDialog#formBuilder\\.fromTable QLineEdit,"
+            "QDialog#formBuilder\\.fromTable QComboBox,"
             "QListWidget#formBuilder\\.fromTable\\.tables,"
             "QTableWidget#formBuilder\\.fromTable\\.mapping"
             " { background: %s; color: %s; border: 1px solid %s; }"
+            "QDialog#formBuilder\\.fromTable QLineEdit:focus,"
+            "QDialog#formBuilder\\.fromTable QComboBox:focus"
+            " { border: %dpx solid %s; }"
+            "QWidget#formBuilder\\.fromTable\\.preview { background: %s; color: %s; }"
             "QPushButton#formBuilder\\.fromTable\\.create"
             " { background: %s; color: %s; border: 0; padding: 0 12px;"
             " min-height: 28px; max-height: 28px; }"
@@ -228,24 +344,119 @@ class FromTableDialog(QDialog):
                 chrome.text,
                 chrome.text,
                 chrome.muted,
-                chrome.muted,
-                chrome.panel,
+                chrome.text,
+                chrome.input,
                 chrome.text,
                 chrome.border,
+                focus,
+                chrome.accent,
+                chrome.panel,
+                chrome.text,
                 chrome.accent,
                 chrome.on_accent,
             )
         )
 
-    def _browse(self) -> None:
-        chosen, _selected = QFileDialog.getOpenFileName(
-            self,
-            "Choose a SQLite database",
+    def _on_add_connection(self) -> None:
+        if self._add_connection is None:
+            return
+        previous = str(self._connection.currentData() or "")
+        before = set(self._connections)
+        self._add_connection()
+        self._load_saved_connections(previous, before)
+
+    def _load_saved_connections(self, prefer: str = "", before: Optional[set] = None) -> None:
+        loaded, _error = load_connections(self._project_root)
+        known = set(self._connections) if before is None else set(before)
+        self._connections = {}
+        self._connection.blockSignals(True)
+        self._connection.clear()
+        fresh = ""
+        if loaded is not None:
+            for item in loaded.connections:
+                self._connections[item.name] = item
+                self._connection.addItem(item.title or item.name, item.name)
+                if item.name not in known:
+                    fresh = item.name
+        target = prefer if prefer in self._connections else fresh
+        if not target and self._connection.count():
+            target = str(self._connection.itemData(0) or "")
+        index = self._connection.findData(target) if target else -1
+        if index >= 0:
+            self._connection.setCurrentIndex(index)
+        self._connection.blockSignals(False)
+        if index >= 0:
+            self._on_connection()
+
+    def _on_connection(self) -> None:
+        name = str(self._connection.currentData() or "")
+        connection = self._connections.get(name) if hasattr(self, "_connections") else None
+        if connection is None:
+            return
+        outcome = refresh(
             self._project_root,
-            "SQLite (*.sqlite *.sqlite3 *.db);;All files (*)",
+            connection,
+            lambda item: ask_connection_secret(self._project_root, item),
         )
-        if chosen:
-            self.set_database(chosen)
+        if not outcome.ok or outcome.schema is None:
+            self._connection_name = name
+            if outcome.schema is not None:
+                self._read_reason = ""
+                self._footer = footer_text(
+                    outcome.schema,
+                    failed=True,
+                    title=connection.title or name,
+                    reason=outcome.reason or "",
+                )
+                self._use_schema(outcome.schema)
+                return
+            self._schema = None
+            self._footer = ""
+            self._read_reason = outcome.reason or "The columns could not be read."
+            self._tables.clear()
+            self._mappings.clear()
+            self._mapping.setRowCount(0)
+            self._show_preview_message(self._read_reason)
+            self._sync_button()
+            return
+        self._read_reason = ""
+        self._footer = ""
+        self._connection_name = name
+        if connection.engine == "sqlite" and connection.file:
+            self._database = os.path.abspath(os.path.join(self._project_root, connection.file))
+            self._show_path(self._database)
+        else:
+            self._database = name
+            self._path.setText("")
+            self._path.setToolTip(connection.title or name)
+        self._use_schema(outcome.schema)
+
+    def _use_schema(self, schema: Schema) -> None:
+        token = tuple(
+            (table.name, tuple((column.name, column.type, column.nullable) for column in table.columns))
+            for table in schema.tables
+        )
+        previous = self._schema_tokens.get(self._connection_name)
+        if previous is not None and previous != token:
+            self._line_memory = {
+                key: value for key, value in self._line_memory.items() if key[0] != self._connection_name
+            }
+        self._schema_tokens[self._connection_name] = token
+        self._schema = schema
+        install_schema_reader(self._project_root)
+        self._current_table = ""
+        self._tables.clear()
+        self._mappings.clear()
+        self._release_mapping_editors()
+        self._mapping.setRowCount(0)
+        if not schema.tables:
+            self._show_preview_message("This database has no tables.")
+            self._sync_button()
+            return
+        for table in schema.tables:
+            self._tables.addItem(table.name)
+            self._mappings[table.name] = [_mapping_row(table, column, schema.engine) for column in table.columns]
+        self._tables.setCurrentRow(0)
 
     def _show_path(self, path: str) -> None:
         relative = os.path.relpath(path, self._project_root).replace(os.sep, "/")
@@ -257,25 +468,37 @@ class FromTableDialog(QDialog):
         self._path.setToolTip(os.path.abspath(path))
 
     def _on_table(self, name: str) -> None:
-        if not name or not self._database:
+        if not name:
             return
-        if name not in self._mappings:
-            try:
-                raw = sqlite_columns(self._database, name)
-            except sqlite3.Error as exc:
-                self._show_preview_message("Could not read %s: %s" % (name, exc))
-                return
-            self._mappings[name] = [
-                TableColumn(
-                    column.name,
-                    column.sql_type,
-                    include=included_by_default(column),
-                )
-                for column in raw
-            ]
-        self._fill_mapping(self._mappings[name])
+        if self._current_table and self._current_table != name:
+            self._line_memory[self._memory_key(self._current_table)] = (
+                self._lines.isChecked(),
+                str(self._lines_table.currentData() or ""),
+                str(self._lines_link.currentData() or ""),
+            )
+        self._current_table = name
+        columns = self._mappings.get(name)
+        if columns is None:
+            return
+        self._fill_mapping(columns)
+        self._fill_lines(name)
+
+    def _memory_key(self, table_name: str) -> Tuple[str, str]:
+        return (self._connection_name, table_name)
+
+    def _release_mapping_editors(self) -> None:
+        table = self._mapping
+        for row in range(table.rowCount()):
+            for column in range(table.columnCount()):
+                if table.cellWidget(row, column) is not None:
+                    table.removeCellWidget(row, column)
+        for child in list(table.findChildren(QComboBox)):
+            child.hide()
+            child.setParent(None)
+            child.deleteLater()
 
     def _fill_mapping(self, columns: List[TableColumn]) -> None:
+        self._release_mapping_editors()
         self._loading = True
         self._mapping.setRowCount(len(columns))
         for row, column in enumerate(columns):
@@ -366,7 +589,8 @@ class FromTableDialog(QDialog):
         raise KeyError(column)
 
     def _shows_as_combo(self, widget_class: str) -> QComboBox:
-        combo = QComboBox(self._mapping)
+        combo = QComboBox()
+        combo.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Fixed)
         chosen = 0
         for index, (qt_name, word) in enumerate(_SHOWS_AS_WORDS):
             combo.addItem(word, qt_name)
@@ -413,71 +637,178 @@ class FromTableDialog(QDialog):
     def _fit_columns_now(self) -> None:
         table = self._mapping
         header = table.horizontalHeader()
-        count = table.columnCount()
-        last = count - 1
-        if last < 1:
+        if table.columnCount() < 5:
             return
         viewport = table.viewport().width()
         if viewport < 80:
-            header.setStretchLastSection(True)
-            header.setSectionResizeMode(last, QHeaderView.Stretch)
             return
+        resize = getattr(QHeaderView, "ResizeMode", QHeaderView)
+        contents = getattr(resize, "ResizeToContents")
+        fixed = getattr(resize, "Fixed")
+        stretch = getattr(resize, "Stretch")
         measured = []
-        for column in range(count):
-            header.setSectionResizeMode(column, QHeaderView.ResizeToContents)
+        for column in range(5):
+            header.setSectionResizeMode(column, contents)
             table.resizeColumnToContents(column)
             measured.append(max(16, header.sectionSize(column)))
-        label_width = max(48, measured[last])
-        others = measured[:last]
-        spare = viewport - label_width
-        if spare < 16 * last:
-            spare = 16 * last
-            label_width = max(48, viewport - spare)
-        if sum(others) > spare and sum(others) > 0:
-            scaled = [max(16, int(width * spare / sum(others))) for width in others]
-            overflow = sum(scaled) - spare
-            guard = 0
-            while overflow > 0 and guard < 64:
-                victim = max(range(last), key=lambda index: scaled[index])
-                if scaled[victim] <= 16:
-                    break
-                scaled[victim] -= 1
-                overflow -= 1
-                guard += 1
-            others = scaled
-        label_width = viewport - sum(others)
-        if label_width < 48:
-            label_width = 48
+        for row in range(table.rowCount()):
+            editor = table.cellWidget(row, 3)
+            if editor is not None:
+                measured[3] = max(measured[3], editor.sizeHint().width())
+        include, column, type_width, shows = measured[:4]
+        column = max(48, column)
+        spare = viewport - include - type_width - shows - column
+        if spare < 64:
+            column = max(48, viewport - include - type_width - shows - 64)
         header.setStretchLastSection(False)
-        for column, width in enumerate(others):
-            header.setSectionResizeMode(column, QHeaderView.Fixed)
-            header.resizeSection(column, width)
-        header.setSectionResizeMode(last, QHeaderView.Fixed)
-        header.resizeSection(last, label_width)
+        for index, width in ((0, include), (1, column), (2, type_width), (3, shows)):
+            header.setSectionResizeMode(index, fixed)
+            header.resizeSection(index, width)
+        header.setSectionResizeMode(4, stretch)
+        table.updateGeometries()
+        for row in range(table.rowCount()):
+            editor = table.cellWidget(row, 3)
+            if editor is None:
+                continue
+            rect = table.visualRect(table.model().index(row, 3))
+            editor.setFixedWidth(max(rect.width(), 1))
 
     def _sync_button(self) -> None:
         count = self.included_count()
-        if count == 1:
-            self._create.setText("Create form with 1 field")
-        else:
-            self._create.setText("Create form with %d fields" % count)
+        table = self._tables.currentItem()
+        name = table.text() if table is not None else ""
+        make = str(self._make.currentData() or "record")
+        lines = bool(make != "list" and self._lines.isChecked() and self._lines_table.currentData())
+        draft = self._draft()
+        planned = plan_forms(draft, self._schema) if draft is not None and self._schema is not None else None
+        sentence = planned.button_text if planned is not None else button_sentence(name, count, make, lines)
+        self._create.setText(sentence)
         reason = self._name_reason()
-        if not reason and not self._database:
-            reason = _CHOOSE_DATABASE
-        elif not reason and count == 0:
+        if not reason and self._schema is None:
+            reason = self._read_reason or _CHOOSE_CONNECTION
+        elif not reason and planned is not None and planned.disabled_reason:
+            reason = planned.disabled_reason
+        elif not reason and count == 0 and self._schema is not None:
             reason = _INCLUDE_REASON
-        self._create.setEnabled(not reason)
-        self._reason.setText(reason or "")
-        self._reason.setVisible(bool(reason))
-        self._create.setToolTip(reason or "")
+        self._disabled = reason or ""
+        self._create.setEnabled(not self._disabled)
+        shown = self._disabled or self._footer
+        self._reason.setText(shown)
+        self._reason.setVisible(bool(shown))
+        self._create.setToolTip(self._disabled or "")
+
+    def _on_make(self) -> None:
+        self._sync_lines_and_button()
+        self._refresh_preview()
+
+    def _on_lines_toggled(self) -> None:
+        self._sync_button()
+        if not self._loading:
+            self._refresh_preview()
+
+    def _sync_lines_and_button(self) -> None:
+        make = str(self._make.currentData() or "record")
+        show = make != "list" and self._lines_table.count() > 0
+        self._lines.setVisible(show)
+        self._lines_table.setVisible(show)
+        if not show:
+            self._link_label.setVisible(False)
+            self._lines_link.setVisible(False)
+        self._sync_button()
+
+    def _on_lines_table(self) -> None:
+        self._fill_link()
+        self._sync_button()
+
+    def _fill_lines(self, table_name: str) -> None:
+        self._lines_table.blockSignals(True)
+        self._lines_table.clear()
+        children = child_tables(self._schema, table_name) if self._schema is not None else ()
+        for child in children:
+            self._lines_table.addItem(child.name, child.name)
+        remembered = self._line_memory.get(self._memory_key(table_name))
+        chosen = remembered[1] if remembered else ""
+        if not chosen and self._schema is not None:
+            for child in children:
+                if default_lines(self._schema, table_name, child):
+                    chosen = child.name
+                    break
+        index = self._lines_table.findData(chosen) if chosen else 0
+        if index < 0:
+            index = 0
+        if self._lines_table.count():
+            self._lines_table.setCurrentIndex(index)
+        self._lines_table.blockSignals(False)
+        has_child = self._lines_table.count() > 0
+        self._lines.setText("Include lines from" if has_child else "Include lines")
+        self._lines.blockSignals(True)
+        if remembered is not None:
+            self._lines.setChecked(remembered[0])
+        else:
+            checked = False
+            if chosen and self._schema is not None:
+                checked = any(default_lines(self._schema, table_name, child) for child in children)
+            self._lines.setChecked(checked)
+        self._lines.blockSignals(False)
+        self._fill_link(remembered[2] if remembered else "")
+        self._sync_lines_and_button()
+        self._refresh_preview()
+
+    def _fill_link(self, prefer: str = "") -> None:
+        child_name = str(self._lines_table.currentData() or "")
+        child = None
+        if self._schema is not None:
+            for table in self._schema.tables:
+                if table.name == child_name:
+                    child = table
+                    break
+        links = linking_columns(child, self._current_table) if child is not None else ()
+        self._lines_link.blockSignals(True)
+        self._lines_link.clear()
+        for column in links:
+            self._lines_link.addItem(column.name, column.name)
+        if len(links) > 1:
+            self._lines_link.insertItem(0, "(choose)", "")
+        target = prefer if any(column.name == prefer for column in links) else ""
+        if not target and len(links) == 1:
+            target = links[0].name
+        found = self._lines_link.findData(target)
+        self._lines_link.setCurrentIndex(found if found >= 0 else 0)
+        self._lines_link.blockSignals(False)
+        show = len(links) > 1 and str(self._make.currentData() or "record") != "list"
+        self._link_label.setVisible(show)
+        self._lines_link.setVisible(show)
+
+    def _choices(self) -> Tuple[ColumnChoice, ...]:
+        chosen = []
+        for column in self._current_columns():
+            if column.include:
+                chosen.append(ColumnChoice(column.name, column.widget_class(), column.field_label()))
+        return tuple(chosen)
 
     def _refresh_preview(self) -> None:
         if not self._current_columns():
-            self._show_preview_message("Include at least one column.")
+            self._show_preview_message(self._disabled or "Include at least one column.")
             return
-        built = self.built_form()
+        draft = self._draft()
+        text = ""
+        if draft is not None and self._schema is not None:
+            from app.features.form_builder.qtside.dialogs.table_apply import render_plans
+
+            made = render_plans(draft, self._schema, self._project_root)
+            planned = plan_forms(draft, self._schema)
+            kinds = {form.stem: form.kind for form in planned.forms}
+            record = ""
+            for stem, body in made:
+                if draft.make == "list" or kinds.get(stem) == "record":
+                    record = body
+                    break
+            text = record
+        if not text:
+            self._show_preview_message(self._disabled or "The preview could not be built.")
+            return
         buffer = QBuffer()
-        buffer.setData(built.text.encode("utf-8"))
+        buffer.setData(text.encode("utf-8"))
         buffer.open(QIODevice.ReadOnly)
         loader = QUiLoader()
         clear = getattr(loader, "clearPluginPaths", None)
@@ -485,11 +816,14 @@ class FromTableDialog(QDialog):
             clear()
         widget = loader.load(buffer)
         error = loader.errorString()
+        if widget is not None:
+            widget.setStyleSheet(self._preview_sheet())
         if widget is None:
             self._show_preview_message(error or "The preview could not be built.")
             return
         # A proxy in its own scene: the app style sheet cannot reach it (UX-ISO-001).
         view = host_form(widget)
+        self._paint_preview(widget, view)
         # Top-left and fitted to the pane width, so the form reflows like the app would.
         view.setAlignment(Qt.AlignLeft | Qt.AlignTop)
         view.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
@@ -506,12 +840,17 @@ class FromTableDialog(QDialog):
         proxy = form.graphicsProxyWidget()
         if proxy is None:
             return
-        width = view.viewport().width()
-        height = form.heightForWidth(width) if form.hasHeightForWidth() else -1
-        if height <= 0:
-            height = form.minimumSizeHint().height()
-        proxy.resize(width, max(view.viewport().height(), height))
-        view.setSceneRect(0, 0, width, max(view.viewport().height(), height))
+        hint = form.sizeHint()
+        width = max(form.minimumSizeHint().width(), hint.width(), 1)
+        height = max(form.minimumSizeHint().height(), hint.height(), 1)
+        proxy.resize(width, height)
+        view.setSceneRect(0, 0, width, height)
+        avail_w = max(view.viewport().width(), 1)
+        avail_h = max(view.viewport().height(), 1)
+        scale = min(1.0, avail_w / float(width), avail_h / float(height))
+        view.resetTransform()
+        view.scale(scale, scale)
+        view.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
 
     def _show_preview_message(self, text: str) -> None:
         label = QLabel(text, self)
@@ -529,4 +868,67 @@ class FromTableDialog(QDialog):
                 old.deleteLater()
         self._preview_widget = form
         self._preview.addWidget(shown)
+
+
+    def _paint_preview(self, widget: QWidget, view: QGraphicsView) -> None:
+        from app.qt.QtGui import QColor, QPalette
+
+        chrome = self._chrome
+        panel = QColor(chrome.panel)
+        ink = QColor(chrome.text)
+        field = QColor(chrome.input)
+        palette = QPalette(widget.palette())
+        palette.setColor(QPalette.ColorRole.Window, panel)
+        palette.setColor(QPalette.ColorRole.WindowText, ink)
+        palette.setColor(QPalette.ColorRole.Base, field)
+        palette.setColor(QPalette.ColorRole.Text, ink)
+        palette.setColor(QPalette.ColorRole.Button, field)
+        palette.setColor(QPalette.ColorRole.ButtonText, ink)
+        widget.setPalette(palette)
+        widget.setAutoFillBackground(True)
+        widget.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        widget.setStyleSheet(self._preview_sheet())
+        view.setStyleSheet("QGraphicsView { background: %s; border: none; }" % chrome.panel)
+        for child in widget.findChildren(QWidget):
+            child.setPalette(palette)
+            if child.inherits("QLabel"):
+                child.setAutoFillBackground(True)
+        view.setBackgroundBrush(panel)
+
+    def _preview_sheet(self) -> str:
+        chrome = self._chrome
+        return (
+            "QWidget { background: %s; color: %s; }"
+            "QLabel { color: %s; background: %s; }"
+            "QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox, QDateEdit, QDateTimeEdit, QTableView"
+            " { color: %s; background: %s; border: 1px solid %s; }"
+            "QPushButton { color: %s; background: %s; border: 1px solid %s; }"
+            % (
+                chrome.panel,
+                chrome.text,
+                chrome.text,
+                chrome.panel,
+                chrome.text,
+                chrome.input,
+                chrome.border,
+                chrome.text,
+                chrome.input,
+                chrome.border,
+            )
+        )
+
+
+def _now() -> str:
+    return datetime.datetime.now().isoformat(timespec="seconds")
+
+
+def _mapping_row(table: Table, column: Column, engine: str) -> TableColumn:
+    choice = choice_for(column, engine)
+    return TableColumn(
+        column.name,
+        column.type,
+        include=include_column(column, table.key or "", engine),
+        shows_as=choice.shows_as,
+        label=choice.label,
+    )
 

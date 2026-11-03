@@ -11,7 +11,7 @@ from app.features.form_builder.engine.data.listing import VALUE_READ
 from app.features.form_builder.engine.data.source import ListSource, RecordSource, read_data
 from app.features.form_builder.engine.data.sql import (
     PG8000_SCAN_SENTENCE,
-    is_identifier,
+    name_usable,
     pg8000_scan_closed,
     select_source_error,
 )
@@ -102,15 +102,15 @@ def _names(doc: object, connections: object, schema: object) -> Iterable[FormDia
     if source is None:
         return ()
     bad = []
-    if source.table and not is_identifier(source.table):
+    if source.table and not name_usable(source.table):
         bad.append(source.table)
     for name in tuple(source.columns) + tuple(source.search):
-        if name and not is_identifier(name):
+        if name and not name_usable(name):
             bad.append(name)
     for item in source.filters:
-        if item.column and not is_identifier(item.column):
+        if item.column and not name_usable(item.column):
             bad.append(item.column)
-    if source.open is not None and source.open.key and not is_identifier(source.open.key):
+    if source.open is not None and source.open.key and not name_usable(source.open.key):
         bad.append(source.open.key)
     return tuple(_at(doc, "FB307", CODES["FB307"].title.format(name=name), _root(doc)) for name in bad)
 

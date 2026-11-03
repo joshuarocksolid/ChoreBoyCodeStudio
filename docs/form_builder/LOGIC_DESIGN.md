@@ -991,7 +991,7 @@ A binding can be marked **read-only** (shown, never written), for computed or au
 | Widget | Steps | Rule | Native shortcut |
 | --- | --- | --- | --- |
 | `firstButton`, `previousButton` | first, previous | Enabled when `form.position > 1` | Ctrl+Home, PgUp |
-| `positionLabel` | | Value = `"Record " + text(form.position) + " of " + text(form.count)` | |
+| `positionLabel` | | Value = `"New {record}" if form.isNew else "Record " + text(form.position) + " of " + text(form.count)` | |
 | `nextButton`, `lastButton` | next, last | Enabled when `form.position < form.count` | PgDown, Ctrl+End |
 | `newButton` | new | | Ctrl+N |
 | `saveButton` | save | Enabled when `form.isDirty or form.isNew` | Ctrl+S |

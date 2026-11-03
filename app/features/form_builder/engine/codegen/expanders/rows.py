@@ -28,15 +28,16 @@ from app.features.form_builder.engine.data.sql import (
     assignment_piece,
     delete_lines_for_link,
     delete_row,
+    insert_line_at_next_position,
     insert_row,
-    is_identifier,
     key_clause,
+    name_usable,
     select_lines,
     select_lookup,
     set_line_position,
     update_head,
 )
-from app.features.form_builder.engine.data.types import describe
+from app.features.form_builder.engine.data.types import describe, stores_whole_integer
 from app.features.form_builder.engine.logic import compat
 from app.features.form_builder.engine.ui4.document import UiDocument
 from app.features.form_builder.engine.ui4.values import StringValue
@@ -108,6 +109,7 @@ def _contribution(
 ) -> Contribution:
     hidden = {rows.key, rows.link, rows.position}
     stored = tuple(column.name for column in columns if not column.calculated and column.name not in hidden)
+    stamp = _append_position(rows, table, engine)
     select_names = (rows.key,) + stored
     if rows.position and rows.position not in select_names:
         select_names = select_names + (rows.position,)
@@ -116,7 +118,7 @@ def _contribution(
     select_sql = select_lines(engine, rows.table, select_names, rows.link, rows.order or rows.position, rows.key)
     methods = [
         _method("_cbcs_load_lines", "_conn, _key", _load_body(view)),
-        _method("_cbcs_save_lines", "_conn, _parent", _save_body(view, engine, rows, stored)),
+        _method("_cbcs_save_lines", "_conn, _parent", _save_body(view, engine, rows, stored, stamp)),
         _method("_cbcs_lines_dirty", "", _dirty_body()),
         _method("_cbcs_clear_lines", "", _clear_body(view)),
         _method("_cbcs_delete_lines", "_conn, _key", _delete_link_body()),
@@ -152,6 +154,7 @@ def _contribution(
         ("PySide6.QtGui", "QStandardItem"),
         ("PySide6.QtGui", "QStandardItemModel"),
         ("PySide6.QtWidgets", "QCheckBox"),
+        ("PySide6.QtWidgets", "QHeaderView"),
         ("PySide6.QtWidgets", "QComboBox"),
         ("PySide6.QtWidgets", "QDateEdit"),
         ("PySide6.QtWidgets", "QDateTimeEdit"),
@@ -180,7 +183,7 @@ def _contribution(
         for imported in compiled[2]:
             if imported not in imports:
                 imports.append(imported)
-    setup = _setup(view, rows, columns, select_names, stored, unique, select_sql, engine)
+    setup = _setup(view, rows, columns, select_names, stored, unique, select_sql, engine, stamp)
     return Contribution(
         imports=tuple(imports),
         setup_lines=tuple(setup),
@@ -194,7 +197,7 @@ def _method(name: str, params: str, lines: Sequence[str]) -> Method:
     return Method(name=name, body="\n".join(lines), source_ref="rows", params=params)
 
 
-def _setup(view, rows, columns, select_names, stored, unique, select_sql, engine):
+def _setup(view, rows, columns, select_names, stored, unique, select_sql, engine, stamp=""):
     headers = ", ".join(py_string(column.header) for column in columns)
     names = ", ".join(py_string(column.name) for column in columns)
     kinds = ", ".join(py_string(column.kind) for column in columns)
@@ -237,6 +240,7 @@ def _setup(view, rows, columns, select_names, stored, unique, select_sql, engine
                 also,
             )
         )
+    stretch_at = _stretch_index(columns)
     lines = [
         "class _CbcsLineDelegate(QStyledItemDelegate):",
         "    def __init__(self, ui):",
@@ -258,7 +262,7 @@ def _setup(view, rows, columns, select_names, stored, unique, select_sql, engine
         "_model.setHorizontalHeaderLabels((%s,))" % headers,
         "self.%s.setModel(_model)" % view,
         "self.%s.setItemDelegate(_CbcsLineDelegate(self))" % view,
-        "self.%s.horizontalHeader().setStretchLastSection(True)" % view,
+        "self.%s.horizontalHeader().setStretchLastSection(False)" % view,
         "_model.dataChanged.connect(self._cbcs_line_changed)",
         "_model.rowsInserted.connect(self._cbcs_line_changed)",
         "_model.rowsRemoved.connect(self._cbcs_line_changed)",
@@ -270,6 +274,15 @@ def _setup(view, rows, columns, select_names, stored, unique, select_sql, engine
         "self._cbcs_line_table = %s" % py_string(rows.table),
         "self._cbcs_line_unique = %s" % ("True" if unique else "False"),
         "self._cbcs_line_names = (%s,)" % names,
+        "_header = self.%s.horizontalHeader()" % view,
+        "_resize = getattr(QHeaderView, 'ResizeMode', QHeaderView)",
+        "_stretch = getattr(_resize, 'Stretch')",
+        "_interactive = getattr(_resize, 'Interactive')",
+        "_header.setSectionResizeMode(%d, _stretch)" % stretch_at,
+        "for _i in range(len(self._cbcs_line_names)):",
+        "    if _i != %d:" % stretch_at,
+        "        self.%s.resizeColumnToContents(_i)" % view,
+        "        _header.setSectionResizeMode(_i, _interactive)",
         "self._cbcs_line_headers = (%s,)" % headers,
         "self._cbcs_line_kinds = (%s,)" % kinds,
         "self._cbcs_line_nullable = (%s,)" % nullable,
@@ -285,7 +298,7 @@ def _setup(view, rows, columns, select_names, stored, unique, select_sql, engine
         "self._cbcs_line_delete_link = %s" % py_string(delete_lines_for_link(engine, rows.table, rows.link).text),
         "self._cbcs_line_position_sql = %s"
         % py_string(set_line_position(engine, rows.table, rows.position or rows.key, rows.key).text if rows.position else ""),
-        "self._cbcs_line_insert = %s" % py_string(_insert_sql(engine, rows, stored)),
+        "self._cbcs_line_insert = %s" % py_string(_insert_sql(engine, rows, stored, stamp)),
         "self._cbcs_line_update = %s" % py_string(update_head(engine, rows.table) + " "),
         "self._cbcs_line_where = %s" % py_string(key_clause(engine, rows.key)),
         "self._cbcs_line_assign = {%s}" % ", ".join(assign),
@@ -309,7 +322,37 @@ def _setup(view, rows, columns, select_names, stored, unique, select_sql, engine
     return lines
 
 
-def _insert_sql(engine: str, rows: Rows, stored: Sequence[str]) -> str:
+def _append_position(rows: Rows, table: object, engine: str) -> str:
+    """An integer position column that is not renumbered. Empty when there is none.
+
+    Nullable and NOT NULL share this path, so a new line gets
+    ``COALESCE(MAX(position), 0) + 1`` instead of NULL. A text column with
+    the same name stays an ordinary grid column.
+    """
+
+    if rows.position or table is None:
+        return ""
+    shown = set()
+    for column in rows.columns:
+        if isinstance(column, DataColumn):
+            shown.add(column.column)
+        elif isinstance(column, CalcColumn):
+            shown.add(column.name)
+    by_name = {column.name: column for column in getattr(table, "columns", ()) or ()}
+    for candidate in ("line_no", "position", "sort"):
+        column = by_name.get(candidate)
+        if column is None or candidate in shown or not name_usable(candidate):
+            continue
+        declared = str(getattr(column, "type", "") or "")
+        if not stores_whole_integer(declared, engine):
+            continue
+        return candidate
+    return ""
+
+
+def _insert_sql(engine: str, rows: Rows, stored: Sequence[str], stamp: str = "") -> str:
+    if stamp:
+        return insert_line_at_next_position(engine, rows.table, stored, rows.key, rows.link, stamp).text
     columns = list(stored)
     if rows.position and rows.position not in columns:
         columns.append(rows.position)
@@ -363,8 +406,22 @@ def _load_body(view: str) -> List[str]:
     ]
 
 
-def _save_body(view: str, engine: str, rows: Rows, stored: Sequence[str]) -> List[str]:
+def _save_body(view: str, engine: str, rows: Rows, stored: Sequence[str], stamp: str = "") -> List[str]:
     del view, engine, rows, stored
+    insert = [
+        "    elif _kind == %s:" % py_string("insert"),
+        "        _params = []",
+        "        for _column, _value in _op[1]:",
+        "            _params.append(self._cbcs_line_out(_column, _value))",
+    ]
+    if stamp:
+        insert.append("        _params.append(self._cbcs_line_out(self._cbcs_line_link, _parent))")
+    insert.extend(
+        [
+            "        _params.append(self._cbcs_line_out(self._cbcs_line_link, _parent))",
+            "        _cursor.execute(self._cbcs_line_insert, _params)",
+        ]
+    )
     return [
         "_ops = _cbcs_plan_lines(",
         "    self._cbcs_line_snapshot,",
@@ -390,13 +447,7 @@ def _save_body(view: str, engine: str, rows: Rows, stored: Sequence[str]) -> Lis
         "        _cursor.execute(self._cbcs_line_update + %s.join(_sets) + self._cbcs_line_where, _params)" % py_string(", "),
         "    elif _kind == %s or _kind == %s:" % (py_string("park"), py_string("position")),
         "        _cursor.execute(self._cbcs_line_position_sql, (self._cbcs_line_out(self._cbcs_line_position, _op[2]), self._cbcs_line_out(self._cbcs_line_key, _op[1])))",
-        "    elif _kind == %s:" % py_string("insert"),
-        "        _params = []",
-        "        for _column, _value in _op[1]:",
-        "            _params.append(self._cbcs_line_out(_column, _value))",
-        "        _params.append(self._cbcs_line_out(self._cbcs_line_link, _parent))",
-        "        _cursor.execute(self._cbcs_line_insert, _params)",
-    ]
+    ] + insert
 
 
 def _dirty_body() -> List[str]:
@@ -1047,7 +1098,16 @@ def _names_ok(rows: Rows, view: str) -> bool:
             names.append(column.column)
         elif isinstance(column, CalcColumn):
             names.append(column.name)
-    return all(is_identifier(name) for name in names if name)
+    return all(name_usable(name) for name in names if name)
+
+
+def _stretch_index(columns: Sequence[_Col]) -> int:
+    """The first text column that is not a lookup. The last column when there is none."""
+
+    for index, column in enumerate(columns):
+        if column.kind != "lookup" and column.family == "text":
+            return index
+    return max(0, len(columns) - 1)
 
 
 def _columns(doc: UiDocument, source: RecordSource, rows: Rows, engine: str) -> Tuple[_Col, ...]:

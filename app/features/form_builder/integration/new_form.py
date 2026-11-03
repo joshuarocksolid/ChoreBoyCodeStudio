@@ -392,6 +392,14 @@ class NewFormSurface:
 
     def _from_table(self) -> None:
         root = self._request.project_root or os.getcwd()
+        window = self._host()
+
+        def add_connection() -> None:
+            workflow = getattr(window, "_file_project_commands_workflow", None)
+            opener = getattr(workflow, "_open_settings_dialog", None)
+            if callable(opener):
+                opener(page_key="connections")
+
         dialog = FromTableDialog(
             project_root=root,
             stem=self._panel.stem(),
@@ -399,25 +407,160 @@ class NewFormSurface:
             date_format=locale_date_format(),
             name_reason=self._panel.name_reason,
             parent=self._panel,
+            add_connection=add_connection,
         )
         dialog.create_requested.connect(lambda: self._create_from_dialog(dialog))
         exec_qt(dialog)
 
     def _create_from_dialog(self, dialog: FromTableDialog) -> None:
-        built = dialog.built_form()
-        result = perform_create(
-            self._host(),
-            template="widget",
-            stem=self._panel.stem(),
-            directory=self._panel.directory(),
-            ui_text=built.text,
-            first_widget=built.first_widget,
-        )
-        if result.refused:
-            self._panel.show_status(result.refused)
+        from app.features.form_builder.qtside.dialogs.table_apply import render_plans
+
+        request = dialog.request()
+        schema = dialog.schema()
+        root = self._request.project_root or os.getcwd()
+        if request is None or schema is None:
+            self._panel.show_status(dialog.disabled_reason() or "Choose a connection")
             return
+        made = render_plans(request, schema, root)
+        if not made:
+            self._panel.show_status(dialog.disabled_reason() or "Include at least one column")
+            return
+        folder = self._panel.directory()
+        if not os.path.isabs(folder):
+            folder = os.path.join(root, folder)
+        from app.features.form_builder.engine.project.fs import OsFileSystem
+        from app.features.form_builder.engine.project.names import first_name_clash
+
+        clash = first_name_clash(folder, tuple(stem for stem, _text in made), OsFileSystem())
+        if clash:
+            self._panel.show_status(clash)
+            return
+        from app.features.form_builder.engine.project.from_table_plan import plan_forms
+
+        planned = plan_forms(request, schema)
+        kinds = {form.stem: form.kind for form in planned.forms}
+        record_path = ""
+        ordered = tuple(sorted(made, key=lambda item: (0 if kinds.get(item[0]) == "list" else 1, item[0])))
+        for stem, text in ordered:
+            result = self._create_planned(stem, text, kinds.get(stem, ""), planned, schema)
+            if result.refused:
+                self._panel.show_status(result.refused)
+                return
+            if result.scope is not None and kinds.get(stem) != "list":
+                record_path = result.scope.ui_path
+            elif result.scope is not None and not record_path:
+                record_path = result.scope.ui_path
+        self._focus_data(record_path)
         dialog.accept()
         self._reload_recents()
+
+    def _create_planned(self, stem: str, text: str, kind: str, planned: object, schema: object) -> CreateResult:
+        """Write one file and leave its undo step on the editor tab that opens."""
+
+        from app.features.form_builder.engine.project.names import class_name_for_stem
+        from app.features.form_builder.qtside.dialogs.table_apply import apply_plan, empty_form
+
+        window = self._host()
+        registry = getattr(window, "_tab_content_registry", None)
+        forms = getattr(planned, "forms", ())
+        plan = next((form for form in forms if form.stem == stem), None)
+        on_tab = registry is not None and plan is not None
+        layout = "QFormLayout" if kind == "record" else "QVBoxLayout"
+        ui_text = empty_form(class_name_for_stem(stem), layout) if on_tab else text
+        result = perform_create(
+            window,
+            template="widget",
+            stem=stem,
+            directory=self._panel.directory(),
+            ui_text=ui_text,
+            first_widget=None,
+        )
+        if result.refused or result.scope is None or registry is None or plan is None:
+            return result
+        from app.qt.QtWidgets import QApplication
+
+        app = QApplication.instance()
+        if app is not None:
+            app.processEvents()
+        surface = registry.surface_for_path(os.path.abspath(result.scope.ui_path))
+        session = getattr(surface, "session", None) if surface is not None else None
+        from app.features.form_builder.engine.data.schema import Schema
+
+        if session is None or not isinstance(schema, Schema):
+            return self._write_rendered(result, text)
+        try:
+            apply_plan(session, plan, schema)
+        except Exception:
+            return self._write_rendered(result, text)
+        from app.features.form_builder.engine.project.fs import OsFileSystem
+        from app.features.form_builder.engine.project.save import write_generated
+        from app.features.form_builder.engine.ui4.writer import write_ui
+
+        finished = write_ui(session.document).text
+        OsFileSystem().write_bytes(result.scope.ui_path, finished.encode("utf-8"))
+        write_generated(result.scope, session.document, finished.encode("utf-8"), OsFileSystem())
+        mark = getattr(surface, "mark_saved", None)
+        if callable(mark):
+            mark(finished)
+        return result
+
+    def _write_rendered(self, result: CreateResult, text: str) -> CreateResult:
+        """Replace the empty skeleton with the rendered form. Remove it if that write fails."""
+
+        scope = result.scope
+        if scope is None:
+            return result
+        from app.features.form_builder.engine.ids import IdAllocator
+        from app.features.form_builder.engine.project.fs import OsFileSystem, ProjectOpError
+        from app.features.form_builder.engine.project.save import write_generated
+        from app.features.form_builder.engine.ui4.reader import read_ui
+        from app.features.form_builder.engine.ui4.writer import write_ui
+
+        fs = OsFileSystem()
+        try:
+            document = read_ui(text, allocator=IdAllocator()).document
+            finished = write_ui(document).text
+            data = finished.encode("utf-8")
+            fs.write_bytes(scope.ui_path, data)
+            written = write_generated(scope, document, data, fs)
+            if not written.text_written:
+                detail = written.diagnostics[0].message if written.diagnostics else "the form could not be generated"
+                raise ProjectOpError(detail)
+        except Exception as exc:
+            self._remove_created(result)
+            reason = "The form could not be created: %s" % exc
+            self._panel.show_status(reason)
+            return CreateResult((), (), None, reason)
+        return result
+
+    def _remove_created(self, result: CreateResult) -> None:
+        from app.features.form_builder.engine.project.fs import OsFileSystem
+
+        fs = OsFileSystem()
+        for path in result.files:
+            try:
+                if path and os.path.lexists(path):
+                    fs.remove(path)
+            except OSError:
+                pass
+
+    def _focus_data(self, path: str) -> None:
+        from app.features.form_builder.qtside.inspector import TabId
+
+        window = self._host()
+        registry = getattr(window, "_tab_content_registry", None)
+        if registry is None or not path:
+            return
+        surface = registry.surface_for_path(os.path.abspath(path))
+        workbench = getattr(surface, "workbench", None)
+        if workbench is None:
+            return
+        focus_tab = getattr(workbench, "focus_inspector_tab", None)
+        focus_section = getattr(workbench, "focus_section", None)
+        if callable(focus_tab):
+            focus_tab(TabId.DATA)
+        if callable(focus_section):
+            focus_section("data")
 
     def _adopt(self) -> None:
         handler = adopt_entry()

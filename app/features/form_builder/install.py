@@ -54,6 +54,7 @@ def install_form_builder(ctx: "ShellCompositionContext") -> None:
         RememberingFormTabProvider,
         attach_new_form,
         bind_adopt_entry,
+        perform_create,
     )
     from app.features.form_builder.engine.project.written_files import set_written_file_listener
     from app.features.form_builder.engine.shell_commands import shortcut_rows
@@ -117,6 +118,11 @@ def install_form_builder(ctx: "ShellCompositionContext") -> None:
     )
     _refresh_shortcut_maps(window)
     register_form_menu(window)
+    from app.features.form_builder.qtside.dialogs.search_screen import install as install_search_screen
+    from app.features.form_builder.qtside.dialogs.search_screen import register_form_creator
+
+    register_form_creator(perform_create)
+    install_search_screen()
     bind_private_attrs(
         window,
         {
