@@ -27,6 +27,7 @@ from urllib.parse import quote
 from app.features.form_builder.engine.data.sql import (
     embedded_semicolon,
     has_extra_statement,
+    has_unicode_escape,
     sql_without_comments,
     statement_words,
 )
@@ -38,6 +39,9 @@ GENERIC_TIMEOUT = "This query took too long, so Try stopped it."
 ONE_STATEMENT = (
     "Try runs one statement at a time. Use a parameter for text that contains a semicolon."
 )
+COMMENT_SEMI = "Try runs one statement at a time; remove the `;` from the comment."
+CHANGES_DATA = "Try didn't run it because it changes data."
+UNICODE_NAME = "Try doesn't run Unicode-escaped names."
 _TIMEOUT_SPAN = re.compile(r"(\d+)\s*(milliseconds|millisecond|ms|seconds|second|secs|sec|s|minutes|minute|min)\b", re.IGNORECASE)
 SAVED_ROLLED_BACK = "Saved, then rolled back"
 OWN_CONNECTION = "This form uses your own connection method, so Try only shows what it would run."
@@ -388,6 +392,14 @@ class TrySession:
         else:
             raw = self._open_postgres(spec)
             rollback = spec.mode == "rollback"
+        if _sessions.get(self.view_id) is not self:
+            closer = getattr(raw, "close", None)
+            if callable(closer):
+                try:
+                    closer()
+                except Exception:
+                    pass
+            raise CbcsConnectionError("Try stopped.")
         connection = _proxy(raw, self, spec, rollback=rollback)
         self._open[name] = connection
         return connection
@@ -1013,14 +1025,20 @@ class _TracingCursor:
                 self._fake_row = self._point(sql, values)
             return self
         driver = _cur_of(self)
-        guard = self._guards_reads() and kind == "read"
-        if guard:
-            driver.execute("SAVEPOINT cbcs_try_read")  # type: ignore[attr-defined]
-            driver.execute("SET LOCAL transaction_read_only = on")  # type: ignore[attr-defined]
+        recover = (
+            kind == "read"
+            and self._spec.engine == "postgres"
+            and self._spec.mode == "would_run"
+            and not self._spec.own_hook
+            and self._session._depth.get(self._spec.name, 0) > 0
+        )
+        side = _side_cursor(self) if recover else None
+        if side is not None:
+            side.execute("SAVEPOINT cbcs_try_stmt")  # type: ignore[attr-defined]
         elif (
             kind == "read"
             and self._spec.engine == "postgres"
-            and (self._spec.mode == "would_run" or self._spec.own_hook)
+            and self._spec.mode == "would_run"
             and self._session._depth.get(self._spec.name, 0) == 0
         ):
             _begin_read_only(_owner_of(self))
@@ -1028,8 +1046,15 @@ class _TracingCursor:
         try:
             send_extended(driver, sql, params)
         except Exception as exc:
-            if guard:
-                _undo_read_guard(driver)
+            if _sqlstate(exc) == "25006" and self._spec.mode == "would_run":
+                if side is not None:
+                    _undo_savepoint(side)
+                else:
+                    self._release_outside()
+                self._serve_unchanged(sql, values)
+                return self
+            if side is not None:
+                _undo_savepoint(side)
             self._release_outside()
             mapped = explain_database_error(
                 exc,
@@ -1040,9 +1065,8 @@ class _TracingCursor:
             if mapped is not None:
                 raise CbcsConnectionError(mapped) from None
             raise
-        if guard:
-            self._hold_driver(driver)
-            _undo_read_guard(driver)
+        if side is not None:
+            side.execute("RELEASE SAVEPOINT cbcs_try_stmt")  # type: ignore[attr-defined]
         self._serving_fake = False
         self._fake_rowcount = None
         self._fake_key = None
@@ -1053,51 +1077,25 @@ class _TracingCursor:
         if writing:
             self._session._wrote = True
             self._effects(verb, sql, values)
-        if guard and self._session._depth.get(self._spec.name, 0) == 0:
-            _rollback_handle(_owner_of(self))
-        else:
-            self._release_outside()
+        self._release_outside()
         if self._spec.mode == "rollback":
             self._note_nextval(sql)
         return self
 
     def executemany(self, sql: str, seq: object) -> object:
-        rows = list(seq)  # type: ignore[arg-type]
-        if _blocked_sentence(sql, self._spec):
-            for params in rows:
-                self.execute(sql, params)
-            return self
-        kind = _classify(sql)
-        if kind == "read" and self._guards_reads():
-            for params in rows:
-                self.execute(sql, params)
-            return self
-        if kind == "control" or (kind == "write" and (self._spec.mode == "would_run" or self._spec.own_hook)):
-            for params in rows:
-                self.execute(sql, params)
-            return self
-        driver = _cur_of(self)
-        started = time.monotonic()
-        try:
-            driver.executemany(sql, rows)  # type: ignore[attr-defined]
-        except Exception as exc:
-            self._release_outside()
-            mapped = explain_database_error(
-                exc,
-                self._spec.record_word,
-                try_set_timeout=self._spec.engine == "postgres",
-                elapsed=time.monotonic() - started,
-            )
-            if mapped is not None:
-                raise CbcsConnectionError(mapped) from None
-            raise
-        self._serving_fake = False
-        self._fake_rowcount = None
-        self._session.note(SqlNote(_sentence("Ran", sql, ()), sql, (), "ran"))
-        if kind == "write":
-            self._session._wrote = True
-        self._release_outside()
+        for params in list(seq):  # type: ignore[arg-type]
+            self.execute(sql, None if _empty_params(params) else params)
         return self
+
+    def _serve_unchanged(self, sql: str, values: Tuple[object, ...]) -> None:
+        """A would-run statement the server refused because it would write."""
+
+        self._serving_fake = True
+        self._fake_rowcount = 0
+        self._fake_key = None
+        self._fake_row = None
+        self._session.note(SqlNote(_sentence("Would run", sql, values), sql, values, "would_run"))
+        self._session.note(SqlNote(CHANGES_DATA, sql, values, "would_run"))
 
     def fetchmany(self, size: Optional[int] = None) -> object:
         if self._serving_fake:
@@ -1175,25 +1173,6 @@ class _TracingCursor:
         found = rows[self._held_at:self._held_at + size]
         self._held_at += len(found)
         return found
-
-    def _guards_reads(self) -> bool:
-        """Rollback reads run read-only so a function cannot move a sequence."""
-
-        return self._spec.engine == "postgres" and self._spec.mode == "rollback" and not self._spec.own_hook
-
-    def _hold_driver(self, driver: object) -> None:
-        self._held_rowcount = int(getattr(driver, "rowcount", -1))
-        self._held_description = getattr(driver, "description", None)
-        self._held_lastrowid = getattr(driver, "lastrowid", None)
-        if self._held_description:
-            try:
-                self._held_rows = list(driver.fetchall())  # type: ignore[attr-defined]
-            except Exception:
-                self._held_rows = []
-        else:
-            self._held_rows = None
-        self._held_at = 0
-        self._held = True
 
     def _release_outside(self) -> None:
         """A statement outside ``work()`` must not keep a transaction open."""
@@ -1442,8 +1421,9 @@ def send_extended(driver: object, sql: str, params: object = None) -> None:
         _pg8000_extended(driver, sql, params)
         return
     if "psycopg" in module:
-        bound = () if params is None else params
-        driver.execute(sql, bound, prepare=True)  # type: ignore[attr-defined]
+        if _empty_params(params):
+            params = None
+        driver.execute(sql, params, prepare=True)  # type: ignore[attr-defined]
         return
     if params is None:
         driver.execute(sql)  # type: ignore[attr-defined]
@@ -1458,7 +1438,7 @@ def _pg8000_extended(cursor: object, sql: str, params: object) -> None:
     statement = sql
     vals: object = ()
     if params:
-        from pg8000.dbapi import convert_paramstyle, paramstyle
+        from pg8000.dbapi import convert_paramstyle, paramstyle  # type: ignore[import]
 
         statement, vals = convert_paramstyle(paramstyle, sql, params)
     context = core.execute_unnamed(statement, vals=vals, oids=getattr(cursor, "_input_oids", ()))
@@ -1491,29 +1471,60 @@ def _blocked_sentence(sql: str, spec: TryConnectionSpec) -> str:
     """A sentence when this string must not reach the server, else ''."""
 
     if embedded_semicolon(sql) or has_extra_statement(sql):
+        if _semicolon_in_comment_only(sql):
+            return COMMENT_SEMI
         return ONE_STATEMENT
+    if has_unicode_escape(sql):
+        return UNICODE_NAME
     if _SET_SCS.search(sql):
         return "Try did not run standard_conforming_strings."
     mode = "would_run" if spec.own_hook or spec.mode == "would_run" else spec.mode
-    for name in _dangerous_names(sql):
+    stripped = sql_without_comments(sql)
+    for name in _dangerous_names(sql) + _dangerous_names(stripped):
         if _refused_call(name, mode):
             return "Try did not run %s." % name
-    for name in _call_names(sql):
+    for name in _call_names(sql) + _call_names(stripped):
         if _refused_call(name, mode):
             return "Try did not run %s." % name
     return ""
+
+
+def _semicolon_in_comment_only(sql: str) -> bool:
+    """True when every ``;`` sits in a comment, so the statement itself is one."""
+
+    if ";" not in sql:
+        return False
+    stripped = sql_without_comments(sql)
+    return not embedded_semicolon(stripped) and not has_extra_statement(stripped)
 
 
 def _dangerous_names(sql: str) -> Tuple[str, ...]:
     return tuple(match.group(1).lower() for match in _DANGEROUS_CALL.finditer(sql))
 
 
-def _undo_read_guard(driver: object) -> None:
-    """Drop the read-only savepoint so a later write in this transaction still runs."""
+def _side_cursor(proxy: object) -> object:
+    """A second cursor, so a savepoint does not discard the statement's rows."""
+
+    owner = _owner_of(proxy)
+    raw = _conn_of(owner)
+    return raw.cursor()  # type: ignore[attr-defined]
+
+
+def _empty_params(params: object) -> bool:
+    if params is None:
+        return True
+    try:
+        return len(params) == 0  # type: ignore[arg-type]
+    except TypeError:
+        return False
+
+
+def _undo_savepoint(driver: object) -> None:
+    """Clear a refused would-run statement so the next read still has a transaction."""
 
     try:
-        driver.execute("ROLLBACK TO SAVEPOINT cbcs_try_read")  # type: ignore[attr-defined]
-        driver.execute("RELEASE SAVEPOINT cbcs_try_read")  # type: ignore[attr-defined]
+        driver.execute("ROLLBACK TO SAVEPOINT cbcs_try_stmt")  # type: ignore[attr-defined]
+        driver.execute("RELEASE SAVEPOINT cbcs_try_stmt")  # type: ignore[attr-defined]
     except Exception:
         return
 
@@ -1532,9 +1543,10 @@ def _call_names(sql: str) -> Tuple[str, ...]:
 
 
 def _refused_call(name: str, mode: str) -> bool:
-    del mode
-    if name in ("setval", "set_config", "nextval", "pg_terminate_backend", "pg_cancel_backend"):
+    if name in ("setval", "set_config", "pg_terminate_backend", "pg_cancel_backend"):
         return True
+    if name == "nextval":
+        return mode == "would_run"
     if name.startswith("pg_advisory_") or name.startswith("lo_") or name.startswith("dblink"):
         return True
     return False

@@ -803,6 +803,76 @@ def test_a_secret_ask_holds_try_stop_until_the_password_returns(tmp_path: Path, 
         child._ask_secret("shop")
 
 
+def test_a_semicolon_inside_a_comment_names_the_comment() -> None:
+    from app.features.form_builder.qtside.preview.child.try_connections import COMMENT_SEMI, ONE_STATEMENT, _blocked_sentence
+
+    spec = TryConnectionSpec(name="shop", mode="rollback", engine="sqlite")
+    assert _blocked_sentence("SELECT 1 -- old; new\n", spec) == COMMENT_SEMI
+    assert _blocked_sentence("SELECT 1 /* keep; this */", spec) == COMMENT_SEMI
+    assert _blocked_sentence("SELECT 1; COMMIT", spec) == ONE_STATEMENT
+
+
+def test_a_later_try_closes_the_connection_from_an_orphaned_ask(monkeypatch: pytest.MonkeyPatch) -> None:
+    from app.features.form_builder.qtside.preview.child import try_connections as tc
+    from app.features.form_builder.qtside.preview.child.try_connections import (
+        CbcsConnectionError,
+        TrySession,
+        begin_try,
+        set_secret_asker,
+    )
+
+    closed: List[str] = []
+
+    class Raw:
+        def close(self) -> None:
+            closed.append("closed")
+
+        def rollback(self) -> None:
+            return None
+
+        def cursor(self) -> "Raw":
+            return self
+
+        def execute(self, *_args: object, **_kwargs: object) -> None:
+            return None
+
+    def connect(_driver: str, _spec: object, password: str) -> Raw:
+        assert password == "pw"
+        return Raw()
+
+    monkeypatch.setattr(tc, "_connect_driver", connect)
+    monkeypatch.setattr(tc, "_prepare_postgres", lambda _raw, _spec: None)
+    spec = TryConnectionSpec(
+        name="shop", mode="rollback", title="Shop", engine="postgres",
+        host="127.0.0.1", database="cbcs", user="cbcs", password_policy="ask",
+    )
+    first = begin_try(_start_secret("view-ask", "run-a", spec))
+    assert isinstance(first, TrySession)
+
+    def ask(_name: str) -> str:
+        begin_try(_start_secret("view-ask", "run-b", spec))
+        return "pw"
+
+    set_secret_asker(ask)
+    try:
+        with pytest.raises(CbcsConnectionError):
+            first.open_connection("shop")
+        assert session_for("view-ask") is not None
+        assert session_for("view-ask") is not first
+    finally:
+        set_secret_asker(None)
+        end_all()
+    assert closed == ["closed"]
+
+
+def _start_secret(view: str, request: str, spec: TryConnectionSpec) -> TryStart:
+    return TryStart(
+        request_id=request, view_id=view, module_name="m", module_source="pass\n",
+        window_class_name="W", base_class="QDialog", window_values=(),
+        data=TryDataPlan(specs=(spec,)), show_form=True,
+    )
+
+
 def test_a_held_try_stop_does_not_end_a_later_run(tmp_path: Path, qapp: Any) -> None:
     from app.features.form_builder.engine.ipc.protocol import ProvideSecret, TryStop, encode_frame
     from app.features.form_builder.qtside.preview.child.session import ChildSession

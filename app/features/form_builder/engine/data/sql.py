@@ -580,6 +580,41 @@ PG8000_SCAN_SENTENCE = (
 )
 
 
+def has_unicode_escape(sql: str) -> bool:
+    """True when a ``U&`` identifier or ``U&`` string sits outside comments and quotes."""
+
+    index = 0
+    length = len(sql)
+    while index < length:
+        char = sql[index]
+        nxt = sql[index + 1] if index + 1 < length else ""
+        if char == "-" and nxt == "-":
+            index = _line_comment_end(sql, index)
+            continue
+        if char == "/" and nxt == "*":
+            end = _block_comment_end(sql, index)
+            index = length if end is None else end
+            continue
+        if char in ("E", "e") and nxt == "'" and not _ident_before(sql, index):
+            index = _end_escape_string(sql, index + 2)
+            continue
+        tag = _dollar_tag(sql, index)
+        if tag is not None:
+            closer = "$%s$" % tag
+            end = sql.find(closer, index + len(closer))
+            index = length if end < 0 else end + len(closer)
+            continue
+        if char in ("'", '"'):
+            index = _end_quote(sql, index + 1, char)
+            continue
+        if char in ("U", "u") and nxt == "&" and not _ident_before(sql, index):
+            quote = sql[index + 2] if index + 2 < length else ""
+            if quote in ("'", '"'):
+                return True
+        index += 1
+    return False
+
+
 def embedded_semicolon(sql: str) -> bool:
     """True when ``;`` appears anywhere except one trailing semicolon.
 

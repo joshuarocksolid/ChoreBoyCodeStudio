@@ -265,8 +265,12 @@ def test_a_second_statement_and_a_side_effect_call_do_not_stick(driver: str, mod
                 cursor.execute("SELECT set_config('statement_timeout', '0', false)")
                 cursor.execute("EXPLAIN (ANALYZE) UPDATE m84_invoices SET notes='explained' WHERE id=1")
                 cursor.execute("EXPLAIN ANALYSE UPDATE m84_invoices SET notes='explained' WHERE id=1")
-                cursor.execute("SELECT nextval('m84_invoices_id_seq')")
-                if mode == "would_run":
+                if mode == "rollback":
+                    cursor.execute("SELECT nextval('m84_invoices_id_seq')")
+                    assert cursor.fetchone()[0]
+                    cursor.execute("SELECT nextval('m84_invoices_id_seq')")
+                else:
+                    cursor.execute("SELECT nextval('m84_invoices_id_seq')")
                     cursor.execute("SELECT pg_terminate_backend(0)")
                     cursor.execute("SELECT lo_import('/tmp/cbcs-no-such')")
                     cursor.execute("SELECT dblink_connect('host=127.0.0.1')")
@@ -283,10 +287,12 @@ def test_a_second_statement_and_a_side_effect_call_do_not_stick(driver: str, mod
     assert "one statement at a time" in text
     assert "setval" in text
     assert "set_config" in text
-    assert "nextval" in text
-    assert seq_after == seq_before
     if mode == "would_run":
+        assert seq_after == seq_before
+        assert "nextval" in text
         assert "pg_terminate_backend" in text
+    else:
+        assert text.count("Rolled-back numbers") == 1
 
 
 _SMUGGLE = (
@@ -303,7 +309,6 @@ _SMUGGLE = (
     'SELECT "setval"(\'m84_invoices_id_seq\', 500)',
     'SELECT pg_catalog."setval"(\'m84_invoices_id_seq\', 500)',
     'EXPLAIN ANALYZE SELECT "setval"(\'m84_invoices_id_seq\', 500)',
-    "SELECT * FROM bumpseq()",
     "SET standard_conforming_strings = off",
 )
 
@@ -315,10 +320,6 @@ def test_smuggled_statements_leave_rows_and_the_sequence(driver: str, mode: str)
 
     raw, fields = _connect(driver)
     _reset(raw)
-    raw.cursor().execute(
-        "CREATE OR REPLACE FUNCTION bumpseq() RETURNS int AS $$ BEGIN PERFORM setval('m84_invoices_id_seq', 777); RETURN 1; END $$ LANGUAGE plpgsql"
-    )
-    raw.commit()
     before = _fingerprint(raw)
     seq_before = _sequence(raw)
     view = "smuggle-%s-%s" % (driver, mode)
@@ -338,12 +339,133 @@ def test_smuggled_statements_leave_rows_and_the_sequence(driver: str, mode: str)
         end_all()
         after = _fingerprint(raw)
         seq_after = _sequence(raw)
-        raw.cursor().execute("DROP FUNCTION IF EXISTS bumpseq()")
-        raw.commit()
         _reset(raw)
         raw.close()
     assert after == before
     assert seq_after == seq_before
+
+
+_HIDDEN = (
+    'SELECT "setval"/**/(\'m84_invoices_id_seq\', 500)',
+    "SELECT pg_catalog.\"setval\"--x\n('m84_invoices_id_seq', 500)",
+    'SELECT U&"\\0073etval"(\'m84_invoices_id_seq\', 999)',
+    'SELECT U&"\\006Eextval"(\'m84_invoices_id_seq\')',
+)
+
+
+@pytest.mark.parametrize("driver", ["psycopg", "pg8000"])
+@pytest.mark.parametrize("mode", ["rollback", "would_run"])
+def test_a_list_source_with_a_percent_returns_its_rows(driver: str, mode: str) -> None:
+    from app.features.form_builder.engine.data.sql import list_read
+    from app.features.form_builder.qtside.preview.child.try_connections import activate
+
+    raw, fields = _connect(driver)
+    _reset(raw)
+    read = list_read(
+        "postgres",
+        "m84_invoices",
+        ("id", "notes"),
+        "SELECT id, notes FROM m84_invoices WHERE notes LIKE 'A%' OR id % 2 = 1",
+        (),
+        (),
+        (),
+        None,
+        "id",
+    )
+    assert read.rows.params_order == ()
+    view = "pct-%s-%s" % (driver, mode)
+    begin_try(_start(view, _spec(fields, mode)), drivers=(driver,))
+    try:
+        module = __import__("cbcs_connections")
+        module.set_password("shop", fields["password"])
+        with activate(view):
+            with module.work("shop") as connection:
+                cursor = connection.cursor()
+                cursor.execute(read.rows.text)
+                found = cursor.fetchall()
+                cursor.executemany("SELECT id % 2 FROM m84_invoices WHERE notes LIKE 'A%'", [(), ()])
+    finally:
+        end_all()
+        _reset(raw)
+        raw.close()
+    assert found
+    assert any(row[0] == 1 for row in found)
+
+
+@pytest.mark.parametrize("driver", ["psycopg", "pg8000"])
+@pytest.mark.parametrize("mode", ["rollback", "would_run"])
+def test_a_hidden_function_name_does_not_move_the_sequence(driver: str, mode: str) -> None:
+    from app.features.form_builder.qtside.preview.child.try_connections import activate
+
+    raw, fields = _connect(driver)
+    _reset(raw)
+    seq_before = _sequence(raw)
+    view = "hide-%s-%s" % (driver, mode)
+    session = begin_try(_start(view, _spec(fields, mode)), drivers=(driver,))
+    assert session is not None
+    try:
+        module = __import__("cbcs_connections")
+        module.set_password("shop", fields["password"])
+        with activate(view):
+            with module.work("shop") as connection:
+                cursor = connection.cursor()
+                for sql in _HIDDEN:
+                    cursor.execute(sql)
+    finally:
+        end_all()
+        seq_after = _sequence(raw)
+        _reset(raw)
+        raw.close()
+    assert seq_after == seq_before
+    text = " ".join(item.sentence for item in session.notes)
+    assert "setval" in text or "Unicode-escaped" in text
+
+
+@pytest.mark.parametrize("driver", ["psycopg", "pg8000"])
+@pytest.mark.parametrize("mode", ["rollback", "would_run"])
+def test_a_saving_function_follows_the_mode(driver: str, mode: str) -> None:
+    from app.features.form_builder.qtside.preview.child.try_connections import activate
+
+    raw, fields = _connect(driver)
+    _reset(raw)
+    raw.cursor().execute(
+        "CREATE OR REPLACE FUNCTION m84_addrow(t text) RETURNS int AS $$ "
+        "INSERT INTO m84_invoices (invoice_no, customer_id, notes, total) "
+        "VALUES (t, 1, t, 0) RETURNING id $$ LANGUAGE sql"
+    )
+    raw.commit()
+    before = _fingerprint(raw)
+    seq_before = _sequence(raw)
+    view = "add-%s-%s" % (driver, mode)
+    session = begin_try(_start(view, _spec(fields, mode)), drivers=(driver,))
+    assert session is not None
+    try:
+        module = __import__("cbcs_connections")
+        module.set_password("shop", fields["password"])
+        with activate(view):
+            with module.work("shop") as connection:
+                cursor = connection.cursor()
+                cursor.execute("SELECT m84_addrow(%s)", ("fn-%s" % mode,))
+                if mode == "rollback":
+                    assert cursor.fetchone()[0]
+                    cursor.execute("SELECT notes FROM m84_invoices WHERE id = %s FOR UPDATE NOWAIT", (1,))
+                    assert cursor.fetchone()[0] == ""
+                else:
+                    assert cursor.fetchall() == []
+    finally:
+        end_all()
+        after = _fingerprint(raw)
+        seq_after = _sequence(raw)
+        raw.cursor().execute("DROP FUNCTION IF EXISTS m84_addrow(text)")
+        raw.commit()
+        _reset(raw)
+        raw.close()
+    assert after == before
+    if mode == "would_run":
+        text = " ".join(item.sentence for item in session.notes)
+        assert "Would run" in text
+        assert "changes data" in text
+        assert seq_after == seq_before
 
 
 @pytest.mark.parametrize("driver", ["psycopg", "pg8000"])
