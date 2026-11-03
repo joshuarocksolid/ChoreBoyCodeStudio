@@ -7,11 +7,17 @@ The memo is keyed by the log entry, not by id(doc).
 
 from __future__ import annotations
 
+import os
 import weakref
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, Optional, Union
 
-from app.features.form_builder.engine.codegen.eject import EjectPlan, plan_eject, window_edit
+from app.features.form_builder.engine.codegen.eject import (
+    EjectPlan,
+    plan_eject,
+    window_edit,
+    window_objections,
+)
 from app.features.form_builder.engine.codegen.window_template import TextEdit
 from app.features.form_builder.engine.commands.base import CommandRejected
 from app.features.form_builder.qtside.data_panel.host import session_of, surface_of
@@ -137,10 +143,20 @@ def plan_for(host: Any) -> Union[EjectPlan, str]:
     if session is None:
         return "Open the form, then eject it."
     scope = session.scope
+    source = _window_source(host, str(getattr(scope, "window_path", "") or ""))
     try:
-        return plan_eject(session.document, scope)
+        plan = plan_eject(session.document, scope, source)
     except ValueError as exc:
         return str(exc)
+    if not source:
+        return plan
+    try:
+        notes = window_objections(source, plan)
+    except ValueError as exc:
+        return str(exc)
+    if notes:
+        plan = replace(plan, summary=plan.summary + notes)
+    return plan
 
 
 def commit_eject(host: Any, plan: EjectPlan) -> str:
@@ -155,10 +171,10 @@ def commit_eject(host: Any, plan: EjectPlan) -> str:
     if not path:
         return "This form has no window file."
     bridge = surface.code_bridge
-    current = _window_text(surface, path)
+    current = _tab_text(surface, path)
     if current is None:
         bridge.open_at(path, 1)
-        current = _window_text(surface, path)
+        current = _tab_text(surface, path)
     if current is None:
         return "Couldn't open %s." % plan.window_filename
     try:
@@ -191,7 +207,26 @@ def commit_eject(host: Any, plan: EjectPlan) -> str:
     return ""
 
 
+def _window_source(host: Any, path: str) -> str:
+    surface = surface_of(host)
+    if surface is None or not path:
+        return ""
+    found = _tab_text(surface, path)
+    if found:
+        return found
+    return _disk_text(path) or ""
+
+
 def _window_text(surface: Any, path: str) -> Optional[str]:
+    """The open tab, or the file on disk when the tab is closed."""
+
+    found = _tab_text(surface, path)
+    if found is not None:
+        return found
+    return _disk_text(path)
+
+
+def _tab_text(surface: Any, path: str) -> Optional[str]:
     bridge = getattr(surface, "code_bridge", None)
     if bridge is None:
         return None
@@ -206,9 +241,31 @@ def _window_text(surface: Any, path: str) -> Optional[str]:
     return None
 
 
+def _disk_text(path: str) -> Optional[str]:
+    if not path or not os.path.isfile(path):
+        return None
+    try:
+        with open(path, "r", encoding="utf-8") as handle:
+            return handle.read()
+    except OSError:
+        return None
+
+
 def _document(surface: Any, path: str) -> Any:
     bridge = getattr(surface, "code_bridge", None)
+    if bridge is None:
+        return None
+    ask = getattr(bridge, "editor_document", None)
+    if callable(ask):
+        found = ask(path)
+        if found is not None:
+            return found
     port = getattr(bridge, "_port", None)
+    ask = getattr(port, "editor_document", None)
+    if callable(ask):
+        found = ask(path)
+        if found is not None:
+            return found
     manager = getattr(port, "_editors", None)
     if manager is None or not hasattr(manager, "find_by_path"):
         return None

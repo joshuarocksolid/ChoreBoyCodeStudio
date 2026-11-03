@@ -62,6 +62,11 @@ def _create(host: Any) -> QWidget:
             return
         current = _text(bridge, path)
         if not current:
+            if not bridge.open_at(path, 1):
+                narrate(host, "Open the window file to see %s." % method)
+                return
+            current = _text(bridge, path)
+        if not current:
             narrate(host, "Open the window file to see %s." % method)
             return
         bridge.open_at(path, method_line(current, method))

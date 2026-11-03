@@ -79,6 +79,8 @@ class Entry:
     continue_gesture: bool = False
     #: ``time.monotonic`` when this step was stored or last absorbed.
     committed_at: float = 0.0
+    #: A step that changes no fields, so undo still has one unit for closed files.
+    anchor: bool = False
 
 
 @dataclass(frozen=True)
@@ -275,6 +277,35 @@ class CommandLog:
         self.selection = _present(self._doc, entry.selection_after)
         self._emit(assemble(changes, self._doc.revision, "redo", entry.label))
         return True
+
+    def mark(self, label: str) -> None:
+        """Push an undo step that does not change the form.
+
+        A rename of closed forms uses this when no open form referred to the
+        method, so one undo still restores every file the rename wrote.
+        """
+
+        self._reject_reentry()
+        if self._txn is not None:
+            raise CommandRejected("A step cannot be marked during a transaction.")
+        before = self._provider()
+        entry = Entry(
+            label=label,
+            commands=(),
+            ops=(),
+            inverse_ops=(),
+            allocated=(),
+            selection_before=before,
+            selection_after=before,
+            anchor=True,
+        )
+        self._drop_redo()
+        token = self._next_token
+        self._next_token += 1
+        self._undo.append(entry)
+        self._tokens.append(token)
+        self._trim()
+        self._emit(assemble((), self._doc.revision, "do", label))
 
     def undo_label(self) -> Optional[str]:
         if not self._undo:
@@ -836,10 +867,14 @@ def _present(doc: UiDocument, snapshot: SelectionSnapshot) -> SelectionSnapshot:
 def _is_net_nil(entry: Entry, doc: UiDocument) -> bool:
     """True when undoing ``entry`` would leave every touched list and field as it is now.
 
+    An anchor step changes nothing on purpose and must stay on the stack.
+
     Each touched (owner, kind) entry list is rebuilt by replaying the entry's
     inverses on a copy, in undo order. That catches a value, a spelling and a
     position change alike. Cost is O(changed).
     """
+    if entry.anchor:
+        return False
     for op in entry.ops:
         if isinstance(op, (InsertNodeOp, RemoveNodeOp, MoveNodeOp, ReplaceRootOp)):
             return False

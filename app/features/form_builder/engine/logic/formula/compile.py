@@ -406,7 +406,7 @@ def _emit_attr(node: Any, self_name: str, env: Any = None) -> _Piece:
         if not _RECORD_NAME.match(name):
             raise ValueError("record column is not a name")
         if getattr(env, "ejected", False):
-            return _Piece('%s._form._cbcs_record.get("%s")' % (self_name, name), PREC_ATOM, True)
+            return _Piece('%s._form._record.get("%s")' % (self_name, name), PREC_ATOM, True)
         return _Piece('%s._cbcs_record.get("%s")' % (self_name, name), PREC_ATOM, True)
     columns = _grid_columns(env, widget)
     if columns is not None and name in columns and name.isidentifier():

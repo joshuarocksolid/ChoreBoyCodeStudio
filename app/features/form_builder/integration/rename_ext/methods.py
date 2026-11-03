@@ -102,8 +102,12 @@ class MethodRename:
             for surface in done:
                 _undo_if(surface, label)
             return RenameFollowThrough(True, plan, "A form that isn't open could not be renamed.")
+        if written and not done:
+            _mark_closed_anchor(window, seed.window_path, label)
         for surface in done:
             _arm_closed(surface, label, written)
+        if written and not done:
+            _arm_anchor(window, seed.window_path, label, written)
         return RenameFollowThrough(False, updated_plan, "")
 
     def closed_note(self, window: object, seed: MethodSeed, plan: object) -> str:
@@ -140,6 +144,7 @@ class _ClosedEdit:
     path: str
     original: bytes
     text: str
+    written: bytes = b""
 
 
 class _ClosedBook:
@@ -158,6 +163,11 @@ class _ClosedBook:
             entries = log.entries()
             tip = entries[-1] if entries else None
             memo = book.memos.get(id(tip)) if tip is not None else None
+            if memo is not None:
+                sentence = _unchanged(memo[1], written=True)
+                if sentence:
+                    log._cbcs_rename_notice = sentence
+                    return False
             ok = bool(previous_undo())
             if ok and memo is not None:
                 _write_bytes(memo[1], restore=True)
@@ -166,6 +176,11 @@ class _ClosedBook:
         def redo() -> bool:
             pending = log._redo[-1] if getattr(log, "_redo", None) else None
             memo = book.memos.get(id(pending)) if pending is not None else None
+            if memo is not None:
+                sentence = _unchanged(memo[1], written=False)
+                if sentence:
+                    log._cbcs_rename_notice = sentence
+                    return False
             ok = bool(previous_redo())
             if ok and memo is not None:
                 _write_bytes(memo[1], restore=False)
@@ -235,7 +250,8 @@ def _write_closed(edits: Sequence[_ClosedEdit]) -> Optional[List[_ClosedEdit]]:
     try:
         for edit in edits:
             files.write_text(edit.path, edit.text)
-            written.append(edit)
+            payload = files.read_bytes(edit.path)
+            written.append(_ClosedEdit(edit.path, edit.original, edit.text, payload))
     except OSError:
         _write_bytes(written, restore=True)
         return None
@@ -246,7 +262,7 @@ def _write_closed(edits: Sequence[_ClosedEdit]) -> Optional[List[_ClosedEdit]]:
 
 def _write_bytes(edits: Sequence[_ClosedEdit], *, restore: bool) -> None:
     for edit in edits:
-        payload = edit.original if restore else edit.text.encode("utf-8")
+        payload = edit.original if restore else (edit.written or edit.text.encode("utf-8"))
         try:
             with open(edit.path, "wb") as handle:
                 handle.write(payload)
@@ -262,6 +278,50 @@ def _restore_window(window: object, seed: MethodSeed) -> None:
     if current is None or current == seed.source:
         return
     port.replace_range(seed.window_path, 0, len(current), seed.source)
+
+
+def _mark_closed_anchor(window: object, window_path: str, label: str) -> None:
+    surface = _anchor_surface(window, window_path)
+    log = getattr(getattr(surface, "session", None), "log", None) if surface is not None else None
+    mark = getattr(log, "mark", None)
+    if log is not None and callable(mark) and log.undo_label() != label:
+        mark(label)
+
+
+def _arm_anchor(window: object, window_path: str, label: str, edits: Sequence[_ClosedEdit]) -> None:
+    surface = _anchor_surface(window, window_path)
+    if surface is not None:
+        _arm_closed(surface, label, edits)
+
+
+def _anchor_surface(window: object, window_path: str) -> object:
+    for surface in _surfaces(window):
+        if _same(_window_path(surface), window_path):
+            return surface
+    return None
+
+
+def _unchanged(edits: Sequence[_ClosedEdit], *, written: bool) -> str:
+    """A sentence when a closed file is no longer the bytes this rename left."""
+
+    names = []
+    for edit in edits:
+        expect = edit.written if written and edit.written else edit.original
+        if written and not edit.written:
+            expect = edit.text.encode("utf-8")
+        try:
+            with open(edit.path, "rb") as handle:
+                current = handle.read()
+        except OSError:
+            names.append(os.path.basename(edit.path))
+            continue
+        if current != expect:
+            names.append(os.path.basename(edit.path))
+    if not names:
+        return ""
+    if len(names) == 1:
+        return "%s changed after the rename, so the rename can't be undone." % names[0]
+    return "%s changed after the rename, so the rename can't be undone." % " and ".join(names)
 
 
 def _arm_closed(surface: object, label: str, edits: Sequence[_ClosedEdit]) -> None:

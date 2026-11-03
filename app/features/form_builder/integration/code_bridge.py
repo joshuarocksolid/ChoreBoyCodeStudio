@@ -144,6 +144,16 @@ class CodeBridge:
             return None
         return self._port.open_text(path)
 
+    def editor_document(self, path: str) -> Any:
+        """The open editor's document, or None when that path has no tab."""
+
+        if not self._allowed(path):
+            return None
+        ask = getattr(self._port, "editor_document", None)
+        if not callable(ask):
+            return None
+        return ask(path)
+
     def buffer_token(self, path: str) -> Optional[str]:
         """A value that changes when the open tab's text changes, or None."""
         if not self._allowed(path):
@@ -467,6 +477,12 @@ class ShellPort:
     def open_text(self, path: str) -> Optional[str]:
         widget = self._widget(path)
         return None if widget is None else str(widget.toPlainText())
+
+    def editor_document(self, path: str) -> Any:
+        widget = self._widget(path)
+        if widget is None or not hasattr(widget, "document"):
+            return None
+        return widget.document()
 
     def buffer_token(self, path: str) -> Optional[str]:
         widget = self._widget(path)

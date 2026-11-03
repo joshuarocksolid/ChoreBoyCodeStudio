@@ -10,7 +10,7 @@ from __future__ import annotations
 import ast
 import os
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Sequence, Tuple
+from typing import Dict, List, Optional, Sequence, Set, Tuple
 
 from app.features.form_builder.engine.codegen.api_types import CodegenOptions
 from app.features.form_builder.engine.codegen.emit import _Emitter
@@ -30,14 +30,15 @@ from app.features.form_builder.engine.codegen.window_template import TextEdit
 
 MARKER = "cbcs-ejected"
 EJECTED_KEY = "cbcsEjected"
-_DATA_ORDERS = frozenset({380, 400, 420, 430})
-_CLEARED = ("cbcsData", "cbcsBind", "cbcsLookup", "cbcsRows")
+_DATA_ORDERS = frozenset({300, 380, 400, 420, 430})
+_CLEARED = ("cbcsData", "cbcsBind", "cbcsLookup", "cbcsRows", "cbcsValidate")
 _SETUP = "_setup_ejected"
 
 # Generated name -> method the dialog lists.
 _USER_OF = {
     "cbcs_open": "load_record",
     "cbcs_save": "save_record",
+    "cbcs_validate": "validate_fields",
     "cbcs_delete": "delete_record",
     "cbcs_new": "new_record",
     "cbcs_revert": "revert_record",
@@ -64,6 +65,7 @@ _USER_OF = {
 _USER_ORDER = (
     "load_record",
     "save_record",
+    "validate_fields",
     "delete_record",
     "new_record",
     "revert_record",
@@ -120,6 +122,8 @@ class EjectPlan:
     commands: Tuple[Command, ...]
     method_names: Tuple[str, ...]
     helper_names: Tuple[str, ...]
+    ui_class: str = ""
+    ui_module: str = ""
 
     @property
     def defined_names(self) -> Tuple[str, ...]:
@@ -149,7 +153,7 @@ def method_line(source: str, name: str) -> int:
     return 1
 
 
-def plan_eject(doc: UiDocument, scope: FormScope) -> EjectPlan:
+def plan_eject(doc: UiDocument, scope: FormScope, window_source: str = "") -> EjectPlan:
     """The methods, the form commands and the window text. Raises ValueError when eject cannot run."""
 
     if ejected_method(doc) is not None:
@@ -164,6 +168,8 @@ def plan_eject(doc: UiDocument, scope: FormScope) -> EjectPlan:
     by_name = {method.name: method for method in methods}
     extra = _extra_blocks(doc, by_name)
     commands, wrappers = _commands(doc)
+    ui_class, ui_module = _ui_names(doc, scope)
+    present = _present_names(window_source, ui_class, ui_module) if window_source.strip() else set()
     try:
         block, public, helpers = render_methods(
             methods,
@@ -174,6 +180,7 @@ def plan_eject(doc: UiDocument, scope: FormScope) -> EjectPlan:
             dict(_USER_OF),
             extra,
             wrappers,
+            present,
         )
     except SyntaxError as exc:
         raise ValueError("This form's data code can't be moved into the window file.") from exc
@@ -193,43 +200,64 @@ def plan_eject(doc: UiDocument, scope: FormScope) -> EjectPlan:
         commands=commands + (SetLogic(doc.root.id, EJECTED_KEY, first),),
         method_names=public,
         helper_names=helpers,
+        ui_class=ui_class,
+        ui_module=ui_module,
     )
 
 
-def splice_window(source: str, plan: EjectPlan) -> str:
-    """Insert the ejected methods at the end of the class that calls ``self.ui.setupUi(self)``."""
+def window_objections(source: str, plan: EjectPlan) -> Tuple[str, ...]:
+    """Sentences for a base class eject will override. Raises when eject must refuse."""
 
-    if ("%s:" % MARKER) in source:
+    try:
+        tree = ast.parse(source)
+    except SyntaxError as exc:
+        raise ValueError("The window file can't be read as Python.") from exc
+    qual, target = _one_class(tree, plan)
+    _refuse_collisions(target, plan, tree)
+    return _override_notes(target, tree)
+
+
+def splice_window(source: str, plan: EjectPlan) -> str:
+    """Insert the ejected methods into the class that sets up this form's Ui class."""
+
+    if _marked(source):
         raise ValueError("This form's data code is already in the window file.")
     try:
         tree = ast.parse(source)
     except SyntaxError as exc:
         raise ValueError("The window file can't be read as Python.") from exc
-    target = _window_class(tree)
-    if target is None:
-        raise ValueError("The window file has no self.ui.setupUi(self).")
-    existing = _class_method_names(target)
-    for name in plan.defined_names:
-        if name in existing:
-            raise ValueError("%s already has %s." % (target.name, name))
+    _qual, target = _one_class(tree, plan)
+    _refuse_collisions(target, plan, tree)
+    source = _drop_stubs(source, target, set(plan.defined_names))
+    try:
+        tree = ast.parse(source)
+    except SyntaxError as exc:
+        raise ValueError("The window file can't be read as Python.") from exc
+    _qual, target = _one_class(tree, plan)
     lines = source.splitlines(keepends=True)
-    call = _setup_call(target)
+    call = _form_setup_call(target, plan.ui_class)
     if call is None or call.end_lineno is None:
-        raise ValueError("The window file has no self.ui.setupUi(self).")
+        raise ValueError(_missing_class(plan.ui_class))
     indent = _indent_of(lines, target)
-    call_indent = _line_indent(lines, call.end_lineno)
+    # The call can span lines. The setup line goes after the last line of the
+    # call, and the state that refresh reads goes before the first line.
+    call_indent = _line_indent(lines, call.lineno)
     block = _indented(plan.class_block, indent)
-    marker = "%s# %s: %s\n" % (indent, MARKER, plan.first_method)
+    eol = "\r\n" if "\r\n" in source else "\n"
+    marker = "%s# %s: %s%s" % (indent, MARKER, plan.first_method, eol)
     end_line = target.end_lineno or call.end_lineno
     insert_at = _offset_after_line(lines, end_line)
-    addition = "\n" + marker + block
-    if not addition.endswith("\n"):
-        addition += "\n"
+    addition = eol + marker + _with_eol(block, eol)
+    if not addition.endswith(eol):
+        addition += eol
     text = source[:insert_at] + addition + source[insert_at:]
-    text = _insert_line_after(text, call.lineno, "%sself.%s()\n" % (call_indent, _SETUP))
+    text = _insert_line_after(text, call.end_lineno, "%sself.%s()%s" % (call_indent, _SETUP, eol))
+    prime = _prime_lines(plan.class_block, call_indent, eol)
+    if prime:
+        text = _insert_lines_before(text, call.lineno, prime)
     text = _insert_imports(text, plan.imports)
-    if not text.endswith("\n"):
-        text += "\n"
+    if not text.endswith("\n") and not text.endswith("\r\n"):
+        text += eol
     try:
         ast.parse(text)
     except SyntaxError as exc:
@@ -375,7 +403,9 @@ def _rewired(steps: Sequence[EventStep], sender: str) -> Tuple[Tuple[EventStep, 
         if arg_src:
             method = "_call_%s_%s_%d" % (target, _ident(sender), index)
             wrappers.append("def %s(self):\n    return self.%s(%s)\n" % (method, target, arg_src))
-        out.append(EventStep("call", method=method, args=0, when="True"))
+        out.append(
+            EventStep("call", method=method, args=0, when=step.when, enabled=step.enabled)
+        )
     return tuple(out), changed, tuple(wrappers)
 
 
@@ -433,22 +463,118 @@ def _window_filename(scope: FormScope) -> str:
     return stem + "_window.py"
 
 
-def _window_class(tree: ast.AST) -> Optional[ast.ClassDef]:
+def _ui_names(doc: UiDocument, scope: FormScope) -> Tuple[str, str]:
+    from app.features.form_builder.engine.codegen.names import python_class_stem
+
+    ui_class = "Ui_%s" % python_class_stem(doc.form_class_name())
+    if scope.module_name:
+        module = scope.module_name
+    else:
+        stem = os.path.basename(scope.ui_path)
+        if stem.endswith(".ui"):
+            stem = stem[:-3]
+        module = "forms.ui_%s" % stem
+    return ui_class, module
+
+
+def _present_names(source: str, ui_class: str, ui_module: str) -> Set[str]:
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return set()
+    matches = _matching_classes(tree, ui_class, ui_module)
+    if len(matches) != 1:
+        return set()
+    _qual, target = matches[0]
+    names = set(_class_method_names(target))
+    for _base, method in _inherited(target, _class_index(tree)):
+        names.add(method)
+    return names
+
+
+def _one_class(tree: ast.AST, plan: EjectPlan) -> Tuple[str, ast.ClassDef]:
+    matches = _matching_classes(tree, plan.ui_class, plan.ui_module)
+    if len(matches) == 1:
+        return matches[0]
+    if len(matches) > 1:
+        listed = " and ".join(name for name, _node in matches)
+        raise ValueError(
+            "The window file sets up %s in more than one class: %s." % (plan.ui_class, listed)
+        )
+    raise ValueError(_missing_class(plan.ui_class))
+
+
+def _missing_class(ui_class: str) -> str:
+    if ui_class:
+        return "The window file has no class that sets up %s." % ui_class
+    return "The window file has no self.ui.setupUi(self)."
+
+
+def _matching_classes(tree: ast.AST, ui_class: str, ui_module: str) -> List[Tuple[str, ast.ClassDef]]:
+    if ui_class and not _imports_ui(tree, ui_class, ui_module):
+        return []
+    found = []
+    for qual, node in _all_classes(getattr(tree, "body", []), ""):
+        if _form_setup_call(node, ui_class) is not None:
+            found.append((qual, node))
+    return found
+
+
+def _imports_ui(tree: ast.AST, ui_class: str, ui_module: str) -> bool:
+    tail = ui_module.rsplit(".", 1)[-1]
     for node in ast.walk(tree):
-        if isinstance(node, ast.ClassDef) and _setup_call(node) is not None:
-            return node
-    return None
+        if not isinstance(node, ast.ImportFrom):
+            continue
+        module = node.module or ""
+        if module.rsplit(".", 1)[-1] != tail:
+            continue
+        for alias in node.names:
+            if alias.name == ui_class and (alias.asname in (None, ui_class)):
+                return True
+    return False
 
 
-def _setup_call(node: ast.ClassDef) -> Optional[ast.Call]:
-    for child in ast.walk(node):
+def _all_classes(body: Sequence[ast.stmt], prefix: str) -> List[Tuple[str, ast.ClassDef]]:
+    found: List[Tuple[str, ast.ClassDef]] = []
+    for node in body:
+        if not isinstance(node, ast.ClassDef):
+            continue
+        qual = "%s.%s" % (prefix, node.name) if prefix else node.name
+        found.append((qual, node))
+        found.extend(_all_classes(node.body, qual))
+    return found
+
+
+def _form_setup_call(node: ast.ClassDef, ui_class: str) -> Optional[ast.Call]:
+    attrs = set()
+    for child in _own_nodes(node):
+        if not isinstance(child, ast.Assign):
+            continue
+        value = child.value
+        if ui_class:
+            if not isinstance(value, ast.Call) or not _is_name(value.func, ui_class):
+                continue
+        elif not isinstance(value, ast.Call):
+            continue
+        for target in child.targets:
+            if (
+                isinstance(target, ast.Attribute)
+                and isinstance(target.value, ast.Name)
+                and target.value.id == "self"
+            ):
+                attrs.add(target.attr)
+    if not ui_class:
+        attrs.add("ui")
+    if not attrs:
+        return None
+    for child in _own_nodes(node):
         if not isinstance(child, ast.Call) or not child.args:
             continue
         func = child.func
         if not isinstance(func, ast.Attribute) or func.attr != "setupUi":
             continue
         inner = func.value
-        if not isinstance(inner, ast.Attribute) or inner.attr != "ui":
+        if not isinstance(inner, ast.Attribute) or inner.attr not in attrs:
             continue
         if not isinstance(inner.value, ast.Name) or inner.value.id != "self":
             continue
@@ -456,6 +582,233 @@ def _setup_call(node: ast.ClassDef) -> Optional[ast.Call]:
         if isinstance(arg, ast.Name) and arg.id == "self":
             return child
     return None
+
+
+def _is_name(node: ast.AST, name: str) -> bool:
+    return isinstance(node, ast.Name) and node.id == name
+
+
+def _own_nodes(node: ast.ClassDef) -> List[ast.AST]:
+    found: List[ast.AST] = []
+
+    def walk(current: ast.AST) -> None:
+        found.append(current)
+        for child in ast.iter_child_nodes(current):
+            if isinstance(child, ast.ClassDef):
+                continue
+            walk(child)
+
+    for stmt in node.body:
+        if isinstance(stmt, ast.ClassDef):
+            continue
+        walk(stmt)
+    return found
+
+
+def _class_index(tree: ast.AST) -> Dict[str, ast.ClassDef]:
+    return {node.name: node for _qual, node in _all_classes(getattr(tree, "body", []), "")}
+
+
+def _inherited(node: ast.ClassDef, index: Dict[str, ast.ClassDef]) -> List[Tuple[str, str]]:
+    found: List[Tuple[str, str]] = []
+    seen = set()
+
+    def walk(current: ast.ClassDef) -> None:
+        for base in current.bases:
+            if not isinstance(base, ast.Name) or base.id not in index:
+                continue
+            parent = index[base.id]
+            if id(parent) in seen:
+                continue
+            seen.add(id(parent))
+            for method in _class_method_names(parent):
+                found.append((parent.name, method))
+            walk(parent)
+
+    walk(node)
+    return found
+
+
+def _refuse_collisions(target: ast.ClassDef, plan: EjectPlan, tree: ast.AST) -> None:
+    defined = set(plan.defined_names)
+    state = _state_names(plan.class_block)
+    for name in _class_method_names(target):
+        if name in defined and not _is_stub(target, name):
+            raise ValueError("%s already has %s." % (target.name, name))
+    for stmt in target.body:
+        for name in _class_level_names(stmt):
+            if name in defined or name in state:
+                raise ValueError("%s already defines %s." % (target.name, name))
+    for node in _own_nodes(target):
+        if not isinstance(node, ast.Assign):
+            continue
+        for item in node.targets:
+            if (
+                isinstance(item, ast.Attribute)
+                and isinstance(item.value, ast.Name)
+                and item.value.id == "self"
+                and item.attr in state
+            ):
+                raise ValueError("%s already sets self.%s." % (target.name, item.attr))
+    for base_name, method in _inherited(target, _class_index(tree)):
+        if method in defined:
+            raise ValueError("%s's base %s already has %s." % (target.name, base_name, method))
+
+
+def _is_stub(node: ast.ClassDef, name: str) -> bool:
+    """A generated slot: a docstring and ``pass``, which eject replaces."""
+
+    for child in node.body:
+        if not isinstance(child, ast.FunctionDef) or child.name != name:
+            continue
+        body = list(child.body)
+        if (
+            body
+            and isinstance(body[0], ast.Expr)
+            and isinstance(body[0].value, ast.Constant)
+            and isinstance(body[0].value.value, str)
+        ):
+            body = body[1:]
+        return len(body) == 1 and isinstance(body[0], ast.Pass)
+    return False
+
+
+def _drop_stubs(source: str, node: ast.ClassDef, names: Set[str]) -> str:
+    lines = source.splitlines(keepends=True)
+    drop = set()
+    for child in node.body:
+        if not isinstance(child, ast.FunctionDef) or child.name not in names or not _is_stub(node, child.name):
+            continue
+        start = int(child.lineno)
+        end = int(child.end_lineno or start)
+        if start > 1 and not lines[start - 2].strip():
+            drop.add(start - 1)
+        for number in range(start, end + 1):
+            drop.add(number)
+    if not drop:
+        return source
+    return "".join(line for number, line in enumerate(lines, 1) if number not in drop)
+
+
+def _class_level_names(stmt: ast.stmt) -> List[str]:
+    names: List[str] = []
+    if isinstance(stmt, ast.Assign):
+        targets = list(stmt.targets)
+    elif isinstance(stmt, ast.AnnAssign):
+        targets = [stmt.target]
+    else:
+        return names
+    for target in targets:
+        if isinstance(target, ast.Name):
+            names.append(target.id)
+    return names
+
+
+def _state_names(block: str) -> Set[str]:
+    try:
+        tree = ast.parse(block)
+    except SyntaxError:
+        return set()
+    names = set()
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.FunctionDef) or node.name != _SETUP:
+            continue
+        for stmt in node.body:
+            if not isinstance(stmt, ast.Assign) or len(stmt.targets) != 1:
+                continue
+            target = stmt.targets[0]
+            if (
+                isinstance(target, ast.Attribute)
+                and isinstance(target.value, ast.Name)
+                and target.value.id == "self"
+            ):
+                names.add(target.attr)
+    return names
+
+
+def _override_notes(target: ast.ClassDef, tree: ast.AST) -> Tuple[str, ...]:
+    index = _class_index(tree)
+    notes = []
+    for base in target.bases:
+        label = _base_label(base)
+        if not label or label[:1] == "Q":
+            continue
+        if isinstance(base, ast.Name) and base.id in index:
+            continue
+        notes.append("Methods of the same name on %s will be overridden." % label)
+    return tuple(notes)
+
+
+def _base_label(base: ast.expr) -> str:
+    if isinstance(base, ast.Name):
+        return base.id
+    if isinstance(base, ast.Attribute):
+        return base.attr
+    return ""
+
+
+def _marked(source: str) -> bool:
+    token = "# %s:" % MARKER
+    for line in source.splitlines():
+        if line.lstrip().startswith(token):
+            return True
+    return False
+
+
+def _with_eol(text: str, eol: str) -> str:
+    return text.replace("\r\n", "\n").replace("\n", eol)
+
+
+def _prime_lines(block: str, indent: str, eol: str) -> List[str]:
+    try:
+        tree = ast.parse(block)
+    except SyntaxError:
+        return []
+    setup = next(
+        (node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == _SETUP),
+        None,
+    )
+    if setup is None:
+        return []
+    primed = []
+    for stmt in setup.body:
+        if not isinstance(stmt, ast.Assign) or len(stmt.targets) != 1:
+            continue
+        target = stmt.targets[0]
+        if not isinstance(target, ast.Attribute) or not isinstance(target.value, ast.Name):
+            continue
+        if target.value.id != "self" or not _prime_value(stmt.value):
+            continue
+        segment = ast.get_source_segment(block, stmt)
+        if not segment:
+            continue
+        primed.append("%s%s%s" % (indent, segment.strip(), eol))
+    return primed
+
+
+def _prime_value(node: ast.AST) -> bool:
+    if isinstance(node, ast.Constant):
+        return True
+    if isinstance(node, ast.Name):
+        return node.id == "self"
+    if isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.USub):
+        return isinstance(node.operand, ast.Constant)
+    if isinstance(node, (ast.List, ast.Set, ast.Tuple)):
+        return all(_prime_value(item) for item in node.elts)
+    if isinstance(node, ast.Dict):
+        return all(
+            (key is None or _prime_value(key)) and _prime_value(value)
+            for key, value in zip(node.keys, node.values)
+        )
+    return False
+
+
+def _insert_lines_before(source: str, lineno: int, additions: Sequence[str]) -> str:
+    lines = source.splitlines(keepends=True)
+    if lineno < 1 or lineno > len(lines) + 1:
+        return source
+    lines[lineno - 1 : lineno - 1] = list(additions)
+    return "".join(lines)
 
 
 def _class_method_names(node: ast.ClassDef) -> set:

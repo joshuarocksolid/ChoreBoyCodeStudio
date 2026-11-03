@@ -39,6 +39,7 @@ def render_methods(
     public_of: Dict[str, str],
     extras: Sequence[Tuple[str, str]],
     wrappers: Sequence[str],
+    present: Optional[Set[str]] = None,
 ) -> Tuple[str, Tuple[str, ...], Tuple[str, ...]]:
     """``(class_block, public_names, helper_names)``."""
 
@@ -66,6 +67,11 @@ def render_methods(
     planned = _planned(methods, helper_sources, extras, wrappers, skip, renames, public_of)
     known = set(renames.values()) | planned
     widget_names = frozenset(widgets)
+    defined = set(present or ())
+    setup_raw = rewrite_function(
+        _wrap("_setup_ejected", "", "\n".join(setup_lines)), widget_names, renames, form_param
+    )
+    state = _assigned_state(setup_raw)
     blocks: List[str] = []
     public: List[str] = []
     helpers: List[str] = []
@@ -76,7 +82,9 @@ def render_methods(
         emitted.add(method.name)
         new = renames.get(method.name, method.name)
         source = _wrap(new, method.params, bodies.get(method.name, method.body))
-        rewritten = polish(rewrite_function(source, widget_names, renames, form_param), planned, known)
+        rewritten = polish(
+            rewrite_function(source, widget_names, renames, form_param), planned, known, state, defined
+        )
         if new in public_of.values() or method.name in public_of:
             public.append(new)
             blocks.append(rewritten)
@@ -102,10 +110,11 @@ def render_methods(
                 rewrite_function(_with_self(function, definition.name, new), widget_names, renames, form_param),
                 planned,
                 known,
+                state,
+                defined,
             )
             blocks.append(rewritten)
-    setup = _wrap("_setup_ejected", "", "\n".join(setup_lines))
-    blocks.append(polish(rewrite_function(setup, widget_names, renames, form_param), planned, known))
+    blocks.append(polish(setup_raw, planned, known, state, defined))
     helpers.append("_setup_ejected")
     for wrapper in wrappers:
         blocks.append(wrapper.rstrip() + "\n")
@@ -352,7 +361,14 @@ def _function_texts(source: str) -> List[str]:
     return found
 
 
-_LOCALS = (("_conn", "conn"), ("_cursor", "cursor"), ("_item", "row"))
+_LOCALS = (
+    ("_conn", "conn"),
+    ("_cursor", "cursor"),
+    ("_item", "row"),
+    ("_row", "row"),
+    ("_value", "value"),
+    ("_was", "was"),
+)
 _SQL_WORD = re.compile(r"\b(SELECT|INSERT|UPDATE|DELETE|FROM|WHERE|VALUES|JOIN|ORDER|SET)\b", re.IGNORECASE)
 _SQL_IDENT = re.compile(r'"[A-Za-z_][A-Za-z0-9_]*"')
 
@@ -386,10 +402,19 @@ def _planned(
     return names
 
 
-def polish(source: str, planned: Set[str], known: Set[str]) -> str:
+def polish(
+    source: str,
+    planned: Set[str],
+    known: Set[str],
+    state: Optional[Set[str]] = None,
+    present: Optional[Set[str]] = None,
+) -> str:
     """Make one ejected method read like code a person wrote."""
 
-    text = _simplify(source, planned, known)
+    ready = set(state or ())
+    defined = set(present or ())
+    text = _simplify(source, planned, known, defined)
+    text = _plain_reads(text, ready, planned, defined)
     text = _rename_locals(text)
     text = _restyle_strings(text)
     text = _wrap_long_sql(text)
@@ -399,12 +424,12 @@ def polish(source: str, planned: Set[str], known: Set[str]) -> str:
     return text
 
 
-def _simplify(source: str, planned: Set[str], known: Set[str]) -> str:
+def _simplify(source: str, planned: Set[str], known: Set[str], present: Set[str]) -> str:
     tree = ast.parse(source)
     root = next(node for node in tree.body if isinstance(node, ast.FunctionDef))
     lines = source.splitlines(keepends=True)
     edits: List[Tuple[int, int, str]] = []
-    _simplify_body(root.body, source, lines, planned, known, edits)
+    _simplify_body(root.body, source, lines, planned, known, present, edits)
     return _apply(source, edits)
 
 
@@ -414,6 +439,7 @@ def _simplify_body(
     lines: Sequence[str],
     planned: Set[str],
     known: Set[str],
+    present: Set[str],
     edits: List[Tuple[int, int, str]],
 ) -> None:
     index = 0
@@ -423,36 +449,41 @@ def _simplify_body(
         if nxt is not None and _drop_redundant_write(stmt, nxt, lines, edits):
             index += 2
             continue
+        if _drop_missing_call(stmt, lines, planned, present, edits):
+            index += 1
+            continue
+        cancel = _cancel_hook(stmt, nxt) if nxt is not None else None
+        if cancel is not None:
+            name, _temp = cancel
+            edits.append(_cancel_edit(stmt, nxt, lines, name, _kept(name, known, present)))
+            index += 2
+            continue
         guard = _guard(stmt, nxt) if nxt is not None else None
         if guard is not None:
             name, call_name = guard
-            if name in planned or (name in known) or name.startswith("_"):
-                edits.append(_guard_edit(stmt, nxt, source, lines, name, call_name, name in planned))
-                index += 2
-                continue
+            edits.append(
+                _guard_edit(stmt, nxt, source, lines, name, call_name, _kept(name, known, present))
+            )
+            index += 2
+            continue
         for child in _nested_bodies(stmt):
-            _simplify_body(child, source, lines, planned, known, edits)
+            _simplify_body(child, source, lines, planned, known, present, edits)
         index += 1
 
 
 def _nested_bodies(stmt: ast.stmt) -> List[Sequence[ast.stmt]]:
+    if isinstance(stmt, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+        return []
     found: List[Sequence[ast.stmt]] = []
-    for node in ast.iter_child_nodes(stmt):
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
-            continue
-        body = getattr(node, "body", None)
-        if isinstance(body, list):
-            found.append(body)
-        orelse = getattr(node, "orelse", None)
-        if isinstance(orelse, list) and orelse and isinstance(orelse[0], ast.stmt):
-            found.append(orelse)
-        handlers = getattr(node, "handlers", None)
-        if isinstance(handlers, list):
-            for handler in handlers:
+    for attr in ("body", "orelse", "finalbody"):
+        value = getattr(stmt, attr, None)
+        if isinstance(value, list) and value and isinstance(value[0], ast.stmt):
+            found.append(value)
+    handlers = getattr(stmt, "handlers", None)
+    if isinstance(handlers, list):
+        for handler in handlers:
+            if handler.body:
                 found.append(handler.body)
-        final = getattr(node, "finalbody", None)
-        if isinstance(final, list):
-            found.append(final)
     return found
 
 
@@ -517,6 +548,194 @@ def _guard(stmt: ast.stmt, nxt: ast.stmt) -> Optional[Tuple[str, str]]:
     return const.value, target.id
 
 
+def _cancel_edit(
+    stmt: ast.stmt, nxt: ast.stmt, lines: Sequence[str], name: str, keep: bool
+) -> Tuple[int, int, str]:
+    start = _offset(lines, stmt.lineno, 0)
+    end_line = nxt.end_lineno or nxt.lineno
+    end = _offset(lines, end_line, len(lines[end_line - 1]))
+    if not keep:
+        return start, end, ""
+    indent = _line_indent(lines, nxt.lineno)
+    text = "%sif self.%s() is False:\n%s    return False\n" % (indent, name, indent)
+    return start, end, text
+
+
+def _line_indent(lines: Sequence[str], lineno: int) -> str:
+    if lineno < 1 or lineno > len(lines):
+        return ""
+    raw = lines[lineno - 1]
+    stripped = raw.lstrip(" ")
+    return raw[: len(raw) - len(stripped)]
+
+
+def _drop_missing_call(
+    stmt: ast.stmt,
+    lines: Sequence[str],
+    planned: Set[str],
+    present: Set[str],
+    edits: List[Tuple[int, int, str]],
+) -> bool:
+    """A call of ``getattr(self, name, ...)`` goes away when this form has no such method."""
+
+    if not isinstance(stmt, ast.Expr) or not isinstance(stmt.value, ast.Call):
+        return False
+    func = stmt.value.func
+    if not isinstance(func, ast.Call) or not isinstance(func.func, ast.Name) or func.func.id != "getattr":
+        return False
+    if len(func.args) < 2:
+        return False
+    owner, const = func.args[0], func.args[1]
+    if not isinstance(owner, ast.Name) or owner.id != "self":
+        return False
+    if not isinstance(const, ast.Constant) or not isinstance(const.value, str):
+        return False
+    if const.value in planned or const.value in present:
+        return False
+    start = _offset(lines, stmt.lineno, 0)
+    end_line = stmt.end_lineno or stmt.lineno
+    end = _offset(lines, end_line, len(lines[end_line - 1]))
+    edits.append((start, end, ""))
+    return True
+
+
+def _kept(name: str, known: Set[str], present: Set[str]) -> bool:
+    return name in known or name in present
+
+
+def _cancel_hook(stmt: ast.stmt, nxt: ast.stmt) -> Optional[Tuple[str, str]]:
+    """``temp = getattr(self, name, None)`` then ``if temp is not None and temp() is False``."""
+
+    found = _getattr_assign(stmt)
+    if found is None or not isinstance(nxt, ast.If) or nxt.orelse:
+        return None
+    name, temp = found
+    test = nxt.test
+    if not isinstance(test, ast.BoolOp) or not isinstance(test.op, ast.And) or len(test.values) != 2:
+        return None
+    if not _is_not_none(test.values[0], temp) or not _call_is_false(test.values[1], temp):
+        return None
+    return name, temp
+
+
+def _getattr_assign(stmt: ast.stmt) -> Optional[Tuple[str, str]]:
+    if not isinstance(stmt, ast.Assign) or len(stmt.targets) != 1:
+        return None
+    target = stmt.targets[0]
+    if not isinstance(target, ast.Name):
+        return None
+    call = _getattr_self(stmt.value)
+    if call is None:
+        return None
+    return call, target.id
+
+
+def _getattr_self(node: ast.AST) -> Optional[str]:
+    if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Name) or node.func.id != "getattr":
+        return None
+    if len(node.args) < 3:
+        return None
+    owner, const, default = node.args[0], node.args[1], node.args[2]
+    if not isinstance(owner, ast.Name) or owner.id != "self":
+        return None
+    if not isinstance(const, ast.Constant) or not isinstance(const.value, str):
+        return None
+    if not isinstance(default, ast.Constant) or default.value is not None:
+        return None
+    return const.value
+
+
+def _is_not_none(node: ast.AST, temp: str) -> bool:
+    if not isinstance(node, ast.Compare) or len(node.ops) != 1 or not isinstance(node.ops[0], ast.IsNot):
+        return False
+    if not isinstance(node.left, ast.Name) or node.left.id != temp:
+        return False
+    return (
+        len(node.comparators) == 1
+        and isinstance(node.comparators[0], ast.Constant)
+        and node.comparators[0].value is None
+    )
+
+
+def _call_is_false(node: ast.AST, temp: str) -> bool:
+    if not isinstance(node, ast.Compare) or len(node.ops) != 1 or not isinstance(node.ops[0], ast.Is):
+        return False
+    call = node.left
+    if not isinstance(call, ast.Call) or not isinstance(call.func, ast.Name) or call.func.id != temp:
+        return False
+    return (
+        len(node.comparators) == 1
+        and isinstance(node.comparators[0], ast.Constant)
+        and node.comparators[0].value is False
+    )
+
+
+def _assigned_state(source: str) -> Set[str]:
+    """Plain ``self.name = ...`` assignments. Those exist before the first refresh."""
+
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return set()
+    root = next((node for node in tree.body if isinstance(node, ast.FunctionDef)), None)
+    if root is None:
+        return set()
+    names = set()
+    for stmt in root.body:
+        if not isinstance(stmt, ast.Assign) or len(stmt.targets) != 1:
+            continue
+        target = stmt.targets[0]
+        if not isinstance(target, ast.Attribute) or not isinstance(target.value, ast.Name):
+            continue
+        if target.value.id == "self" and _plain_value(stmt.value):
+            names.add(target.attr)
+    return names
+
+
+def _plain_value(node: ast.AST) -> bool:
+    if isinstance(node, ast.Constant):
+        return True
+    if isinstance(node, ast.Name):
+        return node.id == "self"
+    if isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.USub):
+        return isinstance(node.operand, ast.Constant)
+    if isinstance(node, (ast.List, ast.Set, ast.Tuple)):
+        return all(_plain_value(item) for item in node.elts)
+    if isinstance(node, ast.Dict):
+        return all(
+            (key is None or _plain_value(key)) and _plain_value(value)
+            for key, value in zip(node.keys, node.values)
+        )
+    return False
+
+
+def _plain_reads(source: str, state: Set[str], planned: Set[str], present: Set[str]) -> str:
+    """``getattr(self, name, default)`` becomes ``self.name`` once that name is real."""
+
+    tree = ast.parse(source)
+    lines = source.splitlines(keepends=True)
+    edits: List[Tuple[int, int, str]] = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Name) or node.func.id != "getattr":
+            continue
+        if len(node.args) < 2:
+            continue
+        owner, const = node.args[0], node.args[1]
+        if not isinstance(owner, ast.Name) or owner.id != "self":
+            continue
+        if not isinstance(const, ast.Constant) or not isinstance(const.value, str):
+            continue
+        name = const.value
+        direct = name in state or name in planned or name in present
+        absent = name in ("validate_fields", "cbcs_validate", "cbcsOnBeforeSave") and not direct
+        if not direct and not absent:
+            continue
+        span = _span(node, lines)
+        if span is not None:
+            edits.append((span[0], span[1], "self.%s" % name if direct else "None"))
+    return _apply(source, edits)
+
+
 def _guard_edit(
     stmt: ast.stmt,
     nxt: ast.stmt,
@@ -546,11 +765,13 @@ def _rename_locals(source: str) -> str:
     root = next(node for node in tree.body if isinstance(node, ast.FunctionDef))
     used = {node.id for node in ast.walk(root) if isinstance(node, ast.Name)}
     used.update(arg.arg for arg in root.args.args)
+    occupied = set(used)
     lines = source.splitlines(keepends=True)
     edits: List[Tuple[int, int, str]] = []
     for old, new in _LOCALS:
-        if old not in used or new in used:
+        if old not in used or new in occupied:
             continue
+        occupied.add(new)
         for node in ast.walk(root):
             if isinstance(node, ast.Name) and node.id == old:
                 span = _span(node, lines)
