@@ -117,6 +117,9 @@ def install_form_builder(ctx: "ShellCompositionContext") -> None:
     )
     _refresh_shortcut_maps(window)
     register_form_menu(window)
+    from app.features.form_builder.qtside.dialogs.search_screen import install as install_search_screen
+
+    install_search_screen()
     bind_private_attrs(
         window,
         {

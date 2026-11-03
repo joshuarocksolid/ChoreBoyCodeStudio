@@ -1,21 +1,22 @@
-"""Build a form from a SQLite table. Preview uses QUiLoader on our own XML.
+"""Build a bound form from a named connection.
 
-``qtside/realize`` is not on this base, so the preview is not the canvas
-realizer. Nothing here loads or runs the user's code.
+The preview is still the column layout via QUiLoader. Create writes each file
+through the Data-tab editors, one undo step per file.
 """
 
 from __future__ import annotations
 
+import datetime
 import os
 import sqlite3
-from typing import Callable, Dict, List, Optional
+from typing import Callable, Dict, List, Optional, Tuple
 
 from app.qt.QtCore import QBuffer, QEvent, QIODevice, QLocale, QTimer, Qt, Signal
 from app.qt.QtUiTools import QUiLoader
 from app.qt.QtWidgets import (
+    QCheckBox,
     QComboBox,
     QDialog,
-    QFileDialog,
     QGraphicsView,
     QHBoxLayout,
     QHeaderView,
@@ -29,21 +30,31 @@ from app.qt.QtWidgets import (
 )
 from app.qt.qt_compat import enum_value
 
+from app.features.form_builder.engine.data.connections import Connection, load_connections
+from app.features.form_builder.engine.data.schema import Column, Schema, Table, write_schema
+from app.features.form_builder.engine.data.schema_cache import install_schema_reader, refresh
+from app.features.form_builder.engine.data.schema_sqlite import read_sqlite_file
+from app.features.form_builder.engine.project.from_table_plan import (
+    ColumnChoice,
+    TableRequest,
+    button_sentence,
+    child_tables,
+    choice_for,
+    include_column,
+)
 from app.features.form_builder.engine.project.names import class_name_for_stem
 from app.features.form_builder.engine.project.table_form import (
     BuiltTableForm,
     TableColumn,
     build_table_form_ui,
     four_digit_year_format,
-    included_by_default,
-    sqlite_columns,
-    sqlite_tables,
 )
+from app.features.form_builder.qtside.schema_prompt import ask_connection_secret
 from app.features.form_builder.qtside.theme.chrome import FormChrome
 from app.features.form_builder.qtside.theme.runtime import host_form
 
 _INCLUDE_REASON = "Include at least one column"
-_CHOOSE_DATABASE = "Choose a SQLite file"
+_CHOOSE_CONNECTION = "Choose a connection"
 _HEADERS = ("Include", "Column", "Type", "Shows as", "Label")
 _SHOWS_AS_WORDS = (
     ("QLineEdit", "Text"),
@@ -54,6 +65,11 @@ _SHOWS_AS_WORDS = (
     ("QDateEdit", "Date"),
     ("QDateTimeEdit", "Date and time"),
     ("QComboBox", "Choice list"),
+)
+_MAKES = (
+    ("record", "Record form"),
+    ("list", "List screen"),
+    ("both", "List screen and record form"),
 )
 
 
@@ -77,6 +93,7 @@ class FromTableDialog(QDialog):
         date_format: str,
         name_reason: Callable[[], Optional[str]],
         parent: Optional[QWidget] = None,
+        add_connection: Optional[Callable[[], None]] = None,
     ) -> None:
         super().__init__(parent)
         self.setObjectName("formBuilder.fromTable")
@@ -87,34 +104,58 @@ class FromTableDialog(QDialog):
         self._chrome = chrome
         self._date_format = four_digit_year_format(date_format)
         self._name_reason = name_reason
+        self._add_connection = add_connection
         self._database = ""
+        self._connection_name = ""
+        self._schema: Optional[Schema] = None
         self._mappings: Dict[str, List[TableColumn]] = {}
         self._loading = False
         self._preview_widget: Optional[QWidget] = None
         self._preview_view: Optional[QGraphicsView] = None
         self._build()
         self._apply_chrome()
+        self._load_saved_connections()
         self._sync_button()
 
     def set_database(self, path: str) -> None:
+        """Point the dialog at a SQLite file. Tests and a dropped file use this."""
+
         self._database = os.path.abspath(path)
         self._show_path(self._database)
-        self._tables.clear()
-        self._mappings.clear()
-        self._mapping.setRowCount(0)
+        self._connection_name = "shop"
         try:
-            names = sqlite_tables(self._database)
+            schema = read_sqlite_file(self._database, self._connection_name, read_at=_now())
         except sqlite3.Error as exc:
+            self._schema = None
+            self._tables.clear()
+            self._mappings.clear()
+            self._mapping.setRowCount(0)
             self._show_preview_message("Could not read that database: %s" % exc)
             self._sync_button()
             return
-        if not names:
-            self._show_preview_message("This database has no tables.")
-            self._sync_button()
-            return
-        for name in names:
-            self._tables.addItem(name)
-        self._tables.setCurrentRow(0)
+        self._use_schema(schema)
+
+    def schema(self) -> Optional[Schema]:
+        return self._schema
+
+    def request(self) -> Optional[TableRequest]:
+        if self.disabled_reason():
+            return None
+        table = self._tables.currentItem()
+        if table is None or self._schema is None or not self._connection_name:
+            return None
+        lines = ""
+        if str(self._make.currentData() or "record") != "list" and self._lines.isChecked():
+            lines = str(self._lines_table.currentData() or "")
+        return TableRequest(
+            self._connection_name,
+            table.text(),
+            self._choices(),
+            str(self._make.currentData() or "record"),
+            lines,
+            self._stem,
+            self._date_format,
+        )
 
     def set_included(self, column: str, included: bool) -> None:
         row = self._row_for(column)
@@ -154,17 +195,42 @@ class FromTableDialog(QDialog):
     def _build(self) -> None:
         root = QVBoxLayout(self)
         path_row = QHBoxLayout()
-        database = QLabel("Database", self)
+        database = QLabel("Connection", self)
         database.setObjectName("formBuilder.fromTable.databaseLabel")
         path_row.addWidget(database)
-        self._path = QLabel("Choose a SQLite file", self)
+        self._connection = QComboBox(self)
+        self._connection.setObjectName("formBuilder.fromTable.connection")
+        self._connection.currentIndexChanged.connect(self._on_connection)
+        path_row.addWidget(self._connection, 1)
+        add = QPushButton("Add connection…", self)
+        add.setObjectName("formBuilder.fromTable.addConnection")
+        add.clicked.connect(self._on_add_connection)
+        path_row.addWidget(add)
+        self._path = QLabel("", self)
         self._path.setObjectName("formBuilder.fromTable.path")
-        path_row.addWidget(self._path, 1)
-        browse = QPushButton("Browse…", self)
-        browse.setObjectName("formBuilder.fromTable.browse")
-        browse.clicked.connect(self._browse)
-        path_row.addWidget(browse)
+        path_row.addWidget(self._path)
         root.addLayout(path_row)
+
+        options = QHBoxLayout()
+        make_label = QLabel("Make", self)
+        make_label.setObjectName("formBuilder.fromTable.makeLabel")
+        options.addWidget(make_label)
+        self._make = QComboBox(self)
+        self._make.setObjectName("formBuilder.fromTable.make")
+        for key, label in _MAKES:
+            self._make.addItem(label, key)
+        self._make.currentIndexChanged.connect(lambda _index: self._sync_lines_and_button())
+        options.addWidget(self._make)
+        self._lines = QCheckBox("Include lines from", self)
+        self._lines.setObjectName("formBuilder.fromTable.lines")
+        self._lines.toggled.connect(lambda _checked: self._sync_button())
+        options.addWidget(self._lines)
+        self._lines_table = QComboBox(self)
+        self._lines_table.setObjectName("formBuilder.fromTable.linesTable")
+        self._lines_table.currentIndexChanged.connect(lambda _index: self._sync_button())
+        options.addWidget(self._lines_table)
+        options.addStretch(1)
+        root.addLayout(options)
 
         body = QHBoxLayout()
         root.addLayout(body, 1)
@@ -237,15 +303,69 @@ class FromTableDialog(QDialog):
             )
         )
 
-    def _browse(self) -> None:
-        chosen, _selected = QFileDialog.getOpenFileName(
-            self,
-            "Choose a SQLite database",
+    def _on_add_connection(self) -> None:
+        if self._add_connection is None:
+            return
+        self._add_connection()
+        self._load_saved_connections()
+
+    def _load_saved_connections(self) -> None:
+        loaded, _error = load_connections(self._project_root)
+        self._connections: Dict[str, Connection] = {}
+        self._connection.blockSignals(True)
+        self._connection.clear()
+        if loaded is not None:
+            for item in loaded.connections:
+                self._connections[item.name] = item
+                self._connection.addItem(item.title or item.name, item.name)
+        self._connection.blockSignals(False)
+        if self._connection.count() and not self._schema:
+            self._connection.setCurrentIndex(0)
+            self._on_connection()
+
+    def _on_connection(self) -> None:
+        name = str(self._connection.currentData() or "")
+        connection = self._connections.get(name) if hasattr(self, "_connections") else None
+        if connection is None:
+            return
+        outcome = refresh(
             self._project_root,
-            "SQLite (*.sqlite *.sqlite3 *.db);;All files (*)",
+            connection,
+            lambda item: ask_connection_secret(self._project_root, item),
         )
-        if chosen:
-            self.set_database(chosen)
+        if not outcome.ok or outcome.schema is None:
+            self._schema = outcome.schema
+            self._connection_name = name
+            self._tables.clear()
+            self._mappings.clear()
+            self._mapping.setRowCount(0)
+            self._show_preview_message(outcome.reason or "The columns could not be read.")
+            self._sync_button()
+            return
+        self._connection_name = name
+        if connection.engine == "sqlite" and connection.file:
+            self._database = os.path.abspath(os.path.join(self._project_root, connection.file))
+            self._show_path(self._database)
+        else:
+            self._database = name
+            self._path.setText("")
+            self._path.setToolTip(connection.title or name)
+        self._use_schema(outcome.schema)
+
+    def _use_schema(self, schema: Schema) -> None:
+        self._schema = schema
+        _store_schema(self._project_root, schema)
+        self._tables.clear()
+        self._mappings.clear()
+        self._mapping.setRowCount(0)
+        if not schema.tables:
+            self._show_preview_message("This database has no tables.")
+            self._sync_button()
+            return
+        for table in schema.tables:
+            self._tables.addItem(table.name)
+            self._mappings[table.name] = [_mapping_row(table, column, schema.engine) for column in table.columns]
+        self._tables.setCurrentRow(0)
 
     def _show_path(self, path: str) -> None:
         relative = os.path.relpath(path, self._project_root).replace(os.sep, "/")
@@ -257,23 +377,13 @@ class FromTableDialog(QDialog):
         self._path.setToolTip(os.path.abspath(path))
 
     def _on_table(self, name: str) -> None:
-        if not name or not self._database:
+        if not name:
             return
-        if name not in self._mappings:
-            try:
-                raw = sqlite_columns(self._database, name)
-            except sqlite3.Error as exc:
-                self._show_preview_message("Could not read %s: %s" % (name, exc))
-                return
-            self._mappings[name] = [
-                TableColumn(
-                    column.name,
-                    column.sql_type,
-                    include=included_by_default(column),
-                )
-                for column in raw
-            ]
-        self._fill_mapping(self._mappings[name])
+        columns = self._mappings.get(name)
+        if columns is None:
+            return
+        self._fill_mapping(columns)
+        self._fill_lines(name)
 
     def _fill_mapping(self, columns: List[TableColumn]) -> None:
         self._loading = True
@@ -457,19 +567,51 @@ class FromTableDialog(QDialog):
 
     def _sync_button(self) -> None:
         count = self.included_count()
-        if count == 1:
-            self._create.setText("Create form with 1 field")
-        else:
-            self._create.setText("Create form with %d fields" % count)
+        table = self._tables.currentItem()
+        name = table.text() if table is not None else ""
+        make = str(self._make.currentData() or "record")
+        lines = bool(make != "list" and self._lines.isChecked() and self._lines_table.currentData())
+        self._create.setText(button_sentence(name, count, make, lines))
         reason = self._name_reason()
-        if not reason and not self._database:
-            reason = _CHOOSE_DATABASE
-        elif not reason and count == 0:
+        if not reason and self._schema is None:
+            reason = _CHOOSE_CONNECTION
+        elif not reason and self._schema is not None and name:
+            key = _key_of(self._schema, name)
+            if not key and make != "list":
+                reason = "%s has no single key column. Record forms need one." % name
+        if not reason and count == 0:
             reason = _INCLUDE_REASON
         self._create.setEnabled(not reason)
         self._reason.setText(reason or "")
         self._reason.setVisible(bool(reason))
         self._create.setToolTip(reason or "")
+
+    def _sync_lines_and_button(self) -> None:
+        make = str(self._make.currentData() or "record")
+        show = make != "list" and self._lines_table.count() > 0
+        self._lines.setVisible(show)
+        self._lines_table.setVisible(show)
+        self._sync_button()
+
+    def _fill_lines(self, table_name: str) -> None:
+        self._lines_table.blockSignals(True)
+        self._lines_table.clear()
+        if self._schema is not None:
+            for child in child_tables(self._schema, table_name):
+                self._lines_table.addItem(child.name, child.name)
+        self._lines_table.blockSignals(False)
+        has_child = self._lines_table.count() > 0
+        self._lines.setText("Include lines from" if has_child else "Include lines")
+        if has_child and not self._lines.isChecked():
+            self._lines.setChecked(True)
+        self._sync_lines_and_button()
+
+    def _choices(self) -> Tuple[ColumnChoice, ...]:
+        chosen = []
+        for column in self._current_columns():
+            if column.include:
+                chosen.append(ColumnChoice(column.name, column.widget_class(), column.field_label()))
+        return tuple(chosen)
 
     def _refresh_preview(self) -> None:
         if not self._current_columns():
@@ -529,4 +671,35 @@ class FromTableDialog(QDialog):
                 old.deleteLater()
         self._preview_widget = form
         self._preview.addWidget(shown)
+
+
+def _now() -> str:
+    return datetime.datetime.now().isoformat(timespec="seconds")
+
+
+def _store_schema(root: str, schema: Schema) -> None:
+    directory = os.path.join(root, "cbcs", "schema")
+    os.makedirs(directory, exist_ok=True)
+    path = os.path.join(directory, schema.connection + ".json")
+    with open(path, "w", encoding="utf-8") as handle:
+        handle.write(write_schema(schema))
+    install_schema_reader(root)
+
+
+def _key_of(schema: Schema, name: str) -> str:
+    for table in schema.tables:
+        if table.name == name:
+            return table.key or ""
+    return ""
+
+
+def _mapping_row(table: Table, column: Column, engine: str) -> TableColumn:
+    choice = choice_for(column, engine)
+    return TableColumn(
+        column.name,
+        column.type,
+        include=include_column(column, table.key or "", engine),
+        shows_as=choice.shows_as,
+        label=choice.label,
+    )
 

@@ -337,7 +337,7 @@ def _database(root: Path) -> Path:
     path = folder / "shop.sqlite"
     connection = sqlite3.connect(path)
     connection.execute(
-        "create table customer (customer_id integer, first_name text, joined date)"
+        "create table customer (id integer primary key, customer_id integer, first_name text, joined date)"
     )
     connection.commit()
     connection.close()
@@ -403,12 +403,12 @@ def test_from_table_maps_columns_to_widgets(tmp_path: Path, qapp: object) -> Non
 def test_from_table_button_names_the_field_count(tmp_path: Path, qapp: object) -> None:
     del qapp
     dialog = _customer_dialog(tmp_path)
-    assert dialog.create_button().text() == "Create form with 3 fields"
+    assert dialog.create_button().text() == "Create customer form with 3 fields"
     assert dialog.create_button().isEnabled()
     dialog.set_included("customer_id", False)
     dialog.set_included("first_name", False)
     dialog.set_included("joined", False)
-    assert dialog.create_button().text() == "Create form with 0 fields"
+    assert dialog.create_button().text() == "Create customer form with 0 fields"
     assert not dialog.create_button().isEnabled()
     assert dialog.disabled_reason() == "Include at least one column"
     dialog.close()
@@ -419,7 +419,7 @@ def test_from_table_uses_singular_for_one_field(tmp_path: Path, qapp: object) ->
     dialog = _customer_dialog(tmp_path)
     dialog.set_included("first_name", False)
     dialog.set_included("joined", False)
-    assert dialog.create_button().text() == "Create form with 1 field"
+    assert dialog.create_button().text() == "Create customer form with 1 field"
     dialog.close()
 
 
@@ -432,7 +432,7 @@ def test_from_table_asks_for_a_database_before_one_is_chosen(tmp_path: Path, qap
         date_format="M/d/yy",
         name_reason=lambda: None,
     )
-    assert dialog.disabled_reason() == "Choose a SQLite file"
+    assert dialog.disabled_reason() == "Choose a connection"
     cancel = dialog.findChild(QPushButton, "formBuilder.fromTable.cancel")
     assert cancel is not None
     assert cancel.text() == "Cancel"

@@ -392,6 +392,14 @@ class NewFormSurface:
 
     def _from_table(self) -> None:
         root = self._request.project_root or os.getcwd()
+        window = self._host()
+
+        def add_connection() -> None:
+            workflow = getattr(window, "_file_project_commands_workflow", None)
+            opener = getattr(workflow, "_open_settings_dialog", None)
+            if callable(opener):
+                opener(page_key="connections")
+
         dialog = FromTableDialog(
             project_root=root,
             stem=self._panel.stem(),
@@ -399,25 +407,60 @@ class NewFormSurface:
             date_format=locale_date_format(),
             name_reason=self._panel.name_reason,
             parent=self._panel,
+            add_connection=add_connection,
         )
         dialog.create_requested.connect(lambda: self._create_from_dialog(dialog))
         exec_qt(dialog)
 
     def _create_from_dialog(self, dialog: FromTableDialog) -> None:
-        built = dialog.built_form()
-        result = perform_create(
-            self._host(),
-            template="widget",
-            stem=self._panel.stem(),
-            directory=self._panel.directory(),
-            ui_text=built.text,
-            first_widget=built.first_widget,
-        )
-        if result.refused:
-            self._panel.show_status(result.refused)
+        from app.features.form_builder.qtside.dialogs.table_apply import render_plans
+
+        request = dialog.request()
+        schema = dialog.schema()
+        root = self._request.project_root or os.getcwd()
+        if request is None or schema is None:
+            self._panel.show_status(dialog.disabled_reason() or "Choose a connection")
             return
+        made = render_plans(request, schema, root)
+        if not made:
+            self._panel.show_status(dialog.disabled_reason() or "Include at least one column")
+            return
+        record_path = ""
+        for stem, text in made:
+            result = perform_create(
+                self._host(),
+                template="widget",
+                stem=stem,
+                directory=self._panel.directory(),
+                ui_text=text,
+                first_widget=None,
+            )
+            if result.refused:
+                self._panel.show_status(result.refused)
+                return
+            if result.scope is not None and not record_path:
+                record_path = result.scope.ui_path
+        self._focus_data(record_path)
         dialog.accept()
         self._reload_recents()
+
+    def _focus_data(self, path: str) -> None:
+        from app.features.form_builder.qtside.inspector import TabId
+
+        window = self._host()
+        registry = getattr(window, "_tab_content_registry", None)
+        if registry is None or not path:
+            return
+        surface = registry.surface_for_path(os.path.abspath(path))
+        workbench = getattr(surface, "workbench", None)
+        if workbench is None:
+            return
+        focus_tab = getattr(workbench, "focus_inspector_tab", None)
+        focus_section = getattr(workbench, "focus_section", None)
+        if callable(focus_tab):
+            focus_tab(TabId.DATA)
+        if callable(focus_section):
+            focus_section("data")
 
     def _adopt(self) -> None:
         handler = adopt_entry()

@@ -76,7 +76,7 @@ class ListingExpander:
         methods = [
             _method("cbcs_refresh_list", _refresh_body(made, source.connection, source.limit)),
             _method("cbcs_open_record", _open_body(open_stem), "which"),
-            _method("_cbcs_arm_list", _arm_body(ctx, source, table, filters)),
+            _method("_cbcs_arm_list", _arm_body(ctx, source, table, filters, _open_record_buttons(doc))),
             _method("_cbcs_list_params", _params_body(ctx, source, search, filters)),
             _method("_cbcs_fill_list", _fill_body(made.columns, made.key, source.limit, table), "_fetched, _names, _count, _keep"),
             _method("_cbcs_selected_key", _selected_body(table)),
@@ -406,7 +406,13 @@ def _failed_body(table: str) -> List[str]:
     ]
 
 
-def _arm_body(ctx: CodegenContext, source: ListSource, table: str, filters: Sequence[str]) -> List[str]:
+def _arm_body(
+    ctx: CodegenContext,
+    source: ListSource,
+    table: str,
+    filters: Sequence[str],
+    skip_buttons: Sequence[str] = (),
+) -> List[str]:
     lines = [
         "self._cbcs_open_windows = {}",
         "self._cbcs_list_timer = QTimer(self._form)",
@@ -451,6 +457,8 @@ def _arm_body(ctx: CodegenContext, source: ListSource, table: str, filters: Sequ
             ]
         )
     for name, which in (("newButton", "new"), ("openButton", "selected")):
+        if name in skip_buttons:
+            continue
         if _class(ctx, name) == "QPushButton":
             lines.append("if hasattr(self, %s):" % py_string(name))
             lines.append("    self.%s.clicked.connect(lambda *_args: self.cbcs_open_record(%s))" % (name, py_string(which)))
@@ -598,6 +606,19 @@ def _source(doc: UiDocument) -> Optional[ListSource]:
     if isinstance(found, ListSource):
         return found
     return None
+
+
+def _open_record_buttons(doc: UiDocument) -> Tuple[str, ...]:
+    """Buttons whose clicked steps already open a record. Arming them again would open it twice."""
+
+    from app.features.form_builder.engine.logic.events import read_event
+
+    armed = []
+    for name in ("newButton", "openButton"):
+        state = read_event(doc, name, "clicked")
+        if any(step.verb == "openRecord" for step in state.steps):
+            armed.append(name)
+    return tuple(armed)
 
 
 def _class(ctx: CodegenContext, name: str) -> str:
