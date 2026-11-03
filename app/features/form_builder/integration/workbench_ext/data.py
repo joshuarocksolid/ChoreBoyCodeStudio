@@ -6,6 +6,7 @@ from typing import Any
 
 from app.qt.QtWidgets import QWidget
 
+from app.features.form_builder.integration.data_checks_bridge import arm
 from app.features.form_builder.integration.workbench_ext import LeftSection
 from app.features.form_builder.qtside.data_panel.panel import DataPanel
 
@@ -31,7 +32,14 @@ def _focus(widget: Any) -> None:
         widget.setFocus()
 
 
+def _arm(workbench: Any) -> None:
+    session = getattr(workbench, "session", None)
+    if session is not None:
+        arm(session)
+
+
 def register(slots: Any) -> None:
     slots.add_left_section(
         LeftSection("data", "Data", _build, order=27, weight=20, focus=_focus)
     )
+    slots.on_workbench(_arm, module=__name__)

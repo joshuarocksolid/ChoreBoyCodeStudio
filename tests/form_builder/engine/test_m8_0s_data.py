@@ -184,11 +184,15 @@ def test_a_lane_check_is_loaded_and_the_builtin_checks_fire(tmp_path: Path, monk
 
 
 def test_record_verbs_stay_untyped_and_a_lane_verb_is_used(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    spec = verbs.default_registry().get("save")
-    assert spec is not None and spec.editable is False and spec.group_id == "records"
-    assert spec.blocks_list(None) is True
-    assert "save" not in TYPED_VERBS
-    assert spec.words(None, None) == "Save record"
+    save = verbs.default_registry().get("save")
+    assert save is not None and save.editable is True and save.group_id == "records"
+    assert save.blocks_list(None) is False
+    assert "save" in TYPED_VERBS
+    assert save.words(None, None) == "Save record"
+    held = verbs.default_registry().get("refreshLookups")
+    assert held is not None and held.editable is False
+    assert held.blocks_list(None) is True
+    assert "refreshLookups" not in TYPED_VERBS
     package = make_package(
         tmp_path,
         monkeypatch,

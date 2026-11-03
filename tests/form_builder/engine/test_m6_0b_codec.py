@@ -238,7 +238,7 @@ def _step(rng: random.Random) -> Step:
     if roll == 1:
         return call_step("m%d" % rng.randrange(5), rng.choice([None, 0, 1, 2]), when=when, enabled=enabled, unknown=unknown)
     fields = tuple(("f%d" % index, _value(rng, 2)) for index in range(rng.randrange(4)))
-    return Step(rng.choice(["save", "later", "future"]), when, enabled, fields, ())
+    return Step(rng.choice(["notYet", "later", "future"]), when, enabled, fields, ())
 
 
 def test_json_round_trip_over_random_models() -> None:

@@ -4,10 +4,14 @@ from __future__ import annotations
 
 from typing import Any, Dict
 
-from app.qt.QtCore import Signal
+from app.qt.QtCore import QTimer, Signal
 from app.qt.QtWidgets import QVBoxLayout, QWidget
 
+from app.features.form_builder.engine.events import PRIORITY_VIEWS
+from app.features.form_builder.qtside.data_panel.chrome import chrome_qss
+from app.features.form_builder.qtside.data_panel.host import note_data_tab
 from app.features.form_builder.qtside.data_panel.sections_ext import default_registry
+from app.qt.qt_compat import wrapper_is_valid
 
 
 class DataPanel(QWidget):
@@ -25,6 +29,10 @@ class DataPanel(QWidget):
         self._layout.setContentsMargins(12, 12, 12, 12)
         self._built: Dict[str, QWidget] = {}
         self._tokens: object = None
+        self._queued = False
+        self._sub: object = None
+        self.destroyed.connect(self._drop_log)
+        self._arm()
         self.reload()
 
     def reload(self) -> None:
@@ -41,31 +49,56 @@ class DataPanel(QWidget):
                 self._built[section.section_id] = widget
                 self._layout.addWidget(widget)
             widget.show()
+            refresh = getattr(widget, "refresh", None)
+            if callable(refresh):
+                refresh()
 
     def showEvent(self, event: object) -> None:  # noqa: N802
+        self._arm()
         self.reload()
+        note_data_tab(self, "left", True)
         super().showEvent(event)  # type: ignore[arg-type]
+
+    def hideEvent(self, event: object) -> None:  # noqa: N802
+        note_data_tab(self, "left", False)
+        super().hideEvent(event)  # type: ignore[arg-type]
 
     def apply_theme(self, tokens: object) -> None:
         self._tokens = tokens
-        width = int(getattr(tokens, "focus_border_width", 0) or 1)
-        self.setStyleSheet(
-            "QWidget#formBuilder\\.dataPanel { background: %s; color: %s; }"
-            "QLabel#formBuilder\\.data\\.sentence, QLabel#formBuilder\\.data\\.schemaSentence { color: %s; background: transparent; }"
-            "QLabel#formBuilder\\.data\\.stale { color: %s; background: transparent; }"
-            "QPushButton { color: %s; background: %s; border: 1px solid %s; padding: 4px 8px; }"
-            "QPushButton:disabled { color: %s; }"
-            "QPushButton:focus { border: %dpx solid %s; }"
-            % (
-                tokens.panel_bg,  # type: ignore[attr-defined]
-                tokens.text_primary,  # type: ignore[attr-defined]
-                tokens.text_primary,  # type: ignore[attr-defined]
-                tokens.diag_warning_color,  # type: ignore[attr-defined]
-                tokens.text_primary,  # type: ignore[attr-defined]
-                tokens.input_bg,  # type: ignore[attr-defined]
-                tokens.border,  # type: ignore[attr-defined]
-                tokens.text_muted,  # type: ignore[attr-defined]
-                width,
-                tokens.accent,  # type: ignore[attr-defined]
-            )
+        qss = chrome_qss(tokens, "formBuilder.dataPanel")
+        qss += "QLabel#formBuilder\\.data\\.stale { color: %s; background: transparent; }" % (
+            tokens.diag_warning_color,  # type: ignore[attr-defined]
         )
+        self.setStyleSheet(qss)
+
+    def _arm(self) -> None:
+        if self._sub is not None:
+            return
+        session = getattr(self._workbench, "session", None)
+        log = getattr(session, "log", None)
+        subscribe = getattr(log, "subscribe", None)
+        if not callable(subscribe):
+            return
+        self._sub = subscribe(self._on_log, priority=PRIORITY_VIEWS)
+
+    def _on_log(self, _changeset: object) -> None:
+        if self._queued:
+            return
+        self._queued = True
+        QTimer.singleShot(0, self._flush)
+
+    def _flush(self) -> None:
+        self._queued = False
+        try:
+            if not wrapper_is_valid(self):
+                return
+            self.reload()
+        except RuntimeError:
+            return
+
+    def _drop_log(self) -> None:
+        sub = self._sub
+        self._sub = None
+        close = getattr(sub, "close", None)
+        if callable(close):
+            close()

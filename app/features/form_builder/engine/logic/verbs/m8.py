@@ -1,14 +1,15 @@
-"""M8 record verbs, registered read-only (CONTRACTS.md section 19.1 and 19.12).
+"""M8 record verbs (CONTRACTS.md section 19.12).
 
-They stay out of the typed-verb set (``editable`` is false) so a file that
-already contains one is kept and reported as FB403. The lane that types a verb
-replaces that entry. This module does not emit them.
+``new`` through ``openRecord`` are typed. ``refreshLookups``, ``addRow`` and
+``deleteRow`` stay read-only until their lanes emit them. ``openRecord`` calls
+``cbcs_open_record``; M8.3c defines that method.
 """
 
 from __future__ import annotations
 
 from typing import Any, Tuple
 
+from app.features.form_builder.engine.codegen.literals import py_string
 from app.features.form_builder.engine.logic.verbs import FieldSpec, VerbSpec
 
 RECORD_VERBS = frozenset(
@@ -58,8 +59,31 @@ def _words(label: str) -> Any:
     return words
 
 
+_CALLS = {
+    "new": "cbcs_new",
+    "save": "cbcs_save",
+    "delete": "cbcs_delete",
+    "revert": "cbcs_revert",
+    "reload": "cbcs_reload",
+    "first": "cbcs_first",
+    "previous": "cbcs_previous",
+    "next": "cbcs_next",
+    "last": "cbcs_last",
+    "find": "cbcs_find",
+    "showAll": "cbcs_show_all",
+}
+
+
 def _validate(taken: Any) -> None:
     del taken
+
+
+def _validate_open(taken: Any) -> None:
+    which = taken.get("which") if isinstance(taken, dict) else None
+    if which not in ("new", "selected"):
+        from app.features.form_builder.engine.logic.codec import _Refused
+
+        raise _Refused(1, 'an "openRecord" step needs "which" of new or selected')
 
 
 def _emit(step: Any, ctx: Any) -> Tuple[str, ...]:
@@ -67,45 +91,80 @@ def _emit(step: Any, ctx: Any) -> Tuple[str, ...]:
     return ()
 
 
+def _emit_call(method: str):
+    def emit(step: Any, ctx: Any) -> Tuple[str, ...]:
+        del step, ctx
+        return ("self.%s()" % method,)
+
+    return emit
+
+
+def _emit_open(step: Any, ctx: Any) -> Tuple[str, ...]:
+    del ctx
+    which = _which(step)
+    if which not in ("new", "selected"):
+        return ("# (openRecord needs new or selected)",)
+    return ("self.cbcs_open_record(%s)" % py_string(which),)
+
+
+def _which(step: Any) -> str:
+    raw = getattr(step, "raw", None)
+    if raw is not None:
+        value = raw.field("which", "")
+        return value if isinstance(value, str) else ""
+    value = getattr(step, "which", "")
+    return value if isinstance(value, str) else ""
+
+
 def _block(step: Any) -> bool:
-    """An untyped record step keeps the whole list from generating, as an unknown verb does."""
+    """An untyped record step keeps the whole list from generating."""
 
     del step
     return True
 
 
-def _spec(name: str, fields: Tuple[FieldSpec, ...] = ()) -> VerbSpec:
+def _allow(step: Any) -> bool:
+    del step
+    return False
+
+
+def _spec(
+    name: str,
+    fields: Tuple[FieldSpec, ...] = (),
+    *,
+    editable: bool,
+    emit: Any,
+    block: Any,
+    validate: Any = None,
+) -> VerbSpec:
     return VerbSpec(
         name,
         fields,
         False,
-        _validate,
-        _emit,
-        _block,
+        validate or _validate,
+        emit,
+        block,
         "records",
         _words(_WORDS[name]),
-        False,
+        editable,
     )
 
 
 def register(registry: Any) -> None:
     add = registry.add
     field = FieldSpec
-    for name in (
-        "new",
-        "save",
-        "delete",
-        "revert",
-        "reload",
-        "first",
-        "previous",
-        "next",
-        "last",
-        "find",
-        "showAll",
-    ):
-        add(_spec(name))
-    add(_spec("refreshLookups", (field("fields", "object_name"),)))
-    add(_spec("addRow", (field("grid", "object_name", True),)))
-    add(_spec("deleteRow"))
-    add(_spec("openRecord", (field("which", "enum", True),)))
+    for name, method in _CALLS.items():
+        add(_spec(name, editable=True, emit=_emit_call(method), block=_allow))
+    add(_spec("refreshLookups", (field("fields", "object_name"),), editable=False, emit=_emit, block=_block))
+    add(_spec("addRow", (field("grid", "object_name", True),), editable=False, emit=_emit, block=_block))
+    add(_spec("deleteRow", editable=False, emit=_emit, block=_block))
+    add(
+        _spec(
+            "openRecord",
+            (field("which", "enum", True),),
+            editable=True,
+            emit=_emit_open,
+            block=_allow,
+            validate=_validate_open,
+        )
+    )

@@ -264,7 +264,7 @@ def test_add_connection_opens_the_connections_page(qapp, tmp_path) -> None:
     connect = body.findChild(QPushButton, "formBuilder.data.connect")
     assert add.isEnabled()
     assert add.toolTip() == ""
-    assert connect.isEnabled() is False
+    assert connect.isEnabled() is True
     connections_page.install()
     dialog = None
     try:
