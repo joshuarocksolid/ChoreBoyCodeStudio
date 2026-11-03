@@ -7,7 +7,7 @@ and whether the combo is editable. SQL text is not built here.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional, Sequence, Tuple
+from typing import List, Optional, Sequence, Tuple
 
 from app.features.form_builder.engine.data.schema import schema_for
 from app.features.form_builder.engine.data.source import Lookup, read_data, read_lookup, singular
@@ -32,6 +32,29 @@ class LookupPlan:
     blank: str = ""
     editable: bool = False
     nullable: bool = False
+
+
+def select_columns(key: str, show: str, also: Sequence[str]) -> List[str]:
+    """Key, shown column, then also columns, with each name once.
+
+    ``select_lookup`` emits this order. Both expanders index a fetched row with it.
+    """
+
+    columns: List[str] = []
+    for name in (key, show):
+        if name not in columns:
+            columns.append(name)
+    for name in also:
+        if name not in columns:
+            columns.append(name)
+    return columns
+
+
+def also_indexes(also: Sequence[str], columns: Sequence[str]) -> Tuple[Tuple[str, int], ...]:
+    """``(name, index)`` for each also column that the SELECT actually returns."""
+
+    found = list(columns)
+    return tuple((name, found.index(name)) for name in also if name in found)
 
 
 def lookup_plans(doc: UiDocument, names: Sequence[str]) -> Tuple[LookupPlan, ...]:

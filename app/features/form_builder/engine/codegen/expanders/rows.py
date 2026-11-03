@@ -9,9 +9,10 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 from typing import List, Mapping, Optional, Sequence, Tuple
 
-from app.features.form_builder.engine.codegen.expanders.record import _engine
+from app.features.form_builder.engine.codegen.expanders.record import _bind_clock, _engine, _from_family, register_open_hook
 from app.features.form_builder.engine.codegen.literals import py_string
 from app.features.form_builder.engine.codegen.logic_hooks import CodegenContext, Contribution, Method
+from app.features.form_builder.engine.codegen.lookup_plan import also_indexes, select_columns
 from app.features.form_builder.engine.data.lines import compile_line_formula, link_position_unique, type_for_kind
 from app.features.form_builder.engine.data.schema import schema_for
 from app.features.form_builder.engine.data.source import (
@@ -90,6 +91,7 @@ class RowsExpander:
             link_position_unique(keys, rows.link, rows.position),
             table,
             _row_attrs(doc, source.connection, columns, engine),
+            _carried_families(doc, source.connection, columns, engine),
         )
 
 
@@ -102,6 +104,7 @@ def _contribution(
     unique: bool,
     table: object,
     attrs: Optional[Mapping[str, Mapping[str, object]]] = None,
+    carried: Sequence[Tuple[str, str, str]] = (),
 ) -> Contribution:
     hidden = {rows.key, rows.link, rows.position}
     stored = tuple(column.name for column in columns if not column.calculated and column.name not in hidden)
@@ -115,7 +118,7 @@ def _contribution(
         _method("_cbcs_load_lines", "_conn, _key", _load_body(view)),
         _method("_cbcs_save_lines", "_conn, _parent", _save_body(view, engine, rows, stored)),
         _method("_cbcs_lines_dirty", "", _dirty_body()),
-        _method("_cbcs_clear_lines", "", _clear_body(view, connection)),
+        _method("_cbcs_clear_lines", "", _clear_body(view)),
         _method("_cbcs_delete_lines", "_conn, _key", _delete_link_body()),
         _method("_cbcs_validate_lines", "", _validate_body(view)),
         _method("_cbcs_add_row", "", _add_body(view, columns, attrs or {})),
@@ -136,6 +139,8 @@ def _contribution(
         _method("_cbcs_line_also", "_column, _key, _name", _also_body()),
         _method("_cbcs_line_lookup_label", "_name, _key", _label_body()),
         _method("_cbcs_load_line_lookups", "_conn", _lookup_body(columns, engine)),
+        _method("_cbcs_line_from", "_table, _column, _value", _line_from_body(carried)),
+        _method("_cbcs_reload_line_lookups", "", _reload_body(connection)),
     ]
     imports = [
         ("PySide6.QtCore", "Qt"),
@@ -215,13 +220,22 @@ def _setup(view, rows, columns, select_names, stored, unique, select_sql, engine
             column.lookup.also,
             column.lookup.order,
         )
-        if column.lookup.also:
-            also = "(%s,)" % ", ".join(py_string(name) for name in column.lookup.also)
+        selected = select_columns(column.lookup.key, column.lookup.show, column.lookup.also)
+        show_at = selected.index(column.lookup.show)
+        indexes = also_indexes(column.lookup.also, selected)
+        if indexes:
+            also = "(%s,)" % ", ".join("(%s, %d)" % (py_string(name), index) for name, index in indexes)
         else:
             also = "()"
         lookups.append(
-            "(%s, %s, %s, %s)"
-            % (py_string(column.name), py_string(statement.text), py_string(column.lookup.show), also)
+            "(%s, %s, %s, %d, %s)"
+            % (
+                py_string(column.name),
+                py_string(statement.text),
+                py_string(column.lookup.table),
+                show_at,
+                also,
+            )
         )
     lines = [
         "class _CbcsLineDelegate(QStyledItemDelegate):",
@@ -306,7 +320,6 @@ def _insert_sql(engine: str, rows: Rows, stored: Sequence[str]) -> str:
 def _load_body(view: str) -> List[str]:
     return [
         "_cursor = _conn.cursor()",
-        "self._cbcs_load_line_lookups(_conn)",
         "_cursor.execute(self._cbcs_line_select, (_key,))",
         "_fetched = _cursor.fetchall()",
         "_model = self.%s.model()" % view,
@@ -394,7 +407,7 @@ def _dirty_body() -> List[str]:
     ]
 
 
-def _clear_body(view: str, connection: str) -> List[str]:
+def _clear_body(view: str) -> List[str]:
     return [
         "self._cbcs_deleted_line_keys = []",
         "_model = self.%s.model()" % view,
@@ -403,12 +416,6 @@ def _clear_body(view: str, connection: str) -> List[str]:
         "    _model.removeRows(0, _model.rowCount())",
         "    _model.blockSignals(False)",
         "self._cbcs_line_snapshot = ()",
-        "import cbcs_connections",
-        "try:",
-        "    with cbcs_connections.work(%s) as _conn:" % py_string(connection),
-        "        self._cbcs_load_line_lookups(_conn)",
-        "except Exception:",
-        "    pass",
     ]
 
 
@@ -622,6 +629,8 @@ def _family_lines(family: str, nullable: bool, engine: str, outbound: bool) -> L
                     "return date.fromisoformat(str(_value)[:10])",
                 ]
             )
+        elif family in ("time", "datetime"):
+            return _from_family(family)
         elif family == "text":
             lines.extend(
                 [
@@ -672,6 +681,10 @@ def _family_lines(family: str, nullable: bool, engine: str, outbound: bool) -> L
             "return date.fromisoformat(_text[:10])" if engine == "postgres" else "return _text",
         ]
         return lines
+    if family == "time":
+        return _bind_clock(engine, "time")
+    if family == "datetime":
+        return _bind_clock(engine, "datetime")
     return ["return _value"]
 
 
@@ -790,6 +803,8 @@ def _editor_body() -> List[str]:
         "if _kind == %s:" % py_string("time"),
         "    _edit = QTimeEdit(_parent)",
         "    _edit.setDisplayFormat(%s)" % py_string("HH:mm:ss"),
+        "    if _nullable:",
+        "        _edit.setSpecialValueText(%s)" % py_string(" "),
         "    return _edit",
         "if _kind == %s:" % py_string("datetime"),
         "    _edit = QDateTimeEdit(_parent)",
@@ -834,8 +849,16 @@ def _editor_data_body() -> List[str]:
         "        _editor.setDate(QDate(_day.year, _day.month, _day.day))",
         "    return",
         "if _kind == %s:" % py_string("time"),
-        "    _clock = _value if isinstance(_value, time) else time.fromisoformat(str(_value or '00:00:00'))",
-        "    _editor.setTime(QTime(_clock.hour, _clock.minute, _clock.second))",
+        "    if _value is None and _nullable:",
+        "        _editor.setTime(_editor.minimumTime())",
+        "    else:",
+        "        if isinstance(_value, datetime):",
+        "            _clock = _value.time()",
+        "        elif isinstance(_value, time):",
+        "            _clock = _value",
+        "        else:",
+        "            _clock = time.fromisoformat(str(_value or %s))" % py_string("00:00:00"),
+        "        _editor.setTime(QTime(_clock.hour, _clock.minute, _clock.second))",
         "    return",
         "if _kind == %s:" % py_string("datetime"),
         "    if _value is None and _nullable:",
@@ -846,6 +869,9 @@ def _editor_data_body() -> List[str]:
         "    return",
         "if _kind == %s:" % py_string("lookup"),
         "    _found = _editor.findData(_value)",
+        "    if _found < 0 and _value is not None:",
+        "        _editor.addItem(%s %% _value, _value)" % py_string("(unknown #%s)"),
+        "        _found = _editor.findData(_value)",
         "    _editor.setCurrentIndex(0 if _found < 0 else _found)",
         "    return",
         "_editor.setText(%s if _value is None else str(_value))" % py_string(""),
@@ -882,7 +908,11 @@ def _commit_body() -> List[str]:
         "    else:",
         "        _value = None if _nullable else _index.data(self._cbcs_line_role)",
         "elif _kind == %s:" % py_string("time"),
-        "    _value = _editor.time().toPython()",
+        "    _clock = _editor.time()",
+        "    if _nullable and _clock == _editor.minimumTime():",
+        "        _value = None",
+        "    else:",
+        "        _value = _clock.toPython()",
         "elif _kind == %s:" % py_string("datetime"),
         "    _stamp = _editor.dateTime()",
         "    if _nullable and _stamp == _editor.minimumDateTime():",
@@ -919,28 +949,60 @@ def _label_body() -> List[str]:
         "for _id, _label in self._cbcs_line_lookup.get(_name, ()):",
         "    if _id == _key:",
         "        return str(_label)",
-        "return %s" % py_string(""),
+        "if _key is None:",
+        "    return %s" % py_string(""),
+        "return %s %% _key" % py_string("(unknown #%s)"),
     ]
 
 
 def _lookup_body(columns: Sequence[_Col], engine: str) -> List[str]:
-    del engine
+    del columns, engine
     return [
-        "self._cbcs_line_lookup = {}",
-        "self._cbcs_line_also_map = {}",
+        "_lookup = {}",
+        "_also_map = {}",
         "_cursor = _conn.cursor()",
-        "for _name, _sql, _show, _also in self._cbcs_line_lookups:",
+        "for _name, _sql, _table, _show_at, _also in self._cbcs_line_lookups:",
         "    _cursor.execute(_sql)",
         "    _pairs = []",
         "    for _item in _cursor.fetchall():",
         "        _key = _item[0]",
-        "        _label = _item[1] if len(_item) > 1 else _item[0]",
+        "        _label = _item[_show_at] if len(_item) > _show_at else _item[0]",
         "        _pairs.append((_key, _label))",
-        "        for _offset, _also_name in enumerate(_also):",
-        "            _raw = _item[_offset + 2] if len(_item) > _offset + 2 else None",
-        "            self._cbcs_line_also_map[(_name, _key, _also_name)] = self._cbcs_from(_also_name, _raw)",
-        "    self._cbcs_line_lookup[_name] = tuple(_pairs)",
+        "        for _also_name, _index in _also:",
+        "            _raw = _item[_index] if len(_item) > _index else None",
+        "            _also_map[(_name, _key, _also_name)] = self._cbcs_line_from(_table, _also_name, _raw)",
+        "    _lookup[_name] = tuple(_pairs)",
+        "self._cbcs_line_lookup = _lookup",
+        "self._cbcs_line_also_map = _also_map",
     ]
+
+
+def _reload_body(connection: str) -> List[str]:
+    return [
+        "import cbcs_connections",
+        "try:",
+        "    with cbcs_connections.work(%s) as _conn:" % py_string(connection),
+        "        self._cbcs_load_line_lookups(_conn)",
+        "except Exception as _error:",
+        "    _tell = getattr(self, %s, None)" % py_string("_cbcs_show_db_error"),
+        "    if _tell is not None:",
+        "        _tell(_error)",
+        "    else:",
+        "        QMessageBox.warning(self._form, %s, str(_error))" % py_string(""),
+    ]
+
+
+def _line_from_body(carried: Sequence[Tuple[str, str, str]]) -> List[str]:
+    lines = []
+    first = True
+    for table, column, family in carried:
+        word = "if" if first else "elif"
+        first = False
+        lines.append("%s _table == %s and _column == %s:" % (word, py_string(table), py_string(column)))
+        for line in _from_family(family):
+            lines.append("    " + line)
+    lines.append("return _value")
+    return lines
 
 
 def _record(doc: UiDocument) -> Optional[RecordSource]:
@@ -1092,6 +1154,30 @@ def _nullable_of(name: str, columns: Sequence[_Col], rows: Rows) -> bool:
     return True
 
 
+def _carried_families(doc: UiDocument, connection: str, columns: Sequence[_Col], engine: str) -> Tuple[Tuple[str, str, str], ...]:
+    """``(lookup table, column, family)`` for carried columns whose schema is known."""
+
+    found = []
+    seen = set()
+    chosen = engine if engine in ("sqlite", "postgres") else "sqlite"
+    for column in columns:
+        lookup = column.lookup
+        if lookup is None or not lookup.also:
+            continue
+        table = _line_table(doc, connection, lookup.table)
+        for name in lookup.also:
+            key = (lookup.table, name)
+            if key in seen:
+                continue
+            spec = _schema_column(table, name)
+            if spec is None:
+                continue
+            seen.add(key)
+            kind = describe(spec.type, engine=chosen, column_name=name, nullable=spec.nullable)
+            found.append((lookup.table, name, kind.direction or "text"))
+    return tuple(found)
+
+
 def _row_attrs(doc: UiDocument, connection: str, columns: Sequence[_Col], engine: str) -> dict:
     """Lookup-table types for ``column.attr``. A missing schema leaves the map empty."""
 
@@ -1170,6 +1256,8 @@ def _show_body() -> List[str]:
         "    if isinstance(_value, bool):",
         "        return %s if _value else %s" % (py_string("Yes"), py_string("No")),
         "    if hasattr(_value, 'isoformat'):",
+        "        if hasattr(_value, 'year') and hasattr(_value, 'hour'):",
+        "            return _value.isoformat(sep=%s)" % py_string(" "),
         "        return _value.isoformat()",
         "    return str(_value)",
         "if _scale == 0:",
@@ -1227,6 +1315,35 @@ def _widgets(doc: UiDocument):
         return tuple(doc.iter_widgets())
     except Exception:
         return ()
+
+
+def _open_line_lookups(doc: UiDocument, ctx: CodegenContext) -> Tuple[str, ...]:
+    """Load line lookups once, before the first record.
+
+    A parent lookup already calls ``cbcs_load_lookups`` on open, and that method
+    reloads the grid lists too. This hook covers a grid that is the only lookup.
+    """
+
+    from app.features.form_builder.engine.codegen.lookup_plan import lookup_plans
+
+    if lookup_plans(doc, ctx.attribute_names):
+        return ()
+    for _name, rows in _grids(doc, ctx):
+        for column in rows.columns:
+            if isinstance(column, DataColumn) and column.lookup is not None:
+                return (
+                    "_reload_lines = getattr(self, %s, None)" % py_string("_cbcs_reload_line_lookups"),
+                    "if _reload_lines is not None:",
+                    "    _reload_lines()",
+                )
+    return ()
+
+
+def _install_line_lookup_hook() -> None:
+    register_open_hook(_open_line_lookups)
+
+
+_install_line_lookup_hook()
 
 
 EXPANDER = RowsExpander()

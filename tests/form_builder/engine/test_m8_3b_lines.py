@@ -439,6 +439,247 @@ def test_a_parent_lookup_and_a_line_lookup_both_load(tmp_path: Path) -> None:
         assert seen["count"] > 1
 
 
+def test_a_null_time_stays_null_and_a_set_time_saves(tmp_path: Path) -> None:
+    from datetime import datetime
+    from datetime import time as clock
+
+    from app.qt.QtCore import QDate, QDateTime, QTime  # type: ignore[reportAttributeAccessIssue]
+
+    rows = Rows(
+        "xl",
+        "invoice_id",
+        "id",
+        (DataColumn("tm", "Tm"), DataColumn("ts", "Ts")),
+        "line_no",
+        "line_no",
+    )
+    ui_text = _xml(
+        RecordSource("shop", "invoices", "id"),
+        (
+            ("QLineEdit", "invoiceNoEdit", "invoice_no", ""),
+            ("QTableView", "linesView", "", _rows_xml(rows)),
+            ("QPushButton", "saveButton", "", ""),
+        ),
+    )
+    schema = Schema(
+        "shop",
+        "sqlite",
+        "",
+        "2026-04-02T00:00:00",
+        "sqlite3",
+        (
+            Table("invoices", (Column("id", "INTEGER", False), Column("invoice_no", "TEXT", False)), key="id"),
+            Table(
+                "xl",
+                (
+                    Column("id", "INTEGER", False),
+                    Column("invoice_id", "INTEGER", False),
+                    Column("line_no", "INTEGER", False),
+                    Column("tm", "TIME", True),
+                    Column("ts", "TIMESTAMP", True),
+                ),
+                key="id",
+            ),
+        ),
+    )
+
+    def prepare(root: Path) -> Path:
+        path = root / "data" / "shop.db"
+        path.parent.mkdir(parents=True)
+        connection = sqlite3.connect(str(path))
+        try:
+            connection.execute("CREATE TABLE invoices (id INTEGER PRIMARY KEY, invoice_no TEXT NOT NULL)")
+            connection.execute(
+                "CREATE TABLE xl (id INTEGER PRIMARY KEY, invoice_id INTEGER NOT NULL, line_no INTEGER NOT NULL, tm TIME, ts TIMESTAMP)"
+            )
+            connection.execute("INSERT INTO invoices VALUES (1, 'INV-1')")
+            connection.execute("INSERT INTO xl VALUES (1, 1, 1, NULL, NULL)")
+            connection.execute("INSERT INTO xl VALUES (2, 1, 2, '10:30:00', '2026-04-02 10:30:00')")
+            connection.commit()
+        finally:
+            connection.close()
+        return path
+
+    seen: List[str] = []
+    with record_window(tmp_path, ui_text, prepare, seen=seen, schema=schema) as (host, db):
+        ui = host.ui
+        _edit(ui, 0, "tm")
+        _edit(ui, 0, "ts")
+        assert _value(ui, 0, "tm") is None
+        assert _value(ui, 0, "ts") is None
+        assert ui.cbcs_is_dirty() is False
+        _edit(ui, 1, "tm")
+        _edit(ui, 1, "ts")
+        assert _value(ui, 1, "tm") == clock(10, 30)
+        assert _value(ui, 1, "ts") == datetime(2026, 4, 2, 10, 30)
+        assert ui.cbcs_is_dirty() is False
+        _edit(ui, 0, "tm", lambda editor: editor.setTime(QTime(9, 15, 0)))
+        _edit(ui, 0, "ts", lambda editor: editor.setDateTime(QDateTime(QDate(2026, 4, 2), QTime(11, 0, 0))))
+        assert ui.cbcs_save() is True
+        connection = sqlite3.connect(str(db))
+        try:
+            stored = connection.execute("SELECT tm, ts FROM xl WHERE id = 1").fetchone()
+        finally:
+            connection.close()
+        assert stored == ("09:15:00", "2026-04-02 11:00:00")
+        assert not seen
+
+
+def test_a_lookup_keeps_show_and_also_when_names_repeat(tmp_path: Path) -> None:
+    shown = list(_spec().columns)
+    shown[0] = replace(shown[0], lookup=Lookup("products", "id", "id", "id", ("price",)))
+    carried = list(_spec().columns)
+    carried[0] = replace(carried[0], lookup=Lookup("products", "id", "name", "name", ("name", "price")))
+    base = escape(write_rows(_spec()))
+
+    def open_with(folder: str, columns: List[Any]) -> Any:
+        text = _ui().replace(base, escape(write_rows(replace(_spec(), columns=tuple(columns)))))
+        return record_window(tmp_path / folder, text, _prepare, schema=_invoice_schema())
+
+    with open_with("shown", shown) as (host, _db):
+        ui = host.ui
+        assert ui.linesView.model().item(0, _index(ui, "product_id")).text() == "1"
+        assert ui._cbcs_line_also("product_id", 1, "price") == Decimal("1.50")
+    with open_with("carried", carried) as (host, _db):
+        ui = host.ui
+        assert ui.linesView.model().item(0, _index(ui, "product_id")).text() == "Widget"
+        assert ui._cbcs_line_also("product_id", 1, "name") == "Widget"
+        assert ui._cbcs_line_also("product_id", 1, "price") == Decimal("1.50")
+
+
+def test_a_failed_line_lookup_still_saves_the_lines(tmp_path: Path) -> None:
+    def prepare(root: Path) -> Path:
+        path = _prepare(root)
+        connection = sqlite3.connect(str(path))
+        try:
+            connection.execute("ALTER TABLE products RENAME TO products_old")
+            connection.commit()
+        finally:
+            connection.close()
+        return path
+
+    seen: List[str] = []
+    with record_window(tmp_path, _ui(), prepare, seen=seen, schema=_invoice_schema()) as (host, db):
+        ui = host.ui
+        assert any("no such table" in text for text in seen)
+        told = len(seen)
+        assert ui._cbcs_key == 1
+        assert ui.linesView.model().rowCount() == 3
+        assert ui.linesView.model().item(0, _index(ui, "product_id")).text() == "(unknown #1)"
+        assert _value(ui, 0, "product_id") == 1
+        ui.cbcs_first()
+        assert len(seen) == told
+        _edit(ui, 0, "description", lambda editor: editor.setText("kept"))
+        assert ui.cbcs_save() is True
+        ui.cbcs_new()
+        assert len(seen) == told
+        connection = sqlite3.connect(str(db))
+        try:
+            connection.execute("ALTER TABLE products_old RENAME TO products")
+            connection.commit()
+            row = connection.execute("SELECT product_id, description FROM invoice_lines WHERE id = 1").fetchone()
+        finally:
+            connection.close()
+        assert row == (1, "kept")
+        ui.cbcs_load_lookups()
+        assert len(seen) == told
+        ui._cbcs_add_row()
+
+        def pick(editor: Any) -> None:
+            assert editor.count() > 1
+
+        _edit(ui, ui.linesView.model().rowCount() - 1, "product_id", pick)
+
+
+def test_a_carried_price_keeps_its_own_type(tmp_path: Path) -> None:
+    rows = Rows(
+        "invoice_lines",
+        "invoice_id",
+        "id",
+        (
+            DataColumn("product_id", "Product", "whole", Lookup("products", "id", "name", "name", ("price",))),
+            DataColumn("qty", "Qty", "whole", None, "1"),
+            DataColumn("cost", "Cost", "money", None, "product_id.price"),
+        ),
+        "line_no",
+        "line_no",
+    )
+    ui_text = _xml(
+        RecordSource("shop", "invoices", "id"),
+        (
+            ("QLineEdit", "invoiceNoEdit", "invoice_no", ""),
+            ("QSpinBox", "priceSpin", "price", ""),
+            ("QTableView", "linesView", "", _rows_xml(rows)),
+            ("QPushButton", "saveButton", "", ""),
+        ),
+    )
+    schema = _invoice_schema()
+    tables = []
+    for table in schema.tables:
+        if table.name == "invoices":
+            tables.append(replace(table, columns=table.columns + (Column("price", "INTEGER", True),)))
+        elif table.name == "invoice_lines":
+            tables.append(
+                replace(
+                    table,
+                    columns=table.columns[:4] + (Column("qty", "INTEGER", False), Column("cost", "NUMERIC", True)),
+                )
+            )
+        else:
+            tables.append(table)
+    schema = replace(schema, tables=tuple(tables))
+
+    def prepare(root: Path) -> Path:
+        path = root / "data" / "shop.db"
+        path.parent.mkdir(parents=True)
+        connection = sqlite3.connect(str(path))
+        try:
+            connection.executescript(
+                """
+                CREATE TABLE customers (id INTEGER PRIMARY KEY, name TEXT);
+                CREATE TABLE products (id INTEGER PRIMARY KEY, name TEXT, price NUMERIC);
+                CREATE TABLE invoices (id INTEGER PRIMARY KEY, invoice_no TEXT, price INTEGER);
+                CREATE TABLE invoice_lines (
+                    id INTEGER PRIMARY KEY,
+                    invoice_id INTEGER,
+                    line_no INTEGER,
+                    product_id INTEGER,
+                    qty INTEGER,
+                    cost NUMERIC
+                );
+                """
+            )
+            connection.execute("INSERT INTO products VALUES (1, 'Widget', 0.15)")
+            connection.execute("INSERT INTO invoices VALUES (1, 'INV-1', 2)")
+            connection.execute("INSERT INTO invoice_lines VALUES (1, 1, 1, 1, 1, 0.15)")
+            connection.commit()
+        finally:
+            connection.close()
+        return path
+
+    with record_window(tmp_path, ui_text, prepare, schema=schema) as (host, db):
+        ui = host.ui
+        assert ui._cbcs_from("price", 0.15) == 0
+        assert ui._cbcs_line_from("products", "price", 0.15) == Decimal("0.15")
+        ui.cbcs_new()
+        ui.invoiceNoEdit.setText("INV-9")
+        ui._cbcs_add_row()
+        _edit(ui, 0, "product_id", lambda editor: editor.setCurrentIndex(editor.findData(1)))
+        assert _value(ui, 0, "cost") == Decimal("0.15")
+        assert ui.cbcs_save() is True
+        connection = sqlite3.connect(str(db))
+        try:
+            stored = connection.execute(
+                "SELECT product_id, cost FROM invoice_lines WHERE invoice_id <> 1"
+            ).fetchone()
+            parent = connection.execute("SELECT price FROM invoices WHERE invoice_no = 'INV-9'").fetchone()
+        finally:
+            connection.close()
+        assert stored[0] == 1
+        assert Decimal(str(stored[1])) == Decimal("0.15")
+        assert parent == (None,) or parent == (0,)
+
+
 def test_a_text_key_without_a_schema_opens(tmp_path: Path) -> None:
     with record_window(tmp_path, _text_ui(), _prepare_text, schema=None) as (host, _db):
         assert host.ui.linesView.model().rowCount() == 1

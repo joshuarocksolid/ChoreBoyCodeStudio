@@ -1665,34 +1665,6 @@ def _also_families(doc: UiDocument, ctx: CodegenContext, engine: str) -> List[Tu
                     break
         for name in plan.also:
             _remember_also(found, seen, columns, name, engine)
-    from app.features.form_builder.engine.data.source import DataColumn, read_rows
-
-    try:
-        nodes = tuple(doc.iter_widgets())
-    except Exception:
-        nodes = ()
-    for node in nodes:
-        prop = getattr(node, "prop", None)
-        entry = prop("cbcsRows") if callable(prop) else None
-        value = getattr(entry, "value", None)
-        text = getattr(value, "text", "")
-        if not isinstance(text, str) or not text.strip():
-            continue
-        rows, error = read_rows(text)
-        if error is not None or rows is None:
-            continue
-        line_columns = {}
-        wanted = {item.lookup.table for item in rows.columns if isinstance(item, DataColumn) and item.lookup is not None}
-        if schema is not None:
-            for table in schema.tables:
-                if table.name in wanted:
-                    line_columns[table.name] = {column.name: column for column in table.columns}
-        for item in rows.columns:
-            if not isinstance(item, DataColumn) or item.lookup is None:
-                continue
-            columns = line_columns.get(item.lookup.table, {})
-            for name in item.lookup.also:
-                _remember_also(found, seen, columns, name, engine)
     return found
 
 

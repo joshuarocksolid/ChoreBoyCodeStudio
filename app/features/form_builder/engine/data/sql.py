@@ -334,6 +334,7 @@ __all__ = [
     "quote_ident",
     "select_keys",
     "select_lines",
+    "select_lookup",
     "set_line_position",
     "update_changed",
     "update_head",
