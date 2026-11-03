@@ -133,7 +133,37 @@ def _table(connection: object, row: Sequence[object]) -> Table:
         "SELECT 1 FROM pg_catalog.pg_trigger WHERE tgrelid = %s AND NOT tgisinternal LIMIT 1",
         (oid,),
     )
-    return Table(name, tuple(columns), key or None, trigger is not None, _rows(connection, name, reltuples))
+    return Table(
+        name,
+        tuple(columns),
+        key or None,
+        trigger is not None,
+        _rows(connection, name, reltuples),
+        False,
+        _composite_unique(connection, oid),
+    )
+
+
+def _composite_unique(connection: object, oid: object) -> Tuple[Tuple[str, ...], ...]:
+    rows = _all(
+        connection,
+        "SELECT i.indexrelid, a.attname FROM pg_catalog.pg_index i "
+        "JOIN LATERAL generate_series(0, i.indnatts - 1) AS k(ord) ON true "
+        "JOIN pg_catalog.pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = i.indkey[k.ord] "
+        "WHERE i.indrelid = %s AND i.indisunique AND i.indnatts > 1 "
+        "ORDER BY i.indexrelid, k.ord",
+        (oid,),
+    )
+    grouped: Dict[object, List[str]] = {}
+    order: List[object] = []
+    for row in rows:
+        if len(row) < 2 or row[1] is None:
+            continue
+        if row[0] not in grouped:
+            order.append(row[0])
+            grouped[row[0]] = []
+        grouped[row[0]].append(str(row[1]))
+    return tuple(tuple(grouped[key]) for key in order if len(grouped[key]) > 1)
 
 
 def _references(connection: object, oid: object) -> Dict[str, Reference]:

@@ -47,6 +47,9 @@ class Table:
     triggers: bool = False
     rows: Optional[int] = None
     without_rowid: bool = False
+    #: Multi-column unique indexes, column order as the database lists them.
+    #: Omitted from the cache JSON when empty. Single-column uniqueness stays on ``Column.unique``.
+    unique_keys: Tuple[Tuple[str, ...], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -142,6 +145,16 @@ def write_schema(schema: Schema) -> str:
     )
 
 
+def _unique_keys(raw: object) -> Tuple[Tuple[str, ...], ...]:
+    if not isinstance(raw, tuple):
+        return ()
+    found = []
+    for item in raw:
+        if isinstance(item, tuple) and len(item) > 1 and all(isinstance(name, str) for name in item):
+            found.append(tuple(item))
+    return tuple(found)
+
+
 def _table(obj: JsonObject) -> Tuple[Optional[Table], Optional[str]]:
     name = obj.get("name")
     columns = obj.get("columns")
@@ -167,6 +180,7 @@ def _table(obj: JsonObject) -> Tuple[Optional[Table], Optional[str]]:
             obj.get("triggers") is True,
             None if rows is None else int(rows),
             obj.get("withoutRowid") is True,
+            _unique_keys(obj.get("uniqueKeys")),
         ),
         None,
     )
@@ -181,6 +195,8 @@ def _table_object(table: Table) -> JsonObject:
         pairs.append(("rows", table.rows))
     if table.without_rowid:
         pairs.append(("withoutRowid", True))
+    if table.unique_keys:
+        pairs.append(("uniqueKeys", tuple(table.unique_keys)))
     pairs.append(("columns", tuple(_column_object(column) for column in table.columns)))
     return JsonObject(tuple(pairs))
 

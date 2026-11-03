@@ -120,6 +120,10 @@ class FormulaEnv:
     returns: Mapping[str, str] = field(default_factory=dict)
     class_name: str = "Window"
     window_file: str = "window.py"
+    # Line-grid formulas read these names from ``_row``, not from widgets.
+    row_columns: Mapping[str, FType] = field(default_factory=dict)
+    # ``product_id.price`` types come from the lookup table. An unknown column stays untyped.
+    row_attrs: Mapping[str, Mapping[str, FType]] = field(default_factory=dict)
 
     @staticmethod
     def for_test(
@@ -132,6 +136,8 @@ class FormulaEnv:
         class_name: str = "Window",
         window_file: str = "window.py",
         reserved: Optional[frozenset] = None,
+        row_columns: Optional[Mapping[str, FType]] = None,
+        row_attrs: Optional[Mapping[str, Mapping[str, FType]]] = None,
     ) -> "FormulaEnv":
         """Build an env without a document. Tests and M7.1b use this."""
         return FormulaEnv(
@@ -143,6 +149,8 @@ class FormulaEnv:
             returns=dict(returns or ()),
             class_name=class_name,
             window_file=window_file,
+            row_columns=dict(row_columns or ()),
+            row_attrs={key: dict(value) for key, value in (row_attrs or {}).items()},
         )
 
     def page_names(self) -> frozenset:

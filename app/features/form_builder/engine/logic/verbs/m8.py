@@ -1,8 +1,8 @@
 """M8 record verbs (CONTRACTS.md section 19.12).
 
 ``new`` through ``openRecord`` are typed. ``refreshLookups`` reloads lookup
-combos. ``addRow`` and ``deleteRow`` stay read-only until their lane emits
-them. ``openRecord`` calls ``cbcs_open_record``; M8.3c defines that method.
+combos. ``addRow`` and ``deleteRow`` emit the lines methods. ``openRecord``
+calls ``cbcs_open_record``; M8.3c defines that method.
 """
 
 from __future__ import annotations
@@ -106,6 +106,14 @@ def _emit_refresh(step: Any, ctx: Any) -> Tuple[str, ...]:
     return ("self.cbcs_load_lookups((%s,))" % rendered,)
 
 
+def _emit_row(method: str):
+    def emit(step: Any, ctx: Any) -> Tuple[str, ...]:
+        del step, ctx
+        return ("self.%s()" % method,)
+
+    return emit
+
+
 def _emit_call(method: str):
     def emit(step: Any, ctx: Any) -> Tuple[str, ...]:
         del step, ctx
@@ -171,8 +179,8 @@ def register(registry: Any) -> None:
     for name, method in _CALLS.items():
         add(_spec(name, editable=True, emit=_emit_call(method), block=_allow))
     add(_spec("refreshLookups", (field("fields", "object_name"),), editable=True, emit=_emit_refresh, block=_allow))
-    add(_spec("addRow", (field("grid", "object_name", True),), editable=False, emit=_emit, block=_block))
-    add(_spec("deleteRow", editable=False, emit=_emit, block=_block))
+    add(_spec("addRow", (field("grid", "object_name", True),), editable=True, emit=_emit_row("_cbcs_add_row"), block=_allow))
+    add(_spec("deleteRow", (field("grid", "object_name", False),), editable=True, emit=_emit_row("_cbcs_delete_row"), block=_allow))
     add(
         _spec(
             "openRecord",

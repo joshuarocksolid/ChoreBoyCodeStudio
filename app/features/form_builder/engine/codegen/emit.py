@@ -1851,6 +1851,11 @@ class _Emitter:
             methods.append(self._method("_cbcs_setup", setup_lines))
         chunks.append("class %s(object):\n%s" % (self.ui_class, "\n\n".join(methods)))
         wanted = {helper_id for item in contributions for helper_id in item.helpers}
+        # The line plan is not a formula helper. Its id would fail the
+        # "def <id>" check the formula table keeps, so it is appended beside it.
+        line_plan = "_cbcs_line_plan" in wanted
+        if line_plan:
+            wanted = wanted - {"_cbcs_line_plan"}
         if wanted:
             # Table order, not contribution order, so the output never depends on expander order.
             table = helper_table()
@@ -1860,6 +1865,10 @@ class _Emitter:
             for helper_id, source in table:
                 if helper_id in wanted:
                     chunks.append(source.rstrip())
+        if line_plan:
+            from app.features.form_builder.engine.data.lines import line_plan_source
+
+            chunks.append(line_plan_source().rstrip())
         return "\n\n".join(chunks) + "\n"
 
     def _connect_slots(self) -> bool:

@@ -188,6 +188,46 @@ def delete_row(dialect: str, table: str, key: str) -> Statement:
     return Statement(text, ("key",), "Delete %s" % singular(table))
 
 
+def select_lines(
+    dialect: str,
+    table: str,
+    columns: Sequence[str],
+    link: str,
+    order_by: str,
+    key: str,
+) -> Statement:
+    """Child rows for one parent. Ordered by ``order_by`` when it is set, then the key."""
+
+    _dialect(dialect)
+    chosen = tuple(columns) if columns else (key,)
+    body = ", ".join(quote_ident(column) for column in chosen)
+    order = ((order_by, "asc"),) if order_by else ()
+    text = "SELECT %s FROM %s WHERE %s = %s%s" % (
+        body,
+        quote_ident(table),
+        quote_ident(link),
+        placeholder(dialect),
+        _order_by(key, order),
+    )
+    return Statement(text, ("link",), "Load %s lines" % singular(table))
+
+
+def delete_lines_for_link(dialect: str, table: str, link: str) -> Statement:
+    """Delete every child row for one parent. Used when the parent itself is deleted."""
+
+    _dialect(dialect)
+    text = "DELETE FROM %s WHERE %s = %s" % (quote_ident(table), quote_ident(link), placeholder(dialect))
+    return Statement(text, ("link",), "Delete %s lines" % singular(table))
+
+
+def set_line_position(dialect: str, table: str, position: str, key: str) -> Statement:
+    """Write one line's position. The caller runs the negative pass first when it must."""
+
+    _dialect(dialect)
+    text = update_head(dialect, table) + " " + assignment_piece(dialect, position) + key_clause(dialect, key)
+    return Statement(text, ("position", "key"), "Number %s" % singular(table))
+
+
 def find_keys(
     dialect: str,
     table: str,
@@ -293,7 +333,9 @@ __all__ = [
     "placeholder",
     "quote_ident",
     "select_keys",
+    "select_lines",
     "select_lookup",
+    "set_line_position",
     "update_changed",
     "update_head",
 ]

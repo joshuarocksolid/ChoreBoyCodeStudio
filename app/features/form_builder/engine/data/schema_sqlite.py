@@ -48,7 +48,7 @@ def _table(connection: sqlite3.Connection, name: str, triggers: bool) -> Table:
     info = _pragma(connection, "table_info", name)
     pk = [str(row["name"]) for row in info if row.get("pk")]
     key = pk[0] if len(pk) == 1 else None
-    unique = _unique_columns(connection, name)
+    unique, unique_keys = _unique_groups(connection, name)
     if key is not None:
         unique.add(key)
     references = _references(connection, name)
@@ -75,11 +75,13 @@ def _table(connection: sqlite3.Connection, name: str, triggers: bool) -> Table:
         triggers,
         _rows(connection, name),
         _without_rowid(connection, name),
+        unique_keys,
     )
 
 
-def _unique_columns(connection: sqlite3.Connection, table: str) -> set:
+def _unique_groups(connection: sqlite3.Connection, table: str):
     found = set()
+    groups = []
     for index in _pragma(connection, "index_list", table):
         if not index.get("unique"):
             continue
@@ -87,7 +89,9 @@ def _unique_columns(connection: sqlite3.Connection, table: str) -> set:
         names = [str(row["name"]) for row in info if row.get("name")]
         if len(names) == 1:
             found.add(names[0])
-    return found
+        elif len(names) > 1:
+            groups.append(tuple(names))
+    return found, tuple(groups)
 
 
 def _references(connection: sqlite3.Connection, table: str) -> Dict[str, Reference]:

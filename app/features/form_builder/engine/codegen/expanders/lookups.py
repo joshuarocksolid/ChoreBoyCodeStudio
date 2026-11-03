@@ -11,7 +11,7 @@ from typing import List, Sequence, Tuple
 
 from app.features.form_builder.engine.codegen.literals import py_string
 from app.features.form_builder.engine.codegen.logic_hooks import CodegenContext, Contribution, Method
-from app.features.form_builder.engine.codegen.lookup_plan import LookupPlan, lookup_plans
+from app.features.form_builder.engine.codegen.lookup_plan import LookupPlan, also_indexes, lookup_plans, select_columns
 from app.features.form_builder.engine.data.source import singular
 from app.features.form_builder.engine.data.sql import IdentifierError, select_lookup
 from app.features.form_builder.engine.ui4.document import UiDocument
@@ -28,9 +28,10 @@ class LookupsExpander:
     def contribute(self, doc: UiDocument, ctx: CodegenContext) -> Contribution:
         plans = lookup_plans(doc, ctx.attribute_names)
         if not plans:
-            if _refresh_requested(doc):
+            if _refresh_requested(doc) or _lines_present(doc):
+                body = "\n".join(_line_reload_lines()) if _lines_present(doc) else "return None"
                 return Contribution(
-                    methods=(Method("cbcs_load_lookups", "return None", "cbcsLookup", params="fields=None"),)
+                    methods=(Method("cbcs_load_lookups", body, "cbcsLookup", params="fields=None"),)
                 )
             return Contribution()
         from app.features.form_builder.engine.codegen.expanders.record import _engine
@@ -54,6 +55,17 @@ class LookupsExpander:
             columns = _select_columns(plan)
             ready.append((plan, statement.text, columns.index(plan.show), _also_indexes(plan, columns)))
         if not ready:
+            if _lines_present(doc):
+                return Contribution(
+                    methods=(
+                        Method(
+                            "cbcs_load_lookups",
+                            "\n".join(_line_reload_lines()),
+                            "cbcsLookup",
+                            params="fields=None",
+                        ),
+                    )
+                )
             return Contribution()
         imports: List[Tuple[str, str]] = []
         if any(plan.editable for plan, _sql, _show_at, _index in ready):
@@ -77,6 +89,12 @@ class LookupsExpander:
             [
                 "finally:",
                 "    self._cbcs_lookup_filling = False",
+            ]
+        )
+        if _lines_present(doc):
+            body.extend(_line_reload_lines())
+        body.extend(
+            [
                 "if getattr(self, %s, False) and hasattr(self, %s) and not getattr(self, %s, False):"
                 % (py_string("_cbcs_ready"), py_string("cbcs_refresh"), py_string("_cbcs_refreshing")),
                 "    self.cbcs_refresh()",
@@ -146,18 +164,25 @@ def _refresh_requested(doc: UiDocument) -> bool:
 
 
 def _select_columns(plan: LookupPlan) -> List[str]:
-    columns: List[str] = []
-    for name in (plan.key, plan.show):
-        if name not in columns:
-            columns.append(name)
-    for name in plan.also:
-        if name not in columns:
-            columns.append(name)
-    return columns
+    return select_columns(plan.key, plan.show, plan.also)
 
 
 def _also_indexes(plan: LookupPlan, columns: Sequence[str]) -> Tuple[Tuple[str, int], ...]:
-    return tuple((name, list(columns).index(name)) for name in plan.also if name in columns)
+    return also_indexes(plan.also, columns)
+
+
+def _lines_present(doc: UiDocument) -> bool:
+    from app.features.form_builder.engine.codegen.expanders.record import _has_lines
+
+    return _has_lines(doc)
+
+
+def _line_reload_lines() -> List[str]:
+    return [
+        "_reload_lines = getattr(self, %s, None)" % py_string("_cbcs_reload_line_lookups"),
+        "if _reload_lines is not None:",
+        "    _reload_lines()",
+    ]
 
 
 def _one_lookup(plan: LookupPlan, sql: str, show_at: int, indexes: Sequence[Tuple[str, int]]) -> List[str]:
