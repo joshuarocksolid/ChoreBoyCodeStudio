@@ -7,7 +7,7 @@ import sqlite3
 import time
 from decimal import Decimal
 from pathlib import Path
-from typing import Any, List, Optional, Tuple
+from typing import Any, List, Optional, Tuple, cast
 
 import pytest
 
@@ -42,12 +42,17 @@ pytestmark = pytest.mark.unit
 
 def test_sqlstate_sentences() -> None:
     class Fault(Exception):
-        def __init__(self, state: str) -> None:
-            super().__init__("driver")
+        def __init__(self, state: str, text: str = "driver") -> None:
+            super().__init__(text)
             self.sqlstate = state
 
     assert explain_database_error(Fault("55P03"), "invoice") == LOCK_TIMEOUT.format(record="invoice")
-    assert explain_database_error(Fault("57014"), "invoice") == STATEMENT_TIMEOUT
+    assert explain_database_error(
+        Fault("57014", "canceling statement due to statement timeout"),
+        "invoice",
+    ) == STATEMENT_TIMEOUT
+    assert explain_database_error(Fault("57014", "canceling statement due to lock timeout"), "invoice") is None
+    assert explain_database_error(Fault("57014"), "invoice") is None
     assert explain_database_error(Fault("23505"), "invoice") is None
 
 
@@ -322,8 +327,242 @@ def test_what_ran_expands_statement_values() -> None:
         {},
     )
     assert lines[0].kind == "sql"
-    assert lines[0].details == ("saved-note",)
+    assert lines[0].details == ("1. 'saved-note'",)
     assert lines[1].sentence == SAVED_ROLLED_BACK
+
+
+def test_broken_connections_json_writes_nothing(tmp_path: Path) -> None:
+    from app.features.form_builder.engine.data.source import RecordSource, write_data
+    from app.features.form_builder.engine.ui4.values import StringValue
+    from app.features.form_builder.qtside.preview.try_data_plan import plan_for
+
+    root = tmp_path / "broken"
+    db = shop_with_three(root)
+    before = _hash(db)
+    note = sqlite3.connect(str(db)).execute("SELECT notes FROM invoices WHERE id = 2").fetchone()
+    value = ConnectionSet((Connection("shop", "Shop database", "sqlite", file="data/shop.db"),))
+    save_connections(str(root), value)
+    (root / "cbcs_connections.py").write_text(render_connections_module(value, project_slug="broken"), encoding="utf-8")
+    (root / "connections.json").write_text("{ broken", encoding="utf-8")
+
+    class Entry:
+        def __init__(self, text: str) -> None:
+            self.value = StringValue(text)
+
+    class Root:
+        def prop(self, name: str) -> object:
+            return Entry(write_data(RecordSource("shop", "invoices", "id"))) if name == "cbcsData" else None
+
+    class Doc:
+        def __init__(self) -> None:
+            self.root = Root()
+
+    plan = plan_for(Doc(), str(root))
+    assert plan.specs and plan.specs[0].refused
+    session = begin_try(_message("view-broken", db, "scratch", spec=plan.specs[0], project_root=str(root)))
+    assert session is not None
+    try:
+        import importlib.util
+
+        spec = importlib.util.spec_from_file_location("cbcs_connections_broken", root / "cbcs_connections.py")
+        assert spec is not None and spec.loader is not None
+        real = importlib.util.module_from_spec(spec)
+        cast(Any, spec.loader).exec_module(real)
+        with pytest.raises(Exception) as raised:
+            with real.work("shop") as connection:
+                connection.cursor().execute("UPDATE invoices SET notes = 'real-write' WHERE id = 2")
+    finally:
+        end_all()
+    assert "real-write" not in str(raised.value)
+    assert _hash(db) == before
+    assert sqlite3.connect(str(db)).execute("SELECT notes FROM invoices WHERE id = 2").fetchone() == note
+
+
+def test_missing_sqlite_file_is_not_created(tmp_path: Path) -> None:
+    root = tmp_path / "missing"
+    (root / "data").mkdir(parents=True)
+    target = root / "data" / "shop.db"
+    spec = TryConnectionSpec(
+        name="shop",
+        mode="scratch",
+        title="Shop database",
+        file="data/shop.db",
+        engine="sqlite",
+        sqlite_path=str(target),
+    )
+    session = begin_try(_message("view-missing", target, "scratch", spec=spec))
+    assert session is not None
+    try:
+        module = __import__("cbcs_connections")
+        with pytest.raises(Exception):
+            module.open_connection("shop")
+    finally:
+        end_all()
+    assert not target.exists()
+
+
+def test_would_run_statements_do_not_touch_the_file(tmp_path: Path) -> None:
+    db = _bare(tmp_path)
+    before = _hash(db)
+    session = begin_try(_message("view-bypass", db, "would_run"))
+    assert session is not None
+    try:
+        module = __import__("cbcs_connections")
+        with module.work("shop") as connection:
+            connection.execute("UPDATE notes SET body = 'via-conn-execute' WHERE id = '1'")
+            connection.cursor().executemany(
+                "INSERT INTO notes (id, body) VALUES (?, ?)",
+                [("9", "via-executemany")],
+            )
+            connection.cursor().execute("/* audit */ INSERT INTO notes (id, body) VALUES ('8', 'via-comment')")
+            connection.cursor().execute("WITH x AS (UPDATE notes SET body = 'cte' WHERE id = '1' RETURNING id) SELECT * FROM x")
+    finally:
+        end_all()
+    assert _hash(db) == before
+    assert sqlite3.connect(str(db)).execute("SELECT COUNT(*) FROM notes").fetchone() == (0,)
+
+
+def test_commit_statement_in_rollback_writes_nothing(tmp_path: Path) -> None:
+    db = _bare(tmp_path)
+    before = _hash(db)
+    begin_try(_message("view-commit", db, "rollback"))
+    try:
+        module = __import__("cbcs_connections")
+        with module.work("shop") as connection:
+            cursor = connection.cursor()
+            cursor.execute("INSERT INTO notes (id, body) VALUES ('1', 'commit-stmt')")
+            cursor.execute("COMMIT")
+            connection.commit()
+    finally:
+        end_all()
+    assert _hash(db) == before
+    assert sqlite3.connect(str(db)).execute("SELECT COUNT(*) FROM notes").fetchone() == (0,)
+
+
+def test_wal_backup_leaves_the_user_file_unchanged(tmp_path: Path) -> None:
+    import os
+    import shutil
+
+    folder = tmp_path / "wal"
+    folder.mkdir()
+    src = folder / "shop.db"
+    connection = sqlite3.connect(str(src))
+    connection.execute("PRAGMA journal_mode=WAL")
+    connection.execute("PRAGMA wal_autocheckpoint=0")
+    connection.execute("CREATE TABLE t (x)")
+    connection.execute("INSERT INTO t VALUES (1)")
+    connection.commit()
+    snap = str(src) + ".snap"
+    for ext in ("", "-wal", "-shm"):
+        path = str(src) + ext
+        if os.path.exists(path):
+            shutil.copy(path, snap + ext)
+    connection.close()
+
+    def digest(path: str) -> Optional[str]:
+        if not os.path.exists(path):
+            return None
+        return hashlib.sha256(open(path, "rb").read()).hexdigest()
+
+    before = (digest(snap), digest(snap + "-wal"))
+    backup_sqlite(snap, str(folder / "scratch.db"))
+    after = (digest(snap), digest(snap + "-wal"))
+    assert before == after
+    assert before[1] is not None
+
+
+def test_second_rollback_save_is_not_a_conflict(tmp_path: Path, qapp: Any) -> None:
+    root, db = _project(tmp_path)
+    before = _hash(db)
+    seen: List[str] = []
+    host, session = _open(root, db, "rollback", "view-twice", seen)
+    try:
+        ui = host.ui
+        ui.notesEdit.setText("first")
+        assert ui.cbcs_save() is True
+        ui.notesEdit.setText("second")
+        assert ui.cbcs_save() is True
+        sentences = [item.sentence for item in session.notes]
+    finally:
+        host.close()
+        end_all()
+    assert sentences.count(SAVED_ROLLED_BACK) >= 2
+    assert not any("conflict" in text.lower() for text in seen)
+    assert _hash(db) == before
+
+
+def test_would_run_next_show_reads_the_real_row(tmp_path: Path, qapp: Any) -> None:
+    root, db = _project(tmp_path)
+    before = _hash(db)
+    seen: List[str] = []
+    host, _session = _open(root, db, "would_run", "view-reshow", seen)
+    try:
+        ui = host.ui
+        key = ui._cbcs_key
+        real = sqlite3.connect(str(db)).execute("SELECT notes FROM invoices WHERE id = ?", (key,)).fetchone()
+        ui.notesEdit.setText("shadowed")
+        assert ui.cbcs_save() is True
+        ui._cbcs_show(1)
+        ui._cbcs_show(0)
+        shown = ui.notesEdit.text()
+    finally:
+        host.close()
+        end_all()
+    assert shown == ("" if real is None or real[0] is None else real[0])
+    assert shown != "shadowed"
+    assert _hash(db) == before
+
+
+def test_subclass_save_is_wrapped(tmp_path: Path, qapp: Any) -> None:
+    root, db = _project(tmp_path)
+    before = _hash(db)
+    seen: List[str] = []
+    host, _session = _open(root, db, "rollback", "view-sub", seen)
+    try:
+        parent = type(host.ui)
+
+        class Child(parent):
+            def cbcs_save(self) -> bool:
+                self.child_ran = True
+                return bool(super().cbcs_save())
+
+        bind_form_class(Child, "view-sub")
+        from PySide6.QtWidgets import QDialog
+
+        class Host(QDialog):
+            def __init__(self) -> None:
+                super().__init__()
+                self.ui = Child()
+                self.ui.setupUi(self)
+
+        child_host = Host()
+        child_host.ui.notesEdit.setText("from-child")
+        assert child_host.ui.cbcs_save() is True
+        assert child_host.ui.child_ran is True
+        child_host.hide()
+    finally:
+        host.close()
+        end_all()
+    assert _hash(db) == before
+
+
+def test_try_stop_is_sent_when_try_ends() -> None:
+    from app.features.form_builder.engine.ipc.protocol import TryStop
+    from app.features.form_builder.integration.preview_notice import PreviewNotices
+
+    class Pool:
+        def __init__(self) -> None:
+            self.sent: List[object] = []
+
+        def request(self, message: object, _callback: object) -> str:
+            self.sent.append(message)
+            return "1"
+
+    pool = Pool()
+    notices = PreviewNotices(object(), object(), pool)
+    notices._trying = True
+    notices.close()
+    assert any(isinstance(item, TryStop) for item in pool.sent)
 
 
 def _project(tmp_path: Path) -> Tuple[Path, Path]:

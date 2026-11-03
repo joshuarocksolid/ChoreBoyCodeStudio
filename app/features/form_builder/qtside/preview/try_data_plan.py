@@ -23,13 +23,13 @@ def plan_for(document: object, project_root: str) -> TryDataPlan:
     source = _source(document)
     if source is None or not getattr(source, "connection", ""):
         return TryDataPlan()
+    name = str(source.connection)
     loaded, _problem = load_connections(project_root)
     if loaded is None:
-        return TryDataPlan()
-    name = str(source.connection)
+        return _refused_plan(name, "connections.json can't be read.")
     connection = next((item for item in loaded.connections if item.name == name), None)
     if connection is None:
-        return TryDataPlan()
+        return _refused_plan(name, "there is no connection with that name.")
     hooks = getattr(source, "hooks", None)
     own = bool(getattr(hooks, "connection", "") or "")
     if own or connection.try_show_sql_only:
@@ -64,10 +64,17 @@ def plan_for(document: object, project_root: str) -> TryDataPlan:
         nextval=tuple(nextval),
         triggers=tuple(triggers),
         own_hook=own,
+        password_policy=connection.password or "none",
     )
     payload = {"mode": mode, "scratch": ""}
     pg_mode = "would_run" if mode == "would_run" else "rollback"
     return TryDataPlan(connections=((name, payload),), pg_mode=pg_mode, specs=(spec,))
+
+
+def _refused_plan(name: str, reason: str) -> TryDataPlan:
+    sentence = "Try can't open %s: %s" % (name, reason)
+    spec = TryConnectionSpec(name=name, mode="scratch", title=name, refused=sentence)
+    return TryDataPlan(connections=((name, {"mode": "scratch"}),), specs=(spec,))
 
 
 def _source(document: object) -> Optional[object]:

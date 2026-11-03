@@ -136,6 +136,114 @@ def test_would_run_and_a_hook_commit_write_nothing(tmp_path: Path, driver: str, 
     assert after == before
 
 
+@pytest.mark.parametrize("driver", ["psycopg", "pg8000"])
+def test_commit_autocommit_and_would_run_leave_rows(tmp_path: Path, driver: str) -> None:
+    del tmp_path
+    raw, fields = _connect(driver)
+    _reset(raw)
+    before = _fingerprint(raw)
+    from app.features.form_builder.qtside.preview.child.try_connections import set_secret_asker
+
+    spec = _spec(fields, "rollback")
+    asked: List[str] = []
+
+    def ask(name: str) -> str:
+        asked.append(name)
+        return str(fields["password"])
+
+    set_secret_asker(ask)
+    begin_try(_start("m84-ctrl-%s" % driver, _with_policy(spec, "ask")), drivers=(driver,))
+    try:
+        module = __import__("cbcs_connections")
+        with module.work("shop") as connection:
+            cursor = connection.cursor()
+            cursor.execute('UPDATE "m84_invoices" SET "notes" = %s WHERE "id" = %s', ("commit-stmt", 1))
+            cursor.execute("COMMIT")
+            connection.commit()
+        try:
+            module.open_connection("shop").set_autocommit(True)
+        except Exception:
+            pass
+        try:
+            module.open_connection("shop").autocommit = True
+        except Exception:
+            pass
+        try:
+            with module.open_connection("shop").transaction():
+                module.open_connection("shop").cursor().execute(
+                    'INSERT INTO "m84_invoices" ("invoice_no") VALUES (%s)',
+                    ("txn",),
+                )
+        except Exception:
+            pass
+    finally:
+        end_all()
+        set_secret_asker(None)
+    would = _spec(fields, "would_run")
+    begin_try(_start("m84-cte-%s" % driver, would), drivers=(driver,))
+    try:
+        module = __import__("cbcs_connections")
+        module.set_password("shop", fields["password"])
+        with module.work("shop") as connection:
+            cursor = connection.cursor()
+            cursor.execute(
+                'WITH x AS (UPDATE "m84_invoices" SET "notes" = %s WHERE "id" = %s RETURNING "id") SELECT * FROM x',
+                ("cte", 1),
+            )
+            cursor.executemany(
+                'INSERT INTO "m84_invoices" ("invoice_no", "customer_id", "invoice_date") VALUES (%s, %s, %s)',
+                [("many", 1, "2026-05-02")],
+            )
+            cursor.execute("/* c */ INSERT INTO \"m84_invoices\" (\"invoice_no\") VALUES ('block')")
+            cursor.execute("-- note\nINSERT INTO \"m84_invoices\" (\"invoice_no\") VALUES ('dash')")
+    finally:
+        end_all()
+        after = _fingerprint(raw)
+        _reset(raw)
+        raw.close()
+    assert asked == ["shop"]
+    assert after == before
+
+
+@pytest.mark.parametrize("driver", ["psycopg", "pg8000"])
+def test_an_update_outside_work_stops_on_the_session_lock_timeout(driver: str) -> None:
+    raw, fields = _connect(driver)
+    _reset(raw)
+    before = _fingerprint(raw)
+    other = _connect(driver)[0]
+    begin_try(_start("m84-out-%s" % driver, _spec(fields, "rollback")), drivers=(driver,))
+    try:
+        module = __import__("cbcs_connections")
+        module.set_password("shop", fields["password"])
+        held = other.cursor()
+        held.execute("BEGIN")
+        held.execute('SELECT id FROM "m84_invoices" WHERE id = %s FOR UPDATE', (1,))
+        started = time.monotonic()
+        with pytest.raises(Exception):
+            opened = module.open_connection("shop")
+            opened.cursor().execute("SET statement_timeout = '8s'")
+            opened.cursor().execute('UPDATE "m84_invoices" SET "notes" = %s WHERE "id" = %s', ("x", 1))
+        elapsed = time.monotonic() - started
+    finally:
+        try:
+            other.rollback()
+        except Exception:
+            pass
+        other.close()
+        end_all()
+        after = _fingerprint(raw)
+        _reset(raw)
+        raw.close()
+    assert after == before
+    assert elapsed < 4.5
+
+
+def _with_policy(spec: TryConnectionSpec, policy: str) -> TryConnectionSpec:
+    from dataclasses import replace
+
+    return replace(spec, password_policy=policy)
+
+
 def _connect(driver: str) -> Tuple[Any, dict]:
     raw_dsn = os.environ.get("CBCS_PG93_DSN", "").strip()
     if not raw_dsn:

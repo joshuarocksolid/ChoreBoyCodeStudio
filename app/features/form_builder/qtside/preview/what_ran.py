@@ -24,6 +24,7 @@ from app.qt.QtCore import Qt, Signal
 from app.qt.QtGui import QColor, QPalette
 from app.qt.QtWidgets import (
     QComboBox,
+    QFrame,
     QHBoxLayout,
     QHeaderView,
     QLabel,
@@ -84,7 +85,7 @@ class WhatRan(QWidget):
         self._list.setColumnCount(3)
         self._list.setHeaderLabels(["Time", "What ran", "Source"])
         self._list.setRootIsDecorated(True)
-        self._list.setTextElideMode(_elide_right())
+        self._list.setTextElideMode(_elide_middle())
         header = self._list.header()
         header.setStretchLastSection(False)
         header.setSectionResizeMode(0, _header_mode("ResizeToContents"))
@@ -254,6 +255,7 @@ class WindowValues(QWidget):
         self._layout.addWidget(self._title)
         self._rows: Dict[str, QWidget] = {}
         self._annotations: Dict[str, str] = {}
+        self.setVisible(False)
 
     def set_methods(
         self,
@@ -340,21 +342,22 @@ class DataStrip(QWidget):
             self.setAccessibleName(text)
 
     def apply_chrome(self, chrome: FormChrome) -> None:
-        _paint(self, chrome.panel, chrome.text)
+        _paint(self, chrome.window, chrome.text)
         width = int(chrome.focus_width or 1)
+        self._label.setFrameShape(QFrame.NoFrame)
         self.setStyleSheet(
             """
-            background: %s; color: %s;
-            QLabel { color: %s; background: transparent; }
+            background: %s; color: %s; border: none;
+            QLabel { color: %s; background: transparent; border: none; }
             QPushButton { color: %s; background: %s; border: %dpx solid %s; padding: 2px 8px; }
             QPushButton:focus { border: %dpx solid %s; }
             """
             % (
-                chrome.panel,
+                chrome.window,
                 chrome.text,
                 chrome.text,
                 chrome.text,
-                chrome.input or chrome.panel,
+                chrome.window,
                 width,
                 chrome.border,
                 width,
@@ -544,10 +547,12 @@ def _paint(widget: QWidget, background: str, foreground: str) -> None:
     widget.setPalette(palette)
 
 
-def _elide_right():  # type: ignore[no-untyped-def]
-    value = getattr(Qt, "ElideRight", None)
+def _elide_middle():  # type: ignore[no-untyped-def]
+    """Keep the value count at the end of a long statement visible."""
+
+    value = getattr(Qt, "ElideMiddle", None)
     if value is None:
-        value = getattr(Qt.TextElideMode, "ElideRight")
+        value = getattr(Qt.TextElideMode, "ElideMiddle")
     return value
 
 

@@ -31,9 +31,12 @@ from app.features.form_builder.engine.ipc.protocol import (
     Appearance,
     ErrorReport,
     LoadForm,
+    NeedSecret,
     PromotedClass,
+    ProvideSecret,
     Response,
     TryStart,
+    TryStop,
 )
 from app.features.form_builder.engine.project.custom_widgets import module_for_header, module_parts
 from app.features.form_builder.engine.ui4.nodes import CustomWidgetNode, WidgetNode
@@ -330,6 +333,7 @@ class PreviewNotices:
         self.run_behavior = True
         self.keep_values = False
         self.window_values: Tuple[Tuple[str, str], ...] = ()
+        self._trying = False
 
     @property
     def view_id(self) -> str:
@@ -360,6 +364,9 @@ class PreviewNotices:
             window_values=self.window_values,
             appearance=appearance,
         )
+        if self._trying and not isinstance(message, TryStart):
+            self._send_try_stop(pool)
+        self._trying = isinstance(message, TryStart)
         return pool.request(message, self._on_response)
 
     def pool(self) -> Any:
@@ -367,19 +374,50 @@ class PreviewNotices:
         return self._pool_or_shared()
 
     def close(self) -> None:
+        if self._trying:
+            pool = self._pool
+            if pool is not None:
+                self._send_try_stop(pool)
+            self._trying = False
         if self._unsubscribe is not None:
             self._unsubscribe()
             self._unsubscribe = None
 
     # ---- child messages
 
+    def _send_try_stop(self, pool: Any) -> None:
+        try:
+            pool.request(
+                TryStop(request_id=uuid.uuid4().hex, view_id=self._view_id),
+                lambda _response: None,
+            )
+        except Exception:
+            return None
+
     def _on_message(self, message: Any) -> None:
+        if isinstance(message, NeedSecret):
+            self._answer_secret(message)
+            return
         if not isinstance(message, ErrorReport):
             return
         root = project_root_of(self._session)
         found = parse_failure(message, root, self._module_file)
         if found is not None and all(item.class_name != found.class_name for item in self._failures):
             self._failures.append(found)
+
+    def _answer_secret(self, message: NeedSecret) -> None:
+        secret = secret_for_try(self._session, message.connection)
+        try:
+            self.pool().request(
+                ProvideSecret(
+                    request_id=uuid.uuid4().hex,
+                    connection=message.connection,
+                    secret=secret or None,
+                ),
+                lambda _response: None,
+            )
+        except Exception:
+            return None
 
     def _on_response(self, response: Any) -> None:
         if not isinstance(response, Response):
@@ -444,6 +482,41 @@ class PreviewNotices:
         from app.features.form_builder.qtside.preview.pool import PreviewPool
 
         return PreviewPool.shared()
+
+
+def secret_for_try(session: object, name: str) -> str:
+    """The password Try should use. Machine passwords come from the store. Ask opens a dialog once."""
+
+    from app.features.form_builder.engine.data.connections import load_connections
+    from app.features.form_builder.integration.custom_registry import project_root_of as root_of
+
+    root = root_of(session)
+    if not root:
+        return ""
+    loaded, _problem = load_connections(root)
+    if loaded is None:
+        return ""
+    connection = next((item for item in loaded.connections if item.name == name), None)
+    if connection is None or not connection.password or connection.password == "none":
+        return ""
+    if connection.password == "machine":
+        from app.features.form_builder.qtside.schema_prompt import stored_machine_password
+
+        found = stored_machine_password(root, connection)
+        if found:
+            return found
+    from app.qt.QtWidgets import QInputDialog, QLineEdit, QWidget
+
+    text, accepted = QInputDialog.getText(
+        QWidget(),
+        "Database password",
+        "Password for %s" % (connection.title or name),
+        QLineEdit.EchoMode.Password,
+        "",
+    )
+    if not accepted or not isinstance(text, str):
+        return ""
+    return text
 
 
 def attach(surface: Any, session: Any, pool: Any = None) -> PreviewNotices:

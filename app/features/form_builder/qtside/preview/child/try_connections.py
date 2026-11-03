@@ -19,6 +19,7 @@ import tempfile
 import types
 from dataclasses import dataclass, field
 from typing import Callable, Dict, Iterator, List, Optional, Sequence, Tuple
+from urllib.parse import quote
 
 from app.features.form_builder.engine.ipc.protocol import TryConnectionSpec, TryDataPlan, TryStart
 
@@ -36,7 +37,17 @@ _WRITE = {"INSERT", "UPDATE", "DELETE", "REPLACE"}
 _QUOTED = re.compile(r'"([^"]+)"')
 _INSERT_COLS = re.compile(r"\(([^)]*)\)\s*VALUES", re.IGNORECASE)
 _NEXTVAL = re.compile(r"nextval\('([^']+)'", re.IGNORECASE)
+_CTE_WRITE = re.compile(r"\b(INSERT|UPDATE|DELETE|MERGE|REPLACE|TRUNCATE)\b", re.IGNORECASE)
+_CONTROL = {
+    "COMMIT", "END", "BEGIN", "START", "ABORT", "PREPARE", "DEALLOCATE",
+    "ATTACH", "DETACH", "VACUUM", "REINDEX", "SET", "ALTER", "DROP",
+    "CREATE", "TRUNCATE", "GRANT", "REVOKE", "COPY", "CALL", "DO",
+    "ANALYZE", "CLUSTER", "LOCK", "DISCARD", "CHECKPOINT", "COMMENT",
+    "SECURITY", "RESET",
+}
 _MODULE_NAME = "cbcs_connections"
+_CLOSED_ENV = "CBCS_TRY_CLOSED"
+_secret_asker: Optional[Callable[[str], str]] = None
 
 _current: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar("cbcs_try_view", default=None)
 _sessions: Dict[str, "TrySession"] = {}
@@ -62,22 +73,33 @@ def explain_database_error(exc: BaseException, record_word: str) -> Optional[str
     record = record_word or "record"
     if state == "55P03":
         return LOCK_TIMEOUT.format(record=record)
-    if state == "57014":
+    if state == "57014" and "statement timeout" in str(exc).lower():
         return STATEMENT_TIMEOUT
     return None
 
 
 def backup_sqlite(source: str, dest: str) -> None:
-    """Copy ``source`` with SQLite's backup API so a WAL is included."""
+    """Copy ``source`` with SQLite's backup API so a WAL is included.
 
+    The source is opened read-only. A missing file is refused, and the open
+    does not checkpoint a WAL back into the user's database.
+    """
+
+    if not source or not os.path.isfile(source):
+        raise CbcsConnectionError("Try can't open %s: the file is missing." % (os.path.basename(source or "database")))
     folder = os.path.dirname(dest)
     if folder:
         os.makedirs(folder, exist_ok=True)
     if os.path.exists(dest):
         os.remove(dest)
-    origin = sqlite3.connect(source, uri=False)
+    uri = "file:%s?mode=ro" % quote(os.path.abspath(source), safe="/")
     try:
-        origin.execute("PRAGMA query_only = ON")
+        origin = sqlite3.connect(uri, uri=True)
+    except sqlite3.Error as exc:
+        raise CbcsConnectionError(
+            "Try can't open %s: the file is missing." % os.path.basename(source)
+        ) from exc
+    try:
         target = sqlite3.connect(dest)
         try:
             origin.backup(target)
@@ -154,6 +176,8 @@ class TrySession:
     _paths: Dict[str, str] = field(default_factory=dict)
     _wrote: bool = False
     _key_seq: int = 1000000000
+    _refusals: Dict[str, str] = field(default_factory=dict)
+    _shadow: Dict[Tuple[str, object], Dict[str, object]] = field(default_factory=dict)
 
     def spec(self, name: str) -> TryConnectionSpec:
         found = self.specs.get(name)
@@ -162,20 +186,32 @@ class TrySession:
         return found
 
     def prepare(self) -> None:
-        """Make scratch copies before the form's first query."""
+        """Make scratch copies before the form's first query.
+
+        A missing file or a refused spec is recorded and never opened. Would-run
+        on SQLite uses a scratch copy too, so a write cannot reach the user's file.
+        """
 
         for spec in self.specs.values():
-            if spec.mode != "scratch":
+            if spec.refused:
+                self._refuse(spec, spec.refused)
+                continue
+            if not _needs_copy(spec):
                 continue
             source = spec.sqlite_path or spec.scratch
-            if not source:
-                raise CbcsConnectionError("Try has no SQLite file for %s." % spec.name)
+            if not source or not os.path.isfile(source):
+                self._refuse(spec, "Try can't open %s: the file is missing." % (spec.title or spec.name))
+                continue
             if not self._dir:
                 self._dir = tempfile.mkdtemp(prefix="cbcs-try-")
             dest = spec.scratch if spec.scratch and spec.sqlite_path else os.path.join(self._dir, spec.name + ".db")
             if os.path.abspath(dest) == os.path.abspath(source):
                 dest = os.path.join(self._dir, spec.name + ".db")
-            backup_sqlite(source, dest)
+            try:
+                backup_sqlite(source, dest)
+            except CbcsConnectionError as exc:
+                self._refuse(spec, str(exc))
+                continue
             self._paths[spec.name] = dest
 
     def reset_scratch(self) -> None:
@@ -205,6 +241,9 @@ class TrySession:
         spec = self._primary()
         if spec is None:
             return ""
+        reason = self._refusals.get(spec.name) or spec.refused
+        if reason:
+            return reason
         if spec.own_hook:
             return "Data: " + OWN_CONNECTION
         if spec.mode == "scratch":
@@ -230,9 +269,7 @@ class TrySession:
 
     def show_reset(self) -> bool:
         spec = self._primary()
-        return spec is not None and spec.mode == "scratch" and not spec.own_hook
-        spec = self._primary()
-        return spec is not None and spec.mode == "scratch" and not spec.own_hook
+        return spec is not None and spec.mode == "scratch" and not spec.own_hook and not spec.refused
 
     def set_password(self, name: str, password: str) -> None:
         self._passwords[name] = password
@@ -248,6 +285,9 @@ class TrySession:
         if existing is not None:
             return existing
         spec = self.spec(name)
+        reason = self._refusals.get(name) or spec.refused
+        if reason:
+            raise CbcsConnectionError(reason)
         if spec.own_hook:
             connection = _proxy(sqlite3.connect(":memory:"), self, spec, rollback=True)
             self._open[name] = connection
@@ -277,12 +317,12 @@ class TrySession:
         try:
             yield connection
             if outer:
-                if spec.mode == "rollback":
-                    connection.rollback()
-                    if self._wrote:
-                        self.note(SqlNote(SAVED_ROLLED_BACK, "", (), "saved"))
-                else:
+                if _commits(spec):
                     connection.commit()
+                else:
+                    connection.rollback()
+                    if self._wrote and spec.mode == "rollback":
+                        self.note(SqlNote(SAVED_ROLLED_BACK, "", (), "saved"))
         except BaseException:
             if outer:
                 _rollback(connection)
@@ -291,6 +331,8 @@ class TrySession:
             self._depth[name] = self._depth.get(name, 0) - 1
             if self._depth.get(name, 0) <= 0:
                 self._depth.pop(name, None)
+                if outer:
+                    self._shadow = {}
 
     def close_all(self) -> None:
         for name in list(self._open):
@@ -316,8 +358,26 @@ class TrySession:
             return None
         return next(iter(self.specs.values()))
 
+    def _refuse(self, spec: TryConnectionSpec, sentence: str) -> None:
+        self._refusals[spec.name] = sentence
+        self.note(SqlNote(sentence, "", (), "warning"))
+
+    def _password_for(self, spec: TryConnectionSpec) -> str:
+        password = self._passwords.get(spec.name, "")
+        policy = spec.password_policy or "none"
+        if password or policy not in ("ask", "machine"):
+            return password
+        title = spec.title or spec.name
+        if _secret_asker is None:
+            raise CbcsConnectionError("Try needs the password for %s." % title)
+        found = _secret_asker(spec.name) or ""
+        if not found:
+            raise CbcsConnectionError("Try needs the password for %s." % title)
+        self._passwords[spec.name] = found
+        return found
+
     def _open_sqlite(self, spec: TryConnectionSpec) -> sqlite3.Connection:
-        if spec.mode == "scratch":
+        if spec.mode in ("scratch", "would_run"):
             path = self._paths.get(spec.name) or spec.scratch or spec.sqlite_path
         else:
             path = spec.sqlite_path or spec.scratch
@@ -328,7 +388,7 @@ class TrySession:
         return connection
 
     def _open_postgres(self, spec: TryConnectionSpec) -> object:
-        password = self._passwords.get(spec.name, "")
+        password = self._password_for(spec)
         errors: List[str] = []
         for driver in self.drivers:
             try:
@@ -365,7 +425,7 @@ class CbcsConnectionError(Exception):
 def begin_try(message: TryStart, *, drivers: Optional[Sequence[str]] = None) -> Optional[TrySession]:
     """Install the substitute for ``message.view_id``. None when the plan has nothing to open."""
 
-    specs = tuple(spec for spec in plan_specs(message.data) if usable(spec))
+    specs = plan_specs(message.data)
     if not specs:
         return None
     end_try(message.view_id)
@@ -379,6 +439,7 @@ def begin_try(message: TryStart, *, drivers: Optional[Sequence[str]] = None) -> 
     session.prepare()
     _sessions[message.view_id] = session
     _install_module()
+    _arm_closed(session)
     if spec_own(session):
         session.note(SqlNote(OWN_CONNECTION, "", (), "warning"))
     return session
@@ -392,11 +453,19 @@ def end_try(view_id: str) -> None:
         session.close()
     if not _sessions:
         _restore_module()
+        os.environ.pop(_CLOSED_ENV, None)
 
 
 def end_all() -> None:
     for view_id in list(_sessions):
         end_try(view_id)
+
+
+def set_secret_asker(asker: Optional[Callable[[str], str]]) -> None:
+    """The preview child asks the host once per connection. ``None`` clears it."""
+
+    global _secret_asker
+    _secret_asker = asker
 
 
 def remember_password(name: str, password: str) -> None:
@@ -422,20 +491,28 @@ def bind_form_class(ui_cls: type, view_id: str) -> None:
 
     A rolled-back save of a new record keeps ``form.isNew`` and does not add
     the key. A rolled-back delete leaves the key list and shows the real row.
-    Generated source is unchanged: the wrap happens on the class the child exec'd.
+    Each class in the MRO that defines a method is wrapped on its own, so a
+    subclass that overrides ``cbcs_save`` is wrapped too. The flag is stored
+    on that class, not inherited.
     """
 
-    if getattr(ui_cls, "_cbcs_try_bound", False):
-        return
-    setattr(ui_cls, "_cbcs_try_bound", True)
-    for name, fn in list(vars(ui_cls).items()):
-        if not isinstance(fn, types.FunctionType):
+    for cls in ui_cls.__mro__:
+        if cls is object:
             continue
-        if name.startswith("__"):
+        if "_cbcs_try_bound" in vars(cls):
             continue
-        if not (name.startswith("cbcs_") or name.startswith("_cbcs_")):
-            continue
-        setattr(ui_cls, name, _bound(fn, view_id, name))
+        replaced = False
+        for name, fn in list(vars(cls).items()):
+            if not isinstance(fn, types.FunctionType):
+                continue
+            if name.startswith("__"):
+                continue
+            if not (name.startswith("cbcs_") or name.startswith("_cbcs_")):
+                continue
+            setattr(cls, name, _bound(fn, view_id, name))
+            replaced = True
+        if replaced:
+            setattr(cls, "_cbcs_try_bound", True)
 
 
 def writes_stick(view_id: Optional[str] = None) -> bool:
@@ -460,15 +537,22 @@ def _bound(fn: types.FunctionType, view_id: str, name: str) -> types.FunctionTyp
     def wrapped(self: object, *args: object, **kwargs: object) -> object:
         token = _current.set(view_id)
         try:
-            if name == "cbcs_save":
+            if name in ("cbcs_save", "_cbcs_write"):
                 was_new = bool(getattr(self, "_cbcs_new", False))
                 keys = list(getattr(self, "_cbcs_keys", []) or [])
                 index = getattr(self, "_cbcs_index", -1)
+                loaded = _copy_map(getattr(self, "_cbcs_loaded", None))
+                saved = _copy_map(getattr(self, "_cbcs_saved_fields", None))
                 result = fn(self, *args, **kwargs)
-                if result and was_new and not writes_stick(view_id):
-                    setattr(self, "_cbcs_new", True)
-                    setattr(self, "_cbcs_keys", keys)
-                    setattr(self, "_cbcs_index", index)
+                if result and not writes_stick(view_id):
+                    if was_new:
+                        setattr(self, "_cbcs_new", True)
+                        setattr(self, "_cbcs_keys", keys)
+                        setattr(self, "_cbcs_index", index)
+                    if loaded is not None:
+                        setattr(self, "_cbcs_loaded", loaded)
+                    if saved is not None:
+                        setattr(self, "_cbcs_saved_fields", saved)
                 return result
             if name == "cbcs_delete":
                 keys = list(getattr(self, "_cbcs_keys", []) or [])
@@ -586,14 +670,53 @@ def spec_own(session: TrySession) -> bool:
     return any(spec.own_hook for spec in session.specs.values())
 
 
+def _needs_copy(spec: TryConnectionSpec) -> bool:
+    return spec.engine == "sqlite" and not spec.own_hook and spec.mode in ("scratch", "would_run")
+
+
+def _commits(spec: TryConnectionSpec) -> bool:
+    """Only a SQLite scratch copy is committed. Rollback and would-run never are."""
+
+    return spec.mode == "scratch" and not spec.own_hook and not spec.refused
+
+
+def _arm_closed(session: TrySession) -> None:
+    """While Try is open, the project's real module must not reach a database."""
+
+    refused = [spec.refused for spec in session.specs.values() if spec.refused]
+    os.environ[_CLOSED_ENV] = refused[0] if refused else "Try has this database open."
+
+
+def _copy_map(value: object) -> Optional[Dict[str, object]]:
+    if not isinstance(value, dict):
+        return None
+    return {str(key): item for key, item in value.items()}
+
+
+class _NoAutocommit:
+    """``autocommit`` stays false. Setting it raises."""
+
+    def __get__(self, obj: object, objtype: object = None) -> bool:
+        return False
+
+    def __set__(self, obj: object, value: object) -> None:
+        raise CbcsConnectionError("Try does not allow autocommit.")
+
+
+def _refuse_call(self: object, *args: object, **kwargs: object) -> None:
+    del self, args, kwargs
+    raise CbcsConnectionError("Try does not allow that connection method.")
+
+
 def _proxy(raw: object, session: TrySession, spec: TryConnectionSpec, *, rollback: bool) -> object:
+    del rollback
     raw_module = type(raw).__module__
 
     def commit(self: object) -> None:
-        if rollback:
-            _rollback(self)
-        else:
+        if _commits(self._spec):  # type: ignore[attr-defined]
             self._raw.commit()  # type: ignore[attr-defined]
+        else:
+            _rollback(self)
 
     def rollback_fn(self: object) -> None:
         _rollback(self)
@@ -604,8 +727,14 @@ def _proxy(raw: object, session: TrySession, spec: TryConnectionSpec, *, rollbac
     def close(self: object) -> None:
         self._raw.close()  # type: ignore[attr-defined]
 
-    def getattr_fn(self: object, name: str) -> object:
-        return getattr(self._raw, name)  # type: ignore[attr-defined]
+    def execute(self: object, sql: str, params: object = None) -> object:
+        made = self.cursor()  # type: ignore[attr-defined]
+        if params is None:
+            return made.execute(sql)
+        return made.execute(sql, params)
+
+    def executemany(self: object, sql: str, seq: object) -> object:
+        return self.cursor().executemany(sql, seq)  # type: ignore[attr-defined]
 
     cls = type(
         "TryConnection",
@@ -616,7 +745,17 @@ def _proxy(raw: object, session: TrySession, spec: TryConnectionSpec, *, rollbac
             "rollback": rollback_fn,
             "cursor": cursor,
             "close": close,
-            "__getattr__": getattr_fn,
+            "execute": execute,
+            "executemany": executemany,
+            "autocommit": _NoAutocommit(),
+            "set_autocommit": _refuse_call,
+            "transaction": _refuse_call,
+            "run": _refuse_call,
+            "tpc_begin": _refuse_call,
+            "tpc_prepare": _refuse_call,
+            "tpc_commit": _refuse_call,
+            "tpc_rollback": _refuse_call,
+            "tpc_recover": _refuse_call,
         },
     )
     proxy = cls()
@@ -642,8 +781,17 @@ class _TracingCursor:
 
     def execute(self, sql: str, params: object = None) -> object:
         values = _param_tuple(params)
+        kind = _classify(sql)
+        if kind == "control":
+            word = _first_word(sql) or "that statement"
+            self._session.note(SqlNote("Try did not run %s." % word, sql, values, "would_run"))
+            self._serving_fake = True
+            self._fake_rowcount = 0
+            self._fake_key = None
+            self._fake_row = None
+            return self
         verb = _verb(sql)
-        writing = verb in _WRITE
+        writing = kind == "write"
         would = self._spec.own_hook or (self._spec.mode == "would_run" and writing)
         read_only_log = self._spec.own_hook and not writing
         if would or read_only_log:
@@ -679,6 +827,39 @@ class _TracingCursor:
             self._session._wrote = True
             self._effects(verb, sql, values)
         return self
+
+    def executemany(self, sql: str, seq: object) -> object:
+        rows = list(seq)  # type: ignore[arg-type]
+        kind = _classify(sql)
+        if kind == "control" or (kind == "write" and (self._spec.mode == "would_run" or self._spec.own_hook)):
+            for params in rows:
+                self.execute(sql, params)
+            return self
+        try:
+            self._raw.executemany(sql, rows)  # type: ignore[attr-defined]
+        except Exception as exc:
+            mapped = explain_database_error(exc, self._spec.record_word)
+            if mapped is not None:
+                raise CbcsConnectionError(mapped) from None
+            raise
+        self._serving_fake = False
+        self._fake_rowcount = None
+        self._session.note(SqlNote(_sentence("Ran", sql, ()), sql, (), "ran"))
+        if kind == "write":
+            self._session._wrote = True
+        return self
+
+    def fetchmany(self, size: Optional[int] = None) -> object:
+        if self._serving_fake:
+            return []
+        if size is None:
+            return self._raw.fetchmany()  # type: ignore[attr-defined]
+        return self._raw.fetchmany(size)  # type: ignore[attr-defined]
+
+    def close(self) -> None:
+        closer = getattr(self._raw, "close", None)
+        if callable(closer):
+            closer()
 
     def fetchone(self) -> object:
         if self._serving_fake:
@@ -721,9 +902,6 @@ class _TracingCursor:
     def description(self) -> object:
         return getattr(self._raw, "description", None)
 
-    def __getattr__(self, name: str) -> object:
-        return getattr(self._raw, name)
-
     def _remember_write(self, verb: str, sql: str, values: Tuple[object, ...]) -> None:
         table = _table(sql)
         key_name = self._spec.key or "id"
@@ -756,7 +934,13 @@ class _TracingCursor:
         if _verb(sql) != "SELECT" or not values:
             return None
         table = _table(sql)
-        data = self._session_shadow().get((table, values[-1]))
+        data = None
+        shadow = self._session_shadow()
+        for value in values:
+            found = shadow.get((table, value))
+            if found:
+                data = found
+                break
         if not data:
             return None
         columns = _select_columns(sql)
@@ -884,6 +1068,8 @@ def _prepare_postgres(raw: object, spec: TryConnectionSpec) -> None:
         raw.autocommit = True  # type: ignore[attr-defined]
     cursor = raw.cursor()  # type: ignore[attr-defined]
     cursor.execute("SET client_encoding TO 'UTF8'")
+    cursor.execute("SET statement_timeout = '5s'")
+    cursor.execute("SET lock_timeout = '2s'")
     if spec.db_schema and spec.db_schema != "public":
         cursor.execute("SET search_path TO %s" % _quote(spec.db_schema))
     if autocommit is not None:
@@ -896,14 +1082,60 @@ def _quote(name: str) -> str:
     return '"%s"' % name.replace('"', '""')
 
 
-def _verb(sql: str) -> str:
-    text = sql.lstrip()
-    while text.startswith("--"):
-        parts = text.split("\n", 1)
-        text = parts[1].lstrip() if len(parts) == 2 else ""
+def _strip_comments(sql: str) -> str:
+    out: List[str] = []
+    index = 0
+    while index < len(sql):
+        if sql.startswith("/*", index):
+            end = sql.find("*/", index + 2)
+            index = len(sql) if end < 0 else end + 2
+            continue
+        if sql.startswith("--", index):
+            end = sql.find("\n", index)
+            index = len(sql) if end < 0 else end + 1
+            continue
+        out.append(sql[index])
+        index += 1
+    return "".join(out).strip()
+
+
+def _first_word(sql: str) -> str:
+    text = _strip_comments(sql)
     if not text:
         return ""
-    return text.split(None, 1)[0].upper()
+    return text.split(None, 1)[0].rstrip(";").upper()
+
+
+def _verb(sql: str) -> str:
+    return _first_word(sql)
+
+
+def _classify(sql: str) -> str:
+    """``read`` runs. ``write`` runs only outside would-run. ``control`` never runs."""
+
+    word = _first_word(sql)
+    if word in ("SAVEPOINT", "RELEASE"):
+        return "savepoint"
+    if word == "ROLLBACK":
+        if " TO " in _strip_comments(sql).upper():
+            return "savepoint"
+        return "control"
+    if word in _CONTROL:
+        return "control"
+    if word == "PRAGMA":
+        return "control" if "=" in _strip_comments(sql) else "read"
+    if word == "EXPLAIN":
+        rest = _strip_comments(sql)[len("EXPLAIN"):].strip()
+        if _first_word(rest) == "ANALYZE":
+            return "write"
+        return "read"
+    if word == "WITH":
+        if _CTE_WRITE.search(_strip_comments(sql)):
+            return "write"
+        return "read"
+    if word in ("SELECT", "SHOW", "VALUES", "TABLE"):
+        return "read"
+    return "write"
 
 
 def _table(sql: str) -> str:
@@ -951,9 +1183,11 @@ def _param_tuple(params: object) -> Tuple[object, ...]:
 
 def _sentence(prefix: str, sql: str, params: Tuple[object, ...]) -> str:
     compact = " ".join(sql.split())
-    if len(compact) > 72:
-        compact = compact[:69] + "…"
+    if len(compact) > 40:
+        compact = compact[:37] + "…"
     count = len(params)
+    if not count:
+        return "%s: %s" % (prefix, compact)
     word = "value" if count == 1 else "values"
     return "%s: %s (%d %s)" % (prefix, compact, count, word)
 

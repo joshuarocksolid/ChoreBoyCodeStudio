@@ -27,6 +27,7 @@ from app.features.form_builder.engine.ipc.protocol import (
     Ping,
     PromotedClass,
     ProtocolViolation,
+    NeedSecret,
     ProvideSecret,
     Response,
     SetAppearance,
@@ -253,9 +254,18 @@ class ChildSession:
             purge_project_modules(self._previous_root)
             self._previous_root = message.project_root
             self._sys_path = replace_sys_path(self._sys_path, message.sys_path)
-            from app.features.form_builder.qtside.preview.child.try_connections import begin_try, end_try
+            from app.features.form_builder.qtside.preview.child.try_connections import (
+                begin_try,
+                end_try,
+                remember_password,
+                set_secret_asker,
+            )
 
+            set_secret_asker(self._ask_secret)
             if try_message is not None:
+                for name, secret in self._secrets.items():
+                    if secret:
+                        remember_password(name, secret)
                 begin_try(try_message)
             else:
                 end_try(message.view_id)
@@ -394,10 +404,18 @@ class ChildSession:
         if message.show_form:
             self._load(_load_from_try(message), message)
             return
-        from app.features.form_builder.qtside.preview.child.try_connections import begin_try
+        from app.features.form_builder.qtside.preview.child.try_connections import (
+            begin_try,
+            remember_password,
+            set_secret_asker,
+        )
 
-        begin_try(message)
         self._current_view = message.view_id
+        set_secret_asker(self._ask_secret)
+        for name, secret in self._secrets.items():
+            if secret:
+                remember_password(name, secret)
+        begin_try(message)
         try:
             standin = _window_standin(message.window_class_name, message.base_class, message.window_values)
             module = types.ModuleType(message.module_name)
@@ -440,6 +458,30 @@ class ChildSession:
 
         end_try(message.view_id)
         self._writer.send(Response(request_id=message.request_id, ok=True, result={"stopped": True}))
+
+    def _ask_secret(self, name: str) -> str:
+        """Ask the host once. A secret already stored for this session is reused."""
+
+        cached = self._secrets.get(name)
+        if isinstance(cached, str) and cached:
+            return cached
+        self._writer.send(NeedSecret(view_id=self._current_view or "", connection=name))
+        deadline = time.monotonic() + 120
+        while time.monotonic() < deadline:
+            self._app.processEvents()
+            try:
+                line = self._queue.get(timeout=0.05)
+            except queue.Empty:
+                continue
+            if line is None:
+                self._queue.put(None)
+                break
+            decoded = decode_line(line.rstrip("\r\n"))
+            if isinstance(decoded, ProvideSecret) and decoded.connection == name:
+                self._provide_secret(decoded)
+                return decoded.secret or ""
+            self._handle_line(line)
+        raise RuntimeError("Try needs the password for %s." % name)
 
     def _provide_secret(self, message: ProvideSecret) -> None:
         # The secret stays in memory. It is not written to a log frame.

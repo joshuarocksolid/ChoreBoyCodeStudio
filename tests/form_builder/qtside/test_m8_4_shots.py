@@ -18,7 +18,15 @@ from app.features.form_builder.integration.connection_paths import project_slug
 from app.features.form_builder.integration.settings_ext.connections_page import ConnectionsPage
 from app.features.form_builder.qtside.preview.try_log import TryEvent, fold
 from app.features.form_builder.qtside.preview.what_ran import TryChrome
-from app.qt.QtWidgets import QApplication, QMessageBox, QWidget
+from app.qt.QtWidgets import (
+    QApplication,
+    QFormLayout,
+    QHBoxLayout,
+    QMessageBox,
+    QPushButton,
+    QVBoxLayout,
+    QWidget,
+)
 from app.shell.theme_tokens import tokens_from_palette
 from tests.form_builder.fixtures.m8.make_shop import build
 from tests.form_builder.qtside.test_m8_4_try_data import _open, _project
@@ -44,18 +52,6 @@ def test_try_screenshots(tmp_path: Path, qapp: QApplication) -> None:
         "Try: changes to Shop database are rolled back. "
         "While a save runs, other people using it may wait up to 2 seconds."
     )
-    rolled = fold(
-        (
-            TryEvent(
-                "sql",
-                "",
-                {"sentence": 'Ran: UPDATE "m84_invoices" SET "notes" = %s … (2 values)', "values": ["saved-note", 1]},
-            ),
-            TryEvent("sql", "", {"sentence": "Saved, then rolled back", "values": []}),
-        ),
-        {},
-        {},
-    )
     project = tmp_path / "settings"
     project.mkdir()
     build(str(project / "data" / "shop.db"))
@@ -72,32 +68,44 @@ def test_try_screenshots(tmp_path: Path, qapp: QApplication) -> None:
         window = TryChrome()
         window.apply_chrome(chrome)
         window.resize(1100, 720)
-        form = QWidget()
-        window.adopt(form)
         seen: list = []
-        host, session = _open(root, db, "scratch", "view-shot-%s" % mode, seen, form)
+        host, session = _open(root, db, "scratch", "view-shot-%s" % mode, seen)
         try:
             host.ui.notesEdit.setText("saved-note")
             assert host.ui.cbcs_save() is True
+            window.adopt(_invoice_page(host.ui))
             window.set_try_data(session.strip_text(), "", session.show_reset())
             window.what_ran.add(_sql_lines(session.notes), int(time.time() * 1000))
             window.what_ran.expand_all()
             window.show()
+            host.hide()
             _pump(qapp)
             _grab(window, folder / ("try-sqlite-%s.png" % mode))
         finally:
             window.close()
             host.close()
             end_all()
-        postgres = _chrome(
-            "Data: Shop database. Changes are rolled back.",
-            banner,
-            False,
-            rolled,
-            chrome,
-        )
-        _grab(postgres, folder / ("try-postgres-%s.png" % mode))
-        postgres.close()
+        pg_host, pg_session = _open(root, db, "rollback", "view-pg-%s" % mode, seen)
+        postgres = None
+        try:
+            pg_host.ui.notesEdit.setText("saved-note")
+            assert pg_host.ui.cbcs_save() is True
+            postgres = TryChrome()
+            postgres.apply_chrome(chrome)
+            postgres.resize(1100, 720)
+            postgres.adopt(_invoice_page(pg_host.ui))
+            postgres.set_try_data("Data: Shop database. Changes are rolled back.", banner, False)
+            postgres.what_ran.add(_sql_lines(pg_session.notes), int(time.time() * 1000))
+            postgres.what_ran.expand_all()
+            postgres.show()
+            pg_host.hide()
+            _pump(qapp)
+            _grab(postgres, folder / ("try-postgres-%s.png" % mode))
+        finally:
+            if postgres is not None:
+                postgres.close()
+            pg_host.close()
+            end_all()
         box = QMessageBox()
         box.setWindowTitle("")
         box.setText("Another user is editing this invoice. Try stopped waiting after 2 seconds.")
@@ -124,31 +132,39 @@ def test_try_screenshots(tmp_path: Path, qapp: QApplication) -> None:
         page.close()
 
 
+def _invoice_page(ui: Any) -> QWidget:
+    """The invoice fields in a form, with the record buttons under them."""
+
+    page = QWidget()
+    outer = QVBoxLayout(page)
+    outer.setContentsMargins(16, 12, 16, 12)
+    outer.setSpacing(8)
+    form = QFormLayout()
+    form.setContentsMargins(0, 0, 0, 0)
+    form.setHorizontalSpacing(12)
+    form.setVerticalSpacing(8)
+    form.addRow("Invoice no", ui.invoiceNoEdit)
+    form.addRow("Customer", ui.customerIdSpin)
+    form.addRow("Date", ui.invoiceDateEdit)
+    form.addRow("Notes", ui.notesEdit)
+    outer.addLayout(form)
+    buttons = QHBoxLayout()
+    buttons.setSpacing(8)
+    for label in ("First", "Previous", "Next", "Last", "Save", "New", "Delete"):
+        buttons.addWidget(QPushButton(label))
+    buttons.addStretch(1)
+    outer.addLayout(buttons)
+    outer.addStretch(1)
+    return page
+
+
 def _sql_lines(notes: Any) -> Any:
     events = tuple(
-        TryEvent("sql", "", {"sentence": item.sentence, "values": [_shown(value) for value in item.values]})
+        TryEvent("sql", "", {"sentence": item.sentence, "values": list(item.values)})
         for item in notes
         if item.kind in ("ran", "would_run", "saved", "warning")
     )
     return fold(events, {}, {})
-
-
-def _chrome(strip: str, banner: str, reset: bool, lines: Any, chrome: Any) -> TryChrome:
-    window = TryChrome()
-    window.set_try_data(strip, banner, reset)
-    window.apply_chrome(chrome)
-    window.what_ran.add(lines, int(time.time() * 1000))
-    window.what_ran.expand_all()
-    window.resize(1100, 720)
-    window.show()
-    _pump(QApplication.instance())
-    return window
-
-
-def _shown(value: object) -> str:
-    if value is None:
-        return "NULL"
-    return str(value)
 
 
 def _grab(widget: Any, path: Path) -> None:

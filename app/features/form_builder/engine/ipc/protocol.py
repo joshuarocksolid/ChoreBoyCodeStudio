@@ -121,6 +121,10 @@ class TryConnectionSpec:
     triggers: Tuple[str, ...] = ()
     own_hook: bool = False
     keep_scratch: bool = False
+    #: When set, Try installs the substitute and every open raises this sentence.
+    refused: str = ""
+    #: ``none``, ``ask``, or ``machine``. Ask and machine use the preview secret path.
+    password_policy: str = "none"
 
 
 @dataclass(frozen=True)
