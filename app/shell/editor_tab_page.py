@@ -124,6 +124,13 @@ class EditorTabPage(QWidget):
         self._layout.setSpacing(0)
         self.info_bar = DiskConflictInfoBar(self)
         self._layout.addWidget(self.info_bar, 0)
+        self._notice_host = QWidget(self)
+        self._notice_host.setObjectName("shell.editorTabPage.notices")
+        self._notice_layout = QVBoxLayout(self._notice_host)
+        self._notice_layout.setContentsMargins(0, 0, 0, 0)
+        self._notice_layout.setSpacing(0)
+        self._notice_host.setVisible(False)
+        self._layout.addWidget(self._notice_host, 0)
         self._content = content
         content.setParent(self)
         self._layout.addWidget(content, 1)
@@ -135,6 +142,12 @@ class EditorTabPage(QWidget):
 
     def content(self) -> QWidget:
         return self._content
+
+    def add_notice_bar(self, widget: QWidget) -> None:
+        """Insert a feature notice under the disk-conflict bar."""
+        widget.setParent(self._notice_host)
+        self._notice_layout.addWidget(widget)
+        self._notice_host.setVisible(True)
 
     def set_content(self, content: QWidget) -> None:
         if content is self._content:

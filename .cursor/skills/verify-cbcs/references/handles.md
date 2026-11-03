@@ -29,6 +29,8 @@ Dependency Inspector title is **Project Dependencies**. No `#shell.dependency*` 
 | `#shell.activityBar.btn.explorer` | Explorer view |
 | `#shell.activityBar.btn.search` | Search view |
 | `#shell.activityBar.btn.test_explorer` | Test Explorer view |
+| `#shell.activityBar.btn.team` | Team view |
+| `#shell.activityBar.badge.*` | Count badge on an activity-bar button |
 | `#shell.leftRegion` | Sidebar host |
 | `#shell.sidebarStack` | 0 Explorer, 1 Search, 2 Test Explorer |
 | `#shell.projectTree` | Project tree |
@@ -476,3 +478,54 @@ The Dune checker requires each handle below to match a `setObjectName` call unde
 - `#shell.freecadRequirement.okButton`
 - `#shell.freecadRequirement.section`
 - `#shell.freecadRequirement.works`
+
+## Team Sync
+
+`#shell.teamSync.*` covers the Team view, Send, status segment, Review, Combine, History, dialogs, and the editor notices. `#shell.toast` is the generic toast. Team Sync restyles that instance as `#shell.teamSync.toast`.
+
+| Handle | What |
+|--------|------|
+| `#shell.teamSync.teamView` | Thread page |
+| `#shell.teamSync.shareButton` | Share Project… |
+| `#shell.teamSync.feed` | Thread feed |
+| `#shell.teamSync.composer` | Composer |
+| `#shell.teamSync.composerSend` | Composer Send |
+| `#shell.teamSync.toolbar.send` | Toolbar Send |
+| `#shell.teamSync.sendSheet` | Send sheet |
+| `#shell.teamSync.statusSegment` | Status-bar Team segment |
+| `#shell.teamSync.statusPopover` | Segment popover |
+| `#shell.teamSync.experimentSegment` | Experiment segment |
+| `#shell.teamSync.experimentMenu` | Experiment menu |
+| `#shell.teamSync.infoBar` | Incoming or clash notice |
+| `#shell.teamSync.reviewTab` | Review tab |
+| `#shell.teamSync.combineTab` | Combine tab |
+| `#shell.teamSync.combineFinish` | Finish |
+| `#shell.teamSync.historyTab` | History tab |
+| `#shell.teamSync.historyMenu` | History context menu |
+| `#shell.teamSync.hoverCard` | Who-changed card |
+| `#shell.teamSync.gutterPeek` | Gutter quick diff |
+| `#shell.teamSync.shareDialog` | Share dialog |
+| `#shell.teamSync.inviteDialog` | Invite dialog |
+| `#shell.teamSync.membersDialog` | Members dialog |
+| `#shell.teamSync.deletedClashDialog` | Deleted clash choice |
+| `#shell.teamSync.settingsGroup` | Settings › Team |
+| `#shell.teamSync.packageMilestone` | Mark this version in history |
+| `#shell.teamSync.toast` | Arrival toast |
+| `#shell.teamSync.teamHeader` | Thread header row |
+| `#shell.teamSync.composerNote` | Thread message field |
+| `#shell.teamSync.composerFiles` | Pending-files chip |
+| `#shell.teamSync.feedFiles` | "N files" link on a message |
+| `#shell.teamSync.feedReview` | Review on an incoming message |
+| `#shell.teamSync.feedMark` | Queued / ✓ / ✓✓ |
+| `#shell.teamSync.statusDot` | 7 px status dot |
+| `#shell.teamSync.statusHistory` | Popover History |
+| `#shell.teamSync.statusMenu` | Popover ⋯ |
+| `#shell.teamSync.lineSummary` | End-of-line who-changed note |
+| `#shell.teamSync.combinePrev` | Previous clash |
+| `#shell.teamSync.combineNext` | Next clash |
+| `#shell.teamSync.historySearch` | History search |
+| `#shell.teamSync.historyFilter` | Main / All lines |
+| `#shell.toast` | Generic toast frame |
+| `#shell.toast.message` | Toast text |
+| `#shell.toast.action` | Toast action |
+| `#shell.editorTabPage.notices` | Feature notices under the disk-conflict bar |

@@ -150,6 +150,10 @@ class EditorTabLifecycleWorkflow:
         editor_tabs_widget = self._host.editor_tabs_widget()
         if editor_tabs_widget is None:
             return
+        page_data = editor_tabs_widget.tabBar().tabData(tab_index)
+        if isinstance(page_data, dict) and page_data.get("virtual_tab"):
+            remove_tab_and_page(editor_tabs_widget, tab_index)
+            return
         file_path = self._editor_tabs_coordinator.file_path_for_tab_index(tab_index)
         if not file_path:
             return

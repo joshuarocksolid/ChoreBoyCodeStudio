@@ -119,6 +119,7 @@ from app.shell.shell_composition import (
     create_composition_timers,
     start_composition_timers,
 )
+from app.shell.contributions import ShellContributions
 from app.shell.shell_composition_context import (
     ShellCompositionContext,
     ShellDiagnosticsLatchState,
@@ -148,6 +149,7 @@ def install_layout_foundation(ctx: ShellCompositionContext) -> None:
             "_logger": logger,
             "_startup_capability_facade": StartupCapabilityFacade(),
             "_settings_service": settings_service,
+            "_shell_contributions": ShellContributions(),
             "_stored_lint_diagnostics": {},
             "_stored_runtime_problems": [],
             "_menu_registry": None,
@@ -480,7 +482,10 @@ def install_theme_and_finalize(ctx: ShellCompositionContext) -> None:
         "python tooling status",
         window._refresh_python_tooling_status,
     )
-    toolbar = build_run_toolbar_widget(menu_registry)
+    toolbar = build_run_toolbar_widget(
+        menu_registry,
+        contributions=window._shell_contributions,
+    )
     window._toolbar = toolbar
     center_panel = window.findChild(QWidget, "shell.centerPanel")
     center_layout = center_panel.layout() if center_panel is not None else None
@@ -496,6 +501,8 @@ def install_theme_and_finalize(ctx: ShellCompositionContext) -> None:
                 center_stack=window._center_stack,
             ),
         )
+    for hook in list(window._shell_contributions.finalize_hooks):
+        _continue_optional_startup_step("shell contribution", lambda hook=hook: hook(window))
     window._shell_theme_workflow.refresh_surface_refs()
     window._shell_theme_workflow.apply_theme_styles()
     window._editor_tab_workflow.apply_runtime_intelligence_preferences_to_open_editors()

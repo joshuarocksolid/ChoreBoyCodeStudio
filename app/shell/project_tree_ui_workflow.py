@@ -31,6 +31,9 @@ class ProjectTreeUiWorkflowHost(Protocol):
     def sidebar_stack(self) -> QStackedWidget | None:
         ...
 
+    def activity_bar(self) -> Any | None:
+        ...
+
     def search_sidebar(self) -> Any | None:
         ...
 
@@ -145,17 +148,17 @@ class ProjectTreeUiWorkflow:
 
     def handle_sidebar_view_changed(self, view_id: str) -> None:
         sidebar_stack = self._host.sidebar_stack()
-        if sidebar_stack is None:
+        activity_bar = self._host.activity_bar()
+        if sidebar_stack is None or activity_bar is None:
             return
-        if view_id == "explorer":
-            sidebar_stack.setCurrentIndex(0)
-        elif view_id == "search":
-            sidebar_stack.setCurrentIndex(1)
+        index = activity_bar.index_of(view_id)
+        if index is None:
+            return
+        sidebar_stack.setCurrentIndex(index)
+        if view_id == "search":
             search_sidebar = self._host.search_sidebar()
             if search_sidebar is not None:
                 search_sidebar.focus_search()
-        elif view_id == "test_explorer":
-            sidebar_stack.setCurrentIndex(2)
 
     def handle_search_open_file_at_line(self, file_path: str, line_number: int) -> None:
         self._host.open_file_at_line(file_path, line_number, preview=False)
@@ -548,6 +551,9 @@ class MainWindowProjectTreeUiHost:
 
     def sidebar_stack(self) -> QStackedWidget | None:
         return self._window._sidebar_stack
+
+    def activity_bar(self) -> Any | None:
+        return self._window._activity_bar
 
     def search_sidebar(self) -> Any | None:
         return self._window._search_sidebar

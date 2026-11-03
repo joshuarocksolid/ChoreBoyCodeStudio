@@ -60,7 +60,8 @@ Each file: H1, one paragraph, then exactly four H2s in this order.
 - [Diagnostics and support](./diagnostics-support.md) — AT-22, AT-23, AT-79
 - [Layout and status](./layout-status.md) — AT-25, zoom, status chips
 - [Flat-Python paste](./edit-flat-python-paste.md) — AT-EDIT-FLAT-PYTHON-PASTE
+- [Team sync](./team-sync.md) — AT-106–AT-113
 
 ## Not in the product
 
-Do not add files for: Git UI, Close Project, File → Zip / USB export, bottom Tasks tab, relocatable install, internet plugin marketplace.
+Do not add files for: Close Project, File → Zip / USB export, bottom Tasks tab, relocatable install, internet plugin marketplace.

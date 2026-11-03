@@ -3182,3 +3182,135 @@ Keep this file focused on:
 - end-to-end success criteria
 
 Do not turn this file into a unit test inventory.
+## AT-106 — Share a project and join it from another shop
+
+**Purpose:**  
+Verify that a solo project can be shared with another shop through the FaxMail terminal and opened there.
+
+**Preconditions:**  
+
+- two stations, each with a FaxMail `.Mails/<account>` folder visible on its share (a cbfarm `shop` lease can play both shops on one account)
+- a project open on the first station
+
+**Steps:**  
+
+1. Open the Team view from the activity bar. It shows "Not shared" and Share Project.
+2. Share the project with the second shop's email.
+3. On the second station, wait for the invite (one terminal mail check).
+4. Open the project from the invite.
+
+**Expected Result:**  
+
+- the first station writes one `out/<id>/` folder with `.lock` while writing, then the terminal moves it to `sent/`
+- the second station shows a toast and an Invite dialog marked Verified
+- the opened project has the same files and one history entry per shared change
+- `cbcs/team.json` lists both members; no absolute path appears in it
+
+## AT-107 — Send a change and see it delivered
+
+**Purpose:**  
+Verify Send saves a change and shows its delivery state until the other shop confirms it.
+
+**Preconditions:**  
+
+- a shared project (AT-106) with edits in three files
+
+**Steps:**  
+
+1. Check the explorer letters, the toolbar Send count and the Team status segment.
+2. Send with a note from the Team view composer.
+3. Watch the change's mark in the Team view and the status segment.
+
+**Expected Result:**  
+
+- explorer shows M/A letters, Send shows 3, status shows `3 to send`
+- after Send: `Queued`, then ✓ when FaxMail moves it to `sent/`, then ✓✓ after the other shop's confirmation
+- with the terminal stopped the mark reads Waiting and the status `Terminal offline`; nothing is lost
+
+## AT-108 — Review and accept an incoming change
+
+**Purpose:**  
+Verify incoming work waits for review and applies only on Accept.
+
+**Steps:**  
+
+1. Receive a change from the other shop.
+2. Open Review from the toast, the Team view or the editor info bar.
+3. Switch Inline and Side by side; open a `.ui` file's visual comparison.
+4. Accept.
+
+**Expected Result:**  
+
+- before Accept the project files are byte-identical to before the change arrived
+- the Review tab shows word-level highlights and every changed file
+- after Accept the files match the sender's, a "You accepted" line appears in the thread, and History has a restore point
+
+## AT-109 — Combine clashing changes
+
+**Purpose:**  
+Verify clashes are settled in the Combine tab without touching files until Finish.
+
+**Steps:**  
+
+1. Edit the same line on both stations; send from one, accept on the other.
+2. Open the Combine tab; settle one clash with Both and one with Use This.
+3. Cancel once and confirm the files are unchanged; repeat and Finish.
+
+**Expected Result:**  
+
+- Finish stays disabled until every clash is settled
+- Cancel leaves the working tree byte-identical
+- Finish writes exactly the chosen lines and records one combined change with both parents
+- a deleted-versus-edited file asks Keep your version / Delete it; a `.ui` clash offers Keep this form with previews
+
+## AT-110 — History, restore, undo and who changed this line
+
+**Steps:**  
+
+1. Open History; search; filter by file from the explorer's File History.
+2. Restore an older version; then Undo This Change on a later change.
+3. Hover a line in the editor.
+
+**Expected Result:**  
+
+- Restore and Undo each create a new change; nothing disappears from History
+- the hover card names who changed the line, when, and the note
+- History first paint stays under 200 ms for 1,000 changes
+
+## AT-111 — Set aside, milestones and experiments
+
+**Steps:**  
+
+1. Set aside unfinished edits, fix something else, Send, then Bring Back.
+2. Package the project with "Mark this version in history" on.
+3. Start an experiment, change a file, switch back to Main, then Bring Into Main.
+
+**Expected Result:**  
+
+- the set-aside edits return intact
+- History shows the milestone flag with the package version
+- the status bar shows the experiment segment only while an experiment exists; lanes appear in History
+
+## AT-112 — Terminal offline and unverified mail
+
+**Steps:**  
+
+1. Stop the FaxMail terminal (cbfarm twin faults) and Send.
+2. Restart it.
+3. Drop a forged `CBCS-SYNC/1` message (wrong signature) into `zip_in`.
+
+**Expected Result:**  
+
+- Send succeeds locally; the change waits in `out/` and the status shows `Terminal offline`
+- it goes out when the terminal returns
+- the forged message is ignored, never imported, and counted as "1 message couldn't be verified"; FaxMail's own mail is untouched
+
+## AT-113 — Team Sync stays fast
+
+**Purpose:**  
+Verify the budgets in `docs/team_sync/SPEC.md` (performance shard).
+
+**Expected Result:**  
+
+- status refresh ≤ 150 ms, inbound scan with nothing new ≤ 20 ms, Send ≤ 1.0 s for 3 files, 50-commit import ≤ 2.0 s, 2,000-line merge ≤ 150 ms
+- typing in the editor never waits on Team Sync work

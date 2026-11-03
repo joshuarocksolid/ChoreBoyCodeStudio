@@ -53,3 +53,6 @@ app/ui/icons/installer_icon_*.png
 vendor/*
 !vendor/README.md
 
+
+# Team Sync review screenshots (tools/team_sync_screens.py); evidence lives on prototype/team-sync
+docs/team_sync/screens/

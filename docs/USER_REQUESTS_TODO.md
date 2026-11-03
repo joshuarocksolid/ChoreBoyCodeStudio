@@ -346,10 +346,10 @@ v0.4.10 hotfix for Clair's syntax-highlighting report (`email:27237`). Product p
 
 | Field          | Value                                                                                                                                                                                                                       |
 | -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Status**     | WON'T DO                                                                                                                                                                                                                    |
+| **Status**     | DONE                                                                                                                                                                                                                        |
 | **Request**    | "Git idea via faxmail terminal."                                                                                                                                                                                            |
 | **Rationale**  | Potentially a workflow request for terminal-based source-control and communication handoff; intent is currently ambiguous.                                                                                                  |
-| **Resolution** | Not planned for the core product. Recommended as a community plugin for users who want this functionality. The plugin architecture (request #4) provides the extension surface for this kind of niche workflow integration. |
+| **Resolution** | Built as Team Sync (`docs/team_sync/SPEC.md`, `app/features/team_sync/`): shops share a project with real git history, and changes travel as signed git bundles through each shop's FaxMail terminal. Supersedes the earlier "community plugin" resolution. Acceptance: AT-106–AT-113. |
 
 
 ---
