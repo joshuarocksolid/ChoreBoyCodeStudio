@@ -21,9 +21,9 @@ from app.features.form_builder.engine.session import FormSession
 from app.features.form_builder.qtside.data_panel.chrome import apply_chrome
 from app.features.form_builder.qtside.data_panel.eject_dialog import EjectDialog
 from app.features.form_builder.qtside.data_panel.panel import DataPanel
+from app.features.form_builder.integration.chrome import chrome_for
 from app.features.form_builder.qtside.preview.what_ran import DataStrip
-from app.features.form_builder.qtside.theme.chrome import chrome_from_values
-from app.qt.QtGui import QFont
+from app.qt.QtGui import QColor, QFont, QPalette
 from app.qt.QtWidgets import QApplication, QLabel, QPlainTextEdit, QVBoxLayout, QWidget
 from tests.form_builder.engine.test_m8_3b_lines import _invoice_schema, _prepare
 from tests.form_builder.engine.test_m8_5_eject import _scenario_ui
@@ -86,28 +86,20 @@ def _try_strip(text: str) -> QWidget:
     shell = QWidget()
     shell.setObjectName("formBuilder.previewShell")
     layout = QVBoxLayout(shell)
+    layout.setContentsMargins(12, 8, 12, 8)
     strip = DataStrip(shell)
     strip.set_text(text, False)
     layout.addWidget(strip)
 
     def apply_theme(tokens: object) -> None:
-        strip.apply_chrome(
-            chrome_from_values(
-                window=tokens.panel_bg,  # type: ignore[attr-defined]
-                panel=tokens.panel_bg,  # type: ignore[attr-defined]
-                text=tokens.text_primary,  # type: ignore[attr-defined]
-                muted=tokens.text_muted,  # type: ignore[attr-defined]
-                faint=tokens.text_muted,  # type: ignore[attr-defined]
-                border=tokens.border,  # type: ignore[attr-defined]
-                accent=tokens.accent,  # type: ignore[attr-defined]
-                row_hover=tokens.border,  # type: ignore[attr-defined]
-                input_bg=tokens.input_bg,  # type: ignore[attr-defined]
-                error=tokens.diag_error_color,  # type: ignore[attr-defined]
-                focus_width=int(tokens.focus_border_width or 1),  # type: ignore[attr-defined]
-                is_dark=bool(getattr(tokens, "is_dark", False)),
-                is_high_contrast=bool(getattr(tokens, "is_high_contrast", False)),
-            )
-        )
+        chrome = chrome_for(tokens)  # type: ignore[arg-type]
+        shell.setAutoFillBackground(True)
+        palette = shell.palette()
+        palette.setColor(QPalette.Window, QColor(chrome.window))
+        palette.setColor(QPalette.WindowText, QColor(chrome.text))
+        shell.setPalette(palette)
+        shell.setStyleSheet("background: %s; color: %s; border: none;" % (chrome.window, chrome.text))
+        strip.apply_chrome(chrome)
 
     shell.apply_theme = apply_theme  # type: ignore[attr-defined]
     return shell

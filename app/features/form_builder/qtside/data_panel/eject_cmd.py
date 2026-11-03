@@ -272,7 +272,34 @@ def _put_back(path: str, old: Optional[bytes]) -> None:
         pass
 
 
+def _release_other_form(keeper: Any, path: str) -> None:
+    """Drop a form tab for ``path`` before a reload subscribes a new one."""
+
+    owners = [keeper]
+    window = getattr(keeper, "window", None)
+    if callable(window):
+        try:
+            found = window()
+        except RuntimeError:
+            found = None
+        if found is not None and found is not keeper:
+            owners.append(found)
+    for owner in owners:
+        registry = getattr(owner, "_tab_content_registry", None)
+        finder = getattr(registry, "surface_for_path", None)
+        if not callable(finder):
+            continue
+        other = finder(path)
+        if other is None or other is keeper:
+            continue
+        release = getattr(other, "release", None)
+        if callable(release):
+            release()
+        return
+
+
 def _reload(surface: Any, path: str, text: str) -> None:
+    _release_other_form(surface, path)
     bridge = getattr(surface, "code_bridge", None)
     port = getattr(bridge, "_port", None)
     reload = getattr(port, "reload_saved", None)

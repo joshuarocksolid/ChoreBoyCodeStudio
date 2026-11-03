@@ -362,6 +362,8 @@ class FormSurface(QWidget):
         self._path = request.file_path
         self._editor: Optional[CodeEditorWidget] = None
         self._released = False
+        self._listeners_dropped = False
+        self._shutting_down = False
         self._tokens = request.theme
         self._banner_is_error = False
         self._save_faded = True
@@ -525,6 +527,21 @@ class FormSurface(QWidget):
         app = QApplication.instance()
         if app is not None:
             app.focusChanged.connect(self._on_focus_changed)
+        self.destroyed.connect(lambda *_args: self._on_destroyed())
+
+    def attach_checks(self, stops: Sequence[Callable[[], None]]) -> None:
+        """Picture checks this tab registered. Release and destroy both stop them."""
+
+        previous = getattr(self, "_cbcs_checks_unlisten", None)
+        owned = tuple(stops)
+
+        def unlisten() -> None:
+            if callable(previous):
+                previous()
+            for stop in owned:
+                stop()
+
+        self._cbcs_checks_unlisten = unlisten
 
     def widget(self) -> QWidget:
         return self
@@ -852,41 +869,95 @@ class FormSurface(QWidget):
         self._workbench.outline.tree.setFocus()
 
     def release(self) -> None:
-        if self._released:
+        self._shutdown(delete=True)
+
+    def _on_destroyed(self, *_args: object) -> None:
+        """Qt is destroying this widget. Children are still alive, so release them too."""
+
+        self._shutdown(delete=False)
+
+    def _shutdown(self, *, delete: bool) -> None:
+        if self._shutting_down or self._listeners_dropped:
             return
+        self._shutting_down = True
         self._released = True
+        try:
+            for part in (
+                lambda: self._workbench.canvas_view().dispose(),
+                lambda: self._workbench.inspector.dispose(),
+                lambda: self._realizer.dispose(),
+            ):
+                try:
+                    part()
+                except RuntimeError:
+                    if delete:
+                        raise
+            try:
+                # A rename still open when the form closes is dropped, not committed.
+                self._workbench.outline.finish_rename()
+                self._stop_timer(self._problem_timer)
+                self._stop_timer(self._kept_timer)
+                self._stop_timer(self._saved_timer)
+                app = QApplication.instance()
+                if app is not None:
+                    try:
+                        app.focusChanged.disconnect(self._on_focus_changed)
+                    except (RuntimeError, TypeError):
+                        pass
+                self._modes.dispose()
+                self._menu_edit.dispose()
+                self._clear_shell_undo()
+                host = self.window()
+                if getattr(host, "_form_return_from_code", None) is self.return_from_code:
+                    host._form_return_from_code = None  # type: ignore[attr-defined]
+                self._workbench.dispose()
+            except RuntimeError:
+                if delete:
+                    raise
+        finally:
+            self._drop_python_listeners()
+        if delete and wrapper_is_valid(self):
+            self.deleteLater()
+
+    def _stop_timer(self, timer: QTimer) -> None:
+        if wrapper_is_valid(timer):
+            timer.stop()
+
+    def _drop_python_listeners(self) -> None:
+        """Unsubscribe Python listeners. Safe after the C++ object is already gone."""
+
+        if self._listeners_dropped:
+            return
+        self._listeners_dropped = True
+        self._released = True
+        diagnostics = getattr(self, "_diagnostics_unsub", None)
+        if callable(diagnostics):
+            diagnostics()
         unlisten = getattr(self, "_cbcs_checks_unlisten", None)
         if callable(unlisten):
-            unlisten()
-            self._cbcs_checks_unlisten = None
-        # A rename still open when the form closes is dropped, not committed.
-        self._workbench.outline.finish_rename()
-        self._problem_timer.stop()
-        self._kept_timer.stop()
-        self._saved_timer.stop()
-        self._diagnostics_unsub()
-        app = QApplication.instance()
-        if app is not None:
             try:
-                app.focusChanged.disconnect(self._on_focus_changed)
-            except (RuntimeError, TypeError):
+                unlisten()
+            except RuntimeError:
                 pass
-        self._modes.dispose()
-        self._menu_edit.dispose()
-        self._clear_shell_undo()
-        host = self.window()
-        if getattr(host, "_form_return_from_code", None) is self.return_from_code:
-            host._form_return_from_code = None  # type: ignore[attr-defined]
-        self._selection_unsub()
-        self._source_unsub()
-        self._changes.close()
-        self._workbench.dispose()
-        self._workbench.canvas_view().dispose()
-        self._workbench.inspector.dispose()
-        self._realizer.dispose()
-        self._session.dispose()
-        self._source.close()
-        self.deleteLater()
+            self._cbcs_checks_unlisten = None
+        selection = getattr(self, "_selection_unsub", None)
+        if callable(selection):
+            selection()
+        source_unsub = getattr(self, "_source_unsub", None)
+        if callable(source_unsub):
+            source_unsub()
+        changes = getattr(self, "_changes", None)
+        close_changes = getattr(changes, "close", None)
+        if callable(close_changes):
+            close_changes()
+        session = getattr(self, "_session", None)
+        dispose = getattr(session, "dispose", None)
+        if callable(dispose):
+            dispose()
+        source = getattr(self, "_source", None)
+        close_source = getattr(source, "close", None)
+        if callable(close_source):
+            close_source()
 
     def undo(self) -> bool:
         """Undo the last command while Design is showing."""
@@ -1861,9 +1932,12 @@ class FormSurface(QWidget):
         self._refresh_shell_status()
 
     def _schedule_problems(self, _diagnostics: object) -> None:
-        if self._released:
+        if self._released or self._listeners_dropped:
             return
-        self._problem_timer.start(0)
+        timer = self._problem_timer
+        if not wrapper_is_valid(timer):
+            return
+        timer.start(0)
 
     def _flush_problems(self) -> None:
         if self._released:

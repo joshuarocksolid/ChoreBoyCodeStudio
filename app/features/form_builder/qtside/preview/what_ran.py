@@ -375,15 +375,15 @@ class DataStrip(QWidget):
             self.setAccessibleName(text)
 
     def apply_chrome(self, chrome: FormChrome) -> None:
-        _paint(self, chrome.window, chrome.text)
         width = int(chrome.focus_width or 1)
+        self.setAutoFillBackground(False)
         self._label.setFrameShape(QFrame.NoFrame)
         self.setStyleSheet(
             """
-            background: %s; color: %s; border: none;
+            background: transparent; color: %s; border: none;
             QLabel { color: %s; background: transparent; border: none; }
             """
-            % (chrome.window, chrome.text, chrome.text)
+            % (chrome.text, chrome.text)
         )
         self._reset.setStyleSheet(
             "QPushButton { color: %s; background: %s; border: 1px solid %s; padding: 4px 12px; border-radius: 3px; }"

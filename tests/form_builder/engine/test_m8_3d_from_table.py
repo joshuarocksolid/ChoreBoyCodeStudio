@@ -595,7 +595,7 @@ def test_the_form_tab_shows_record_sections_or_list_sections(tmp_path: Path, qap
     finally:
         for surface in (record, listing):
             parent = surface.parent()
-            surface.close()
+            surface.release()
             if parent is not None:
                 parent.close()
         set_schema_reader(None)

@@ -12,6 +12,7 @@ from app.features.form_builder.integration.provider import FormTabProvider
 from app.features.form_builder.integration.qrc_provider import refresh_picture_checks
 from app.features.form_builder.integration.surface import FormSurface
 from app.features.form_builder.qtside.data_panel.eject_cmd import _reload
+from app.qt.qt_compat import delete_now
 from app.qt.QtWidgets import QApplication, QPlainTextEdit, QWidget
 from app.shell.tab_content_providers import TabSurfaceRequest
 from app.shell.theme_tokens import tokens_from_palette
@@ -61,7 +62,7 @@ def _open(qapp: QApplication, root: Path) -> tuple[QWidget, FormSurface, str]:
         editor.setObjectName("shell.editorTabs.textEditor")
         return editor
 
-    surface = FormTabProvider().create_surface(
+    opened = FormTabProvider().create_surface(
         TabSurfaceRequest(
             file_path=str(path),
             initial_text=_UI,
@@ -72,6 +73,8 @@ def _open(qapp: QApplication, root: Path) -> tuple[QWidget, FormSurface, str]:
             project_root=str(root),
         )
     )
+    assert isinstance(opened, FormSurface)
+    surface = opened
     parent.show()
     surface.show()
     qapp.processEvents()
@@ -88,12 +91,12 @@ def test_reloading_a_form_tab_from_disk_drops_the_old_diagnostics_listener(
 
     monkeypatch.setattr(FormSurface, "_schedule_problems", wrapped)
     _parent, surface, path = _open(qapp, tmp_path)
-    session = surface.session
+    diagnostics = surface.session.diagnostics
     shell = QWidget()
     shell._tab_content_registry = _Registry(path, surface)  # type: ignore[attr-defined]
     calls.clear()
     _reload(shell, path, surface.current_text())
-    session.diagnostics.publish("reader", ())
+    diagnostics.publish("reader", ())
     refresh_picture_checks()
     assert surface not in calls
 
@@ -108,10 +111,10 @@ def test_a_destroyed_form_tab_is_not_told_about_later_diagnostics(
 
     monkeypatch.setattr(FormSurface, "_schedule_problems", wrapped)
     parent, surface, _path = _open(qapp, tmp_path)
-    session = surface.session
+    diagnostics = surface.session.diagnostics
     calls.clear()
-    parent.deleteLater()
+    delete_now(parent)
     qapp.processEvents()
-    session.diagnostics.publish("reader", ())
+    diagnostics.publish("reader", ())
     refresh_picture_checks()
     assert surface not in calls

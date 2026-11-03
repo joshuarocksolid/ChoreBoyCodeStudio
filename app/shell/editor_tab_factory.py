@@ -220,6 +220,12 @@ class EditorTabFactory:
                     window._editor_tabs_widget,
                 )
         else:
+            stale = registry.surface_for_path(tab_file_path)
+            if stale is not None:
+                registry.unbind(tab_file_path)
+                release_surface = getattr(stale, "release", None)
+                if callable(release_surface):
+                    release_surface()
 
             def open_linked_file(linked_path: str) -> None:
                 self.open_file_in_editor(linked_path, preview=False)
