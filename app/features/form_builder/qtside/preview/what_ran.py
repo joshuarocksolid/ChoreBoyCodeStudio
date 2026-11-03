@@ -110,21 +110,34 @@ class WhatRan(QWidget):
             item.setData(0, _user_role(), line)
             item.setToolTip(1, line.sentence)
             item.setToolTip(2, _source_tip(line, self._names))
-            for ref in line.details:
-                child = QTreeWidgetItem(["", source_label(ref, self._names), ""])
-                child.setToolTip(1, ref)
-                child.setToolTip(2, ref)
-                child.setData(
-                    0,
-                    _user_role(),
-                    TryLine(source_label(ref, self._names), ref, source_of(ref), "rule"),
-                )
-                item.addChild(child)
+            if line.kind == "sql":
+                for value in line.details:
+                    child = QTreeWidgetItem(["", value, ""])
+                    child.setToolTip(1, value)
+                    child.setData(0, _user_role(), TryLine(value, "", source_of(""), "sql"))
+                    item.addChild(child)
+            else:
+                for ref in line.details:
+                    child = QTreeWidgetItem(["", source_label(ref, self._names), ""])
+                    child.setToolTip(1, ref)
+                    child.setToolTip(2, ref)
+                    child.setData(
+                        0,
+                        _user_role(),
+                        TryLine(source_label(ref, self._names), ref, source_of(ref), "rule"),
+                    )
+                    item.addChild(child)
             self._list.addTopLevelItem(item)
             self._lines.append(line)
         self._fit_columns()
         if lines:
             self._list.scrollToItem(self._list.topLevelItem(self._list.topLevelItemCount() - 1))
+
+    def expand_all(self) -> None:
+        """Open every row so a screenshot shows the values."""
+
+        for index in range(self._list.topLevelItemCount()):
+            self._list.topLevelItem(index).setExpanded(True)
 
     def clear(self) -> None:
         self._list.clear()
@@ -295,6 +308,61 @@ class WindowValues(QWidget):
         )
 
 
+class DataStrip(QWidget):
+    """The line under Window values. Reset data copies the SQLite file again."""
+
+    reset_clicked = Signal()
+
+    def __init__(self, parent: Optional[QWidget] = None) -> None:
+        super().__init__(parent)
+        self.setObjectName("preview.dataStrip")
+        self.setVisible(False)
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(8, 0, 8, 8)
+        self._label = QLabel("", self)
+        self._label.setObjectName("preview.dataStrip.label")
+        self._label.setWordWrap(True)
+        layout.addWidget(self._label, 1)
+        self._reset = QPushButton("Reset data", self)
+        self._reset.setObjectName("preview.dataStrip.reset")
+        self._reset.setVisible(False)
+        self._reset.clicked.connect(self.reset_clicked.emit)
+        layout.addWidget(self._reset)
+
+    def set_text(self, text: str, reset: bool) -> None:
+        self._label.setText(text)
+        shown = bool(text)
+        self.setVisible(shown)
+        self._reset.setVisible(shown and reset)
+        if reset:
+            self.setAccessibleName("%s [Reset data]" % text)
+        else:
+            self.setAccessibleName(text)
+
+    def apply_chrome(self, chrome: FormChrome) -> None:
+        _paint(self, chrome.panel, chrome.text)
+        width = int(chrome.focus_width or 1)
+        self.setStyleSheet(
+            """
+            background: %s; color: %s;
+            QLabel { color: %s; background: transparent; }
+            QPushButton { color: %s; background: %s; border: %dpx solid %s; padding: 2px 8px; }
+            QPushButton:focus { border: %dpx solid %s; }
+            """
+            % (
+                chrome.panel,
+                chrome.text,
+                chrome.text,
+                chrome.text,
+                chrome.input or chrome.panel,
+                width,
+                chrome.border,
+                width,
+                chrome.accent,
+            )
+        )
+
+
 class TryChrome(QWidget):
     """Toolbar, the form, Window values, and What ran."""
 
@@ -321,6 +389,11 @@ class TryChrome(QWidget):
         bar.addWidget(self.run_behavior)
         bar.addStretch(1)
         root.addWidget(self._toolbar)
+        self._banner = QLabel("", self)
+        self._banner.setObjectName("preview.banner")
+        self._banner.setWordWrap(True)
+        self._banner.setVisible(False)
+        root.addWidget(self._banner)
         self._splitter = QSplitter(self)
         self._splitter.setObjectName("preview.splitter")
         self._splitter.setOrientation(Qt.Horizontal)
@@ -334,8 +407,10 @@ class TryChrome(QWidget):
         self._form_layout = QVBoxLayout(self._form_parent)
         self._form_layout.setContentsMargins(0, 0, 0, 0)
         self.values = WindowValues(left)
+        self.data_strip = DataStrip(left)
         left_layout.addWidget(self._form_parent, 1)
         left_layout.addWidget(self.values, 0)
+        left_layout.addWidget(self.data_strip, 0)
         self.what_ran = WhatRan(self._splitter)
         self._splitter.addWidget(left)
         self._splitter.addWidget(self.what_ran)
@@ -346,7 +421,8 @@ class TryChrome(QWidget):
 
         app = QApplication.instance()
         self._native = QPalette(app.palette() if app is not None else self.palette())
-        self.apply_chrome(fallback_chrome())
+        self._chrome = fallback_chrome()
+        self.apply_chrome(self._chrome)
 
     def form_parent(self) -> QWidget:
         return self._form_parent
@@ -356,6 +432,7 @@ class TryChrome(QWidget):
         self._form_layout.addWidget(form)
 
     def apply_chrome(self, chrome: FormChrome) -> None:
+        self._chrome = chrome
         width = int(chrome.focus_width or 1)
         _paint(self, chrome.window, chrome.text)
         _paint(self._toolbar, chrome.panel, chrome.text)
@@ -371,7 +448,27 @@ class TryChrome(QWidget):
         self._splitter.setStyleSheet("QSplitter::handle { background: %s; }" % chrome.border)
         self.what_ran.apply_chrome(chrome)
         self.values.apply_chrome(chrome)
+        self.data_strip.apply_chrome(chrome)
+        self._paint_banner(chrome)
         self._keep_form_style()
+
+    def set_try_data(self, text: str, banner: str, reset: bool) -> None:
+        """The data strip under Window values, and the rollback banner."""
+
+        self.data_strip.set_text(text, reset)
+        self._banner.setText(banner)
+        self._banner.setVisible(bool(banner))
+        if banner:
+            self._banner.setAccessibleName(banner)
+        self._paint_banner(self._chrome)
+
+    def _paint_banner(self, chrome: FormChrome) -> None:
+        fill = chrome.warning or chrome.accent
+        ink = _ink_for(fill, chrome.text)
+        self._banner.setAutoFillBackground(True)
+        self._banner.setStyleSheet(
+            "background: %s; color: %s; padding: 6px 10px;" % (fill, ink)
+        )
 
     def _keep_form_style(self) -> None:
         """The person's form keeps the style it opened with. Only the chrome is themed."""
@@ -387,6 +484,18 @@ class TryChrome(QWidget):
         form.setAutoFillBackground(True)
         for child in form.findChildren(QWidget):
             child.setPalette(native)
+
+
+def _ink_for(fill: str, fallback: str) -> str:
+    """Black or white text, whichever reads on ``fill``."""
+
+    color = QColor(fill)
+    if not color.isValid():
+        return fallback
+    luma = (0.2126 * color.red()) + (0.7152 * color.green()) + (0.0722 * color.blue())
+    if luma > 140:
+        return QColor(0, 0, 0).name()
+    return QColor(255, 255, 255).name()
 
 
 def _shown_source(line: TryLine, names: Mapping[str, str]) -> str:

@@ -229,6 +229,21 @@ def fold(
                 )
             )
             continue
+        if item.kind == "sql":
+            payload = item.value if isinstance(item.value, dict) else {}
+            sentence = str(payload.get("sentence") or item.value or "")
+            raw_values = payload.get("values") or ()
+            details = tuple(str(piece) for piece in raw_values)
+            lines.append(
+                TryLine(
+                    sentence=sentence,
+                    ref=item.ref,
+                    source=SourceRef(),
+                    kind="sql",
+                    details=details,
+                )
+            )
+            continue
         if item.kind == "needs_value":
             lines.append(
                 TryLine(

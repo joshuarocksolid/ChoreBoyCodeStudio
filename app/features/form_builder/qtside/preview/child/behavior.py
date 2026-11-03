@@ -189,8 +189,23 @@ def make_host_factory(sink: TrySink, message: TryStart):
     sink._values = values  # noqa: SLF001
 
     def factory(ui_cls: type, source: str) -> QWidget:
+        from app.features.form_builder.qtside.preview.child.try_connections import (
+            activate,
+            bind_form_class,
+            session_for,
+        )
+
         guard_handlers(ui_cls, sink)
+        bind_form_class(ui_cls, message.view_id)
         chrome = TryChrome()
+        sink.chrome = chrome
+        session = session_for(message.view_id)
+        if session is not None:
+            session.on_sql = lambda note: sink.trace(
+                "sql",
+                "",
+                {"sentence": note.sentence, "values": [_shown_value(value) for value in note.values]},
+            )
         order = host_kinds(source)
         error: Optional[AttributeError] = None
         host: Optional[QWidget] = None
@@ -202,7 +217,8 @@ def make_host_factory(sink: TrySink, message: TryStart):
             sink.entering_setup(True)
             try:
                 ui = ui_cls()
-                ui.setupUi(made)
+                with activate(message.view_id):
+                    ui.setupUi(made)
                 error = None
                 break
             except AttributeError as exc:
@@ -218,11 +234,29 @@ def make_host_factory(sink: TrySink, message: TryStart):
         chrome.adopt(host)
         chrome.form_ui = ui  # type: ignore[attr-defined]
         chrome.values.set_methods(specs, values)
+        if session is not None:
+            chrome.set_try_data(session.strip_text(), session.banner_text(), session.show_reset())
+            chrome.data_strip.reset_clicked.connect(lambda _ui=ui, _session=session: _reset_scratch(_ui, _session))
         sink.bind(ui, chrome, values)
         chrome.resize(780, 480)
         return chrome
 
     return factory
+
+
+def _shown_value(value: object) -> str:
+    if value is None:
+        return "NULL"
+    return str(value)
+
+
+def _reset_scratch(ui: object, session: object) -> None:
+    reset = getattr(session, "reset_scratch", None)
+    if callable(reset):
+        reset()
+    opener = getattr(ui, "cbcs_open", None)
+    if callable(opener):
+        opener()
 
 
 def guard_handlers(ui_cls: type, sink: TrySink) -> None:

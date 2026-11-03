@@ -95,15 +95,49 @@ class PropertyPatch:
 
 
 @dataclass(frozen=True)
+class TryConnectionSpec:
+    """One connection in a Try session (CONTRACTS section 19.10).
+
+    ``mode`` is ``scratch`` (SQLite backup), ``rollback`` (PostgreSQL, every
+    block rolls back), or ``would_run`` (reads run, writes are only logged).
+    Passwords are never on this object. The child asks through ``NeedSecret``.
+    """
+
+    name: str = ""
+    mode: str = "scratch"
+    scratch: str = ""
+    title: str = ""
+    file: str = ""
+    engine: str = "sqlite"
+    sqlite_path: str = ""
+    host: str = ""
+    port: int = 5432
+    database: str = ""
+    user: str = ""
+    db_schema: str = "public"
+    record_word: str = "record"
+    key: str = "id"
+    nextval: Tuple[Tuple[str, str, str], ...] = ()
+    triggers: Tuple[str, ...] = ()
+    own_hook: bool = False
+    keep_scratch: bool = False
+
+
+@dataclass(frozen=True)
 class TryDataPlan:
-    """Per named connection: SQLite uses ``scratch_path`` (a copy the host made);
-    PostgreSQL uses ``pg_mode`` ``rollback`` or ``would_run``. Passwords are
-    never sent here. The child asks through ``NeedSecret``."""
+    """Per named connection. ``specs`` is the section 19.10 plan.
+
+    ``connections`` and ``pg_mode`` stay so an older frame still decodes.
+    When ``specs`` is empty the child derives a plan from ``connections``.
+    Passwords are never sent here. The child asks through ``NeedSecret``.
+    """
 
     connections: Tuple[Tuple[str, object], ...] = ()
     pg_mode: Literal["rollback", "would_run"] = "rollback"
     statement_timeout_ms: int = 5000
     lock_timeout_ms: int = 2000
+    specs: Tuple[TryConnectionSpec, ...] = ()
+    warning: str = ""
 
 
 # =============================================================================

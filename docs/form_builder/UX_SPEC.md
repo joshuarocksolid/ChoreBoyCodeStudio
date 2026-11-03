@@ -3268,6 +3268,8 @@ Sentences, en_US, following UX-M6-001 and UX-M7-001. `{record}` is the record wo
 | Try, own connection | "This form uses your own connection method, so Try only shows what it would run." |
 | App, password prompt | "Password for {user} on {connection}" with "Remember on this machine" when the policy allows it |
 | Try, lock timeout | "Another user is editing this {record}. Try stopped waiting after 2 seconds." |
+| Try, statement timeout | "This query took longer than 5 seconds, so Try stopped it." |
+| Try, saved | "Saved, then rolled back" |
 | Try, sequence | "Try used number {n} from {sequence}. Rolled-back numbers are skipped, so the next real {record} gets a later number." |
 | Try, triggers | "{table} has triggers. Anything they do outside the database isn't rolled back." |
 | Schema, stale | "Columns read {date} (may be out of date)" |

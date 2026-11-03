@@ -33,7 +33,6 @@ from app.features.form_builder.engine.ipc.protocol import (
     LoadForm,
     PromotedClass,
     Response,
-    TryDataPlan,
     TryStart,
 )
 from app.features.form_builder.engine.project.custom_widgets import module_for_header, module_parts
@@ -184,6 +183,7 @@ def build_try_start(
     class_name = window_class_name(scope)
     root_widget = getattr(document, "root", None)
     base = str(getattr(root_widget, "class_name", "") or "QWidget")
+    from app.features.form_builder.qtside.preview.try_data_plan import plan_for
     from app.features.form_builder.qtside.preview.try_log import names_for
 
     display_names = names_for(document)
@@ -195,7 +195,7 @@ def build_try_start(
         window_class_name=class_name or "Window",
         base_class=base,
         window_values=tuple(values),
-        data=TryDataPlan(),
+        data=plan_for(document, root),
         show_form=True,
         run_behavior=True,
         form_path=path,
