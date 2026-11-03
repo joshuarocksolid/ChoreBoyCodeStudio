@@ -455,6 +455,16 @@ def _install_boxes(
                 during()
             return RealBox.StandardButton.Ok
 
+        @staticmethod
+        def information(_parent: object, _title: str, text: str) -> object:  # type: ignore[override]
+            seen.append(text)
+            return RealBox.StandardButton.Ok
+
+        @staticmethod
+        def critical(_parent: object, _title: str, text: str) -> object:  # type: ignore[override]
+            seen.append(text)
+            return RealBox.StandardButton.Ok
+
         def exec(self) -> int:  # type: ignore[override]  # noqa: A003 - Qt spells it exec
             seen.append(self.text())
             if during is not None:

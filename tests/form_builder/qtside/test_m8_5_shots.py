@@ -21,6 +21,8 @@ from app.features.form_builder.engine.session import FormSession
 from app.features.form_builder.qtside.data_panel.chrome import apply_chrome
 from app.features.form_builder.qtside.data_panel.eject_dialog import EjectDialog
 from app.features.form_builder.qtside.data_panel.panel import DataPanel
+from app.features.form_builder.qtside.preview.what_ran import DataStrip
+from app.features.form_builder.qtside.theme.chrome import chrome_from_values
 from app.qt.QtGui import QFont
 from app.qt.QtWidgets import QApplication, QLabel, QPlainTextEdit, QVBoxLayout, QWidget
 from tests.form_builder.engine.test_m8_3b_lines import _invoice_schema, _prepare
@@ -45,7 +47,7 @@ def test_eject_shots(tmp_path: Path, qapp: QApplication) -> None:
         parent = QWidget()
         parent.resize(640, 280)
         dialog = EjectDialog(parent, plan)
-        _shoot(dialog, qapp, root, "eject-dialog", 520, max(dialog.height(), 160))
+        _shoot(dialog, qapp, root, "eject-dialog", 520, max(dialog.sizeHint().height() + 24, 240))
         with session.log.transaction("Eject to code"):
             for command in plan.commands:
                 session.log.execute(command)
@@ -68,12 +70,47 @@ def test_eject_shots(tmp_path: Path, qapp: QApplication) -> None:
         _shoot(shell, qapp, root, "window-load-record", 720, 480)
         fields = _editor(text, "write_fields")
         _shoot(fields, qapp, root, "window-write-fields", 720, 480)
+        from app.features.form_builder.integration.preview_notice import _eject_note
+
+        _shoot(_try_strip(_eject_note(session.document, scope)), qapp, root, "try-ejected-strip", 720, 88)
         assert (root / "eject-dialog-light.png").is_file()
+        assert (root / "try-ejected-strip-light.png").is_file()
         assert (root / "eject-dialog-dark.png").is_file()
         assert (root / "data-tab-ejected-light.png").is_file()
         assert (root / "window-load-record-dark.png").is_file()
     finally:
         set_schema_reader(None)
+
+
+def _try_strip(text: str) -> QWidget:
+    shell = QWidget()
+    shell.setObjectName("formBuilder.previewShell")
+    layout = QVBoxLayout(shell)
+    strip = DataStrip(shell)
+    strip.set_text(text, False)
+    layout.addWidget(strip)
+
+    def apply_theme(tokens: object) -> None:
+        strip.apply_chrome(
+            chrome_from_values(
+                window=tokens.panel_bg,  # type: ignore[attr-defined]
+                panel=tokens.panel_bg,  # type: ignore[attr-defined]
+                text=tokens.text_primary,  # type: ignore[attr-defined]
+                muted=tokens.text_muted,  # type: ignore[attr-defined]
+                faint=tokens.text_muted,  # type: ignore[attr-defined]
+                border=tokens.border,  # type: ignore[attr-defined]
+                accent=tokens.accent,  # type: ignore[attr-defined]
+                row_hover=tokens.border,  # type: ignore[attr-defined]
+                input_bg=tokens.input_bg,  # type: ignore[attr-defined]
+                error=tokens.diag_error_color,  # type: ignore[attr-defined]
+                focus_width=int(tokens.focus_border_width or 1),  # type: ignore[attr-defined]
+                is_dark=bool(getattr(tokens, "is_dark", False)),
+                is_high_contrast=bool(getattr(tokens, "is_high_contrast", False)),
+            )
+        )
+
+    shell.apply_theme = apply_theme  # type: ignore[attr-defined]
+    return shell
 
 
 def _editor(source: str, method: str) -> QWidget:

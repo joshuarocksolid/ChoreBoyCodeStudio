@@ -102,12 +102,17 @@ class MethodRename:
             for surface in done:
                 _undo_if(surface, label)
             return RenameFollowThrough(True, plan, "A form that isn't open could not be renamed.")
+        before_text = seed.source
+        after_text = ""
+        patch = _patch_for(plan, seed.window_path)
+        if patch is not None:
+            after_text = str(getattr(patch, "updated_content", "") or "")
         if written and not done:
             _mark_closed_anchor(window, seed.window_path, label)
         for surface in done:
-            _arm_closed(surface, label, written)
+            _arm_closed(surface, label, written, window, seed.window_path, before_text, after_text)
         if written and not done:
-            _arm_anchor(window, seed.window_path, label, written)
+            _arm_anchor(window, seed.window_path, label, written, before_text, after_text)
         return RenameFollowThrough(False, updated_plan, "")
 
     def closed_note(self, window: object, seed: MethodSeed, plan: object) -> str:
@@ -151,8 +156,17 @@ class _ClosedBook:
     def __init__(self) -> None:
         self.memos: dict = {}
 
-    def arm(self, log: object, entry: object, edits: Sequence[_ClosedEdit]) -> None:
-        self.memos[id(entry)] = (entry, edits)
+    def arm(
+        self,
+        log: object,
+        entry: object,
+        edits: Sequence[_ClosedEdit],
+        window: object = None,
+        path: str = "",
+        before: str = "",
+        after: str = "",
+    ) -> None:
+        self.memos[id(entry)] = (entry, edits, window, path, before, after)
         if getattr(log, "_cbcs_closed_armed", False):
             return
         previous_undo = log.undo
@@ -164,26 +178,28 @@ class _ClosedBook:
             tip = entries[-1] if entries else None
             memo = book.memos.get(id(tip)) if tip is not None else None
             if memo is not None:
-                sentence = _unchanged(memo[1], written=True)
+                sentence = _unchanged(memo[1], written=True) or _window_changed(memo, memo[5])
                 if sentence:
                     log._cbcs_rename_notice = sentence
                     return False
             ok = bool(previous_undo())
             if ok and memo is not None:
                 _write_bytes(memo[1], restore=True)
+                _put_window(memo[2], memo[3], memo[4])
             return ok
 
         def redo() -> bool:
             pending = log._redo[-1] if getattr(log, "_redo", None) else None
             memo = book.memos.get(id(pending)) if pending is not None else None
             if memo is not None:
-                sentence = _unchanged(memo[1], written=False)
+                sentence = _unchanged(memo[1], written=False) or _window_changed(memo, memo[4])
                 if sentence:
                     log._cbcs_rename_notice = sentence
                     return False
             ok = bool(previous_redo())
             if ok and memo is not None:
                 _write_bytes(memo[1], restore=False)
+                _put_window(memo[2], memo[3], memo[5])
             return ok
 
         log.undo = undo  # type: ignore[method-assign]
@@ -288,10 +304,17 @@ def _mark_closed_anchor(window: object, window_path: str, label: str) -> None:
         mark(label)
 
 
-def _arm_anchor(window: object, window_path: str, label: str, edits: Sequence[_ClosedEdit]) -> None:
+def _arm_anchor(
+    window: object,
+    window_path: str,
+    label: str,
+    edits: Sequence[_ClosedEdit],
+    before: str = "",
+    after: str = "",
+) -> None:
     surface = _anchor_surface(window, window_path)
     if surface is not None:
-        _arm_closed(surface, label, edits)
+        _arm_closed(surface, label, edits, window, window_path, before, after)
 
 
 def _anchor_surface(window: object, window_path: str) -> object:
@@ -324,7 +347,41 @@ def _unchanged(edits: Sequence[_ClosedEdit], *, written: bool) -> str:
     return "%s changed after the rename, so the rename can't be undone." % " and ".join(names)
 
 
-def _arm_closed(surface: object, label: str, edits: Sequence[_ClosedEdit]) -> None:
+def _window_changed(memo: tuple, expected: str) -> str:
+    window, path = memo[2], memo[3]
+    if window is None or not path or expected == "":
+        return ""
+    from app.features.form_builder.integration.code_bridge import ShellPort
+
+    current = ShellPort(window).open_text(path)
+    if current is None or current == expected:
+        return ""
+    return "%s changed after the rename, so the rename can't be undone." % os.path.basename(path)
+
+
+def _put_window(window: object, path: str, text: str) -> None:
+    if window is None or not path or text == "":
+        return
+    from app.features.form_builder.integration.code_bridge import ShellPort
+
+    port = ShellPort(window)
+    reload = getattr(port, "reload_saved", None)
+    if callable(reload) and reload(path, text):
+        return
+    widget = port._widget(path)
+    if widget is not None and hasattr(widget, "setPlainText"):
+        widget.setPlainText(text)
+
+
+def _arm_closed(
+    surface: object,
+    label: str,
+    edits: Sequence[_ClosedEdit],
+    window: object = None,
+    path: str = "",
+    before: str = "",
+    after: str = "",
+) -> None:
     if not edits:
         return
     log = getattr(getattr(surface, "session", None), "log", None)
@@ -333,7 +390,7 @@ def _arm_closed(surface: object, label: str, edits: Sequence[_ClosedEdit]) -> No
     entries = log.entries()
     if not entries:
         return
-    _CLOSED.arm(log, entries[-1], edits)
+    _CLOSED.arm(log, entries[-1], edits, window, path, before, after)
 
 
 def register(window: object) -> None:

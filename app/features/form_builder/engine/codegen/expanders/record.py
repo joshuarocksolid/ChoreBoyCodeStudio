@@ -134,7 +134,8 @@ class RecordExpander:
                 prelude.extend(extra)
         also = _also_families(doc, ctx, engine)
         methods = _methods(
-            source, fields, engine, record_word, order, search, check, hooks, allow_keep, rowid, has_lines, prelude, also
+            source, fields, engine, record_word, order, search, check, hooks, allow_keep, rowid, has_lines, prelude, also,
+            _form_handlers(doc),
         )
         imports = _imports(fields, not _closing_generates(doc), also)
         setup: List[str] = []
@@ -169,7 +170,7 @@ class RecordExpander:
         )
 
 
-def _methods(source, fields, engine, record_word, order, search, check, hooks, allow_keep, rowid, has_lines: bool = False, prelude=(), also=()) -> List[Method]:
+def _methods(source, fields, engine, record_word, order, search, check, hooks, allow_keep, rowid, has_lines: bool = False, prelude=(), also=(), events=None) -> List[Method]:
     noun = record_word
     table = source.table
     key = source.key
@@ -183,8 +184,8 @@ def _methods(source, fields, engine, record_word, order, search, check, hooks, a
     pieces = _sql(engine, table, key, noun, order, search, load_columns, insert_columns, writable, check, rowid)
     bodies = {
         "cbcs_open": ("key=None", _open_body(pieces, connection, prelude)),
-        "_cbcs_show": ("_index", _show_body(pieces, connection, fields, hooks)),
-        "_cbcs_start_new": ("", _new_body(fields, hooks, has_lines)),
+        "_cbcs_show": ("_index", _show_body(pieces, connection, fields, hooks, events)),
+        "_cbcs_start_new": ("", _new_body(fields, hooks, has_lines, events)),
         "cbcs_read_fields": ("", _read_body(fields)),
         "cbcs_write_fields": ("_row", _write_body(fields)),
         "_cbcs_snapshot": ("", ["return getattr(self, %s, {})" % _q("_cbcs_saved_fields")]),
@@ -204,9 +205,9 @@ def _methods(source, fields, engine, record_word, order, search, check, hooks, a
         "_cbcs_clear_errors": ("", _clear_errors_body(fields)),
         "_cbcs_show_field": ("_widget, _label, _message", _show_field_body()),
         "_cbcs_conflict": ("", _conflict_body(noun, allow_keep)),
-        "cbcs_save": ("", _save_body(hooks)),
-        "_cbcs_write": ("_overwrite", _write_sql_body(pieces, connection, fields, writable, check, hooks)),
-        "cbcs_delete": ("", _delete_body(pieces, connection, hooks, has_lines and source.delete_lines is not False)),
+        "cbcs_save": ("", _save_body(hooks, events)),
+        "_cbcs_write": ("_overwrite", _write_sql_body(pieces, connection, fields, writable, check, hooks, events)),
+        "cbcs_delete": ("", _delete_body(pieces, connection, hooks, has_lines and source.delete_lines is not False, events)),
         "cbcs_new": ("", _verb_new()),
         "cbcs_revert": ("", _revert_body()),
         "cbcs_reload": ("", ["self.cbcs_revert()"]),
@@ -280,7 +281,7 @@ def _open_body(pieces, connection, prelude=()) -> List[str]:
     return lines
 
 
-def _show_body(pieces, connection, fields, hooks) -> List[str]:
+def _show_body(pieces, connection, fields, hooks, events=None) -> List[str]:
     lines = [
         "if _index < 0 or _index >= len(self._cbcs_keys):",
         "    self._cbcs_start_new()",
@@ -326,13 +327,13 @@ def _show_body(pieces, connection, fields, hooks) -> List[str]:
             "        _load_lines(_conn, _key)",
         ]
     )
-    lines.extend(_call_event("cbcsOnRecordLoaded", False))
+    lines.extend(_call_event("cbcsOnRecordLoaded", False, events))
     lines.extend(_call_hook(hooks.after_load, False))
     lines.extend(_refresh_call())
     return lines
 
 
-def _new_body(fields, hooks, clear_lines: bool = False) -> List[str]:
+def _new_body(fields, hooks, clear_lines: bool = False, events=None) -> List[str]:
     lines = [
         "self._cbcs_new = True",
         "self._cbcs_key = None",
@@ -352,7 +353,7 @@ def _new_body(fields, hooks, clear_lines: bool = False) -> List[str]:
             ]
         )
     lines.append("self._cbcs_ready = True")
-    lines.extend(_call_event("cbcsOnNewRecord", False))
+    lines.extend(_call_event("cbcsOnNewRecord", False, events))
     lines.extend(_call_hook(hooks.new_record, False))
     lines.extend(_refresh_call())
     return lines
@@ -1095,7 +1096,7 @@ def _conflict_body(noun: str, allow_overwrite: bool) -> List[str]:
     return lines
 
 
-def _save_body(hooks: Hooks) -> List[str]:
+def _save_body(hooks: Hooks, events=None) -> List[str]:
     lines = [
         "if not self._cbcs_new and not self._cbcs_is_dirty():",
         "    return True",
@@ -1103,13 +1104,13 @@ def _save_body(hooks: Hooks) -> List[str]:
         "if _validate is not None and _validate() is False:",
         "    return False",
     ]
-    lines.extend(_call_event("cbcsOnBeforeSave", True))
+    lines.extend(_call_event("cbcsOnBeforeSave", True, events))
     lines.extend(_call_hook(hooks.before_save, True))
     lines.append("return self._cbcs_write(False)")
     return lines
 
 
-def _write_sql_body(pieces, connection, fields, writable, check, hooks) -> List[str]:
+def _write_sql_body(pieces, connection, fields, writable, check, hooks, events=None) -> List[str]:
     lines = [
         "import cbcs_connections",
         "_fields = self.cbcs_read_fields()",
@@ -1242,7 +1243,7 @@ def _write_sql_body(pieces, connection, fields, writable, check, hooks) -> List[
         "    self._cbcs_index = self._cbcs_keys.index(self._cbcs_key)",
         ]
     )
-    lines.extend(["    " + line if False else line for line in _call_event("cbcsOnAfterSave", False)])
+    lines.extend(["    " + line if False else line for line in _call_event("cbcsOnAfterSave", False, events)])
     lines.extend(_call_hook(hooks.after_save, False))
     lines.extend(_call_hook(hooks.after_load, False))
     lines.extend(_refresh_call())
@@ -1259,14 +1260,14 @@ def key_tail_only(pieces) -> str:
     return tail
 
 
-def _delete_body(pieces, connection, hooks, delete_children: bool = False) -> List[str]:
+def _delete_body(pieces, connection, hooks, delete_children: bool = False, events=None) -> List[str]:
     lines = [
         "if self._cbcs_new or self._cbcs_key is None:",
         "    return False",
         "if not self._cbcs_ask_delete():",
         "    return False",
     ]
-    lines.extend(_call_event("cbcsOnBeforeDelete", True))
+    lines.extend(_call_event("cbcsOnBeforeDelete", True, events))
     lines.extend(_call_hook(hooks.before_delete, True))
     lines.extend(
         [
@@ -1435,7 +1436,39 @@ def _refresh_call() -> List[str]:
     ]
 
 
-def _call_event(name: str, cancel: bool) -> List[str]:
+def _form_handlers(doc) -> dict:
+    """Handler names for form events that generate. Empty when the form has none."""
+
+    from app.features.form_builder.engine.codegen.expanders.steps import _generates
+    from app.features.form_builder.engine.logic.events_codec import read_list
+    from app.features.form_builder.engine.logic.storage import signal_of_property
+
+    root = getattr(getattr(doc, "root", None), "object_name", "") or ""
+    if not isinstance(root, str) or not compat.is_name(root):
+        return {}
+    found = {}
+    root_node = doc.root
+    for entry in root_node.properties():
+        signal = signal_of_property(entry.name)
+        if signal not in ("recordLoaded", "newRecord", "beforeSave", "afterSave", "beforeDelete"):
+            continue
+        if not isinstance(entry.value, StringValue):
+            continue
+        parsed = read_list(entry.value.text)
+        if not _generates(parsed) or not compat.is_name(signal):
+            continue
+        handler = "_cbcs_%s_%s" % (root, signal)
+        if compat.is_name(handler):
+            found[entry.name] = handler
+    return found
+
+
+def _call_event(name: str, cancel: bool, events=None) -> List[str]:
+    handler = (events or {}).get(name, "")
+    if handler:
+        if cancel:
+            return ["if self.%s() is False:" % handler, "    return False"]
+        return ["self.%s()" % handler]
     if cancel:
         return [
             "_event = getattr(self, %s, None)" % _q(name),

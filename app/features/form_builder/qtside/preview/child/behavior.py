@@ -234,7 +234,10 @@ def make_host_factory(sink: TrySink, message: TryStart):
         chrome.adopt(host)
         chrome.form_ui = ui  # type: ignore[attr-defined]
         chrome.values.set_methods(specs, values)
-        if session is not None:
+        note = str(getattr(message, "eject_note", "") or "")
+        if note:
+            chrome.set_try_data(note, "", False)
+        elif session is not None:
             chrome.set_try_data(session.strip_text(), session.banner_text(), session.show_reset())
             chrome.data_strip.reset_clicked.connect(lambda _ui=ui, _session=session: _reset_scratch(_ui, _session))
         sink.bind(ui, chrome, values)

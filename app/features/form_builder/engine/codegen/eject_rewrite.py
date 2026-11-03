@@ -40,6 +40,7 @@ def render_methods(
     extras: Sequence[Tuple[str, str]],
     wrappers: Sequence[str],
     present: Optional[Set[str]] = None,
+    ui_methods: Optional[Set[str]] = None,
 ) -> Tuple[str, Tuple[str, ...], Tuple[str, ...]]:
     """``(class_block, public_names, helper_names)``."""
 
@@ -71,7 +72,11 @@ def render_methods(
     setup_raw = rewrite_function(
         _wrap("_setup_ejected", "", "\n".join(setup_lines)), widget_names, renames, form_param
     )
+    blob = "\n".join(method.body for method in methods) + "\n".join(helper_sources)
+    if "_cbcs_lookup_missing" in blob or "_lookup_missing" in blob:
+        setup_raw = _ensure_assign(setup_raw, "_lookup_missing", "None")
     state = _assigned_state(setup_raw)
+    on_ui = set(ui_methods or ())
     blocks: List[str] = []
     public: List[str] = []
     helpers: List[str] = []
@@ -83,7 +88,12 @@ def render_methods(
         new = renames.get(method.name, method.name)
         source = _wrap(new, method.params, bodies.get(method.name, method.body))
         rewritten = polish(
-            rewrite_function(source, widget_names, renames, form_param), planned, known, state, defined
+            rewrite_function(source, widget_names, renames, form_param),
+            planned,
+            known,
+            state,
+            defined,
+            on_ui,
         )
         if new in public_of.values() or method.name in public_of:
             public.append(new)
@@ -112,9 +122,10 @@ def render_methods(
                 known,
                 state,
                 defined,
+                on_ui,
             )
             blocks.append(rewritten)
-    blocks.append(polish(setup_raw, planned, known, state, defined))
+    blocks.append(polish(setup_raw, planned, known, state, defined, on_ui))
     helpers.append("_setup_ejected")
     for wrapper in wrappers:
         blocks.append(wrapper.rstrip() + "\n")
@@ -179,7 +190,15 @@ def _walk(
         if node.attr in renames:
             _replace_attr(node, renames[node.attr], lines, edits)
         elif node.attr.startswith("_cbcs_"):
-            _replace_attr(node, window_names(node.attr, {}), lines, edits)
+            parent = parents.get(id(node))
+            called = isinstance(parent, ast.Call) and parent.func is node
+            renamed = window_names(node.attr, {})
+            if called and renamed not in renames.values():
+                span = _span(node, lines)
+                if span is not None:
+                    edits.append((span[0], span[1], "%s.ui.%s" % (node.value.id, node.attr)))
+            else:
+                _replace_attr(node, renamed, lines, edits)
         elif node.attr.startswith("cbcs_") and isinstance(getattr(node, "ctx", None), ast.Load):
             # A generated method that stayed on the Ui, such as cbcs_refresh.
             span = _span(node, lines)
@@ -408,12 +427,13 @@ def polish(
     known: Set[str],
     state: Optional[Set[str]] = None,
     present: Optional[Set[str]] = None,
+    ui_methods: Optional[Set[str]] = None,
 ) -> str:
     """Make one ejected method read like code a person wrote."""
 
     ready = set(state or ())
     defined = set(present or ())
-    text = _simplify(source, planned, known, defined)
+    text = _simplify(source, planned, known, defined, set(ui_methods or ()))
     text = _plain_reads(text, ready, planned, defined)
     text = _rename_locals(text)
     text = _restyle_strings(text)
@@ -424,12 +444,12 @@ def polish(
     return text
 
 
-def _simplify(source: str, planned: Set[str], known: Set[str], present: Set[str]) -> str:
+def _simplify(source: str, planned: Set[str], known: Set[str], present: Set[str], ui_methods: Set[str]) -> str:
     tree = ast.parse(source)
     root = next(node for node in tree.body if isinstance(node, ast.FunctionDef))
     lines = source.splitlines(keepends=True)
     edits: List[Tuple[int, int, str]] = []
-    _simplify_body(root.body, source, lines, planned, known, present, edits)
+    _simplify_body(root.body, source, lines, planned, known, present, ui_methods, edits)
     return _apply(source, edits)
 
 
@@ -440,12 +460,23 @@ def _simplify_body(
     planned: Set[str],
     known: Set[str],
     present: Set[str],
+    ui_methods: Set[str],
     edits: List[Tuple[int, int, str]],
 ) -> None:
     index = 0
     while index < len(body):
         stmt = body[index]
         nxt = body[index + 1] if index + 1 < len(body) else None
+        refresh = _refresh_hedge(stmt, source, lines, "cbcs_refresh" in ui_methods)
+        if refresh is not None:
+            edits.append(refresh)
+            index += 1
+            continue
+        direct = _direct_hook(stmt, lines)
+        if direct is not None:
+            edits.append(direct)
+            index += 1
+            continue
         if nxt is not None and _drop_redundant_write(stmt, nxt, lines, edits):
             index += 2
             continue
@@ -467,8 +498,72 @@ def _simplify_body(
             index += 2
             continue
         for child in _nested_bodies(stmt):
-            _simplify_body(child, source, lines, planned, known, present, edits)
+            _simplify_body(child, source, lines, planned, known, present, ui_methods, edits)
         index += 1
+
+
+def _refresh_hedge(
+    stmt: ast.stmt,
+    source: str,
+    lines: Sequence[str],
+    keep: bool,
+) -> Optional[Tuple[int, int, str]]:
+    """``hasattr(self.ui, "cbcs_refresh")`` is known at eject time."""
+
+    if not isinstance(stmt, ast.If) or len(stmt.body) != 1 or stmt.orelse:
+        return None
+    if not _is_refresh_call(stmt.body[0]):
+        return None
+    parts = stmt.test.values if isinstance(stmt.test, ast.BoolOp) and isinstance(stmt.test.op, ast.And) else [stmt.test]
+    hedge = next((part for part in parts if _is_refresh_hasattr(part)), None)
+    if hedge is None:
+        return None
+    start = _offset(lines, stmt.lineno, 0)
+    end_line = stmt.end_lineno or stmt.lineno
+    end = _offset(lines, end_line, len(lines[end_line - 1]))
+    if not keep:
+        return (start, end, "")
+    rest = [part for part in parts if part is not hedge]
+    indent = lines[stmt.lineno - 1][: stmt.col_offset]
+    call = (ast.get_source_segment(source, stmt.body[0]) or "self.ui.cbcs_refresh()").strip()
+    if not rest:
+        return (start, end, "%s%s\n" % (indent, call))
+    test = " and ".join(ast.get_source_segment(source, part) or "" for part in rest)
+    return (start, end, "%sif %s:\n%s    %s\n" % (indent, test, indent, call))
+
+
+def _is_refresh_hasattr(node: ast.AST) -> bool:
+    if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Name) or node.func.id != "hasattr":
+        return False
+    if len(node.args) < 2 or not isinstance(node.args[1], ast.Constant) or node.args[1].value != "cbcs_refresh":
+        return False
+    owner = node.args[0]
+    return (
+        isinstance(owner, ast.Attribute)
+        and owner.attr == "ui"
+        and isinstance(owner.value, ast.Name)
+        and owner.value.id == "self"
+    )
+
+
+def _is_refresh_call(stmt: ast.stmt) -> bool:
+    if not isinstance(stmt, ast.Expr) or not isinstance(stmt.value, ast.Call):
+        return False
+    func = stmt.value.func
+    return (
+        isinstance(func, ast.Attribute)
+        and func.attr == "cbcs_refresh"
+        and isinstance(func.value, ast.Attribute)
+        and func.value.attr == "ui"
+        and isinstance(func.value.value, ast.Name)
+        and func.value.value.id == "self"
+    )
+
+
+def _ensure_assign(source: str, name: str, value: str) -> str:
+    if ("self.%s =" % name) in source:
+        return source
+    return source + "    self.%s = %s\n" % (name, value)
 
 
 def _nested_bodies(stmt: ast.stmt) -> List[Sequence[ast.stmt]]:
@@ -559,6 +654,52 @@ def _cancel_edit(
     indent = _line_indent(lines, nxt.lineno)
     text = "%sif self.%s() is False:\n%s    return False\n" % (indent, name, indent)
     return start, end, text
+
+
+def _direct_hook(stmt: ast.stmt, lines: Sequence[str]) -> Optional[Tuple[int, int, str]]:
+    """A form hook named at eject time is a direct call. A missing refresh call is omitted."""
+
+    if not isinstance(stmt, ast.If) or stmt.orelse:
+        return None
+    name = _form_hook_name(stmt.test)
+    if name:
+        indent = _line_indent(lines, stmt.lineno)
+        start, end = _stmt_bounds(stmt, lines)
+        if _returns_false(stmt):
+            return start, end, "%sif self.%s() is False:\n%s    return False\n" % (indent, name, indent)
+        return start, end, "%sself.%s()\n" % (indent, name)
+    return None
+
+
+def _form_hook_name(test: ast.AST) -> str:
+    if isinstance(test, ast.BoolOp) and isinstance(test.op, ast.And) and test.values:
+        test = test.values[0]
+    if not isinstance(test, ast.Call) or not isinstance(test.func, ast.Name) or test.func.id != "hasattr":
+        return ""
+    if len(test.args) < 2:
+        return ""
+    owner, const = test.args[0], test.args[1]
+    if not isinstance(const, ast.Constant) or not isinstance(const.value, str):
+        return ""
+    if not isinstance(owner, ast.Attribute) or owner.attr != "_form":
+        return ""
+    if not isinstance(owner.value, ast.Name) or owner.value.id != "self":
+        return ""
+    return const.value
+
+
+def _returns_false(stmt: ast.If) -> bool:
+    for node in stmt.body:
+        if isinstance(node, ast.Return):
+            value = node.value
+            return isinstance(value, ast.Constant) and value.value is False
+    return False
+
+
+def _stmt_bounds(stmt: ast.stmt, lines: Sequence[str]) -> Tuple[int, int]:
+    start = _offset(lines, stmt.lineno, 0)
+    end_line = stmt.end_lineno or stmt.lineno
+    return start, _offset(lines, end_line, len(lines[end_line - 1]))
 
 
 def _line_indent(lines: Sequence[str], lineno: int) -> str:

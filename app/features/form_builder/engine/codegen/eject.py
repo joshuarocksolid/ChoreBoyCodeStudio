@@ -171,6 +171,12 @@ def plan_eject(doc: UiDocument, scope: FormScope, window_source: str = "") -> Ej
     ui_class, ui_module = _ui_names(doc, scope)
     present = _present_names(window_source, ui_class, ui_module) if window_source.strip() else set()
     try:
+        stayed = {
+            method.name
+            for item in contributions
+            if item.expander_order not in _DATA_ORDERS
+            for method in item.methods
+        }
         block, public, helpers = render_methods(
             methods,
             _helper_sources(data),
@@ -181,6 +187,7 @@ def plan_eject(doc: UiDocument, scope: FormScope, window_source: str = "") -> Ej
             extra,
             wrappers,
             present,
+            stayed,
         )
     except SyntaxError as exc:
         raise ValueError("This form's data code can't be moved into the window file.") from exc
@@ -242,7 +249,7 @@ def splice_window(source: str, plan: EjectPlan) -> str:
     # The call can span lines. The setup line goes after the last line of the
     # call, and the state that refresh reads goes before the first line.
     call_indent = _line_indent(lines, call.lineno)
-    block = _indented(plan.class_block, indent)
+    block = _indented(_strip_primed(plan.class_block), indent)
     eol = "\r\n" if "\r\n" in source else "\n"
     marker = "%s# %s: %s%s" % (indent, MARKER, plan.first_method, eol)
     end_line = target.end_lineno or call.end_lineno
@@ -360,6 +367,7 @@ def _summary(filename: str, ui_name: str, names: Sequence[str], helpers: Sequenc
         "Adds %d methods and %d helpers to %s.\n%s" % (len(names), len(helpers), filename, _capped(names)),
         "Removes the data settings from %s" % ui_name,
         third,
+        "Eject saves %s and %s." % (ui_name, filename),
     )
 
 
@@ -640,16 +648,9 @@ def _refuse_collisions(target: ast.ClassDef, plan: EjectPlan, tree: ast.AST) -> 
             if name in defined or name in state:
                 raise ValueError("%s already defines %s." % (target.name, name))
     for node in _own_nodes(target):
-        if not isinstance(node, ast.Assign):
-            continue
-        for item in node.targets:
-            if (
-                isinstance(item, ast.Attribute)
-                and isinstance(item.value, ast.Name)
-                and item.value.id == "self"
-                and item.attr in state
-            ):
-                raise ValueError("%s already sets self.%s." % (target.name, item.attr))
+        for attr in _self_targets(node):
+            if attr in state:
+                raise ValueError("%s already sets self.%s." % (target.name, attr))
     for base_name, method in _inherited(target, _class_index(tree)):
         if method in defined:
             raise ValueError("%s's base %s already has %s." % (target.name, base_name, method))
@@ -735,7 +736,7 @@ def _override_notes(target: ast.ClassDef, tree: ast.AST) -> Tuple[str, ...]:
             continue
         if isinstance(base, ast.Name) and base.id in index:
             continue
-        notes.append("Methods of the same name on %s will be overridden." % label)
+        notes.append("Methods and saved values of the same name on %s will be overridden." % label)
     return tuple(notes)
 
 
@@ -757,6 +758,67 @@ def _marked(source: str) -> bool:
 
 def _with_eol(text: str, eol: str) -> str:
     return text.replace("\r\n", "\n").replace("\n", eol)
+
+
+def _self_targets(stmt: ast.AST) -> List[str]:
+    """Names in ``self.name =``, ``self.name +=``, ``self.name: T =`` and tuple targets."""
+
+    targets: List[ast.AST] = []
+    if isinstance(stmt, ast.Assign):
+        targets.extend(stmt.targets)
+    elif isinstance(stmt, ast.AnnAssign) and stmt.value is not None:
+        targets.append(stmt.target)
+    elif isinstance(stmt, ast.AugAssign):
+        targets.append(stmt.target)
+    found: List[str] = []
+    for target in targets:
+        found.extend(_attr_names(target))
+    return found
+
+
+def _attr_names(target: ast.AST) -> List[str]:
+    if isinstance(target, (ast.Tuple, ast.List)):
+        found: List[str] = []
+        for item in target.elts:
+            found.extend(_attr_names(item))
+        return found
+    if (
+        isinstance(target, ast.Attribute)
+        and isinstance(target.value, ast.Name)
+        and target.value.id == "self"
+    ):
+        return [target.attr]
+    return []
+
+
+def _strip_primed(block: str) -> str:
+    """State is assigned once, before ``setupUi``. The setup method does not repeat it."""
+
+    try:
+        tree = ast.parse(block)
+    except SyntaxError:
+        return block
+    setup = next(
+        (node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == _SETUP),
+        None,
+    )
+    if setup is None:
+        return block
+    drop = set()
+    for stmt in setup.body:
+        if not isinstance(stmt, ast.Assign) or len(stmt.targets) != 1:
+            continue
+        target = stmt.targets[0]
+        if not isinstance(target, ast.Attribute) or not isinstance(target.value, ast.Name):
+            continue
+        if target.value.id != "self" or not _prime_value(stmt.value):
+            continue
+        end = int(stmt.end_lineno or stmt.lineno)
+        for number in range(int(stmt.lineno), end + 1):
+            drop.add(number)
+    if not drop:
+        return block
+    return "".join(line for number, line in enumerate(block.splitlines(keepends=True), 1) if number not in drop)
 
 
 def _prime_lines(block: str, indent: str, eol: str) -> List[str]:
@@ -862,6 +924,28 @@ def _insert_line_after(source: str, lineno: int, addition: str) -> str:
     return "".join(lines)
 
 
+def _without_imported(line: str, imported: Dict[str, Set[str]]) -> str:
+    """Drop names the window file already imports. Empty when nothing new remains."""
+
+    try:
+        node = ast.parse(line).body[0]
+    except SyntaxError:
+        return line
+    if not isinstance(node, ast.ImportFrom) or not node.module or node.level:
+        return line
+    have = imported.get(node.module, set())
+    kept = []
+    for alias in node.names:
+        if alias.name in have and not alias.asname:
+            continue
+        kept.append("%s as %s" % (alias.name, alias.asname) if alias.asname else alias.name)
+    if len(kept) == len(node.names):
+        return line
+    if not kept:
+        return ""
+    return "from %s import %s" % (node.module, ", ".join(kept))
+
+
 def _insert_imports(source: str, imports: Sequence[str]) -> str:
     if not imports:
         return source
@@ -870,12 +954,22 @@ def _insert_imports(source: str, imports: Sequence[str]) -> str:
     except SyntaxError:
         return source
     present = set()
+    imported: Dict[str, Set[str]] = {}
     last = 0
     for node in tree.body:
         if isinstance(node, (ast.Import, ast.ImportFrom)) and node.end_lineno:
             last = max(last, node.end_lineno)
             present.add(ast.get_source_segment(source, node) or "")
-    missing = [line for line in imports if line not in present and not any(line in item for item in present)]
+        if isinstance(node, ast.ImportFrom) and node.module:
+            imported.setdefault(node.module, set()).update(alias.name for alias in node.names)
+    missing = []
+    for line in imports:
+        if line in present or any(line in item for item in present):
+            continue
+        fresh = _without_imported(line, imported)
+        if not fresh:
+            continue
+        missing.append(fresh)
     if not missing:
         return source
     lines = source.splitlines(keepends=True)

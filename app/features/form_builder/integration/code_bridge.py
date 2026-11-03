@@ -587,6 +587,20 @@ class ShellPort:
         widget.setPlainText(text)
         document.setUndoRedoEnabled(True)
 
+    def reload_saved(self, path: str, text: str) -> bool:
+        """Replace an open tab with text that is already on disk. The tab's undo starts here."""
+
+        widget = self._widget(path)
+        if widget is None:
+            return False
+        self._write_without_history(widget, text)
+        document = widget.document()
+        clear = getattr(document, "clearUndoRedoStacks", None)
+        if callable(clear):
+            clear()
+        self.mark_clean(path)
+        return True
+
     def mark_clean(self, path: str) -> None:
         widget = self._widget(path)
         text = str(widget.toPlainText()) if widget is not None else ""

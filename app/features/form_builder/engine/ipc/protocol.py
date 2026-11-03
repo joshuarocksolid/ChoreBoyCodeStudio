@@ -252,6 +252,8 @@ class TryStart:
     # ``(object name, display name)`` from FormulaEnv. The child keeps object
     # names in generated code and applies this map when it paints What ran.
     display_names: Tuple[Tuple[str, str], ...] = ()
+    # One strip sentence when the form's data code lives in the window file.
+    eject_note: str = ""
 
 
 @dataclass(frozen=True)

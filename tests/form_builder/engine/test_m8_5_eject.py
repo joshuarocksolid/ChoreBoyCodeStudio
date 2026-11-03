@@ -25,6 +25,7 @@ from app.features.form_builder.engine.data.schema import set_schema_reader, writ
 from app.features.form_builder.engine.data.schema_cache import install_schema_reader
 from app.features.form_builder.engine.data.source import Lookup, RecordSource, write_lookup
 from app.features.form_builder.engine.ids import IdAllocator
+from app.features.form_builder.engine.logic.checks import Length, write_checks
 from app.features.form_builder.engine.logic.codec import Step
 from app.features.form_builder.engine.logic.events import read_events
 from app.features.form_builder.engine.logic.events_codec import EventStep
@@ -407,6 +408,9 @@ def _host_ejected(
     window_mod = importlib.import_module("forms.%s_window" % stem)
     _mark_run(window_mod, connections)
     _install_boxes(window_mod, [], None, choose, lambda: ("INV-1", True))
+    ui_mod = sys.modules.get("forms.ui_%s" % stem)
+    if ui_mod is not None:
+        _install_boxes(ui_mod, [], None, choose, lambda: ("INV-1", True))
     previous = sys.modules.get("cbcs_connections")
     sys.modules["cbcs_connections"] = connections
     app = QApplication.instance() or QApplication([])
@@ -766,28 +770,38 @@ def test_commit_eject_undo_redo_and_a_changed_window_refuses(tmp_path: Path) -> 
         )()
         shell.code_bridge = CodeBridge(str(root), ShellPort(shell))
         plan = plan_eject(session.document, scope)
+        ui_path = str(scope.ui_path)
+        before_ui = Path(ui_path).read_bytes()
+        before_py = Path(path).read_bytes()
+        assert "Eject saves invoice.ui and invoice_window.py." in plan.summary
         assert commit_eject(shell, plan) == ""
-        assert editor.toPlainText() != window
-        assert Path(path).read_text(encoding="utf-8") == window
-        assert editor.document().isModified() is True
+        ejected_py = Path(path).read_bytes()
+        ejected_ui = Path(ui_path).read_bytes()
+        assert ejected_py != before_py
+        assert ejected_ui != before_ui
+        assert editor.toPlainText().encode("utf-8") == ejected_py
+        assert editor.document().isModified() is False
+        assert b"def load_record(" in ejected_py
+        editor.document().undo()
+        assert editor.toPlainText().encode("utf-8") == ejected_py
         assert session.log.undo() is True
-        assert editor.toPlainText() == window
+        assert Path(path).read_bytes() == before_py
+        assert Path(ui_path).read_bytes() == before_ui
+        assert editor.toPlainText().encode("utf-8") == before_py
         assert session.text() == before
         assert session.log.redo() is True
+        assert Path(path).read_bytes() == ejected_py
+        assert Path(ui_path).read_bytes() == ejected_ui
         assert "def load_record(" in editor.toPlainText()
         assert ejected_method(session.document) == "load_record"
         longer = editor.toPlainText() + "\n# edited\n"
         editor.setPlainText(longer)
         assert session.log.undo() is False
         assert editor.toPlainText() == longer
+        assert Path(path).read_bytes() == ejected_py
+        assert Path(ui_path).read_bytes() == ejected_ui
         assert ejected_method(session.document) == "load_record"
         assert "changed after Eject" in shell._eject_notice
-        shorter = longer[:-8]
-        editor.setPlainText(shorter)
-        assert session.log.undo() is False
-        assert editor.toPlainText() == shorter
-        assert ejected_method(session.document) == "load_record"
-        assert Path(path).read_text(encoding="utf-8") == window
     finally:
         if editor is not None:
             editor.close()
@@ -836,10 +850,8 @@ def test_commit_eject_opens_a_closed_window_file(tmp_path: Path, qapp: QApplicat
         shell.code_bridge = CodeBridge(str(root), ShellPort(shell))
         plan = plan_eject(session.document, scope)
         assert commit_eject(shell, plan) == ""
-        editor = editors[os.path.abspath(path)]
-        assert "def load_record(" in editor.toPlainText()
-        assert editor.document().isModified() is True
-        assert Path(path).read_text(encoding="utf-8") == window
+        assert "def load_record(" in Path(path).read_text(encoding="utf-8")
+        assert os.path.abspath(path) not in editors
     finally:
         for opened in editors.values():
             opened.close()
@@ -850,4 +862,361 @@ def test_commit_eject_opens_a_closed_window_file(tmp_path: Path, qapp: QApplicat
         app = QApplication.instance()
         if app is not None:
             app.processEvents()
+        set_schema_reader(None)
+
+
+def test_validate_then_save_refuses_a_short_value(tmp_path: Path) -> None:
+    from app.features.form_builder.engine.commands.catalog import SetLogic
+
+    module = None
+    try:
+        root, scope, ui_text = _project(tmp_path, _scenario_ui(), _prepare, "invoice.ui", _invoice_schema())
+        session = FormSession.open(ui_text, path=scope.ui_path, scope=scope)
+        node = session.document.by_name("invoiceNoEdit")[0]
+        checks = write_checks((Length(6, None, "Too short"),))
+        raw_validate = Step("validate", None, True, (), ())
+        raw_save = Step("save", None, True, (), ())
+        with session.log.transaction("Checks"):
+            session.log.execute(SetLogic(node, "cbcsValidate", checks))
+            session.log.execute(
+                SetEventSteps(
+                    "saveButton",
+                    "clicked",
+                    (EventStep("validate", raw=raw_validate), EventStep("save", raw=raw_save)),
+                )
+            )
+        _close_leftovers()
+        module = _connections(root, [])
+        saved = "SELECT invoice_no FROM invoices ORDER BY id"
+        before = _rows(root, saved)
+        for ejected in (False, True):
+            if ejected:
+                plan = plan_eject(session.document, scope)
+                with session.log.transaction("Eject to code"):
+                    for command in plan.commands:
+                        session.log.execute(command)
+                host = _host_ejected(root, scope, session.text(), plan, module, lambda _text: "Close")
+            else:
+                host = _host_bound(root, scope, session.text(), module, lambda _text: "Close")
+            host.ui.invoiceNoEdit.setText("X")
+            host.ui.saveButton.click()
+            assert _rows(root, saved) == before
+            host.ui.invoiceNoEdit.setText("LONGENOUGH")
+            host.ui.saveButton.click()
+            assert _rows(root, saved) == [("LONGENOUGH",)]
+            before = _rows(root, saved)
+            host.close()
+        module.close_all()
+    finally:
+        if module is not None:
+            _restore_connections(module)
+        set_schema_reader(None)
+        _drop_forms(tmp_path / "proj")
+
+
+def test_preview_of_an_ejected_record_formula_does_not_crash(tmp_path: Path, qapp: QApplication) -> None:
+    value = (
+        '    <property name="cbcsValue" stdset="0">'
+        '<string notr="true">record.invoice_no</string></property>\n'
+        '    <property name="cbcsEnabledWhen" stdset="0">'
+        '<string notr="true">form.isDirty</string></property>\n'
+    )
+    ui = _xml(
+        RecordSource("shop", "invoices", "id"),
+        (
+            ("QLineEdit", "invoiceNoEdit", "invoice_no", ""),
+            ("QLabel", "noLabel", "", value),
+            ("QPushButton", "saveButton", "", ""),
+        ),
+    )
+    try:
+        root, scope, ui_text = _project(tmp_path, ui, _prepare, "invoice.ui", _invoice_schema())
+        session = FormSession.open(ui_text, path=scope.ui_path, scope=scope)
+        plan = plan_eject(session.document, scope)
+        with session.log.transaction("Eject to code"):
+            for command in plan.commands:
+                session.log.execute(command)
+        from app.features.form_builder.integration.preview_notice import _eject_note
+
+        assert _eject_note(session.document, scope) == (
+            "This form's data code is in invoice_window.py, so Try shows the layout and lists the calls instead of running them."
+        )
+        source = _generate(root, Path(scope.ui_path), session.text())
+        generated = Path(scope.generated_path or "")
+        generated.write_text(source, encoding="utf-8")
+        module = _load_module(generated, "ui_preview_ejected")
+        assert "noLabel" in source
+        host = QDialog()
+        form = _ui_class(module)()
+        form.setupUi(host)
+        qapp.processEvents()
+        from app.qt.QtWidgets import QLabel
+
+        label = host.findChild(QLabel, "noLabel")
+        assert label is not None
+        assert label.text() == ""
+        assert label.isEnabled() is False
+        host.close()
+    finally:
+        set_schema_reader(None)
+        _drop_forms(tmp_path / "proj")
+
+
+def test_a_root_form_event_runs_on_the_bound_and_ejected_form(tmp_path: Path) -> None:
+    event = (
+        '    <property name="cbcsOnBeforeSave" stdset="0"><string notr="true">'
+        '[{"do": "set", "field": "invoiceNoEdit", "formula": "\\"FROMEVENT\\""}]'
+        "</string></property>\n"
+    )
+    ui = _scenario_ui().replace(
+        '<widget class="QDialog" name="Invoice">\n',
+        '<widget class="QDialog" name="Invoice">\n' + event,
+        1,
+    )
+    module = None
+    try:
+        root, scope, ui_text = _project(tmp_path, ui, _prepare, "invoice.ui", _invoice_schema())
+        session = FormSession.open(ui_text, path=scope.ui_path, scope=scope)
+        _arm_save(session)
+        _close_leftovers()
+        module = _connections(root, [])
+        saved = "SELECT invoice_no FROM invoices ORDER BY id"
+        for ejected in (False, True):
+            if ejected:
+                plan = plan_eject(session.document, scope)
+                with session.log.transaction("Eject to code"):
+                    for command in plan.commands:
+                        session.log.execute(command)
+                host = _host_ejected(root, scope, session.text(), plan, module, lambda _text: "Close")
+            else:
+                host = _host_bound(root, scope, session.text(), module, lambda _text: "Close")
+            source = Path(scope.generated_path or "").read_text(encoding="utf-8")
+            assert ".beforeSave.connect" not in source
+            host.ui.invoiceNoEdit.setText("KEEP")
+            assert (host.save_record() if ejected else host.ui.cbcs_save()) is True
+            assert host.ui.invoiceNoEdit.text() == "FROMEVENT"
+            assert _rows(root, saved) == [("FROMEVENT",)]
+            host.close()
+        module.close_all()
+    finally:
+        if module is not None:
+            _restore_connections(module)
+        set_schema_reader(None)
+        _drop_forms(tmp_path / "proj")
+
+
+def test_a_before_save_stop_refuses_the_save_bound_and_ejected(tmp_path: Path) -> None:
+    event = (
+        '    <property name="cbcsOnBeforeSave" stdset="0"><string notr="true">'
+        '[{"do": "stop", "message": "no X", "when": "invoiceNoEdit.text == \\"X\\""}]'
+        "</string></property>\n"
+    )
+    ui = _scenario_ui().replace(
+        '<widget class="QDialog" name="Invoice">\n',
+        '<widget class="QDialog" name="Invoice">\n' + event,
+        1,
+    )
+    module = None
+    try:
+        root, scope, ui_text = _project(tmp_path, ui, _prepare, "invoice.ui", _invoice_schema())
+        session = FormSession.open(ui_text, path=scope.ui_path, scope=scope)
+        _arm_save(session)
+        _close_leftovers()
+        module = _connections(root, [])
+        saved = "SELECT invoice_no FROM invoices ORDER BY id"
+        kept = "INV-1"
+        for ejected in (False, True):
+            if ejected:
+                plan = plan_eject(session.document, scope)
+                with session.log.transaction("Eject to code"):
+                    for command in plan.commands:
+                        session.log.execute(command)
+                host = _host_ejected(root, scope, session.text(), plan, module, lambda _text: "Close")
+                save = host.save_record
+            else:
+                host = _host_bound(root, scope, session.text(), module, lambda _text: "Close")
+                save = host.ui.cbcs_save
+            host.ui.invoiceNoEdit.setText("X")
+            assert save() is False
+            assert _rows(root, saved) == [(kept,)]
+            host.ui.invoiceNoEdit.setText("Y")
+            assert save() is True
+            assert _rows(root, saved) == [("Y",)]
+            kept = "Y"
+            host.close()
+        module.close_all()
+    finally:
+        if module is not None:
+            _restore_connections(module)
+        set_schema_reader(None)
+        _drop_forms(tmp_path / "proj")
+
+
+def _ejected_text(tmp_path: Path, ui: str) -> str:
+    _root, scope, ui_text = _project(tmp_path, ui, _prepare, "invoice.ui", _invoice_schema())
+    try:
+        session = FormSession.open(ui_text, path=scope.ui_path, scope=scope)
+        plan = plan_eject(session.document, scope)
+        return splice_window(render_window_class(session.document, scope=scope), plan)
+    finally:
+        set_schema_reader(None)
+
+
+def test_ejected_window_drops_hedges_it_can_decide(tmp_path: Path) -> None:
+    plain = _ejected_text(tmp_path, _scenario_ui())
+    assert 'getattr(self, "_lookup_missing"' not in plain
+    assert 'hasattr(self.ui, "cbcs_refresh")' not in plain
+    assert "self.ui.cbcs_refresh()" not in plain
+    assert "self._lookup_missing" in plain
+    assert plain.count("import QDialog") == 1
+    ast.parse(plain)
+    formula = _scenario_ui().replace(
+        '<widget class="QPushButton" name="saveButton">',
+        '<widget class="QPushButton" name="saveButton">\n'
+        '     <property name="cbcsEnabledWhen" stdset="0"><string notr="true">form.isDirty</string></property>',
+        1,
+    )
+    decided = _ejected_text(tmp_path / "formula", formula)
+    assert 'hasattr(self.ui, "cbcs_refresh")' not in decided
+    assert "self.ui.cbcs_refresh()" in decided
+    ast.parse(decided)
+
+
+def test_state_collisions_include_updates_annotations_and_tuples(tmp_path: Path) -> None:
+    from app.features.form_builder.engine.codegen.eject import window_objections
+
+    try:
+        _root, scope, ui_text = _project(tmp_path, _scenario_ui(), _prepare, "invoice.ui", _invoice_schema())
+        session = FormSession.open(ui_text, path=scope.ui_path, scope=scope)
+        plan = plan_eject(session.document, scope, _WINDOW)
+        bodies = (
+            "self._record += 1",
+            "self._record: dict = {}",
+            "self._record, self._ready = {}, False",
+        )
+        for body in bodies:
+            window = _WINDOW.replace(
+                "        self.ui.setupUi(self)\n",
+                "        self.ui.setupUi(self)\n        %s\n" % body,
+            )
+            with pytest.raises(ValueError) as raised:
+                window_objections(window, plan)
+            assert "self._record" in str(raised.value)
+        external = _WINDOW.replace("class InvoiceWindow(QDialog):", "class InvoiceWindow(Base):")
+        notes = window_objections(external, plan)
+        assert any("saved values" in note and "Base" in note for note in notes)
+    finally:
+        set_schema_reader(None)
+
+
+def test_a_list_opens_the_selected_record_and_asks_before_leaving(tmp_path: Path) -> None:
+    root, scope, ui_text = _project(tmp_path, _xml(_source(10), _widgets()), _prepare_list, "customers.ui", None)
+    forms = root / "forms"
+    (forms / "__init__.py").write_text("", encoding="utf-8")
+    (forms / "customer_window.py").write_text(
+        "class _Signal:\n"
+        "    def connect(self, fn):\n"
+        "        return None\n\n"
+        "class CustomerWindow(object):\n"
+        "    loaded = []\n"
+        "    started = []\n"
+        "    asked = []\n"
+        "    opened = []\n"
+        "    visible = False\n"
+        "    allow = True\n"
+        "    def __init__(self, parent=None):\n"
+        "        self.ui = self\n"
+        "        self.finished = _Signal()\n"
+        "    def load_record(self, key):\n"
+        "        CustomerWindow.loaded.append(key)\n"
+        "    def new_record(self):\n"
+        "        CustomerWindow.started.append(True)\n"
+        "    def confirm_leave(self):\n"
+        "        CustomerWindow.asked.append(True)\n"
+        "        return CustomerWindow.allow\n"
+        "    def cbcs_open(self, key):\n"
+        "        CustomerWindow.opened.append(key)\n"
+        "    def isVisible(self):\n"
+        "        return CustomerWindow.visible\n"
+        "    def exec(self):\n"
+        "        return 0\n"
+        "    def show(self):\n"
+        "        return None\n"
+        "    def raise_(self):\n"
+        "        return None\n"
+        "    def activateWindow(self):\n"
+        "        return None\n"
+        "    def setWindowFlag(self, flag):\n"
+        "        return None\n",
+        encoding="utf-8",
+    )
+    inserted = str(root)
+    if inserted not in sys.path:
+        sys.path.insert(0, inserted)
+    module = None
+    try:
+        session = FormSession.open(ui_text, path=scope.ui_path, scope=scope)
+        _close_leftovers()
+        module = _connections(root, [])
+        host = _host_bound(root, scope, session.text(), module, lambda _text: "Close")
+        import forms.customer_window as window_mod
+
+        host.ui.customersView.selectRow(1)
+        host.ui.cbcs_open_record("selected")
+        assert window_mod.CustomerWindow.loaded
+        assert window_mod.CustomerWindow.opened == []
+        first = window_mod.CustomerWindow.loaded[-1]
+        host.ui.customersView.selectRow(0)
+        host.ui.cbcs_open_record("selected")
+        assert window_mod.CustomerWindow.loaded[-1] != first
+        host.ui.cbcs_open_record("new")
+        assert window_mod.CustomerWindow.started == [True]
+        window_mod.CustomerWindow.visible = True
+        window_mod.CustomerWindow.allow = False
+        loaded = list(window_mod.CustomerWindow.loaded)
+        host.ui.cbcs_open_record("selected")
+        assert window_mod.CustomerWindow.asked
+        assert window_mod.CustomerWindow.loaded == loaded
+        host.close()
+        module.close_all()
+    finally:
+        if module is not None:
+            _restore_connections(module)
+        _drop_forms(root)
+
+
+def test_eject_refuses_a_dirty_window_before_the_dialog(tmp_path: Path) -> None:
+    from app.editors.code_editor_widget import CodeEditorWidget
+    from app.features.form_builder.integration.code_bridge import CodeBridge, ShellPort
+    from app.features.form_builder.qtside.data_panel.eject_cmd import plan_for
+    from app.qt.QtWidgets import QWidget
+
+    editor = None
+    shell = None
+    try:
+        root, scope, ui_text = _project(tmp_path, _scenario_ui(), _prepare, "invoice.ui", _invoice_schema())
+        session = FormSession.open(ui_text, path=scope.ui_path, scope=scope)
+        window = render_window_class(read_ui(ui_text, allocator=IdAllocator()).document, scope=scope)
+        path = str(scope.window_path)
+        Path(path).write_text(window, encoding="utf-8")
+        editor = CodeEditorWidget()
+        editor.setPlainText(window + "\n# unsaved\n")
+        shell = QWidget()
+        shell.session = session
+        shell._workspace_controller = type(
+            "C",
+            (),
+            {"widget_for_path": lambda _self, asked: editor if os.path.abspath(asked) == os.path.abspath(path) else None},
+        )()
+        shell.code_bridge = CodeBridge(str(root), ShellPort(shell))
+        sentence = plan_for(shell)
+        assert sentence == "Save or discard your changes to invoice_window.py first."
+        assert Path(path).read_text(encoding="utf-8") == window
+    finally:
+        if editor is not None:
+            editor.close()
+            editor.deleteLater()
+        if shell is not None:
+            shell.close()
+            shell.deleteLater()
         set_schema_reader(None)

@@ -3236,9 +3236,10 @@ What ran logs each statement as "Ran: UPDATE "invoices" SET … (3 values)". The
 **UX-EJECT-001** `M8.5` `[S T]` Eject to code (F14). The dialog lists:
 - "Adds {n} methods and {m} helpers to invoice_window.py." and, on the next line, the first 8 names, then "and {k} more";
 - "Removes the data settings from invoice.ui";
-- "Save, Delete and the toolbar buttons will call your methods".
+- "Save, Delete and the toolbar buttons will call your methods";
+- "Eject saves invoice.ui and invoice_window.py."
 
-After ejecting, the Data tab reads "This form's data code is in invoice_window.py." with a link to the first method. The sentence is body text. Only the file name is a link, in the theme's link colour, at the top of the page. If the window file changed after Eject, Undo says "{file} changed after Eject, so Eject can't be undone. Undo your edits there first." and changes neither file. A closed window tab whose file on disk is still the original or the ejected text does not count as a change. A test proves the ejected form behaves identically: the same SQL, the same field values after load, save and delete, on SQLite and PostgreSQL.
+Eject writes both files. An open tab reloads from disk, and that tab's own undo does not reach back past the eject. If either file has unsaved edits, Eject says "Save or discard your changes to {file} first." and does not open the dialog. After ejecting, the Data tab reads "This form's data code is in invoice_window.py." with a link to the first method. The sentence is body text. Only the file name is a link, in the theme's link colour, at the top of the page. If either file changed after Eject, on disk or in an open tab, Undo says "{file} changed after Eject, so Eject can't be undone. Undo your edits there first." and changes neither file. A closed tab whose file on disk is still the ejected text does not count as a change. A test proves the ejected form behaves identically: the same SQL, the same field values after load, save and delete, on SQLite and PostgreSQL.
 
 **UX-SCH-001** `M8.6` `[S T]` Refresh shows "Reading columns…" with Esc to cancel. When it completes, the Data tab updates in place and keeps scroll and selection. The editor stays responsive during a PostgreSQL refresh, because the helper is a separate process. If the database can't be reached, the cached columns stay in use, with the note "Using columns read 2 Nov. Can't reach Shop database: {reason}". Bindings to columns that disappeared get FB303 on Refresh, never silently removed.
 
@@ -3265,6 +3266,7 @@ Sentences, en_US, following UX-M6-001 and UX-M7-001. `{record}` is the record wo
 | List, cut off | "Showing the first {limit} of {count}. Type more to narrow the list." |
 | List, pg8000 scan | "This SQL can't be searched with the pg8000 driver. Remove the quote or comment that confuses it." |
 | Try, banner | "Try: changes to {connection} are rolled back. While a save runs, other people using it may wait up to 2 seconds." |
+| Try, ejected form | "This form's data code is in {window file}, so Try shows the layout and lists the calls instead of running them." |
 | Try, own connection | "This form uses your own connection method, so Try only shows what it would run." |
 | App, password prompt | "Password for {user} on {connection}" with "Remember on this machine" when the policy allows it |
 | Try, lock timeout | "Another user is editing this {record}. Try stopped waiting after 2 seconds." |
