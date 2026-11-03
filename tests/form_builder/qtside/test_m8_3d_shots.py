@@ -13,13 +13,15 @@ pytest.importorskip("app.qt.QtWidgets", exc_type=ImportError)
 
 from app.core import constants
 from app.features.form_builder.engine.project.forms import FormScope
+from app.features.form_builder.engine.query.selection import SelectionSource
 from app.features.form_builder.engine.session import FormSession
 from app.features.form_builder.integration.chrome import chrome_for
-from app.features.form_builder.qtside.data_panel.panel import DataPanel
 from app.features.form_builder.qtside.dialogs.from_table import FromTableDialog
+from app.features.form_builder.qtside.inspector.pane import InspectorPane, TabId
+from app.features.form_builder.qtside.realize import Realizer
 from app.qt.QtCore import QDate
 from app.qt.QtUiTools import QUiLoader
-from app.qt.QtWidgets import QApplication, QHBoxLayout, QLabel, QWidget
+from app.qt.QtWidgets import QApplication, QHBoxLayout, QWidget
 from app.shell.theme_tokens import tokens_from_palette
 from tests.form_builder.engine.test_m8_3d_from_table import (
     _customer_request,
@@ -70,7 +72,7 @@ def _dialogs(root: Path, qapp, folder: Path) -> None:
         date_format="yyyy-MM-dd",
         name_reason=lambda: None,
     )
-    dialog.set_database(str(root / "data" / "shop.db"))
+    dialog.set_database(str(root / "data" / "shop.db"), "shop")
     _select(dialog, "invoices")
     assert dialog._lines.isChecked() is True
     for make in _MAKES:
@@ -95,21 +97,34 @@ def _editor(root: Path, text: str, qapp, folder: Path, name: str) -> None:
         module_name="forms.ui_shot",
     )
     session = FormSession.open(text, path=str(ui_path), scope=scope)
+    session.selection.set((session.document.root.id,), source=SelectionSource.PROGRAM)
+    realizer = Realizer(session)
+    realizer.build()
     frame = QWidget()
     frame.session = session
     frame.project_root = str(root)
-    panel = DataPanel(frame)
+    pane = InspectorPane(session, realizer, data_tab=True, on_leave=lambda: None, parent=frame)
     canvas = QUiLoader().load(str(ui_path), frame)
     assert canvas is not None
-    sentence = panel.findChild(QLabel, "formBuilder.data.sourceText")
-    listing = panel.findChild(QLabel, "formBuilder.data.listSentence")
-    assert (sentence is not None and sentence.text()) or (listing is not None and listing.text())
     layout = QHBoxLayout(frame)
     layout.setContentsMargins(0, 0, 0, 0)
-    layout.addWidget(panel)
+    layout.addWidget(pane, 1)
     layout.addWidget(canvas, 1)
-    frame.resize(1100, 700)
-    _shoot(frame, qapp, folder, name, 1100, 700)
+    pane.focus_tab(TabId.DATA)
+    frame.resize(1100, 720)
+    frame.show()
+    qapp.processEvents()
+    pane.focus_tab(TabId.DATA)
+    for mode in _MODES:
+        tokens = tokens_from_palette(frame.palette(), force_mode=mode)
+        pane.apply_chrome(chrome_for(tokens))
+        frame.resize(1100, 720)
+        frame.show()
+        for _index in range(4):
+            qapp.processEvents()
+            time.sleep(0.01)
+        frame.grab().save(str(folder / ("%s-%s.png" % (name, mode))))
+    pane.dispose()
     session.dispose()
 
 
@@ -122,10 +137,20 @@ def _running(root: Path, qapp, folder: Path) -> None:
         _pick(host.ui.customer_id, 2)
         host.ui._cbcs_add_row()
         host.ui._cbcs_add_row()
+        _line(host.ui, 0, "description", "Widget")
         _line(host.ui, 0, "qty", 2)
         _line(host.ui, 0, "price", "1.50")
-        _line(host.ui, 1, "qty", 1)
         _line(host.ui, 1, "description", "Gasket")
+        _line(host.ui, 1, "qty", 1)
+        _line(host.ui, 1, "price", "2.00")
+        _named_line(host.ui, 0, "product_id", 1, "Widget")
+        _named_line(host.ui, 1, "product_id", 2, "Gadget")
+        host.ui._cbcs_recompute_lines()
+        host.ui.cbcs_refresh()
+        if hasattr(host.ui, "total"):
+            host.ui.total.setValue(5.0)
+        _named_line(host.ui, 0, "product_id", 1, "Widget")
+        _named_line(host.ui, 1, "product_id", 2, "Gadget")
         host.resize(720, 640)
         qapp.processEvents()
         _shoot(host, qapp, folder, "invoice-running", 720, 640)
@@ -134,6 +159,16 @@ def _running(root: Path, qapp, folder: Path) -> None:
         host.resize(720, 480)
         qapp.processEvents()
         _shoot(host, qapp, folder, "customer-list-running", 720, 480)
+
+
+def _named_line(ui: object, row: int, name: str, value: object, shown: str) -> None:
+    _line(ui, row, name, value)
+    label = ""
+    lookup = getattr(ui, "_cbcs_line_lookup_label", None)
+    if callable(lookup):
+        label = lookup(name, value) or ""
+    column = ui._cbcs_line_names.index(name)
+    ui.invoice_linesView.model().item(row, column).setText(label or shown)
 
 
 def _select(dialog: FromTableDialog, table: str) -> None:
@@ -150,6 +185,7 @@ def _shoot_dialog(dialog: FromTableDialog, qapp: QApplication, folder: Path, nam
         tokens = tokens_from_palette(dialog.palette(), force_mode=mode)
         dialog._chrome = chrome_for(tokens)
         dialog._apply_chrome()
+        dialog._refresh_preview()
         dialog.resize(1100, 680)
         dialog.show()
         for _index in range(4):

@@ -346,6 +346,12 @@ def _schema_from_payload(payload: object, name: str, read_at: str) -> Optional[S
     return parsed
 
 
+def store_schema(project_root: str, schema: Schema) -> Optional[Schema]:
+    """Write one schema through the cache's replace. The dialog uses this."""
+
+    return _store(project_root, schema)
+
+
 def _store(project_root: str, schema: Schema) -> Optional[Schema]:
     text = write_schema(schema)
     parsed, error = read_schema(text)

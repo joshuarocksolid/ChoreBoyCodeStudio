@@ -61,11 +61,13 @@ def is_identifier(name: str) -> bool:
 
 
 def quote_ident(name: str) -> str:
-    """Double-quote ``name``. Raises ``IdentifierError`` instead of quoting a bad name."""
+    """Double-quote ``name``. A space stays inside the quotes. A break-out is refused."""
 
-    if not is_identifier(name):
+    if not name or any(mark in name for mark in ("\x00", "\n", "\r", ";", "--", "/*", "*/")):
+        raise IdentifierError(name or "")
+    if not is_identifier(name) and not all(ch == " " or ch.isalnum() or ch in "_-" for ch in name):
         raise IdentifierError(name)
-    return '"%s"' % name
+    return '"%s"' % name.replace('"', '""')
 
 
 def placeholder(dialect: str) -> str:

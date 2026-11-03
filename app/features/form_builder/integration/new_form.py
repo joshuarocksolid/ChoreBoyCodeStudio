@@ -425,8 +425,19 @@ class NewFormSurface:
         if not made:
             self._panel.show_status(dialog.disabled_reason() or "Include at least one column")
             return
+        folder = self._panel.directory()
+        if not os.path.isabs(folder):
+            folder = os.path.join(root, folder)
+        from app.features.form_builder.engine.project.fs import OsFileSystem
+        from app.features.form_builder.engine.project.names import first_name_clash
+
+        clash = first_name_clash(folder, tuple(stem for stem, _text in made), OsFileSystem())
+        if clash:
+            self._panel.show_status(clash)
+            return
         record_path = ""
-        for stem, text in made:
+        ordered = tuple(sorted(made, key=lambda item: (0 if item[0].endswith("_list") else 1, item[0])))
+        for stem, text in ordered:
             result = perform_create(
                 self._host(),
                 template="widget",
@@ -438,7 +449,9 @@ class NewFormSurface:
             if result.refused:
                 self._panel.show_status(result.refused)
                 return
-            if result.scope is not None and not record_path:
+            if result.scope is not None and not stem.endswith("_list"):
+                record_path = result.scope.ui_path
+            elif result.scope is not None and not record_path:
                 record_path = result.scope.ui_path
         self._focus_data(record_path)
         dialog.accept()

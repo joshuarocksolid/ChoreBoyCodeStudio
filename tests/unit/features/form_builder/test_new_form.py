@@ -353,7 +353,7 @@ def _customer_dialog(tmp_path: Path) -> FromTableDialog:
         date_format="M/d/yy",
         name_reason=lambda: None,
     )
-    dialog.set_database(str(path))
+    dialog.set_database(str(path), "shop")
     return dialog
 
 
@@ -461,7 +461,7 @@ def test_an_integer_primary_key_starts_unchecked(tmp_path: Path, qapp: object) -
         date_format="M/d/yy",
         name_reason=lambda: None,
     )
-    dialog.set_database(str(path))
+    dialog.set_database(str(path), "shop")
     table = dialog.findChild(QTableWidget, "formBuilder.fromTable.mapping")
     assert table is not None
     checks = {}
@@ -476,7 +476,7 @@ def test_an_integer_primary_key_starts_unchecked(tmp_path: Path, qapp: object) -
     dialog.close()
 
 
-def test_the_preview_stays_on_the_runtime_palette(tmp_path: Path, qapp: object) -> None:
+def test_the_preview_follows_the_dialog_chrome(tmp_path: Path, qapp: object) -> None:
     # CONTRACTS 5.4: chrome rules live on the window; the app sheet is tooltip-only.
     app = QApplication.instance()
     assert app is not None
@@ -506,7 +506,7 @@ def test_the_preview_stays_on_the_runtime_palette(tmp_path: Path, qapp: object) 
         parent=window,
     )
     try:
-        dialog.set_database(str(_database(tmp_path)))
+        dialog.set_database(str(_database(tmp_path)), "shop")
         dialog.resize(960, 560)
         dialog.show()
         app.processEvents()
@@ -526,7 +526,7 @@ def test_the_preview_stays_on_the_runtime_palette(tmp_path: Path, qapp: object) 
                 elif value < 80:
                     dark += 1
         assert dark > 0
-        assert light > dark
+        assert dark > light
     finally:
         dialog.close()
         window.deleteLater()
@@ -640,7 +640,7 @@ def test_preview_fits_its_pane_so_every_label_shows(tmp_path: Path, qapp: object
         name_reason=lambda: None,
     )
     try:
-        dialog.set_database(str(_database(tmp_path)))
+        dialog.set_database(str(_database(tmp_path)), "shop")
         dialog.resize(960, 560)
         dialog.show()
         for _ in range(3):

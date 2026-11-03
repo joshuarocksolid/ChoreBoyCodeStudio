@@ -125,10 +125,11 @@ def test_find_uses_like_or_ilike_with_one_backslash(dialect: str) -> None:
 def test_a_bad_name_is_not_quoted() -> None:
     assert is_identifier("invoice_no") is True
     assert is_identifier("a b") is False
+    assert quote_ident("a b") == '"a b"'
+    assert quote_ident("bad name") == '"bad name"'
     with pytest.raises(IdentifierError):
-        quote_ident("a b")
-    with pytest.raises(IdentifierError):
-        select_keys("sqlite", "bad name", "id", ())
+        quote_ident("a;b")
+    assert select_keys("sqlite", "bad name", "id", ()).text.startswith('SELECT "id" FROM "bad name"')
     with pytest.raises(ValueError):
         select_keys("mysql", "invoices", "id", ())
 

@@ -29,8 +29,8 @@ from app.features.form_builder.engine.data.sql import (
     delete_lines_for_link,
     delete_row,
     insert_row,
-    is_identifier,
     key_clause,
+    quote_ident,
     select_lines,
     select_lookup,
     set_line_position,
@@ -152,6 +152,7 @@ def _contribution(
         ("PySide6.QtGui", "QStandardItem"),
         ("PySide6.QtGui", "QStandardItemModel"),
         ("PySide6.QtWidgets", "QCheckBox"),
+        ("PySide6.QtWidgets", "QHeaderView"),
         ("PySide6.QtWidgets", "QComboBox"),
         ("PySide6.QtWidgets", "QDateEdit"),
         ("PySide6.QtWidgets", "QDateTimeEdit"),
@@ -258,7 +259,7 @@ def _setup(view, rows, columns, select_names, stored, unique, select_sql, engine
         "_model.setHorizontalHeaderLabels((%s,))" % headers,
         "self.%s.setModel(_model)" % view,
         "self.%s.setItemDelegate(_CbcsLineDelegate(self))" % view,
-        "self.%s.horizontalHeader().setStretchLastSection(True)" % view,
+        "self.%s.horizontalHeader().setStretchLastSection(False)" % view,
         "_model.dataChanged.connect(self._cbcs_line_changed)",
         "_model.rowsInserted.connect(self._cbcs_line_changed)",
         "_model.rowsRemoved.connect(self._cbcs_line_changed)",
@@ -270,6 +271,19 @@ def _setup(view, rows, columns, select_names, stored, unique, select_sql, engine
         "self._cbcs_line_table = %s" % py_string(rows.table),
         "self._cbcs_line_unique = %s" % ("True" if unique else "False"),
         "self._cbcs_line_names = (%s,)" % names,
+        "_header = self.%s.horizontalHeader()" % view,
+        "_resize = getattr(QHeaderView, 'ResizeMode', QHeaderView)",
+        "_stretch = getattr(_resize, 'Stretch')",
+        "_interactive = getattr(_resize, 'Interactive')",
+        "_desc = self._cbcs_line_names.index('description') if 'description' in self._cbcs_line_names else -1",
+        "for _i in range(len(self._cbcs_line_names)):",
+        "    if _i == _desc:",
+        "        _header.setSectionResizeMode(_i, _stretch)",
+        "    else:",
+        "        self.%s.resizeColumnToContents(_i)" % view,
+        "        _header.setSectionResizeMode(_i, _interactive)",
+        "if _desc < 0 and self._cbcs_line_names:",
+        "    _header.setSectionResizeMode(len(self._cbcs_line_names) - 1, _stretch)",
         "self._cbcs_line_headers = (%s,)" % headers,
         "self._cbcs_line_kinds = (%s,)" % kinds,
         "self._cbcs_line_nullable = (%s,)" % nullable,
@@ -1047,7 +1061,15 @@ def _names_ok(rows: Rows, view: str) -> bool:
             names.append(column.column)
         elif isinstance(column, CalcColumn):
             names.append(column.name)
-    return all(is_identifier(name) for name in names if name)
+    return all(_quotable(name) for name in names if name)
+
+
+def _quotable(name: str) -> bool:
+    try:
+        quote_ident(name)
+    except Exception:
+        return False
+    return True
 
 
 def _columns(doc: UiDocument, source: RecordSource, rows: Rows, engine: str) -> Tuple[_Col, ...]:

@@ -29,6 +29,7 @@ from app.features.form_builder.engine.logic.codec import Step
 from app.features.form_builder.engine.logic.events_catalog import step_words
 from app.features.form_builder.engine.logic.events_codec import EventStep
 from app.features.form_builder.engine.project.from_table_plan import ColumnChoice, TableRequest, plan_forms
+from app.features.form_builder.engine.session import FormSession
 from app.features.form_builder.engine.ui4.reader import read_ui
 from app.features.form_builder.engine.ui4.writer import write_ui
 from app.features.form_builder.qtside.data_panel.column_insert_hooks import search_screen_command
@@ -98,7 +99,7 @@ def test_search_screen_writes_a_list_keyed_to_the_record_form(tmp_path: Path) ->
         set_schema_reader(None)
 
 
-def test_invoice_plan_is_one_undo_and_round_trips(tmp_path: Path) -> None:
+def test_invoice_create_is_one_command_and_opens_clean(tmp_path: Path) -> None:
     root, schema = _shop(tmp_path)
     request = _invoice_request()
     planned = plan_forms(request, schema)
@@ -113,7 +114,29 @@ def test_invoice_plan_is_one_undo_and_round_trips(tmp_path: Path) -> None:
         session.dispose()
     again = write_ui(read_ui(text, allocator=IdAllocator()).document).text
     assert again == text
+    written = root / "forms" / "invoice.ui"
+    written.parent.mkdir(parents=True, exist_ok=True)
+    written.write_text(text, encoding="utf-8")
+    from app.features.form_builder.engine.project.forms import FormScope
+
+    scope = FormScope(
+        kind="project",
+        ui_path=str(written),
+        project_root=str(root),
+        generated_path=str(root / "forms" / "ui_invoice.py"),
+        window_path=str(root / "forms" / "invoice_window.py"),
+        module_name="forms.ui_invoice",
+    )
+    opened = FormSession.open(written.read_text(encoding="utf-8"), path=str(written), scope=scope)
+    try:
+        assert len(opened.log.entries()) == 0
+        assert write_ui(opened.document).text == written.read_text(encoding="utf-8")
+    finally:
+        opened.dispose()
+    assert 'class="QFormLayout"' in text
     document = read_ui(text, allocator=IdAllocator()).document
+    formula = _prop(document.node(document.by_name("positionLabel")[0]), "cbcsValue")
+    assert "New invoice" in formula and "text(form.position)" in formula
     source = read_data(_prop(document.root, "cbcsData")).value
     assert isinstance(source, RecordSource) and source.table == "invoices" and source.key == "id"
     lookup, lookup_error = read_lookup(_prop(document.node(document.by_name("customer_id")[0]), "cbcsLookup"))
@@ -132,6 +155,101 @@ def test_invoice_plan_is_one_undo_and_round_trips(tmp_path: Path) -> None:
     assert placeholder == "Search invoices"
     data = read_data(_prop(listed.root, "cbcsData")).value
     assert isinstance(data, ListSource) and data.open is not None and data.open.form == "invoice" and data.open.key == "id"
+
+
+def test_lines_start_checked_only_for_a_real_line_table(tmp_path: Path) -> None:
+    from app.features.form_builder.engine.project.from_table_plan import child_tables, default_lines
+
+    _root, schema = _shop(tmp_path)
+    tables = {table.name: table for table in schema.tables}
+    assert default_lines(schema, "invoices", tables["invoice_lines"])
+    assert not any(default_lines(schema, "products", child) for child in child_tables(schema, "products"))
+    assert not any(default_lines(schema, "customers", child) for child in child_tables(schema, "customers"))
+
+
+def test_product_save_without_lines_leaves_invoice_lines(tmp_path: Path) -> None:
+    root, schema = _shop(tmp_path)
+    request = TableRequest(
+        "shop",
+        "products",
+        (ColumnChoice("name", "QLineEdit", "Name"), ColumnChoice("price", "QDoubleSpinBox", "Price")),
+        "record",
+        "",
+        "product",
+        "yyyy-MM-dd",
+    )
+    _write_generated(root, _texts(root, schema, request))
+    with _hosts(root, "product") as (host, db):
+        before = _all(db, "SELECT id, invoice_id, line_no, product_id FROM invoice_lines ORDER BY id")
+        host.ui.cbcs_open(1)
+        host.ui.name.setText("Widget 2")
+        assert host.ui.cbcs_save() is True
+        assert _all(db, "SELECT id, invoice_id, line_no, product_id FROM invoice_lines ORDER BY id") == before
+
+
+def test_a_clashing_list_module_names_the_file(tmp_path: Path) -> None:
+    from app.features.form_builder.engine.project.fs import OsFileSystem
+    from app.features.form_builder.engine.project.names import first_name_clash
+
+    root, schema = _shop(tmp_path)
+    forms = root / "forms"
+    (forms / "invoice_list.py").write_text("# the user's own module\n", encoding="utf-8")
+    made = render_plans(_invoice_request(), schema, str(root))
+    reason = first_name_clash(str(forms), tuple(stem for stem, _text in made), OsFileSystem())
+    assert reason is not None and "invoice_list.py" in reason
+    assert not (forms / "invoice.ui").is_file()
+
+
+def test_keyword_column_names_still_generate(tmp_path: Path) -> None:
+    root = tmp_path / "proj"
+    (root / "forms").mkdir(parents=True)
+    (root / "data").mkdir()
+    database = root / "data" / "shop.db"
+    connection = sqlite3.connect(str(database))
+    connection.executescript(
+        'CREATE TABLE "order" (id INTEGER PRIMARY KEY, "class" TEXT, "from" TEXT, "first name" TEXT);'
+        "INSERT INTO \"order\" VALUES (1, 'a', 'b', 'Ann');"
+        'CREATE TABLE "order line" (id INTEGER PRIMARY KEY, "order" INTEGER NOT NULL REFERENCES "order"(id), "select" TEXT);'
+        'INSERT INTO "order line" VALUES (1, 1, \'x\');'
+    )
+    connection.commit()
+    connection.close()
+    schema = read_sqlite_file(str(database), "shop", read_at="2026-11-03T00:00:00")
+    _save_schema(root, schema)
+    _save_connection(root)
+    table = next(item for item in schema.tables if item.name == "order")
+    from app.features.form_builder.engine.project.from_table_plan import choice_for, include_column
+
+    columns = tuple(
+        choice_for(column, "sqlite")
+        for column in table.columns
+        if include_column(column, "id", "sqlite")
+    )
+    request = TableRequest("shop", "order", columns, "both", "order line", "orders", "yyyy-MM-dd")
+    texts = _texts(root, schema, request)
+    _write_generated(root, texts)
+    with _hosts(root, "orders") as (host, db):
+        host.ui.cbcs_open(1)
+        assert host.ui.cbcs_save() is True
+        assert _all(db, 'SELECT "class", "from", "first name" FROM "order"') == [("a", "b", "Ann")]
+
+
+def test_text_on_a_foreign_key_drops_the_lookup(tmp_path: Path) -> None:
+    root, schema = _shop(tmp_path)
+    request = TableRequest(
+        "shop",
+        "invoices",
+        (ColumnChoice("customer_id", "QLineEdit", "Customer"), ColumnChoice("invoice_no", "QLineEdit", "Invoice No")),
+        "record",
+        "",
+        "invoice",
+        "yyyy-MM-dd",
+    )
+    text = _texts(root, schema, request)[0][1]
+    document = read_ui(text, allocator=IdAllocator()).document
+    node = document.node(document.by_name("customer_id")[0])
+    assert node.class_name == "QLineEdit"
+    assert _prop(node, "cbcsLookup") == ""
 
 
 def test_invoice_story_saves_lines_and_a_customer_edit(tmp_path: Path) -> None:

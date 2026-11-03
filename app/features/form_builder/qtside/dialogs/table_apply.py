@@ -9,7 +9,7 @@ from __future__ import annotations
 import os
 from typing import List, Tuple
 
-from app.features.form_builder.engine.commands.catalog import MorphWidget, SetProperty
+from app.features.form_builder.engine.commands.catalog import MorphWidget, SetLogic, SetProperty
 from app.features.form_builder.engine.commands.catalog_ext.events import SetEventSteps
 from app.features.form_builder.engine.data.schema import Schema
 from app.features.form_builder.engine.data.schema_cache import install_schema_reader
@@ -64,7 +64,8 @@ def open_plan(plan: FormPlan, schema: Schema, project_root: str) -> FormSession:
     root = os.path.abspath(project_root) if project_root else ""
     forms = os.path.join(root, "forms") if root else ""
     path = os.path.join(forms, plan.stem + ".ui") if forms else plan.stem + ".ui"
-    skeleton = empty_form(class_name_for_stem(plan.stem))
+    layout = "QFormLayout" if plan.kind == "record" else "QVBoxLayout"
+    skeleton = empty_form(class_name_for_stem(plan.stem), layout)
     scope = FormScope(
         kind="project" if root else "external",
         ui_path=path,
@@ -91,6 +92,14 @@ def apply_plan(session: FormSession, plan: FormPlan, schema: Schema) -> None:
             return
         connect_form(session, plan.source)
         insert_record_toolbar(session)
+        word = getattr(plan.source, "record_word", "") or "record"
+        formula = (
+            '"New %s" if form.isNew else "Record " + text(form.position) + " of " + text(form.count)'
+            % word
+        )
+        labels = session.document.by_name("positionLabel")
+        if labels:
+            txn.execute(SetLogic(labels[0], "cbcsValue", formula))
         for column, choice in zip(plan.columns, plan.choices):
             field_id = insert_column_field(session, column)
             _face(txn, session, field_id, choice.label, choice.shows_as, plan.date_format)
@@ -98,8 +107,11 @@ def apply_plan(session: FormSession, plan: FormPlan, schema: Schema) -> None:
             add_lines(session, plan.lines)
 
 
-def empty_form(class_name: str) -> str:
-    inner = '  <layout class="QVBoxLayout" name="verticalLayout"/>\n'
+def empty_form(class_name: str, layout: str = "QVBoxLayout") -> str:
+    if layout == "QFormLayout":
+        inner = '  <layout class="QFormLayout" name="formLayout"/>\n'
+    else:
+        inner = '  <layout class="QVBoxLayout" name="verticalLayout"/>\n'
     return form_document(class_name, "QWidget", inner)
 
 
@@ -116,13 +128,38 @@ def _face(txn: object, session: FormSession, field_id: object, label: str, shows
     name = node.object_name if isinstance(node, WidgetNode) else ""
     if name and label:
         labels = document.by_name(name + "Label")
+        if not labels:
+            labels = _buddy_label(document, name)
         if labels:
             txn.execute(SetProperty(labels[0], "text", StringValue(label)))
+    if shows_as == "QLineEdit":
+        txn.execute(SetLogic(field_id, "cbcsLookup", None))
     if isinstance(node, WidgetNode) and node.class_name in _DATE_WIDGETS:
         pattern = four_digit_year_format(date_format)
         if node.class_name == "QDateTimeEdit" and "h" not in pattern.lower():
             pattern = pattern + " hh:mm"
         txn.execute(SetProperty(node.id, "displayFormat", StringValue(pattern)))
+
+
+def _buddy_label(document: object, field_name: str) -> list:
+    found = []
+    by_name = getattr(document, "by_name", None)
+    node_of = getattr(document, "node", None)
+    if not callable(by_name) or not callable(node_of):
+        return found
+    for candidate in ("label",) + tuple("label_%d" % index for index in range(2, 80)):
+        raw = by_name(candidate)
+        if not isinstance(raw, (list, tuple)) or not raw:
+            if candidate != "label":
+                break
+            continue
+        node = node_of(raw[0])
+        entry = node.prop("buddy") if hasattr(node, "prop") else None
+        value = getattr(entry, "value", None)
+        if getattr(value, "text", "") == field_name:
+            found.append(raw[0])
+            break
+    return found
 
 
 def _list_chrome(txn: object, session: FormSession, placeholder: str) -> None:

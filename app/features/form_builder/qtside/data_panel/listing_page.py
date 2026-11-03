@@ -344,8 +344,6 @@ class ListingPage(QWidget):
                 widget.deleteLater()
         for entry in source.filters:
             self._append_filter(entry.field, entry.column)
-        if not source.filters:
-            self._append_filter("", "")
 
     def _append_filter(self, field: str, column: str) -> None:
         row = QWidget(self._filters)

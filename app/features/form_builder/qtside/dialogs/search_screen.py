@@ -8,18 +8,21 @@ table.
 from __future__ import annotations
 
 import os
-from typing import Optional
+from typing import Optional, Tuple
 
 from app.features.form_builder.engine.data.schema import schema_for
 from app.features.form_builder.engine.data.source import singular
 from app.features.form_builder.engine.ids import IdAllocator
-from app.features.form_builder.engine.project.create import create_form
+from app.features.form_builder.engine.data.source import ListSource, read_data
 from app.features.form_builder.engine.project.from_table_plan import (
     TableRequest,
     choice_for,
     include_column,
 )
+from app.features.form_builder.engine.project.create import create_form
 from app.features.form_builder.engine.project.fs import OsFileSystem, ProjectOpError
+from app.features.form_builder.engine.project.names import unique_form_stem
+from app.features.form_builder.engine.project.recents import remember_form
 from app.features.form_builder.engine.ui4.reader import UiReadError, read_ui
 from app.features.form_builder.qtside.data_panel.column_insert_hooks import register_search_screen
 from app.features.form_builder.qtside.data_panel.host import session_of
@@ -28,8 +31,17 @@ from app.features.form_builder.qtside.data_panel.model import record_source
 from app.features.form_builder.qtside.dialogs.table_apply import render_plans
 
 
+_creator = None
+
+
 def install() -> None:
     register_search_screen(open_search_screen)
+
+
+def register_form_creator(fn: object) -> None:
+    """Integration registers ``perform_create`` so this module never imports it."""
+    global _creator
+    _creator = fn
 
 
 def open_search_screen(table_name: str) -> None:
@@ -45,7 +57,7 @@ def open_search_screen(table_name: str) -> None:
     root = os.path.abspath(getattr(project, "project_root", "") or "")
     if not root:
         return
-    record_stem = _record_stem(root, source.connection, table_name, session)
+    record_stem = _record_stem(root, source.connection, table_name, session, window)
     if not record_stem:
         _say(window, "Create a %s record form first." % singular(table_name))
         return
@@ -61,57 +73,130 @@ def open_search_screen(table_name: str) -> None:
     if table is None or not table.key:
         _say(window, "%s has no single key column. Record forms need one." % table_name)
         return
+    folder = os.path.join(root, "forms")
     list_stem = record_stem + "_list"
-    path = os.path.join(root, "forms", list_stem + ".ui")
-    if not os.path.isfile(path):
-        engine = schema.engine if schema.engine in ("sqlite", "postgres") else "sqlite"
-        columns = tuple(
-            choice_for(column, engine)
-            for column in table.columns
-            if include_column(column, table.key or "", engine)
-        )
-        request = TableRequest(
-            source.connection,
-            table.name,
-            columns,
-            "list",
-            "",
-            list_stem,
-            "yyyy-MM-dd",
-            open_form=record_stem,
-        )
-        made = render_plans(request, schema, root)
-        if not made:
-            _say(window, "Include at least one column.")
-            return
-        stem, text = made[0]
-        result = create_form(root, stem, OsFileSystem(), template="widget", ui_text=text)
-        if result.refused or result.scope is None:
-            _say(window, result.refused or "The list screen was not created.")
-            return
-        path = result.scope.ui_path
+    path = os.path.join(folder, list_stem + ".ui")
+    if os.path.isfile(path) and _is_list_of(path, table_name, source.connection):
+        factory = getattr(window, "_editor_tab_factory", None)
+        if factory is not None:
+            factory.open_file_in_editor(path)
+        _focus_data(window, path)
+        return
+    if os.path.isfile(path):
+        list_stem = unique_form_stem(folder, OsFileSystem(), list_stem)
+    engine = schema.engine if schema.engine in ("sqlite", "postgres") else "sqlite"
+    columns = tuple(
+        choice_for(column, engine)
+        for column in table.columns
+        if include_column(column, table.key or "", engine)
+    )
+    request = TableRequest(
+        source.connection,
+        table.name,
+        columns,
+        "list",
+        "",
+        list_stem,
+        "yyyy-MM-dd",
+        open_form=record_stem,
+    )
+    made = render_plans(request, schema, root)
+    if not made:
+        _say(window, "Include at least one column.")
+        return
+    stem, text = made[0]
+    result = _write_list(window, root, folder, stem, text)
+    refused = getattr(result, "refused", None)
+    scope = getattr(result, "scope", None)
+    if result is None or refused or scope is None:
+        _say(window, refused or "The list screen was not created.")
+        return
+    _focus_data(window, getattr(scope, "ui_path", ""))
+
+
+def _write_list(window: object, root: str, folder: str, stem: str, text: str) -> object:
+    creator = _creator
+    if callable(creator):
+        return creator(window, template="widget", stem=stem, directory=folder, ui_text=text)
+    fs = OsFileSystem()
+    result = create_form(root, stem, fs, template="widget", directory=folder, ui_text=text)
+    if result.refused or result.scope is None:
+        return result
+    try:
+        remember_form(root, result.scope.ui_path, fs)
+    except ProjectOpError:
+        pass
     factory = getattr(window, "_editor_tab_factory", None)
     if factory is not None:
-        factory.open_file_in_editor(path)
-    _focus_data(window, path)
+        factory.open_file_in_editor(result.scope.ui_path)
+    tree = getattr(window, "_project_tree_ui_workflow", None)
+    refresh = getattr(tree, "refresh_project_tree_from_disk", None)
+    if callable(refresh):
+        refresh()
+    return result
 
 
-def _record_stem(root: str, connection: str, table: str, session: object) -> str:
+def _record_stem(root: str, connection: str, table: str, session: object, window: object) -> str:
     current = record_source(getattr(session, "document", None))
     if current is not None and current.table == table and current.connection == connection:
         return _stem(getattr(session, "path", "") or "")
+    matches = _record_stems(root, connection, table)
+    if not matches:
+        return ""
+    if len(matches) == 1:
+        return matches[0]
+    from app.qt.QtWidgets import QInputDialog, QWidget
+
+    parent = window if isinstance(window, QWidget) else None
+    choice, ok = QInputDialog.getItem(
+        parent,
+        "Search screen",
+        "Which record form should the list open?",
+        list(matches),
+        0,
+        False,
+    )
+    if not ok:
+        return ""
+    return str(choice)
+
+
+def _record_stems(root: str, connection: str, table: str) -> Tuple[str, ...]:
     folder = os.path.join(root, "forms")
+    found = []
     for stem in form_stems(root):
         path = os.path.join(folder, stem + ".ui")
-        try:
-            text = OsFileSystem().read_text(path)
-            document = read_ui(text, allocator=IdAllocator()).document
-        except (OSError, UnicodeError, ProjectOpError, UiReadError):
-            continue
-        source = record_source(document)
+        source = _record_at(path)
         if source is not None and source.table == table and source.connection == connection:
-            return stem
-    return ""
+            found.append(stem)
+    return tuple(found)
+
+
+def _record_at(path: str) -> object:
+    try:
+        text = OsFileSystem().read_text(path)
+        document = read_ui(text, allocator=IdAllocator()).document
+    except (OSError, UnicodeError, ProjectOpError, UiReadError):
+        return None
+    return record_source(document)
+
+
+def _is_list_of(path: str, table: str, connection: str) -> bool:
+    try:
+        text = OsFileSystem().read_text(path)
+        document = read_ui(text, allocator=IdAllocator()).document
+    except (OSError, UnicodeError, ProjectOpError, UiReadError):
+        return False
+    raw = ""
+    root = getattr(document, "root", None)
+    entry = root.prop("cbcsData") if root is not None and hasattr(root, "prop") else None
+    value = getattr(entry, "value", None)
+    raw = getattr(value, "text", "") if value is not None else ""
+    if not raw:
+        return False
+    parsed = read_data(raw)
+    data = getattr(parsed, "value", None)
+    return isinstance(data, ListSource) and data.table == table and data.connection == connection
 
 
 def _stem(path: str) -> str:
@@ -152,7 +237,7 @@ def _focus_data(window: object, path: str) -> None:
     workbench = getattr(surface, "workbench", None)
     if workbench is None:
         return
-    from app.features.form_builder.qtside.inspector.pane import TabId
+    from app.features.form_builder.qtside.inspector import TabId
 
     focus_tab = getattr(workbench, "focus_inspector_tab", None)
     focus_section = getattr(workbench, "focus_section", None)

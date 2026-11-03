@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from typing import Optional, Sequence, Tuple
 
 from app.features.form_builder.engine.codegen.lookup_plan import suggest_lookup
+from app.features.form_builder.engine.data.lines import link_position_unique
 from app.features.form_builder.engine.data.schema import Column, Schema, Table
 from app.features.form_builder.engine.data.source import (
     DataColumn,
@@ -51,6 +52,7 @@ class TableRequest:
     stem: str
     date_format: str
     open_form: str = ""
+    lines_link: str = ""
 
 
 @dataclass(frozen=True)
@@ -94,6 +96,37 @@ def child_tables(schema: Schema, parent: str) -> Tuple[Table, ...]:
     return tuple(found)
 
 
+def linking_columns(child: Table, parent: str) -> Tuple[Column, ...]:
+    """Columns on ``child`` that point at ``parent``. Two of them is ambiguous."""
+
+    return tuple(column for column in child.columns if _points(column, parent))
+
+
+def position_name(child: Table) -> str:
+    names = [column.name for column in child.columns]
+    for candidate in ("line_no", "position", "sort"):
+        if candidate in names:
+            return candidate
+    return ""
+
+
+def default_lines(schema: Schema, parent: str, child: Table) -> bool:
+    """Tick Include lines only for a real line table of this parent.
+
+    The link is one column, not null, and either unique together with the
+    position or there is no position column. A table other tables hang off
+    (an invoice, not its lines) is a record, so it stays unticked.
+    """
+
+    links = linking_columns(child, parent)
+    if len(links) != 1 or links[0].nullable:
+        return False
+    position = position_name(child)
+    if position:
+        return link_position_unique(child.unique_keys, links[0].name, position)
+    return not child_tables(schema, child.name)
+
+
 def button_sentence(table: str, count: int, make: str, lines: bool) -> str:
     """The primary button names the files it will write."""
 
@@ -126,7 +159,9 @@ def plan_forms(request: TableRequest, schema: Schema) -> PlannedForms:
     engine = schema.engine if schema.engine in ("sqlite", "postgres") else "sqlite"
     chosen = _chosen(table, request.columns)
     record = _record(request, table, chosen, engine)
-    line_rows = _lines(schema, table, request.lines_table, engine) if lines else None
+    line_rows = (
+        _lines(schema, table, request.lines_table, engine, request.lines_link) if lines else None
+    )
     forms = []
     if request.make in ("record", "both"):
         forms.append(
@@ -212,28 +247,33 @@ def _list(
     )
 
 
-def _lines(schema: Schema, parent: Table, child_name: str, engine: str) -> Optional[Rows]:
+def _lines(schema: Schema, parent: Table, child_name: str, engine: str, link_name: str = "") -> Optional[Rows]:
+    del engine
     child = _table(schema, child_name)
     if child is None:
         return None
-    link = ""
-    for column in child.columns:
-        if _points(column, parent.name):
-            link = column.name
-            break
-    if not link:
+    links = linking_columns(child, parent.name)
+    chosen = None
+    if link_name:
+        for column in links:
+            if column.name == link_name:
+                chosen = column
+                break
+    elif len(links) == 1:
+        chosen = links[0]
+    if chosen is None:
         return None
-    key = child.key or ""
-    position = ""
-    names = [column.name for column in child.columns]
-    for candidate in ("line_no", "position", "sort"):
-        if candidate in names:
-            position = candidate
-            break
-    order = position or key
+    link = chosen.name
+    key = child.key or ("rowid" if schema.engine == "sqlite" else "")
+    if not key:
+        return None
+    stored_position = position_name(child)
+    renumber = bool(stored_position) and link_position_unique(child.unique_keys, link, stored_position)
+    position = stored_position if renumber else ""
+    order = stored_position or key
     columns = []
     for column in child.columns:
-        if column.name in (key, link, position):
+        if column.name in (key, link, stored_position):
             continue
         lookup = None
         ref = getattr(column.references, "table", "") if column.references is not None else ""
@@ -242,7 +282,7 @@ def _lines(schema: Schema, parent: Table, child_name: str, engine: str) -> Optio
         columns.append(DataColumn(column.name, _header(column.name), "", lookup))
     if not columns:
         return None
-    return Rows(child.name, link, key or "id", tuple(columns), order, position)
+    return Rows(child.name, link, key, tuple(columns), order, position)
 
 
 def _text(column: Column, engine: str) -> bool:
