@@ -241,7 +241,7 @@ def test_an_update_outside_work_stops_on_the_session_lock_timeout(driver: str) -
 @pytest.mark.parametrize("driver", ["psycopg", "pg8000"])
 @pytest.mark.parametrize("mode", ["rollback", "would_run"])
 def test_a_second_statement_and_a_side_effect_call_do_not_stick(driver: str, mode: str) -> None:
-    from app.features.form_builder.qtside.preview.child.try_connections import SEQUENCE_WARNING, activate
+    from app.features.form_builder.qtside.preview.child.try_connections import activate
 
     raw, fields = _connect(driver)
     _reset(raw)
@@ -266,8 +266,6 @@ def test_a_second_statement_and_a_side_effect_call_do_not_stick(driver: str, mod
                 cursor.execute("EXPLAIN (ANALYZE) UPDATE m84_invoices SET notes='explained' WHERE id=1")
                 cursor.execute("EXPLAIN ANALYSE UPDATE m84_invoices SET notes='explained' WHERE id=1")
                 cursor.execute("SELECT nextval('m84_invoices_id_seq')")
-                if mode == "rollback":
-                    assert cursor.fetchall()
                 if mode == "would_run":
                     cursor.execute("SELECT pg_terminate_backend(0)")
                     cursor.execute("SELECT lo_import('/tmp/cbcs-no-such')")
@@ -282,14 +280,104 @@ def test_a_second_statement_and_a_side_effect_call_do_not_stick(driver: str, mod
         raw.close()
     assert after == before
     text = " ".join(item.sentence for item in session.notes)
-    assert "Another statement" in text
+    assert "one statement at a time" in text
     assert "setval" in text
     assert "set_config" in text
+    assert "nextval" in text
+    assert seq_after == seq_before
     if mode == "would_run":
-        assert seq_after == seq_before
         assert "pg_terminate_backend" in text
-    else:
-        assert any(item.sentence == SEQUENCE_WARNING.format(n=seq_after, sequence="m84_invoices_id_seq", record="invoice") for item in session.notes)
+
+
+_SMUGGLE = (
+    "SELECT 1 --x\r; COMMIT",
+    "SELECT 1 AS a$$; COMMIT; SELECT 1 AS b$$",
+    "SELECT 1 /* /* */ ' */ ; COMMIT; --'",
+    "; COMMIT",
+    ";COMMIT",
+    "SELECT '$$'; COMMIT; SELECT '$$'",
+    "SELECT E'\\''; COMMIT; SELECT 1",
+    "SELECT 1 -- it's\n; COMMIT",
+    'SELECT 1 AS "a;b"; COMMIT',
+    "SELECT $a$ $b$ ; $b$ $a$; COMMIT",
+    'SELECT "setval"(\'m84_invoices_id_seq\', 500)',
+    'SELECT pg_catalog."setval"(\'m84_invoices_id_seq\', 500)',
+    'EXPLAIN ANALYZE SELECT "setval"(\'m84_invoices_id_seq\', 500)',
+    "SELECT * FROM bumpseq()",
+    "SET standard_conforming_strings = off",
+)
+
+
+@pytest.mark.parametrize("driver", ["psycopg", "pg8000"])
+@pytest.mark.parametrize("mode", ["rollback", "would_run"])
+def test_smuggled_statements_leave_rows_and_the_sequence(driver: str, mode: str) -> None:
+    from app.features.form_builder.qtside.preview.child.try_connections import activate
+
+    raw, fields = _connect(driver)
+    _reset(raw)
+    raw.cursor().execute(
+        "CREATE OR REPLACE FUNCTION bumpseq() RETURNS int AS $$ BEGIN PERFORM setval('m84_invoices_id_seq', 777); RETURN 1; END $$ LANGUAGE plpgsql"
+    )
+    raw.commit()
+    before = _fingerprint(raw)
+    seq_before = _sequence(raw)
+    view = "smuggle-%s-%s" % (driver, mode)
+    begin_try(_start(view, _spec(fields, mode)), drivers=(driver,))
+    try:
+        module = __import__("cbcs_connections")
+        module.set_password("shop", fields["password"])
+        with activate(view):
+            with module.work("shop") as connection:
+                cursor = connection.cursor()
+                for sql in _SMUGGLE:
+                    try:
+                        cursor.execute(sql)
+                    except Exception:
+                        break
+    finally:
+        end_all()
+        after = _fingerprint(raw)
+        seq_after = _sequence(raw)
+        raw.cursor().execute("DROP FUNCTION IF EXISTS bumpseq()")
+        raw.commit()
+        _reset(raw)
+        raw.close()
+    assert after == before
+    assert seq_after == seq_before
+
+
+@pytest.mark.parametrize("driver", ["psycopg", "pg8000"])
+def test_the_server_rejects_a_second_command(driver: str, monkeypatch: pytest.MonkeyPatch) -> None:
+    from app.features.form_builder.qtside.preview.child import try_connections as tc
+
+    raw, _fields = _connect(driver)
+    try:
+        with pytest.raises(Exception) as direct:
+            tc.send_extended(raw.cursor(), "SELECT 1; COMMIT")
+        assert "multiple commands" in str(direct.value).lower()
+    finally:
+        raw.rollback()
+        raw.close()
+    raw, fields = _connect(driver)
+    _reset(raw)
+    before = _fingerprint(raw)
+    monkeypatch.setattr(tc, "embedded_semicolon", lambda _sql: False)
+    monkeypatch.setattr(tc, "has_extra_statement", lambda _sql: False)
+    begin_try(_start("bypass-%s" % driver, _spec(fields, "rollback")), drivers=(driver,))
+    try:
+        module = __import__("cbcs_connections")
+        module.set_password("shop", fields["password"])
+        with tc.activate("bypass-%s" % driver):
+            with pytest.raises(Exception) as caught:
+                with module.work("shop") as connection:
+                    connection.cursor().execute("UPDATE m84_invoices SET notes='x' WHERE id=1; COMMIT")
+        assert "multiple commands" in str(caught.value).lower()
+    finally:
+        end_all()
+        after = _fingerprint(raw)
+        _reset(raw)
+        raw.close()
+    assert after == before
 
 
 @pytest.mark.parametrize("driver", ["psycopg", "pg8000"])

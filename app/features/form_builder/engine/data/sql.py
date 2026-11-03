@@ -580,6 +580,18 @@ PG8000_SCAN_SENTENCE = (
 )
 
 
+def embedded_semicolon(sql: str) -> bool:
+    """True when ``;`` appears anywhere except one trailing semicolon.
+
+    A semicolon inside a literal is refused too. Try runs one statement at a time.
+    """
+
+    body = sql.rstrip()
+    if body.endswith(";"):
+        body = body[:-1]
+    return ";" in body
+
+
 def statement_words(sql: str) -> Optional[Tuple[str, ...]]:
     """Words outside quotes and comments, with ``;`` kept as its own word.
 
@@ -629,12 +641,11 @@ def sql_without_comments(sql: str) -> str:
         char = sql[index]
         nxt = sql[index + 1] if index + 1 < length else ""
         if char == "-" and nxt == "-":
-            end = sql.find("\n", index + 2)
-            index = length if end < 0 else end
+            index = _line_comment_end(sql, index)
             continue
         if char == "/" and nxt == "*":
-            end = sql.find("*/", index + 2)
-            index = length if end < 0 else end + 2
+            end = _block_comment_end(sql, index)
+            index = length if end is None else end
             continue
         if char in ("E", "e") and nxt == "'" and not _ident_before(sql, index):
             end = _end_escape_string(sql, index + 2)
@@ -771,16 +782,16 @@ def _sql_words(sql: str) -> Optional[List[str]]:
         nxt = sql[index + 1] if index + 1 < length else ""
         if char == "-" and nxt == "-":
             flush()
-            index = sql.find("\n", index + 2)
-            if index < 0:
+            index = _line_comment_end(sql, index)
+            if index >= length:
                 return found
             continue
         if char == "/" and nxt == "*":
             flush()
-            end = sql.find("*/", index + 2)
-            if end < 0:
+            end = _block_comment_end(sql, index)
+            if end is None:
                 return None
-            index = end + 2
+            index = end
             continue
         if char in ("E", "e") and nxt == "'" and not _ident_before(sql, index):
             flush()
@@ -825,15 +836,51 @@ def _sql_words(sql: str) -> Optional[List[str]]:
     return found
 
 
+def _line_comment_end(sql: str, index: int) -> int:
+    """Index of the ``\\n`` or ``\\r`` that ends a ``--`` comment, or the string length."""
+
+    index += 2
+    length = len(sql)
+    while index < length and sql[index] not in ("\n", "\r"):
+        index += 1
+    return index
+
+
+def _block_comment_end(sql: str, index: int) -> Optional[int]:
+    """Index after a nested ``/* */`` comment, or None when it is unfinished."""
+
+    depth = 1
+    index += 2
+    length = len(sql)
+    while index < length and depth:
+        pair = sql[index:index + 2]
+        if pair == "/*":
+            depth += 1
+            index += 2
+            continue
+        if pair == "*/":
+            depth -= 1
+            index += 2
+            continue
+        index += 1
+    if depth:
+        return None
+    return index
+
+
 def _ident_before(sql: str, index: int) -> bool:
     if index <= 0:
         return False
     prev = sql[index - 1]
-    return prev.isalnum() or prev == "_"
+    return prev.isalnum() or prev in ("_", "$")
 
 
 def _dollar_tag(sql: str, index: int) -> Optional[str]:
     if index >= len(sql) or sql[index] != "$":
+        return None
+    if _ident_before(sql, index):
+        return None
+    if index + 1 < len(sql) and sql[index + 1].isdigit():
         return None
     cursor = index + 1
     while cursor < len(sql) and (sql[cursor].isalnum() or sql[cursor] == "_"):
@@ -877,14 +924,15 @@ def _strip_trailing_semicolon(sql: str) -> str:
         char = sql[index]
         nxt = sql[index + 1] if index + 1 < length else ""
         if char == "-" and nxt == "-":
-            end = sql.find("\n", index + 2)
-            index = length if end < 0 else end + 1
+            index = _line_comment_end(sql, index)
+            if index < length and sql[index] in ("\n", "\r"):
+                index += 1
             continue
         if char == "/" and nxt == "*":
-            end = sql.find("*/", index + 2)
-            if end < 0:
+            end = _block_comment_end(sql, index)
+            if end is None:
                 return sql
-            index = end + 2
+            index = end
             continue
         if char in ("E", "e") and nxt == "'" and not _ident_before(sql, index):
             end = _end_escape_string(sql, index + 2)

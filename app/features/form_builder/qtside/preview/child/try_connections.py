@@ -17,18 +17,27 @@ import shutil
 import sqlite3
 import sys
 import tempfile
+import time
 import types
 import weakref
 from dataclasses import dataclass, field
 from typing import Callable, Dict, Iterator, List, Optional, Sequence, Tuple
 from urllib.parse import quote
 
-from app.features.form_builder.engine.data.sql import has_extra_statement, sql_without_comments, statement_words
+from app.features.form_builder.engine.data.sql import (
+    embedded_semicolon,
+    has_extra_statement,
+    sql_without_comments,
+    statement_words,
+)
 from app.features.form_builder.engine.ipc.protocol import TryConnectionSpec, TryDataPlan, TryStart
 
 LOCK_TIMEOUT = "Another user is editing this {record}. Try stopped waiting after 2 seconds."
 STATEMENT_TIMEOUT = "This query took longer than 5 seconds, so Try stopped it."
 GENERIC_TIMEOUT = "This query took too long, so Try stopped it."
+ONE_STATEMENT = (
+    "Try runs one statement at a time. Use a parameter for text that contains a semicolon."
+)
 _TIMEOUT_SPAN = re.compile(r"(\d+)\s*(milliseconds|millisecond|ms|seconds|second|secs|sec|s|minutes|minute|min)\b", re.IGNORECASE)
 SAVED_ROLLED_BACK = "Saved, then rolled back"
 OWN_CONNECTION = "This form uses your own connection method, so Try only shows what it would run."
@@ -48,7 +57,8 @@ _CONTROL = {
     "ATTACH", "DETACH", "VACUUM", "REINDEX", "SET", "ALTER", "DROP",
     "CREATE", "TRUNCATE", "GRANT", "REVOKE", "COPY", "CALL", "DO",
     "ANALYZE", "CLUSTER", "LOCK", "DISCARD", "CHECKPOINT", "COMMENT",
-    "SECURITY", "RESET",
+    "SECURITY", "RESET", "EXECUTE", "DECLARE", "FETCH", "MOVE", "NOTIFY",
+    "LISTEN", "UNLISTEN", "LOAD", "REASSIGN",
 }
 _MODULE_NAME = "cbcs_connections"
 _SKIP_IMPORT = ("app.", "PySide", "shiboken", "importlib", "encodings", "cbcs_connections")
@@ -61,11 +71,52 @@ _secret_asker: Optional[Callable[[str], str]] = None
 
 _current: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar("cbcs_try_view", default=None)
 _sessions: Dict[str, "TrySession"] = {}
-_imported_by: Dict[str, str] = {}
+_imported_by: Dict[str, List[str]] = {}
 _saved_import: Optional[Callable[..., object]] = None
-_conn_raw: "weakref.WeakKeyDictionary[object, object]" = weakref.WeakKeyDictionary()
-_cur_raw: "weakref.WeakKeyDictionary[object, object]" = weakref.WeakKeyDictionary()
-_cur_owner: "weakref.WeakKeyDictionary[object, object]" = weakref.WeakKeyDictionary()
+
+
+def _bind_handles() -> Tuple[Callable[[object, object], None], Callable[[object], object], Callable[[object, object, object], None], Callable[[object], object], Callable[[object], object], Callable[[object], object]]:
+    """Raw driver objects stay in these maps. Proxy methods do not close over them."""
+
+    conns: "weakref.WeakKeyDictionary[object, object]" = weakref.WeakKeyDictionary()
+    curs: "weakref.WeakKeyDictionary[object, object]" = weakref.WeakKeyDictionary()
+    owners: "weakref.WeakKeyDictionary[object, object]" = weakref.WeakKeyDictionary()
+
+    def remember_conn(proxy: object, raw: object) -> None:
+        conns[proxy] = raw
+
+    def conn_of(proxy: object) -> object:
+        found = conns.get(proxy)
+        return proxy if found is None else found
+
+    def remember_cur(cur: object, raw: object, owner: object) -> None:
+        curs[cur] = raw
+        owners[cur] = owner
+
+    def cur_of(cur: object) -> object:
+        found = curs.get(cur)
+        if found is None:
+            raise KeyError("cursor")
+        return found
+
+    def cur_or_self(cur: object) -> object:
+        found = curs.get(cur)
+        return cur if found is None else found
+
+    def owner_of(cur: object) -> object:
+        return owners.get(cur)
+
+    return remember_conn, conn_of, remember_cur, cur_of, cur_or_self, owner_of
+
+
+(
+    _remember_conn,
+    _conn_of,
+    _remember_cur,
+    _cur_of,
+    _cur_or_self,
+    _owner_of,
+) = _bind_handles()
 _module: Optional[types.ModuleType] = None
 _saved_module: object = None
 _pushed = False
@@ -86,11 +137,14 @@ def explain_database_error(
     record_word: str,
     *,
     try_set_timeout: bool = False,
+    elapsed: Optional[float] = None,
 ) -> Optional[str]:
     """The UX sentence for SQLSTATE 55P03 or 57014, or None when it is some other error.
 
     ``try_set_timeout`` is true when this Try connection set ``statement_timeout``
-    to 5 seconds. A 57014 that names some other duration is not that limit.
+    to 5 seconds. The 5 second sentence is used only when that timer is the one
+    that fired, meaning the statement ran longer than the limit. Any other
+    cancel, in any locale, gets the generic sentence.
     """
 
     state = _sqlstate(exc)
@@ -100,14 +154,18 @@ def explain_database_error(
     if state != "57014":
         return None
     text = _error_text(exc)
-    if "lock timeout" in text or "user request" in text:
+    if "lock timeout" in text:
         return None
     span = _timeout_span_ms(text)
-    if span is not None and span != 5000:
-        return GENERIC_TIMEOUT
-    if "statement timeout" in text or (try_set_timeout and span is None):
+    own_timer = (
+        try_set_timeout
+        and elapsed is not None
+        and elapsed >= 4.5
+        and (span is None or span == 5000)
+    )
+    if own_timer:
         return STATEMENT_TIMEOUT
-    return None
+    return GENERIC_TIMEOUT
 
 
 def backup_sqlite(source: str, dest: str) -> None:
@@ -344,7 +402,9 @@ class TrySession:
         self._depth[name] = self._depth.get(name, 0) + 1
         if outer:
             self._wrote = False
-            if spec.mode == "rollback" and spec.engine == "postgres" and not spec.own_hook:
+            if spec.mode == "would_run" and spec.engine == "postgres" and not spec.own_hook:
+                _begin_read_only(connection)
+            if spec.engine == "postgres" and not spec.own_hook and spec.mode in ("rollback", "would_run"):
                 _set_local(connection)
         try:
             yield connection
@@ -616,17 +676,21 @@ def _lookup(view_id: Optional[str] = None) -> Optional[TrySession]:
 
 
 def _view_on_stack() -> Optional[str]:
-    """The Try view that imported the module now on the stack."""
+    """The Try view whose module is on the stack. None when two views both imported it."""
 
+    found: Optional[str] = None
     frame: Optional[types.FrameType] = sys._getframe(1)
     while frame is not None:
         name = frame.f_globals.get("__name__")
-        if isinstance(name, str):
-            view = _imported_by.get(name)
-            if view is not None:
-                return view
+        views = _imported_by.get(name) if isinstance(name, str) else None
+        if views:
+            if len(views) != 1:
+                return None
+            if found is not None and found != views[0]:
+                return None
+            found = views[0]
         frame = frame.f_back
-    return None
+    return found
 
 
 def _install_import_hook() -> None:
@@ -673,14 +737,35 @@ def _notice_import(module: object, fromlist: Sequence[str]) -> None:
                     seen.append(found)
         for found in seen:
             name = getattr(found, "__name__", "")
-            if not isinstance(name, str) or not name or name.startswith(_SKIP_IMPORT):
+            if not isinstance(name, str) or not _form_module(found, view):
                 continue
-            _imported_by[name] = view
+            views = _imported_by.setdefault(name, [])
+            if view not in views:
+                views.append(view)
             for value in list(vars(found).values()):
-                if isinstance(value, type):
+                if isinstance(value, type) and getattr(value, "__module__", "") == name:
                     bind_form_class(value, view)
     except Exception:
         return None
+
+
+def _form_module(module: object, view: str) -> bool:
+    """True for the project's forms package, or any module file under the project root."""
+
+    name = getattr(module, "__name__", "")
+    if not isinstance(name, str) or not name or name.startswith(_SKIP_IMPORT):
+        return False
+    if name == "forms" or name.startswith("forms."):
+        return True
+    session = _sessions.get(view)
+    root = session.project_root if session is not None else ""
+    path = getattr(module, "__file__", "") or ""
+    if not root or not isinstance(path, str) or not path:
+        return False
+    try:
+        return os.path.commonpath([os.path.abspath(root), os.path.abspath(path)]) == os.path.abspath(root)
+    except ValueError:
+        return False
 
 
 def _require() -> TrySession:
@@ -817,21 +902,22 @@ def _proxy(raw: object, session: TrySession, spec: TryConnectionSpec, *, rollbac
     raw_module = type(raw).__module__
 
     def commit(self: object) -> None:
+        handle = _conn_of(self)
         if _commits(spec):
-            raw.commit()  # type: ignore[attr-defined]
+            handle.commit()  # type: ignore[attr-defined]
         else:
-            _rollback_handle(raw)
+            _rollback_handle(handle)
 
     def rollback_fn(self: object) -> None:
-        _rollback_handle(raw)
+        _rollback_handle(_conn_of(self))
 
     def cursor(self: object) -> object:
-        made = _TracingCursor(raw.cursor(), session, spec)  # type: ignore[attr-defined]
-        _cur_owner[made] = raw
+        handle = _conn_of(self)
+        made = _TracingCursor(handle.cursor(), session, spec, handle)  # type: ignore[attr-defined]
         return made
 
     def close(self: object) -> None:
-        raw.close()  # type: ignore[attr-defined]
+        _conn_of(self).close()  # type: ignore[attr-defined]
 
     def execute(self: object, sql: str, params: object = None) -> object:
         made = self.cursor()  # type: ignore[attr-defined]
@@ -865,15 +951,15 @@ def _proxy(raw: object, session: TrySession, spec: TryConnectionSpec, *, rollbac
         },
     )
     proxy = cls()
-    _conn_raw[proxy] = raw
+    _remember_conn(proxy, raw)
     return proxy
 
 
 class _TracingCursor:
     """Logs every statement. Would-run writes never reach the server."""
 
-    def __init__(self, raw: object, session: TrySession, spec: TryConnectionSpec) -> None:
-        _cur_raw[self] = raw
+    def __init__(self, raw: object, session: TrySession, spec: TryConnectionSpec, owner: object) -> None:
+        _remember_cur(self, raw, owner)
         self._session = session
         self._spec = spec
         self._fake_rowcount: Optional[int] = None
@@ -926,22 +1012,37 @@ class _TracingCursor:
             elif self._point(sql, values) is not None:
                 self._fake_row = self._point(sql, values)
             return self
-        driver = _cur_raw[self]
+        driver = _cur_of(self)
+        guard = self._guards_reads() and kind == "read"
+        if guard:
+            driver.execute("SAVEPOINT cbcs_try_read")  # type: ignore[attr-defined]
+            driver.execute("SET LOCAL transaction_read_only = on")  # type: ignore[attr-defined]
+        elif (
+            kind == "read"
+            and self._spec.engine == "postgres"
+            and (self._spec.mode == "would_run" or self._spec.own_hook)
+            and self._session._depth.get(self._spec.name, 0) == 0
+        ):
+            _begin_read_only(_owner_of(self))
+        started = time.monotonic()
         try:
-            if params is None:
-                driver.execute(sql)  # type: ignore[attr-defined]
-            else:
-                driver.execute(sql, params)  # type: ignore[attr-defined]
+            send_extended(driver, sql, params)
         except Exception as exc:
+            if guard:
+                _undo_read_guard(driver)
             self._release_outside()
             mapped = explain_database_error(
                 exc,
                 self._spec.record_word,
                 try_set_timeout=self._spec.engine == "postgres",
+                elapsed=time.monotonic() - started,
             )
             if mapped is not None:
                 raise CbcsConnectionError(mapped) from None
             raise
+        if guard:
+            self._hold_driver(driver)
+            _undo_read_guard(driver)
         self._serving_fake = False
         self._fake_rowcount = None
         self._fake_key = None
@@ -952,7 +1053,10 @@ class _TracingCursor:
         if writing:
             self._session._wrote = True
             self._effects(verb, sql, values)
-        self._release_outside()
+        if guard and self._session._depth.get(self._spec.name, 0) == 0:
+            _rollback_handle(_owner_of(self))
+        else:
+            self._release_outside()
         if self._spec.mode == "rollback":
             self._note_nextval(sql)
         return self
@@ -964,11 +1068,16 @@ class _TracingCursor:
                 self.execute(sql, params)
             return self
         kind = _classify(sql)
+        if kind == "read" and self._guards_reads():
+            for params in rows:
+                self.execute(sql, params)
+            return self
         if kind == "control" or (kind == "write" and (self._spec.mode == "would_run" or self._spec.own_hook)):
             for params in rows:
                 self.execute(sql, params)
             return self
-        driver = _cur_raw[self]
+        driver = _cur_of(self)
+        started = time.monotonic()
         try:
             driver.executemany(sql, rows)  # type: ignore[attr-defined]
         except Exception as exc:
@@ -977,6 +1086,7 @@ class _TracingCursor:
                 exc,
                 self._spec.record_word,
                 try_set_timeout=self._spec.engine == "postgres",
+                elapsed=time.monotonic() - started,
             )
             if mapped is not None:
                 raise CbcsConnectionError(mapped) from None
@@ -994,13 +1104,13 @@ class _TracingCursor:
             return []
         if self._held:
             return self._take(size)
-        driver = _cur_raw[self]
+        driver = _cur_of(self)
         if size is None:
             return driver.fetchmany()  # type: ignore[attr-defined]
         return driver.fetchmany(size)  # type: ignore[attr-defined]
 
     def close(self) -> None:
-        closer = getattr(_cur_raw.get(self), "close", None)
+        closer = getattr(_cur_or_self(self), "close", None)
         if callable(closer):
             closer()
 
@@ -1016,7 +1126,7 @@ class _TracingCursor:
         if self._held:
             found = self._take(1)
             return found[0] if found else None
-        row = _cur_raw[self].fetchone()  # type: ignore[attr-defined]
+        row = _cur_of(self).fetchone()  # type: ignore[attr-defined]
         if self._spec.mode == "would_run" or self._spec.own_hook:
             overlaid = self._overlay(self._last_sql, self._last_values, row)
             if overlaid is not None:
@@ -1032,7 +1142,7 @@ class _TracingCursor:
             return []
         if self._held:
             return self._take(None)
-        return _cur_raw[self].fetchall()  # type: ignore[attr-defined]
+        return _cur_of(self).fetchall()  # type: ignore[attr-defined]
 
     @property
     def rowcount(self) -> int:
@@ -1040,7 +1150,7 @@ class _TracingCursor:
             return self._fake_rowcount
         if self._held and self._held_rowcount is not None:
             return self._held_rowcount
-        return int(getattr(_cur_raw.get(self), "rowcount", -1))
+        return int(getattr(_cur_or_self(self), "rowcount", -1))
 
     @property
     def lastrowid(self) -> object:
@@ -1048,13 +1158,13 @@ class _TracingCursor:
             return self._fake_key
         if self._held:
             return self._held_lastrowid
-        return getattr(_cur_raw.get(self), "lastrowid", None)
+        return getattr(_cur_or_self(self), "lastrowid", None)
 
     @property
     def description(self) -> object:
         if self._held:
             return self._held_description
-        return getattr(_cur_raw.get(self), "description", None)
+        return getattr(_cur_or_self(self), "description", None)
 
     def _take(self, size: Optional[int]) -> List[object]:
         rows = self._held_rows or []
@@ -1066,12 +1176,31 @@ class _TracingCursor:
         self._held_at += len(found)
         return found
 
+    def _guards_reads(self) -> bool:
+        """Rollback reads run read-only so a function cannot move a sequence."""
+
+        return self._spec.engine == "postgres" and self._spec.mode == "rollback" and not self._spec.own_hook
+
+    def _hold_driver(self, driver: object) -> None:
+        self._held_rowcount = int(getattr(driver, "rowcount", -1))
+        self._held_description = getattr(driver, "description", None)
+        self._held_lastrowid = getattr(driver, "lastrowid", None)
+        if self._held_description:
+            try:
+                self._held_rows = list(driver.fetchall())  # type: ignore[attr-defined]
+            except Exception:
+                self._held_rows = []
+        else:
+            self._held_rows = None
+        self._held_at = 0
+        self._held = True
+
     def _release_outside(self) -> None:
         """A statement outside ``work()`` must not keep a transaction open."""
 
         if self._session._depth.get(self._spec.name, 0) > 0:
             return
-        driver = _cur_raw.get(self)
+        driver = _cur_or_self(self)
         if driver is None:
             return
         self._held_rowcount = int(getattr(driver, "rowcount", -1))
@@ -1086,7 +1215,7 @@ class _TracingCursor:
             self._held_rows = None
         self._held_at = 0
         self._held = True
-        _rollback_handle(_cur_owner.get(self))
+        _rollback_handle(_owner_of(self))
 
     def _note_nextval(self, sql: str) -> None:
         if self._spec.engine != "postgres":
@@ -1195,7 +1324,7 @@ class _TracingCursor:
         value: object = "?"
         try:
             probe = self._session.open_connection(self._spec.name).cursor()  # type: ignore[union-attr]
-            found = _cur_raw.get(probe, probe)
+            found = _cur_or_self(probe)
             if found is None:
                 return "?"
             raw = found
@@ -1213,13 +1342,13 @@ class _TracingCursor:
                     value = "?"
             value = "?"
         if raw is not None and self._session._depth.get(self._spec.name, 0) == 0:
-            _rollback_handle(_cur_owner.get(probe) if probe is not None else None)
+            _rollback_handle(_owner_of(probe) if probe is not None else None)
         return value
 
 
 def _set_local(connection: object) -> None:
     cursor = connection.cursor()
-    raw = _cur_raw.get(cursor, cursor)
+    raw = _cur_or_self(cursor)
     if raw is None:
         return
     raw.execute("SET LOCAL statement_timeout = '5s'")  # type: ignore[attr-defined]
@@ -1227,7 +1356,7 @@ def _set_local(connection: object) -> None:
 
 
 def _rollback(connection: object) -> None:
-    _rollback_handle(_conn_raw.get(connection, connection))
+    _rollback_handle(_conn_of(connection))
 
 
 def _rollback_handle(raw: object) -> None:
@@ -1275,14 +1404,68 @@ def _prepare_postgres(raw: object, spec: TryConnectionSpec) -> None:
         raw.autocommit = True  # type: ignore[attr-defined]
     cursor = raw.cursor()  # type: ignore[attr-defined]
     cursor.execute("SET client_encoding TO 'UTF8'")
+    cursor.execute("SET standard_conforming_strings = on")
     cursor.execute("SET statement_timeout = '5s'")
     cursor.execute("SET lock_timeout = '2s'")
+    if spec.mode == "would_run":
+        cursor.execute("SET default_transaction_read_only = on")
     if spec.db_schema and spec.db_schema != "public":
         cursor.execute("SET search_path TO %s" % _quote(spec.db_schema))
     if autocommit is not None:
         raw.autocommit = False  # type: ignore[attr-defined]
     else:
         raw.commit()  # type: ignore[attr-defined]
+
+
+def _begin_read_only(connection: object) -> None:
+    """Start the would-run transaction as read only, before any other statement."""
+
+    raw = _conn_of(connection)
+    module = type(raw).__module__
+    if "pg8000" in module:
+        if not getattr(raw, "_in_transaction", False) and not getattr(raw, "autocommit", False):
+            raw.execute_simple("BEGIN READ ONLY")  # type: ignore[attr-defined]
+        return
+    cursor = raw.cursor()  # type: ignore[attr-defined]
+    cursor.execute("BEGIN READ ONLY")
+
+
+def send_extended(driver: object, sql: str, params: object = None) -> None:
+    """One statement, via Parse/Bind when the driver has an extended protocol.
+
+    A second command in the string is the server's error, not a second execution.
+    SQLite has no extended protocol. The semicolon scan is what stops it there.
+    """
+
+    module = type(driver).__module__
+    if "pg8000" in module:
+        _pg8000_extended(driver, sql, params)
+        return
+    if "psycopg" in module:
+        bound = () if params is None else params
+        driver.execute(sql, bound, prepare=True)  # type: ignore[attr-defined]
+        return
+    if params is None:
+        driver.execute(sql)  # type: ignore[attr-defined]
+        return
+    driver.execute(sql, params)  # type: ignore[attr-defined]
+
+
+def _pg8000_extended(cursor: object, sql: str, params: object) -> None:
+    core = cursor._c  # type: ignore[attr-defined]
+    if not core._in_transaction and not core.autocommit:
+        core.execute_simple("begin transaction")
+    statement = sql
+    vals: object = ()
+    if params:
+        from pg8000.dbapi import convert_paramstyle, paramstyle
+
+        statement, vals = convert_paramstyle(paramstyle, sql, params)
+    context = core.execute_unnamed(statement, vals=vals, oids=getattr(cursor, "_input_oids", ()))
+    cursor._context = context  # type: ignore[attr-defined]
+    rows = context.rows
+    cursor._row_iter = None if rows is None else iter(rows)  # type: ignore[attr-defined]
+    cursor._input_oids = ()  # type: ignore[attr-defined]
 
 
 def _quote(name: str) -> str:
@@ -1293,16 +1476,46 @@ def _strip_comments(sql: str) -> str:
     return sql_without_comments(sql)
 
 
+_DANGEROUS_CALL = re.compile(
+    r"(?i)(?:^|[^a-z0-9_$])"
+    r"(?:(?:\"pg_catalog\"|pg_catalog)\s*\.\s*)?"
+    r"\"?"
+    r"(setval|set_config|nextval|pg_terminate_backend|pg_cancel_backend|"
+    r"pg_advisory_[a-z0-9_]*|lo_[a-z0-9_]*|dblink[a-z0-9_]*)"
+    r"\"?\s*\("
+)
+_SET_SCS = re.compile(r"(?i)\bset\s+(session\s+|local\s+)?standard_conforming_strings\b")
+
+
 def _blocked_sentence(sql: str, spec: TryConnectionSpec) -> str:
     """A sentence when this string must not reach the server, else ''."""
 
-    if has_extra_statement(sql):
-        return "Try did not run this. Another statement follows the semicolon."
+    if embedded_semicolon(sql) or has_extra_statement(sql):
+        return ONE_STATEMENT
+    if _SET_SCS.search(sql):
+        return "Try did not run standard_conforming_strings."
     mode = "would_run" if spec.own_hook or spec.mode == "would_run" else spec.mode
+    for name in _dangerous_names(sql):
+        if _refused_call(name, mode):
+            return "Try did not run %s." % name
     for name in _call_names(sql):
         if _refused_call(name, mode):
             return "Try did not run %s." % name
     return ""
+
+
+def _dangerous_names(sql: str) -> Tuple[str, ...]:
+    return tuple(match.group(1).lower() for match in _DANGEROUS_CALL.finditer(sql))
+
+
+def _undo_read_guard(driver: object) -> None:
+    """Drop the read-only savepoint so a later write in this transaction still runs."""
+
+    try:
+        driver.execute("ROLLBACK TO SAVEPOINT cbcs_try_read")  # type: ignore[attr-defined]
+        driver.execute("RELEASE SAVEPOINT cbcs_try_read")  # type: ignore[attr-defined]
+    except Exception:
+        return
 
 
 def _call_names(sql: str) -> Tuple[str, ...]:
@@ -1319,11 +1532,8 @@ def _call_names(sql: str) -> Tuple[str, ...]:
 
 
 def _refused_call(name: str, mode: str) -> bool:
-    if name in ("setval", "set_config"):
-        return True
-    if mode != "would_run":
-        return False
-    if name in ("nextval", "pg_terminate_backend", "pg_cancel_backend"):
+    del mode
+    if name in ("setval", "set_config", "nextval", "pg_terminate_backend", "pg_cancel_backend"):
         return True
     if name.startswith("pg_advisory_") or name.startswith("lo_") or name.startswith("dblink"):
         return True
@@ -1381,11 +1591,9 @@ def _classify(sql: str) -> str:
     """``read`` runs. ``write`` runs only outside would-run. ``control`` never runs."""
 
     word = _first_word(sql)
-    if word in ("SAVEPOINT", "RELEASE"):
-        return "savepoint"
-    if word == "ROLLBACK":
-        if " TO " in _strip_comments(sql).upper():
-            return "savepoint"
+    if not word:
+        return "control"
+    if word in ("SAVEPOINT", "RELEASE", "ROLLBACK"):
         return "control"
     if word in _CONTROL:
         return "control"

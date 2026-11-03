@@ -51,9 +51,15 @@ def test_sqlstate_sentences() -> None:
     assert explain_database_error(
         Fault("57014", "canceling statement due to statement timeout"),
         "invoice",
+        try_set_timeout=True,
+        elapsed=6,
     ) == STATEMENT_TIMEOUT
+    assert explain_database_error(
+        Fault("57014", "canceling statement due to statement timeout"),
+        "invoice",
+    ) == GENERIC_TIMEOUT
     assert explain_database_error(Fault("57014", "canceling statement due to lock timeout"), "invoice") is None
-    assert explain_database_error(Fault("57014"), "invoice") is None
+    assert explain_database_error(Fault("57014"), "invoice") == GENERIC_TIMEOUT
     assert explain_database_error(Fault("23505"), "invoice") is None
 
 
@@ -566,6 +572,36 @@ def test_try_stop_is_sent_when_try_ends() -> None:
     assert any(isinstance(item, TryStop) for item in pool.sent)
 
 
+def test_a_leading_semicolon_does_not_change_the_real_file(tmp_path: Path) -> None:
+    db = tmp_path / "shop.db"
+    conn = sqlite3.connect(str(db))
+    conn.execute("CREATE TABLE pr (id INTEGER PRIMARY KEY, note TEXT)")
+    conn.execute("INSERT INTO pr VALUES (1, 'orig')")
+    conn.commit()
+    conn.close()
+    before = _hash(db)
+    spec = TryConnectionSpec(
+        name="shop", mode="rollback", title="Shop", engine="sqlite", sqlite_path=str(db), record_word="note", key="id",
+    )
+    begin_try(TryStart(
+        request_id="t", view_id="v-semi", module_name="m", module_source="pass\n",
+        window_class_name="W", base_class="QDialog", window_values=(),
+        data=TryDataPlan(specs=(spec,)), show_form=True,
+    ))
+    try:
+        from app.features.form_builder.qtside.preview.child.try_connections import activate
+
+        module = __import__("cbcs_connections")
+        with activate("v-semi"):
+            with module.work("shop") as connection:
+                cursor = connection.cursor()
+                cursor.execute("UPDATE pr SET note='smuggled' WHERE id=1")
+                cursor.execute("; COMMIT")
+    finally:
+        end_all()
+    assert _hash(db) == before
+
+
 def test_a_second_statement_does_not_change_the_scratch_copy(tmp_path: Path, qapp: Any) -> None:
     root, db = _project(tmp_path)
     before = _hash(db)
@@ -589,7 +625,7 @@ def test_a_second_statement_does_not_change_the_scratch_copy(tmp_path: Path, qap
     assert note is not None
     assert note[0] != "multi"
     assert note[0] != "hidden"
-    assert any("Another statement" in item for item in sentences)
+    assert any("one statement at a time" in item for item in sentences)
     assert _hash(db) == before
 
 
@@ -767,15 +803,39 @@ def test_a_secret_ask_holds_try_stop_until_the_password_returns(tmp_path: Path, 
         child._ask_secret("shop")
 
 
+def test_a_held_try_stop_does_not_end_a_later_run(tmp_path: Path, qapp: Any) -> None:
+    from app.features.form_builder.engine.ipc.protocol import ProvideSecret, TryStop, encode_frame
+    from app.features.form_builder.qtside.preview.child.session import ChildSession
+
+    class Writer:
+        def send(self, _message: object) -> None:
+            return None
+
+    db = _bare(tmp_path)
+    begin_try(_message("view-secret", db, "rollback"))
+    child = ChildSession(Writer(), qapp)  # type: ignore[arg-type]
+    child._try_run["view-secret"] = "run-a"
+    child.push_line(encode_frame(TryStop(request_id="stop", view_id="view-secret")))
+    child.push_line(encode_frame(ProvideSecret(request_id="sec", connection="shop", secret="pw")))
+    try:
+        assert child._ask_secret("shop") == "pw"
+        child._try_run["view-secret"] = "run-b"
+        child.drain()
+        assert session_for("view-secret") is not None
+    finally:
+        end_all()
+
+
 def test_a_different_timeout_does_not_say_five_seconds() -> None:
     class Fault(Exception):
         def __init__(self, state: str, text: str = "") -> None:
             super().__init__(text)
             self.sqlstate = state
 
-    assert explain_database_error(Fault("57014", "annulation"), "invoice", try_set_timeout=True) == STATEMENT_TIMEOUT
-    assert explain_database_error(Fault("57014", "statement timeout 30s"), "invoice", try_set_timeout=True) == GENERIC_TIMEOUT
-    assert explain_database_error(Fault("57014", "canceling statement due to user request"), "invoice", try_set_timeout=True) is None
+    assert explain_database_error(Fault("57014", "annulation"), "invoice", try_set_timeout=True, elapsed=6) == STATEMENT_TIMEOUT
+    assert explain_database_error(Fault("57014", "annulation"), "invoice", try_set_timeout=True, elapsed=0.2) == GENERIC_TIMEOUT
+    assert explain_database_error(Fault("57014", "statement timeout 30s"), "invoice", try_set_timeout=True, elapsed=6) == GENERIC_TIMEOUT
+    assert explain_database_error(Fault("57014", "canceling statement due to user request"), "invoice", try_set_timeout=True, elapsed=0.1) == GENERIC_TIMEOUT
 
 
 def _project(tmp_path: Path) -> Tuple[Path, Path]:

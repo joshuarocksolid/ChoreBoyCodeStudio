@@ -109,6 +109,8 @@ class ChildSession:
         self._materializer = FormMaterializer()
         self._secrets: Dict[str, Optional[str]] = {}
         self._current_view: Optional[str] = None
+        self._try_run: Dict[str, str] = {}
+        self._stop_pin: Dict[str, Optional[str]] = {}
         self._exit_code = 0
         self._closed = False
         self._last_view_change = time.monotonic()
@@ -401,6 +403,7 @@ class ChildSession:
         ``show_form`` is Preview with behavior: the same load as a form, on the
         stand-in, with the What ran pane. The window file is not imported.
         """
+        self._try_run[message.view_id] = message.request_id
         if message.show_form:
             self._load(_load_from_try(message), message)
             return
@@ -456,6 +459,14 @@ class ChildSession:
     def _try_stop(self, message: TryStop) -> None:
         from app.features.form_builder.qtside.preview.child.try_connections import end_try
 
+        pinned = self._stop_pin.pop(message.view_id, None)
+        current = self._try_run.get(message.view_id)
+        if pinned is not None and pinned != current:
+            self._writer.send(
+                Response(request_id=message.request_id, ok=True, result={"stopped": False})
+            )
+            return
+        self._try_run.pop(message.view_id, None)
         end_try(message.view_id)
         self._writer.send(Response(request_id=message.request_id, ok=True, result={"stopped": True}))
 
@@ -479,6 +490,7 @@ class ChildSession:
                 break
             decoded = decode_line(line.rstrip("\r\n"))
             if isinstance(decoded, TryStop):
+                self._stop_pin[decoded.view_id] = self._try_run.get(decoded.view_id)
                 held.append(line)
                 continue
             if isinstance(decoded, ProvideSecret) and decoded.connection == name:
