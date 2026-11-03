@@ -347,13 +347,23 @@ def _widget_attr(state: _State, node: Attr, base: Ref, facts: WidgetFacts, ctx: 
         return replace(node, base=base, type=standard)
     if matched == "QComboBox" and node.sub is None and node.name in facts.also:
         _data_required(state, node.span)
-        return replace(node, base=base, type=TEXT)
+        return replace(node, base=base, type=_also_type(facts, node.name))
+    if matched == "QComboBox" and node.name == "also" and node.sub in facts.also:
+        _data_required(state, node.span)
+        return replace(node, base=base, type=_also_type(facts, node.sub))
     if spec is None and matched is None:
         _problem(state, "FB114", node.span, "%s has no value a formula can read" % display)
         return replace(node, base=base, type=ANY)
     extra = node.name if node.sub is None else "%s.%s" % (node.name, node.sub)
     _problem(state, "FB114", node.span, "%s has no %s." % (display, extra))
     return replace(node, base=base, type=ANY)
+
+
+def _also_type(facts: WidgetFacts, name: str):
+    for column, kind in getattr(facts, "also_types", ()) or ():
+        if column == name:
+            return kind
+    return TEXT
 
 
 def _grid_attr(state: _State, node: Attr, base: Ref, display: str, ctx: _Ctx) -> Node:

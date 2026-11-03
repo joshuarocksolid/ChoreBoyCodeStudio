@@ -117,7 +117,7 @@ def _emit(node: Any, env: Any, self_name: str, wraps: Set[Any]) -> _Piece:
     elif kind == "ref":
         piece = _emit_ref(node, env, self_name)
     elif kind == "attr":
-        piece = _emit_attr(node, self_name)
+        piece = _emit_attr(node, self_name, env)
     elif kind == "call":
         piece = _emit_call(node, env, self_name, wraps)
     elif kind == "window":
@@ -333,9 +333,7 @@ def _emit_textish(target: str, style: str, kind: str, facts: Any, blank: bool) -
     return _Piece("_cbcs_read_%s%s(%s)" % (prefix, kind, target), PREC_ATOM, blank)
 
 
-def _emit_attr(node: Any, self_name: str) -> _Piece:
-    if getattr(node, "sub", None) is not None:
-        raise ValueError("attribute subscript is not a formula read")
+def _emit_attr(node: Any, self_name: str, env: Any = None) -> _Piece:
     base = node.base
     if isinstance(base, str):
         widget = base
@@ -345,12 +343,17 @@ def _emit_attr(node: Any, self_name: str) -> _Piece:
         raise ValueError("attribute base is not a widget")
     _reject_hidden_name(widget)
     name = node.name
+    sub = getattr(node, "sub", None)
     if widget == "form":
+        if sub is not None:
+            raise ValueError("attribute subscript is not a formula read")
         method = _FORM_READS.get(name)
         if method is None:
             raise ValueError("unknown form attribute %s" % name)
         return _Piece("%s.%s()" % (self_name, method), PREC_ATOM, False)
     if widget == "record":
+        if sub is not None:
+            raise ValueError("attribute subscript is not a formula read")
         if not _RECORD_NAME.match(name):
             raise ValueError("record column is not a name")
         return _Piece('%s._cbcs_record.get("%s")' % (self_name, name), PREC_ATOM, True)
@@ -362,10 +365,26 @@ def _emit_attr(node: Any, self_name: str) -> _Piece:
         "checked": ("_cbcs_read_checked", False),
         "count": ("_cbcs_read_count", False),
     }
-    if name not in table:
-        raise ValueError("unknown attribute %s" % name)
-    helper, blank = table[name]
-    return _Piece("%s(%s)" % (helper, target), PREC_ATOM, blank)
+    if sub is None and name in table:
+        helper, blank = table[name]
+        return _Piece("%s(%s)" % (helper, target), PREC_ATOM, blank)
+    if sub is not None and name != "also":
+        raise ValueError("attribute subscript is not a formula read")
+    column = sub if name == "also" and sub else name
+    facts = None
+    widgets = getattr(env, "widgets", None) if env is not None else None
+    if widgets is not None and hasattr(widgets, "get"):
+        facts = widgets.get(widget)
+    also = getattr(facts, "also", ()) if facts is not None else ()
+    if column not in also or not _RECORD_NAME.match(str(column)):
+        raise ValueError("unknown attribute %s" % (column if name == "also" else name))
+    from app.features.form_builder.engine.codegen.literals import py_string
+
+    return _Piece(
+        "%s._cbcs_also(%s, %s)" % (self_name, py_string(widget), py_string(str(column))),
+        PREC_ATOM,
+        True,
+    )
 
 
 def _emit_call(node: Any, env: Any, self_name: str, wraps: Set[Any]) -> _Piece:

@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
-from typing import List, Optional, Sequence, Tuple
+from typing import Callable, List, Optional, Sequence, Tuple
 
 from app.features.form_builder.engine.codegen.expanders.form_events import _GUARDS, register_close_guard
 from app.features.form_builder.engine.codegen.literals import py_string
@@ -35,6 +35,9 @@ from app.features.form_builder.engine.ui4.document import UiDocument
 from app.features.form_builder.engine.ui4.values import CStringValue, StringValue
 
 _GUARD_ID = "record.leave"
+# Lines inserted into cbcs_open after the key list is loaded, before the first show.
+# Empty for a form with no lookup, so the generated text matches M8.2.
+_OPEN_HOOKS = []
 _WIDGET_IO = {
     "QLineEdit": "text",
     "QPlainTextEdit": "plain",
@@ -63,6 +66,7 @@ class _Field:
     points_to: str
     error_label: str = ""
     item_data: bool = True
+    lookup: bool = False
 
 
 def _leave_lines(doc: UiDocument, ctx: CodegenContext) -> Tuple[str, ...]:
@@ -93,6 +97,13 @@ def _install_guard() -> None:
 _install_guard()
 
 
+def register_open_hook(fn: Callable) -> None:
+    """Add lines to ``cbcs_open`` after the key list loads. Idempotent."""
+
+    if fn not in _OPEN_HOOKS:
+        _OPEN_HOOKS.append(fn)
+
+
 class RecordExpander:
     expander_id = "record"
     level = 4
@@ -115,8 +126,16 @@ class RecordExpander:
         allow_keep = bool(source.allow_overwrite or source.conflicts == "overwrite")
         hooks = source.hooks or Hooks()
         rowid = _uses_rowid(engine, _schema_table(doc, source), source.key, fields)
-        methods = _methods(source, fields, engine, record_word, order, search, check, hooks, allow_keep, rowid)
-        imports = _imports(fields, not _closing_generates(doc))
+        prelude = []
+        for fn in _OPEN_HOOKS:
+            extra = fn(doc, ctx)
+            if extra:
+                prelude.extend(extra)
+        also = _also_families(doc, ctx, engine)
+        methods = _methods(
+            source, fields, engine, record_word, order, search, check, hooks, allow_keep, rowid, prelude, also
+        )
+        imports = _imports(fields, not _closing_generates(doc), also)
         setup: List[str] = []
         setup.extend(_null_markers(fields))
         if not _closing_generates(doc):
@@ -149,7 +168,7 @@ class RecordExpander:
         )
 
 
-def _methods(source, fields, engine, record_word, order, search, check, hooks, allow_keep, rowid) -> List[Method]:
+def _methods(source, fields, engine, record_word, order, search, check, hooks, allow_keep, rowid, prelude=(), also=()) -> List[Method]:
     noun = record_word
     table = source.table
     key = source.key
@@ -162,7 +181,7 @@ def _methods(source, fields, engine, record_word, order, search, check, hooks, a
     insert_columns = ((key,) if typed_key else ()) + tuple(field.column for field in writable)
     pieces = _sql(engine, table, key, noun, order, search, load_columns, insert_columns, writable, check, rowid)
     bodies = {
-        "cbcs_open": ("key=None", _open_body(pieces, connection)),
+        "cbcs_open": ("key=None", _open_body(pieces, connection, prelude)),
         "_cbcs_show": ("_index", _show_body(pieces, connection, fields, hooks)),
         "_cbcs_start_new": ("", _new_body(fields, hooks)),
         "cbcs_read_fields": ("", _read_body(fields)),
@@ -170,7 +189,7 @@ def _methods(source, fields, engine, record_word, order, search, check, hooks, a
         "_cbcs_snapshot": ("", ["return getattr(self, %s, {})" % _q("_cbcs_saved_fields")]),
         "_cbcs_is_dirty": ("", _dirty_body(writable)),
         "_cbcs_bind": ("_column, _value", _bind_body(fields, engine)),
-        "_cbcs_from": ("_column, _value", _from_body(fields)),
+        "_cbcs_from": ("_column, _value", _from_body(fields, also)),
         "_cbcs_fill_record": ("_raw", _fill_body(load_columns)),
         "_cbcs_confirm_leave": ("", _confirm_body(noun)),
         "cbcs_confirm_leave": ("", ["return self._cbcs_confirm_leave()"]),
@@ -236,8 +255,8 @@ def _sql(engine, table, key, noun, order, search, load_columns, insert_columns, 
     }
 
 
-def _open_body(pieces, connection) -> List[str]:
-    return [
+def _open_body(pieces, connection, prelude=()) -> List[str]:
+    lines = [
         "import cbcs_connections",
         "with cbcs_connections.work(%s) as _conn:" % _q(connection),
         "    _cursor = _conn.cursor()",
@@ -245,13 +264,19 @@ def _open_body(pieces, connection) -> List[str]:
         "    self._cbcs_keys = [_item[0] for _item in _cursor.fetchall()]",
         "self._cbcs_filtered = False",
         "self._cbcs_find_note(None)",
-        "if key is not None and key in self._cbcs_keys:",
-        "    self._cbcs_show(self._cbcs_keys.index(key))",
-        "elif self._cbcs_keys:",
-        "    self._cbcs_show(0)",
-        "else:",
-        "    self._cbcs_start_new()",
     ]
+    lines.extend(prelude)
+    lines.extend(
+        [
+            "if key is not None and key in self._cbcs_keys:",
+            "    self._cbcs_show(self._cbcs_keys.index(key))",
+            "elif self._cbcs_keys:",
+            "    self._cbcs_show(0)",
+            "else:",
+            "    self._cbcs_start_new()",
+        ]
+    )
+    return lines
 
 
 def _show_body(pieces, connection, fields, hooks) -> List[str]:
@@ -477,7 +502,7 @@ def _write_field(field: _Field) -> List[str]:
     elif field.io == "datetime":
         lines.extend(_write_datetime(widget, field.nullable))
     elif field.io == "data":
-        lines.extend(_write_combo(widget, field.item_data))
+        lines.extend(_write_combo(field.widget, field.item_data, field.lookup))
     else:
         lines.append("    %s.setText(%s if _value is None else str(_value))" % (widget, _q("")))
     lines.extend(["finally:", "    %s.blockSignals(False)" % widget])
@@ -562,7 +587,10 @@ def _write_datetime(widget: str, nullable: bool) -> List[str]:
     ]
 
 
-def _write_combo(widget: str, item_data: bool) -> List[str]:
+def _write_combo(name: str, item_data: bool, lookup: bool = False) -> List[str]:
+    widget = "self.%s" % name
+    if lookup:
+        return ["    self._cbcs_select_lookup(%s, _value)" % _q(name)]
     if item_data:
         return [
             "    _picked = -1",
@@ -725,18 +753,20 @@ def _bind_clock(engine: str, family: str) -> List[str]:
     return lines
 
 
-def _from_body(fields: Sequence[_Field]) -> List[str]:
+def _from_body(fields: Sequence[_Field], extras: Sequence[Tuple[str, str]] = ()) -> List[str]:
     lines = []
     first = True
     seen = set()
-    for field in fields:
-        if field.column in seen:
+    pairs = [(field.column, field.family) for field in fields]
+    pairs.extend(extras)
+    for column, family in pairs:
+        if column in seen:
             continue
-        seen.add(field.column)
+        seen.add(column)
         word = "if" if first else "elif"
         first = False
-        lines.append("%s _column == %s:" % (word, _q(field.column)))
-        for line in _from_family(field.family):
+        lines.append("%s _column == %s:" % (word, _q(column)))
+        for line in _from_family(family):
             lines.append("    " + line)
     lines.append("return _value")
     return lines
@@ -1430,12 +1460,13 @@ def _own_filter(form_param: str) -> List[str]:
     ]
 
 
-def _imports(fields: Sequence[_Field], own_filter: bool) -> List[Tuple[str, str]]:
+def _imports(fields: Sequence[_Field], own_filter: bool, extras: Sequence[Tuple[str, str]] = ()) -> List[Tuple[str, str]]:
     found = [
         ("PySide6.QtWidgets", "QMessageBox"),
         ("PySide6.QtWidgets", "QInputDialog"),
     ]
     families = {field.family for field in fields}
+    families.update(family for _name, family in extras)
     ios = {field.io for field in fields}
     if "decimal" in families or "decimal" in ios:
         found.append(("decimal", "Decimal"))
@@ -1511,6 +1542,9 @@ def _mentions_form_or_record(doc: UiDocument) -> bool:
 
 def _fields(doc: UiDocument, ctx: CodegenContext, source: RecordSource, engine: str) -> Tuple[_Field, ...]:
     table = _schema_table(doc, source)
+    from app.features.form_builder.engine.codegen.lookup_plan import lookup_names
+
+    lookups = set(lookup_names(doc, ctx.attribute_names))
     found = []
     for node in _widgets(doc):
         name = node.object_name or ""
@@ -1537,7 +1571,8 @@ def _fields(doc: UiDocument, ctx: CodegenContext, source: RecordSource, engine: 
         value = node.value("cbcsValue")
         if isinstance(value, (StringValue, CStringValue)) and value.text.strip():
             calculated = True
-        item_data = _combo_has_data(node) if io == "data" else True
+        is_lookup = io == "data" and name in lookups
+        item_data = True if is_lookup else (_combo_has_data(node) if io == "data" else True)
         found.append(
             _Field(
                 name,
@@ -1550,6 +1585,7 @@ def _fields(doc: UiDocument, ctx: CodegenContext, source: RecordSource, engine: 
                 points,
                 _error_label_name(node, ctx),
                 item_data,
+                is_lookup,
             )
         )
     return tuple(found)
@@ -1583,6 +1619,41 @@ def _family(table, column: str, engine: str, io: str) -> Tuple[str, bool, str, b
         base = spec.type.strip().lower().split("(", 1)[0].strip()
         return family, spec.nullable, points, bool(kind.read_only), base in ("json", "jsonb")
     return widget_family, True, "", False, False
+
+
+def _also_families(doc: UiDocument, ctx: CodegenContext, engine: str) -> List[Tuple[str, str]]:
+    """Also columns whose schema type ``_cbcs_from`` should convert. Unknown columns stay raw."""
+
+    from app.features.form_builder.engine.codegen.lookup_plan import lookup_plans
+    from app.features.form_builder.engine.data.schema import schema_for
+    from app.features.form_builder.engine.data.types import describe
+
+    plans = lookup_plans(doc, ctx.attribute_names)
+    if not plans:
+        return []
+    schema = schema_for(doc, plans[0].connection)
+    found: List[Tuple[str, str]] = []
+    seen = set()
+    for plan in plans:
+        columns = {}
+        if schema is not None:
+            for table in schema.tables:
+                if table.name == plan.table:
+                    columns = {column.name: column for column in table.columns}
+                    break
+        for name in plan.also:
+            if name in seen or name not in columns:
+                continue
+            seen.add(name)
+            column = columns[name]
+            kind = describe(
+                column.type,
+                engine=engine if engine in ("sqlite", "postgres") else "sqlite",
+                column_name=name,
+                nullable=column.nullable,
+            )
+            found.append((name, kind.direction or "text"))
+    return found
 
 
 def _schema_table(doc: UiDocument, source: RecordSource):

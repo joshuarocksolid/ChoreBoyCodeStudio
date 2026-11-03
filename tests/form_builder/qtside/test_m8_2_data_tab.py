@@ -132,7 +132,7 @@ def test_connect_writes_one_undo_step(qapp, office) -> None:
         session.dispose()
 
 
-def test_enter_on_a_column_inserts_a_bound_spin_box_in_one_undo(qapp, office) -> None:
+def test_enter_on_a_pointing_column_inserts_a_lookup(qapp, office) -> None:
     del qapp
     session, host = _open(_FORM, office)
     try:
@@ -142,12 +142,21 @@ def test_enter_on_a_column_inserts_a_bound_spin_box_in_one_undo(qapp, office) ->
         before = len(session.log.entries())
         row.keyPressEvent(QKeyEvent(QEvent.Type.KeyPress, Qt.Key.Key_Return, Qt.KeyboardModifier.NoModifier))
         assert len(session.log.entries()) == before + 1
-        assert session.log.undo_label() == "Bind customer_id"
+        assert session.log.undo_label() == "Add lookup"
         ids = session.document.by_name("customer_id")
         assert len(ids) == 1
         node = session.document.node(ids[0])
-        assert node.class_name == "QSpinBox"
+        assert node.class_name == "QComboBox"
         assert _prop(node, "cbcsBind") == "customer_id"
+        from app.features.form_builder.engine.data.source import read_lookup
+
+        lookup, error = read_lookup(_prop(node, "cbcsLookup"))
+        assert error is None and lookup is not None
+        assert lookup.table == "customers"
+        assert lookup.key == "id"
+        assert lookup.show == "name"
+        assert lookup.blank == "(choose a customer)"
+        assert session.selection.state.current == ids[0]
         assert session.log.undo()
         assert session.document.by_name("customer_id") == ()
         assert has_data_source(session.document)

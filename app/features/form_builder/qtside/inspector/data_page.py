@@ -69,20 +69,28 @@ class DataPage(QWidget):
             "%s QLabel { color: %s; background: transparent; }"
             "%s QLabel#formBuilder\\.inspectorData\\.sentence, %s QLabel#formBuilder\\.inspectorData\\.notBound,"
             " %s QLabel#formBuilder\\.inspectorData\\.typeWords, %s QLabel[fbFaint=\"true\"] { color: %s; background: transparent; }"
-            "%s QLabel#formBuilder\\.inspectorData\\.problem[fbProblem=\"warning\"] { color: %s; }"
-            "%s QLabel#formBuilder\\.inspectorData\\.problem[fbProblem=\"error\"] { color: %s; }"
+            "%s QLabel#formBuilder\\.inspectorData\\.problem[fbProblem=\"warning\"], %s QLabel#formBuilder\\.inspectorData\\.lookupRows[fbProblem=\"warning\"] { color: %s; }"
+            "%s QLabel#formBuilder\\.inspectorData\\.problem[fbProblem=\"error\"], %s QLabel#formBuilder\\.inspectorData\\.lookupRows[fbProblem=\"error\"] { color: %s; }"
             "%s QLineEdit, %s QComboBox, %s QListWidget, %s QPlainTextEdit { color: %s; background: %s; border: 1px solid %s; }"
             "%s QLineEdit:focus, %s QComboBox:focus, %s QListWidget:focus, %s QPlainTextEdit:focus { border: %dpx solid %s; }"
             "%s QCheckBox { color: %s; background: transparent; }"
+            "%s QPushButton, %s QToolButton { color: %s; background: %s; border: 1px solid %s; padding: 2px 8px; }"
+            "%s QPushButton:disabled, %s QToolButton:disabled { color: %s; }"
+            "%s QPushButton:focus, %s QToolButton:focus { border: %dpx solid %s; }"
+            "%s QToolButton#formBuilder\\.inspectorData\\.lookupAlsoAdd::menu-indicator { image: none; width: 0px; }"
             % (
                 body, panel, text,
                 body, text,
                 body, body, body, body, faint or text,
-                body, warning,
-                body, error,
+                body, body, warning,
+                body, body, error,
                 body, body, body, body, text, input_bg, border,
                 body, body, body, body, width, accent,
                 body, text,
+                body, body, text, input_bg, border,
+                body, body, faint or text,
+                body, body, width, accent,
+                body,
             )
         )
         marks = SimpleNamespace(
@@ -104,9 +112,10 @@ class DataPage(QWidget):
                 continue
             widget = self._built.get(section.section_id)
             if widget is None:
-                # The source editor is a table list. Building it before this tab
-                # is on screen pulls keyboard focus off the canvas and Insert.
-                if section.section_id == "form-source" and not self.isVisible():
+                # Building a focusable editor before this tab is on screen pulls
+                # keyboard focus off the canvas and Insert (the source list, and
+                # the lookup combos).
+                if section.section_id in ("form-source", "lookup") and not self.isVisible():
                     continue
                 widget = section.create(self)
                 self._built[section.section_id] = widget

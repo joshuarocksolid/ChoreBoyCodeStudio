@@ -33,6 +33,7 @@ class WidgetFacts:
     has_items_data: bool = False
     pages: Tuple[str, ...] = ()
     also: Tuple[str, ...] = ()
+    also_types: Tuple[Tuple[str, FType], ...] = ()
 
 
 @dataclass(frozen=True)

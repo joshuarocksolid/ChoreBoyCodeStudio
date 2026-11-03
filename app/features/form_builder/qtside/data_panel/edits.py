@@ -107,7 +107,10 @@ def insert_column_field(session: object, column: object) -> object:
         text=caption[:-1] if own_text and caption.endswith(":") else None,
         max_length=getattr(kind, "max_length", None),
     )
-    with session.log.transaction("Bind %s" % name) as txn:
+    from app.features.form_builder.qtside.data_panel.column_insert_hooks import after_insert, insert_label
+
+    label = insert_label(column, class_name, kind) or "Bind %s" % name
+    with session.log.transaction(label) as txn:
         if layout.class_name == "QFormLayout":
             label_id, field_id = txn.execute(
                 InsertFormRow(layout.id, _next_row(layout), fragment=Fragment((spec,)))
@@ -119,6 +122,7 @@ def insert_column_field(session: object, column: object) -> object:
         txn.execute(SetLogic(field_id, "cbcsBind", name))
         if getattr(kind, "read_only", False):
             txn.execute(SetLogic(field_id, "cbcsBindMode", "readOnly"))
+        after_insert(txn, session, field_id, column, class_name, kind)
     return field_id
 
 

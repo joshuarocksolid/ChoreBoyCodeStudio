@@ -24,11 +24,11 @@ def checkbox_indicators(tokens: object) -> str:
         "QCheckBox::indicator:hover { border-color: %s; }"
         "QCheckBox::indicator:checked { border: %dpx solid %s; background: %s; image: url(\"%s\"); }"
         "QCheckBox::indicator:disabled { background: %s; border-color: %s; }"
-        "QCheckBox::indicator:checked:disabled { background: %s; border-color: %s; image: none; }"
+        "QCheckBox::indicator:checked:disabled { border: %dpx solid %s; background: %s; image: url(\"%s\"); }"
     ) % (
         border_width, border, input_bg,
         accent,
         border_width, accent, accent, image,
         panel_bg, border,
-        panel_bg, border,
+        border_width, accent, accent, image,
     )
