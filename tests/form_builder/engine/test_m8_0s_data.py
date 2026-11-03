@@ -190,9 +190,13 @@ def test_record_verbs_stay_untyped_and_a_lane_verb_is_used(tmp_path: Path, monke
     assert "save" in TYPED_VERBS
     assert save.words(None, None) == "Save record"
     held = verbs.default_registry().get("refreshLookups")
-    assert held is not None and held.editable is False
-    assert held.blocks_list(None) is True
-    assert "refreshLookups" not in TYPED_VERBS
+    assert held is not None and held.editable is True
+    assert held.blocks_list(None) is False
+    assert "refreshLookups" in TYPED_VERBS
+    add_row = verbs.default_registry().get("addRow")
+    assert add_row is not None and add_row.editable is False
+    assert add_row.blocks_list(None) is True
+    assert "addRow" not in TYPED_VERBS
     package = make_package(
         tmp_path,
         monkeypatch,

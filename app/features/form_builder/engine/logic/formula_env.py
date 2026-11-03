@@ -142,6 +142,7 @@ def _facts(doc: UiDocument, node: WidgetNode, buddy_label: str) -> WidgetFacts:
         has_items_data=_items_have_data(node),
         pages=_pages(doc, node),
         also=_also(node),
+        also_types=_also_types(doc, node),
     )
 
 
@@ -296,3 +297,38 @@ def _also(node: WidgetNode) -> Tuple[str, ...]:
     if lookup is None:
         return ()
     return lookup.also
+
+
+def _also_types(doc: UiDocument, node: WidgetNode) -> Tuple[Tuple[str, FType], ...]:
+    """Schema types for a lookup's also columns. Missing columns stay text."""
+
+    from app.features.form_builder.engine.data.schema import schema_for
+    from app.features.form_builder.engine.data.source import read_data, read_lookup
+    from app.features.form_builder.engine.data.types import describe
+
+    text = _text(node, "cbcsLookup")
+    if not text:
+        return ()
+    lookup, _error = read_lookup(text)
+    if lookup is None or not lookup.also:
+        return ()
+    source_text = _text(doc.root, "cbcsData")
+    source = read_data(source_text).value if source_text else None
+    connection = getattr(source, "connection", "") if source is not None else ""
+    schema = schema_for(doc, connection) if connection else None
+    columns = {}
+    if schema is not None:
+        for table in schema.tables:
+            if table.name != lookup.table:
+                continue
+            engine = schema.engine if schema.engine in ("sqlite", "postgres") else "sqlite"
+            for column in table.columns:
+                kind = describe(
+                    column.type,
+                    engine=engine,
+                    column_name=column.name,
+                    nullable=column.nullable,
+                )
+                columns[column.name] = _FORMULA_TYPES.get(kind.kind, TEXT)
+            break
+    return tuple((name, columns.get(name, TEXT)) for name in lookup.also)

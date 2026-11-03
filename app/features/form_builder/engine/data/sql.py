@@ -221,6 +221,36 @@ def _dialect(dialect: str) -> str:
     return dialect
 
 
+def select_lookup(
+    dialect: str,
+    table: str,
+    key: str,
+    show: str,
+    also: Sequence[str] = (),
+    order: str = "",
+) -> Statement:
+    """Key, shown column, and also columns, ordered by ``order`` or the shown column.
+
+    The same columns are not repeated. There are no placeholders.
+    """
+
+    _dialect(dialect)
+    columns = []
+    for name in (key, show):
+        if name not in columns:
+            columns.append(name)
+    for name in also:
+        if name not in columns:
+            columns.append(name)
+    order_name = order or show
+    text = "SELECT %s FROM %s ORDER BY %s" % (
+        ", ".join(quote_ident(name) for name in columns),
+        quote_ident(table),
+        quote_ident(order_name),
+    )
+    return Statement(text, (), "Lookup %s" % singular(table))
+
+
 def _direction(text: str) -> str:
     lowered = text.strip().lower()
     if lowered == "desc":
@@ -263,6 +293,7 @@ __all__ = [
     "placeholder",
     "quote_ident",
     "select_keys",
+    "select_lookup",
     "update_changed",
     "update_head",
 ]

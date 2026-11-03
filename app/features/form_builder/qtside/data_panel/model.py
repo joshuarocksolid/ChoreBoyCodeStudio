@@ -147,8 +147,13 @@ def column_kind(column: object, engine: str, *, lookup: bool) -> object:
 
 
 def widget_class_for(column: object, engine: str) -> Tuple[str, object]:
-    """The widget to insert. An integer foreign key is a spin box in this lane."""
+    """The widget to insert. A pointing column can become a lookup combo."""
 
+    from app.features.form_builder.qtside.data_panel.column_insert_hooks import widget_class_override
+
+    decided = widget_class_override(column, engine)
+    if decided is not None:
+        return decided
     kind = column_kind(column, engine, lookup=False)
     widget = str(getattr(kind, "widget", "QLineEdit"))
     if widget == "QComboBox" and getattr(kind, "direction", "") == "int":
@@ -311,3 +316,12 @@ def load_columns(document: object, source: RecordSource) -> Tuple[str, ...]:
         if column not in extra:
             extra.append(column)
     return tuple(extra)
+
+
+def _install_lookup_columns() -> None:
+    from app.features.form_builder.qtside.data_panel.lookup_columns import install
+
+    install()
+
+
+_install_lookup_columns()

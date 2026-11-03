@@ -63,6 +63,7 @@ class _Field:
     points_to: str
     error_label: str = ""
     item_data: bool = True
+    lookup: bool = False
 
 
 def _leave_lines(doc: UiDocument, ctx: CodegenContext) -> Tuple[str, ...]:
@@ -245,6 +246,10 @@ def _open_body(pieces, connection) -> List[str]:
         "    self._cbcs_keys = [_item[0] for _item in _cursor.fetchall()]",
         "self._cbcs_filtered = False",
         "self._cbcs_find_note(None)",
+        # Fill lookups before the first show, so a missing key is selected before the snapshot.
+        "_load_lookups = getattr(self, %s, None)" % _q("cbcs_load_lookups"),
+        "if _load_lookups is not None:",
+        "    _load_lookups()",
         "if key is not None and key in self._cbcs_keys:",
         "    self._cbcs_show(self._cbcs_keys.index(key))",
         "elif self._cbcs_keys:",
@@ -477,7 +482,7 @@ def _write_field(field: _Field) -> List[str]:
     elif field.io == "datetime":
         lines.extend(_write_datetime(widget, field.nullable))
     elif field.io == "data":
-        lines.extend(_write_combo(widget, field.item_data))
+        lines.extend(_write_combo(field.widget, field.item_data, field.lookup))
     else:
         lines.append("    %s.setText(%s if _value is None else str(_value))" % (widget, _q("")))
     lines.extend(["finally:", "    %s.blockSignals(False)" % widget])
@@ -562,7 +567,10 @@ def _write_datetime(widget: str, nullable: bool) -> List[str]:
     ]
 
 
-def _write_combo(widget: str, item_data: bool) -> List[str]:
+def _write_combo(name: str, item_data: bool, lookup: bool = False) -> List[str]:
+    widget = "self.%s" % name
+    if lookup:
+        return ["    self._cbcs_select_lookup(%s, _value)" % _q(name)]
     if item_data:
         return [
             "    _picked = -1",
@@ -1511,6 +1519,9 @@ def _mentions_form_or_record(doc: UiDocument) -> bool:
 
 def _fields(doc: UiDocument, ctx: CodegenContext, source: RecordSource, engine: str) -> Tuple[_Field, ...]:
     table = _schema_table(doc, source)
+    from app.features.form_builder.engine.codegen.lookup_plan import lookup_names
+
+    lookups = set(lookup_names(doc, ctx.attribute_names))
     found = []
     for node in _widgets(doc):
         name = node.object_name or ""
@@ -1537,7 +1548,8 @@ def _fields(doc: UiDocument, ctx: CodegenContext, source: RecordSource, engine: 
         value = node.value("cbcsValue")
         if isinstance(value, (StringValue, CStringValue)) and value.text.strip():
             calculated = True
-        item_data = _combo_has_data(node) if io == "data" else True
+        is_lookup = io == "data" and name in lookups
+        item_data = True if is_lookup else (_combo_has_data(node) if io == "data" else True)
         found.append(
             _Field(
                 name,
@@ -1550,6 +1562,7 @@ def _fields(doc: UiDocument, ctx: CodegenContext, source: RecordSource, engine: 
                 points,
                 _error_label_name(node, ctx),
                 item_data,
+                is_lookup,
             )
         )
     return tuple(found)
