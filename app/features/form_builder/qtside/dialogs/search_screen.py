@@ -74,16 +74,14 @@ def open_search_screen(table_name: str) -> None:
         _say(window, "%s has no single key column. Record forms need one." % table_name)
         return
     folder = os.path.join(root, "forms")
-    list_stem = record_stem + "_list"
-    path = os.path.join(folder, list_stem + ".ui")
-    if os.path.isfile(path) and _is_list_of(path, table_name, source.connection):
+    earlier = _earlier_list(folder, record_stem, table_name, source.connection)
+    if earlier:
         factory = getattr(window, "_editor_tab_factory", None)
         if factory is not None:
-            factory.open_file_in_editor(path)
-        _focus_data(window, path)
+            factory.open_file_in_editor(earlier)
+        _focus_data(window, earlier)
         return
-    if os.path.isfile(path):
-        list_stem = unique_form_stem(folder, OsFileSystem(), list_stem)
+    list_stem = unique_form_stem(folder, OsFileSystem(), record_stem + "_list")
     engine = schema.engine if schema.engine in ("sqlite", "postgres") else "sqlite"
     columns = tuple(
         choice_for(column, engine)
@@ -179,6 +177,37 @@ def _record_at(path: str) -> object:
     except (OSError, UnicodeError, ProjectOpError, UiReadError):
         return None
     return record_source(document)
+
+
+def _earlier_list(folder: str, record_stem: str, table: str, connection: str) -> str:
+    """An existing ``<stem>_list`` or ``<stem>_list_N`` screen for this table."""
+
+    prefix = record_stem + "_list"
+    found = []
+    try:
+        names = os.listdir(folder)
+    except OSError:
+        return ""
+    for name in names:
+        if not name.endswith(".ui"):
+            continue
+        stem = name[:-3]
+        if stem != prefix and not _numbered_list(stem, prefix):
+            continue
+        path = os.path.join(folder, name)
+        if _is_list_of(path, table, connection):
+            found.append((0 if stem == prefix else int(stem[len(prefix) + 1 :]), path))
+    if not found:
+        return ""
+    found.sort()
+    return found[0][1]
+
+
+def _numbered_list(stem: str, prefix: str) -> bool:
+    if not stem.startswith(prefix + "_"):
+        return False
+    suffix = stem[len(prefix) + 1 :]
+    return suffix.isdigit() and not suffix.startswith("0")
 
 
 def _is_list_of(path: str, table: str, connection: str) -> bool:

@@ -31,6 +31,9 @@ from app.features.form_builder.engine.project.table_form import (
 )
 
 NO_KEY = "%s has no single key column. Record forms need one."
+CHOOSE_LINK = "Choose which column links the lines."
+NO_LINE_KEY = "%s has no key column, so its lines can't be saved."
+NO_LINE_COLUMNS = "%s has no columns left to show as lines."
 
 
 @dataclass(frozen=True)
@@ -159,9 +162,11 @@ def plan_forms(request: TableRequest, schema: Schema) -> PlannedForms:
     engine = schema.engine if schema.engine in ("sqlite", "postgres") else "sqlite"
     chosen = _chosen(table, request.columns)
     record = _record(request, table, chosen, engine)
-    line_rows = (
-        _lines(schema, table, request.lines_table, engine, request.lines_link) if lines else None
-    )
+    line_rows = None
+    if lines:
+        line_rows, line_reason = _lines(schema, table, request.lines_table, engine, request.lines_link)
+        if line_rows is None:
+            return PlannedForms((), sentence, line_reason)
     forms = []
     if request.make in ("record", "both"):
         forms.append(
@@ -247,11 +252,13 @@ def _list(
     )
 
 
-def _lines(schema: Schema, parent: Table, child_name: str, engine: str, link_name: str = "") -> Optional[Rows]:
+def _lines(
+    schema: Schema, parent: Table, child_name: str, engine: str, link_name: str = ""
+) -> Tuple[Optional[Rows], str]:
     del engine
     child = _table(schema, child_name)
     if child is None:
-        return None
+        return None, "%s isn't in this database." % child_name
     links = linking_columns(child, parent.name)
     chosen = None
     if link_name:
@@ -262,11 +269,11 @@ def _lines(schema: Schema, parent: Table, child_name: str, engine: str, link_nam
     elif len(links) == 1:
         chosen = links[0]
     if chosen is None:
-        return None
+        return None, CHOOSE_LINK
     link = chosen.name
     key = child.key or ("rowid" if schema.engine == "sqlite" else "")
     if not key:
-        return None
+        return None, NO_LINE_KEY % child.name
     stored_position = position_name(child)
     renumber = bool(stored_position) and link_position_unique(child.unique_keys, link, stored_position)
     position = stored_position if renumber else ""
@@ -281,8 +288,8 @@ def _lines(schema: Schema, parent: Table, child_name: str, engine: str, link_nam
             lookup = suggest_lookup(column, schema.tables)
         columns.append(DataColumn(column.name, _header(column.name), "", lookup))
     if not columns:
-        return None
-    return Rows(child.name, link, key, tuple(columns), order, position)
+        return None, NO_LINE_COLUMNS % child.name
+    return Rows(child.name, link, key, tuple(columns), order, position), ""
 
 
 def _text(column: Column, engine: str) -> bool:

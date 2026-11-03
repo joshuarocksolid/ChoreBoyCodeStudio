@@ -11,7 +11,7 @@ from typing import List, Optional, Sequence, Tuple
 
 from app.features.form_builder.engine.data.schema import schema_for
 from app.features.form_builder.engine.data.source import Lookup, read_data, read_lookup, singular
-from app.features.form_builder.engine.data.sql import is_identifier
+from app.features.form_builder.engine.data.sql import name_usable
 from app.features.form_builder.engine.data.types import describe
 from app.features.form_builder.engine.logic import compat
 from app.features.form_builder.engine.ui4.document import UiDocument
@@ -102,10 +102,10 @@ def suggest_lookup(column: object, tables: Sequence[object]) -> Optional[Lookup]
 
     ref = getattr(column, "references", None)
     table_name = getattr(ref, "table", "") or ""
-    if not table_name or not is_identifier(table_name):
+    if not table_name or not name_usable(table_name):
         return None
     key = getattr(ref, "column", "") or "id"
-    if not is_identifier(key):
+    if not name_usable(key):
         return None
     target = None
     for table in tables:
@@ -145,11 +145,11 @@ def _lookup(node: object) -> Optional[Lookup]:
 
 
 def _names_ok(lookup: Lookup) -> bool:
-    if not is_identifier(lookup.table) or not is_identifier(lookup.key) or not is_identifier(lookup.show):
+    if not name_usable(lookup.table) or not name_usable(lookup.key) or not name_usable(lookup.show):
         return False
-    if lookup.order and not is_identifier(lookup.order):
+    if lookup.order and not name_usable(lookup.order):
         return False
-    return all(is_identifier(name) for name in lookup.also)
+    return all(name_usable(name) for name in lookup.also)
 
 
 def _show_column(table: object, key: str) -> str:
@@ -158,7 +158,7 @@ def _show_column(table: object, key: str) -> str:
     texts = []
     for column in getattr(table, "columns", ()) or ():
         name = getattr(column, "name", "") or ""
-        if not name or not is_identifier(name):
+        if not name or not name_usable(name):
             continue
         kind = describe(
             getattr(column, "type", "") or "",

@@ -649,3 +649,155 @@ def _all(database: Path, sql: str) -> List[Tuple[object, ...]]:
         return [tuple(row) for row in connection.execute(sql)]
     finally:
         connection.close()
+
+
+def test_spaced_names_keep_the_lookup_and_skip_fb307(tmp_path: Path) -> None:
+    from app.features.form_builder.engine.data.check import run_checks
+    from app.features.form_builder.engine.project.from_table_plan import choice_for, include_column
+
+    root = tmp_path / "proj"
+    (root / "forms").mkdir(parents=True)
+    (root / "data").mkdir()
+    database = root / "data" / "shop.db"
+    connection = sqlite3.connect(str(database))
+    connection.executescript(
+        'CREATE TABLE "the products" (id INTEGER PRIMARY KEY, "display name" TEXT NOT NULL);'
+        "INSERT INTO \"the products\" VALUES (1, 'Widget');"
+        'CREATE TABLE "first name" ('
+        "id INTEGER PRIMARY KEY, "
+        '"product id" INTEGER REFERENCES "the products"(id), '
+        '"given name" TEXT);'
+    )
+    connection.commit()
+    connection.close()
+    schema = read_sqlite_file(str(database), "shop", read_at="2026-11-03T00:00:00")
+    _save_schema(root, schema)
+    _save_connection(root)
+    table = next(item for item in schema.tables if item.name == "first name")
+    columns = tuple(
+        choice_for(column, "sqlite")
+        for column in table.columns
+        if include_column(column, table.key or "", "sqlite")
+    )
+    request = TableRequest("shop", "first name", columns, "record", "", "person", "yyyy-MM-dd")
+    text = _texts(root, schema, request)[0][1]
+    document = read_ui(text, allocator=IdAllocator()).document
+    assert [item.code for item in run_checks(document, None, schema) if item.code == "FB307"] == []
+    lookup, lookup_error = read_lookup(_prop(document.node(document.by_name("product_id")[0]), "cbcsLookup"))
+    assert lookup_error is None and lookup is not None
+    assert lookup.table == "the products" and lookup.show == "display name"
+
+
+def test_a_line_without_a_unique_position_writes_the_next_number(tmp_path: Path) -> None:
+    root = tmp_path / "proj"
+    (root / "forms").mkdir(parents=True)
+    (root / "data").mkdir()
+    database = root / "data" / "shop.db"
+    connection = sqlite3.connect(str(database))
+    connection.executescript(
+        "CREATE TABLE jobs (id INTEGER PRIMARY KEY, title TEXT);"
+        "INSERT INTO jobs VALUES (1, 'Roof');"
+        "CREATE TABLE job_lines ("
+        "id INTEGER PRIMARY KEY, "
+        "job_id INTEGER NOT NULL REFERENCES jobs(id), "
+        "line_no INTEGER NOT NULL, "
+        "note TEXT);"
+        "INSERT INTO job_lines VALUES (1, 1, 5, 'a');"
+        "INSERT INTO job_lines VALUES (2, 1, 9, 'b');"
+    )
+    connection.commit()
+    connection.close()
+    schema = read_sqlite_file(str(database), "shop", read_at="2026-11-03T00:00:00")
+    _save_schema(root, schema)
+    _save_connection(root)
+    request = TableRequest(
+        "shop",
+        "jobs",
+        (ColumnChoice("title", "QLineEdit", "Title"),),
+        "record",
+        "job_lines",
+        "job",
+        "yyyy-MM-dd",
+        lines_link="job_id",
+    )
+    _write_generated(root, _texts(root, schema, request))
+    with _hosts(root, "job") as (host, db):
+        host.ui.cbcs_open(1)
+        host.ui._cbcs_add_row()
+        _line(host.ui, 2, "note", "c", "job_linesView")
+        assert host.ui.cbcs_save() is True
+        host.close()
+    assert _all(database, "SELECT line_no, note FROM job_lines ORDER BY line_no") == [(5, "a"), (9, "b"), (10, "c")]
+    with _hosts(root, "job") as (host, db):
+        host.ui.cbcs_open(1)
+        _line(host.ui, 0, "note", "a2", "job_linesView")
+        assert host.ui.cbcs_save() is True
+        host.close()
+    assert _all(database, "SELECT line_no, note FROM job_lines ORDER BY line_no") == [(5, "a2"), (9, "b"), (10, "c")]
+
+
+def test_an_earlier_numbered_list_is_reopened(tmp_path: Path) -> None:
+    from app.features.form_builder.qtside.dialogs.search_screen import open_search_screen
+    from app.qt.QtWidgets import QApplication, QWidget
+
+    root, schema = _shop(tmp_path)
+    record = TableRequest("shop", "customers", _customer_request().columns, "record", "", "customer", "yyyy-MM-dd")
+    session = open_plan(plan_forms(record, schema).forms[0], schema, str(root))
+    listed = TableRequest(
+        "shop",
+        "customers",
+        _customer_request().columns,
+        "list",
+        "",
+        "customer_list_2",
+        "yyyy-MM-dd",
+        open_form="customer",
+    )
+    (root / "forms" / "customer_list_2.ui").write_text(render_plans(listed, schema, str(root))[0][1], encoding="utf-8")
+    app = QApplication.instance() or QApplication([])
+
+    class Project:
+        project_root = str(root)
+
+    window = QWidget()
+    window._loaded_project = Project()
+    window.session = session
+    window.show()
+    app.processEvents()
+    try:
+        open_search_screen("customers")
+        assert not (root / "forms" / "customer_list.ui").is_file()
+        assert (root / "forms" / "customer_list_2.ui").is_file()
+    finally:
+        window.close()
+        session.dispose()
+        set_schema_reader(None)
+
+
+def test_a_list_module_without_a_screen_gets_a_free_name(tmp_path: Path) -> None:
+    from app.features.form_builder.qtside.dialogs.search_screen import open_search_screen
+    from app.qt.QtWidgets import QApplication, QWidget
+
+    root, schema = _shop(tmp_path)
+    record = TableRequest("shop", "customers", _customer_request().columns, "record", "", "customer", "yyyy-MM-dd")
+    session = open_plan(plan_forms(record, schema).forms[0], schema, str(root))
+    (root / "forms" / "customer_list.py").write_text("# kept\n", encoding="utf-8")
+    app = QApplication.instance() or QApplication([])
+
+    class Project:
+        project_root = str(root)
+
+    window = QWidget()
+    window._loaded_project = Project()
+    window.session = session
+    window.show()
+    app.processEvents()
+    try:
+        open_search_screen("customers")
+        assert (root / "forms" / "customer_list.py").read_text(encoding="utf-8") == "# kept\n"
+        assert not (root / "forms" / "customer_list.ui").is_file()
+        assert (root / "forms" / "customer_list_2.ui").is_file()
+    finally:
+        window.close()
+        session.dispose()
+        set_schema_reader(None)

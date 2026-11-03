@@ -273,11 +273,15 @@ def _driver() -> Tuple[str, Any]:
     try:
         import pg8000.dbapi as pg8000  # type: ignore[import]
     except ImportError:
+        pg8000 = None
+    if pg8000 is None:
         pytest.skip("neither psycopg nor pg8000 is installed")
+        raise RuntimeError("neither psycopg nor pg8000 is installed")
+    driver = pg8000
 
     def open_pg8000(_dsn: str, found: dict) -> Any:
         port = int(found.get("port") or "5432")
-        return pg8000.connect(
+        return driver.connect(
             user=found["user"],
             password=found["password"],
             host=found.get("host") or "127.0.0.1",

@@ -143,6 +143,92 @@ def test_postgres_text_key_keeps_null_decimal_and_date(
         _release(root, previous, module)
 
 
+@pytest.mark.parametrize("driver", ["psycopg", "pg8000"])
+def test_postgres_line_without_a_unique_position_writes_the_next_number(
+    tmp_path: Path, pg93_dsn: str, driver: str, connections_module
+) -> None:
+    _import(driver)
+    suffix = uuid.uuid4().hex[:8]
+    jobs = "m83d_%s_jobs" % suffix
+    lines = "m83d_%s_lines" % suffix
+    module = _module(tmp_path, _fields(pg93_dsn), driver, connections_module)
+    root = _project(tmp_path)
+    previous = sys.modules.get("cbcs_connections")
+    sys.modules["cbcs_connections"] = module
+    sys.path.insert(0, str(root))
+    try:
+        with module.work("shop") as connection:
+            cursor = connection.cursor()
+            cursor.execute("CREATE TABLE %s (id serial PRIMARY KEY, title text)" % jobs)
+            cursor.execute(
+                "CREATE TABLE %s (id serial PRIMARY KEY, job_id integer NOT NULL REFERENCES %s (id), "
+                "line_no integer NOT NULL, note text)" % (lines, jobs)
+            )
+            cursor.execute("INSERT INTO %s (title) VALUES (%%s)" % jobs, ("Roof",))
+            cursor.execute("SELECT id FROM %s" % jobs)
+            job_id = int(cursor.fetchone()[0])
+            cursor.execute(
+                "INSERT INTO %s (job_id, line_no, note) VALUES (%%s, %%s, %%s)" % lines,
+                (job_id, 5, "a"),
+            )
+            cursor.execute(
+                "INSERT INTO %s (job_id, line_no, note) VALUES (%%s, %%s, %%s)" % lines,
+                (job_id, 9, "b"),
+            )
+        schema = Schema(
+            "shop",
+            "postgres",
+            "PostgreSQL 9.3",
+            "2026-11-03T00:00:00",
+            driver,
+            (
+                Table(jobs, (Column("id", "integer", False, unique=True), Column("title", "text", True)), key="id"),
+                Table(
+                    lines,
+                    (
+                        Column("id", "integer", False, unique=True),
+                        Column("job_id", "integer", False, references=Reference(jobs, "id")),
+                        Column("line_no", "integer", False),
+                        Column("note", "text", True),
+                    ),
+                    key="id",
+                ),
+            ),
+        )
+        _cache(root, schema)
+        save_connections(str(root), _value(_fields(pg93_dsn)))
+        request = TableRequest(
+            "shop",
+            jobs,
+            (ColumnChoice("title", "QLineEdit", "Title"),),
+            "record",
+            lines,
+            "job",
+            "yyyy-MM-dd",
+            lines_link="job_id",
+        )
+        _write_generated(root, render_plans(request, schema, str(root)))
+        view = lines + "View"
+        with _form(root, "job") as host:
+            host.ui.cbcs_open(job_id)
+            host.ui._cbcs_add_row()
+            _line(host.ui, 2, "note", "c", view)
+            assert host.ui.cbcs_save() is True
+        with _form(root, "job") as host:
+            host.ui.cbcs_open(job_id)
+            _line(host.ui, 0, "note", "a2", view)
+            assert host.ui.cbcs_save() is True
+        with module.work("shop") as connection:
+            cursor = connection.cursor()
+            cursor.execute("SELECT line_no, note FROM %s ORDER BY line_no" % lines)
+            rows = cursor.fetchall()
+        assert [(row[0], row[1]) for row in rows] == [(5, "a2"), (9, "b"), (10, "c")]
+    finally:
+        _drop(module, lines)
+        _drop(module, jobs)
+        _release(root, previous, module)
+
+
 def _drive_invoice(root: Path, module: Any, names: Dict[str, str]) -> List[float]:
     samples: List[float] = []
     with _form(root, "invoice") as host:

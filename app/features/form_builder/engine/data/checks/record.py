@@ -16,7 +16,7 @@ from typing import Iterable, List, Optional, Sequence, Tuple
 from app.features.form_builder.engine.data.check import DataCheck
 from app.features.form_builder.engine.data.schema import Schema, schema_for
 from app.features.form_builder.engine.data.source import read_bind, read_bind_mode, read_data, singular
-from app.features.form_builder.engine.data.sql import is_identifier
+from app.features.form_builder.engine.data.sql import name_usable
 from app.features.form_builder.engine.data.types import describe, is_sqlite_rowid, sqlite_affinity
 from app.features.form_builder.engine.diagnostics import CODES, DiagnosticLocation, FormDiagnostic
 from app.features.form_builder.engine.ui4.values import NumberValue, StringValue
@@ -162,18 +162,18 @@ def _names(doc: object, connections: object, schema: object) -> Iterable[FormDia
     if source is None:
         return ()
     found = []
-    if source.table and not is_identifier(source.table):
+    if source.table and not name_usable(source.table):
         found.append(_problem(doc, "FB307", _root(doc), "cbcsData", name=source.table))
-    if source.key and not is_identifier(source.key):
+    if source.key and not name_usable(source.key):
         found.append(_problem(doc, "FB307", _root(doc), "cbcsData", name=source.key))
     for _node, column, _mode in _bound(doc):
-        if column and not is_identifier(column):
+        if column and not name_usable(column):
             found.append(_problem(doc, "FB307", _root(doc), "cbcsBind", name=column))
     cached = _schema(doc, schema, source)
     table = _table(cached, source.table) if cached is not None else None
     if table is not None:
         for column in table.columns:
-            if column.name and not is_identifier(column.name):
+            if column.name and not name_usable(column.name):
                 found.append(_problem(doc, "FB307", _root(doc), "cbcsData", name=column.name))
     return tuple(found)
 

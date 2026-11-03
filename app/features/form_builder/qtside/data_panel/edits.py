@@ -45,9 +45,13 @@ _BAR = (
     ("deleteButton", "QPushButton", "Delete", "", "not form.isNew", "delete"),
     ("findButton", "QPushButton", "Find", "Ctrl+F", "", "find"),
 )
-_POSITION = (
-    '"New record" if form.isNew else "Record " + text(form.position) + " of " + text(form.count)'
-)
+def position_formula(record: str) -> str:
+    """The position label. ``record`` is the record word, for example "invoice"."""
+
+    word = (record or "").strip() or "record"
+    if '"' in word or "\\" in word:
+        word = "record"
+    return '"New %s" if form.isNew else "Record " + text(form.position) + " of " + text(form.count)' % word
 
 
 def connect_form(session: object, source: RecordSource) -> None:
@@ -171,7 +175,9 @@ def insert_record_toolbar(session: object) -> None:
             if formula:
                 txn.execute(SetLogic(ids[0], "cbcsEnabledWhen", formula))
             if name == "positionLabel":
-                txn.execute(SetLogic(ids[0], "cbcsValue", _POSITION))
+                source = record_source(document)
+                word = source.record_word or singular(source.table) if source is not None else "record"
+                txn.execute(SetLogic(ids[0], "cbcsValue", position_formula(word)))
             if verb:
                 txn.execute(
                     SetEventSteps(

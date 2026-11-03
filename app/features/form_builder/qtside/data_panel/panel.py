@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any, Dict
 
 from app.qt.QtCore import QTimer, Signal
-from app.qt.QtWidgets import QVBoxLayout, QWidget
+from app.qt.QtWidgets import QSizePolicy, QVBoxLayout, QWidget
 
 from app.features.form_builder.engine.events import PRIORITY_VIEWS
 from app.features.form_builder.qtside.data_panel.chrome import chrome_qss
@@ -49,9 +49,30 @@ class DataPanel(QWidget):
                 self._built[section.section_id] = widget
                 self._layout.addWidget(widget)
             widget.show()
+            widget.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
             refresh = getattr(widget, "refresh", None)
             if callable(refresh):
                 refresh()
+        self._pin_footer()
+
+    def _pin_footer(self) -> None:
+        """Sections stay at their height. Spare space sits above the footer."""
+
+        layout = self._layout
+        index = 0
+        while index < layout.count():
+            item = layout.itemAt(index)
+            if item is not None and item.widget() is None and item.spacerItem() is not None:
+                layout.takeAt(index)
+                continue
+            index += 1
+        footer = self._built.get("schema_footer")
+        if footer is not None and not footer.isHidden():
+            at = layout.indexOf(footer)
+            if at >= 0:
+                layout.insertStretch(at, 1)
+                return
+        layout.addStretch(1)
 
     def showEvent(self, event: object) -> None:  # noqa: N802
         self._arm()

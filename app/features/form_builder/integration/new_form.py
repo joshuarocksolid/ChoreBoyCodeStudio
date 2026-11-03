@@ -435,27 +435,73 @@ class NewFormSurface:
         if clash:
             self._panel.show_status(clash)
             return
+        from app.features.form_builder.engine.project.from_table_plan import plan_forms
+
+        planned = plan_forms(request, schema)
+        kinds = {form.stem: form.kind for form in planned.forms}
         record_path = ""
-        ordered = tuple(sorted(made, key=lambda item: (0 if item[0].endswith("_list") else 1, item[0])))
+        ordered = tuple(sorted(made, key=lambda item: (0 if kinds.get(item[0]) == "list" else 1, item[0])))
         for stem, text in ordered:
-            result = perform_create(
-                self._host(),
-                template="widget",
-                stem=stem,
-                directory=self._panel.directory(),
-                ui_text=text,
-                first_widget=None,
-            )
+            result = self._create_planned(stem, text, kinds.get(stem, ""), planned, schema)
             if result.refused:
                 self._panel.show_status(result.refused)
                 return
-            if result.scope is not None and not stem.endswith("_list"):
+            if result.scope is not None and kinds.get(stem) != "list":
                 record_path = result.scope.ui_path
             elif result.scope is not None and not record_path:
                 record_path = result.scope.ui_path
         self._focus_data(record_path)
         dialog.accept()
         self._reload_recents()
+
+    def _create_planned(self, stem: str, text: str, kind: str, planned: object, schema: object) -> CreateResult:
+        """Write one file and leave its undo step on the editor tab that opens."""
+
+        from app.features.form_builder.engine.project.names import class_name_for_stem
+        from app.features.form_builder.qtside.dialogs.table_apply import apply_plan, empty_form
+
+        window = self._host()
+        registry = getattr(window, "_tab_content_registry", None)
+        forms = getattr(planned, "forms", ())
+        plan = next((form for form in forms if form.stem == stem), None)
+        on_tab = registry is not None and plan is not None
+        layout = "QFormLayout" if kind == "record" else "QVBoxLayout"
+        ui_text = empty_form(class_name_for_stem(stem), layout) if on_tab else text
+        result = perform_create(
+            window,
+            template="widget",
+            stem=stem,
+            directory=self._panel.directory(),
+            ui_text=ui_text,
+            first_widget=None,
+        )
+        if result.refused or result.scope is None or registry is None or plan is None:
+            return result
+        from app.qt.QtWidgets import QApplication
+
+        app = QApplication.instance()
+        if app is not None:
+            app.processEvents()
+        surface = registry.surface_for_path(os.path.abspath(result.scope.ui_path))
+        session = getattr(surface, "session", None)
+        if session is None:
+            return result
+        from app.features.form_builder.engine.data.schema import Schema
+
+        if not isinstance(schema, Schema):
+            return result
+        apply_plan(session, plan, schema)
+        from app.features.form_builder.engine.project.fs import OsFileSystem
+        from app.features.form_builder.engine.project.save import write_generated
+        from app.features.form_builder.engine.ui4.writer import write_ui
+
+        finished = write_ui(session.document).text
+        OsFileSystem().write_bytes(result.scope.ui_path, finished.encode("utf-8"))
+        write_generated(result.scope, session.document, finished.encode("utf-8"), OsFileSystem())
+        mark = getattr(surface, "mark_saved", None)
+        if callable(mark):
+            mark(finished)
+        return result
 
     def _focus_data(self, path: str) -> None:
         from app.features.form_builder.qtside.inspector import TabId

@@ -18,6 +18,7 @@ from app.qt.QtWidgets import (  # noqa: E402
     QComboBox,
     QLabel,
     QLineEdit,
+    QListWidget,
     QMainWindow,
     QPushButton,
     QTableWidget,
@@ -658,3 +659,526 @@ def test_preview_fits_its_pane_so_every_label_shows(tmp_path: Path, qapp: object
     finally:
         dialog.close()
     del qapp
+
+
+def _theme():
+    return tokens_from_palette(QApplication.instance().palette(), force_mode="light")
+
+
+def _surface(root: Path, window: QWidget):
+    from app.features.form_builder.integration.new_form import NewFormSurface
+    from app.shell.tab_content_providers import TabSurfaceRequest
+
+    return NewFormSurface(
+        TabSurfaceRequest(
+            file_path=str(root / "cbcs" / "new-form.cbcs-tab"),
+            initial_text="",
+            parent=window,
+            theme=_theme(),
+            create_source_editor=lambda: None,
+            open_linked_file=lambda _path: None,
+            project_root=str(root),
+        ),
+        window,
+    )
+
+
+def _shop_dialog(root: Path, stem: str) -> FromTableDialog:
+    from tests.form_builder.fixtures.m8.make_shop import build
+
+    data = root / "data"
+    data.mkdir(parents=True, exist_ok=True)
+    database = data / "shop.db"
+    if not database.is_file():
+        build(str(database))
+    dialog = FromTableDialog(
+        project_root=str(root),
+        stem=stem,
+        chrome=_chrome(),
+        date_format="yyyy-MM-dd",
+        name_reason=lambda: None,
+    )
+    dialog.set_database(str(database), "shop")
+    return dialog
+
+
+def _select_table(dialog: FromTableDialog, name: str) -> None:
+    tables = dialog.findChild(QListWidget, "formBuilder.fromTable.tables")
+    assert tables is not None
+    for row in range(tables.count()):
+        item = tables.item(row)
+        if item is not None and item.text() == name:
+            tables.setCurrentRow(row)
+            QApplication.processEvents()
+            return
+    raise AssertionError(name)
+
+
+def _assert_include_cells(table: QTableWidget) -> None:
+    QApplication.processEvents()
+    combos = table.findChildren(QComboBox)
+    assert len(combos) == table.rowCount()
+    for row in range(table.rowCount()):
+        item = table.item(row, 0)
+        assert item is not None
+        state = enum_value(item.checkState())
+        assert state in (enum_value(Qt.Checked), enum_value(Qt.Unchecked))
+        assert table.cellWidget(row, 0) is None
+        index = table.model().index(row, 0)
+        assert table.indexWidget(index) is None
+        assert table.cellWidget(row, 3) in combos
+    for combo in combos:
+        assert any(table.cellWidget(row, 3) is combo for row in range(table.rowCount()))
+
+
+def test_include_cells_stay_checkboxes_for_every_make(tmp_path: Path, qapp: object) -> None:
+    del qapp
+    dialog = _shop_dialog(tmp_path, "invoice")
+    try:
+        mapping = dialog.findChild(QTableWidget, "formBuilder.fromTable.mapping")
+        make = dialog.findChild(QComboBox, "formBuilder.fromTable.make")
+        assert mapping is not None and make is not None
+        _select_table(dialog, "customers")
+        _select_table(dialog, "invoices")
+        mapping.setCurrentCell(0, 0)
+        QApplication.processEvents()
+        for index in range(make.count()):
+            make.setCurrentIndex(index)
+            QApplication.processEvents()
+            _assert_include_cells(mapping)
+    finally:
+        dialog.close()
+
+
+def test_lines_that_cannot_be_planned_disable_create(tmp_path: Path, qapp: object) -> None:
+    from app.features.form_builder.engine.data.schema import Column, Reference, Schema, Table
+    from app.features.form_builder.engine.project.from_table_plan import (
+        CHOOSE_LINK,
+        NO_LINE_COLUMNS,
+        NO_LINE_KEY,
+    )
+
+    del qapp
+    root = tmp_path / "shop"
+    data = root / "data"
+    data.mkdir(parents=True)
+    database = data / "shop.db"
+    connection = sqlite3.connect(str(database))
+    connection.executescript(
+        "CREATE TABLE accounts (id INTEGER PRIMARY KEY, name TEXT);"
+        "CREATE TABLE transfers ("
+        "id INTEGER PRIMARY KEY, "
+        "from_id INTEGER REFERENCES accounts(id), "
+        "to_id INTEGER REFERENCES accounts(id), "
+        "amount REAL);"
+        "CREATE TABLE empty_lines (id INTEGER PRIMARY KEY, account_id INTEGER NOT NULL REFERENCES accounts(id));"
+    )
+    connection.commit()
+    connection.close()
+    dialog = FromTableDialog(
+        project_root=str(root),
+        stem="account",
+        chrome=_chrome(),
+        date_format="yyyy-MM-dd",
+        name_reason=lambda: None,
+    )
+    try:
+        dialog.set_database(str(database), "shop")
+        _select_table(dialog, "accounts")
+        dialog._lines.setChecked(True)
+        lines_table = dialog.findChild(QComboBox, "formBuilder.fromTable.linesTable")
+        assert lines_table is not None
+        lines_table.setCurrentIndex(lines_table.findData("transfers"))
+        QApplication.processEvents()
+        assert "and lines" in dialog.create_button().text()
+        assert not dialog.create_button().isEnabled()
+        assert dialog.disabled_reason() == CHOOSE_LINK
+
+        lines_table.setCurrentIndex(lines_table.findData("empty_lines"))
+        QApplication.processEvents()
+        assert "and lines" in dialog.create_button().text()
+        assert dialog.disabled_reason() == NO_LINE_COLUMNS % "empty_lines"
+
+        dialog._connection_name = "shop"
+        dialog._use_schema(
+            Schema(
+                "shop",
+                "postgres",
+                "PostgreSQL 9.3",
+                "2026-11-03T00:00:00",
+                "psycopg",
+                (
+                    Table("accounts", (Column("id", "integer", False), Column("name", "text", True)), key="id"),
+                    Table(
+                        "transfers",
+                        (
+                            Column("from_id", "integer", False, references=Reference("accounts", "id")),
+                            Column("amount", "numeric", True),
+                        ),
+                        key=None,
+                    ),
+                ),
+            )
+        )
+        _select_table(dialog, "accounts")
+        dialog._lines.setChecked(True)
+        QApplication.processEvents()
+        assert "and lines" in dialog.create_button().text()
+        assert dialog.disabled_reason() == NO_LINE_KEY % "transfers"
+        assert dialog.request() is None
+    finally:
+        dialog.close()
+
+
+def test_offline_cache_lists_tables_with_the_footer(tmp_path: Path, qapp: object) -> None:
+    from app.features.form_builder.engine.data.connections import Connection, ConnectionSet, save_connections
+    from app.features.form_builder.engine.data.schema_cache import store_schema
+    from app.features.form_builder.engine.data.schema_sqlite import read_sqlite_file
+
+    del qapp
+    root = tmp_path / "proj"
+    data = root / "data"
+    data.mkdir(parents=True)
+    database = data / "shop.db"
+    from tests.form_builder.fixtures.m8.make_shop import build
+
+    build(str(database))
+    schema = read_sqlite_file(str(database), "shop", read_at="2026-11-03T00:00:00")
+    store_schema(str(root), schema)
+    database.unlink()
+    save_connections(str(root), ConnectionSet((Connection("shop", "Shop database", "sqlite", file="data/shop.db"),)))
+    dialog = FromTableDialog(
+        project_root=str(root),
+        stem="invoice",
+        chrome=_chrome(),
+        date_format="yyyy-MM-dd",
+        name_reason=lambda: None,
+    )
+    try:
+        tables = dialog.findChild(QListWidget, "formBuilder.fromTable.tables")
+        reason = dialog.findChild(QLabel, "formBuilder.fromTable.reason")
+        assert tables is not None and reason is not None
+        names = [tables.item(row).text() for row in range(tables.count())]
+        assert "invoices" in names and "customers" in names
+        assert "Using columns read" in reason.text()
+    finally:
+        dialog.close()
+
+
+def test_no_single_key_and_a_missing_database_disable_create(tmp_path: Path, qapp: object) -> None:
+    from app.features.form_builder.engine.data.connections import Connection, ConnectionSet, save_connections
+    from app.features.form_builder.engine.project.from_table_plan import NO_KEY
+
+    del qapp
+    missing = tmp_path / "missing"
+    (missing / "data").mkdir(parents=True)
+    save_connections(
+        str(missing),
+        ConnectionSet((Connection("shop", "Shop database", "sqlite", file="data/gone.db"),)),
+    )
+    unread = FromTableDialog(
+        project_root=str(missing),
+        stem="invoice",
+        chrome=_chrome(),
+        date_format="yyyy-MM-dd",
+        name_reason=lambda: None,
+    )
+    try:
+        assert unread.findChild(QListWidget, "formBuilder.fromTable.tables").count() == 0
+        assert not unread.create_button().isEnabled()
+        assert "Can't open the database." in unread.disabled_reason()
+    finally:
+        unread.close()
+
+    root = tmp_path / "pair"
+    data = root / "data"
+    data.mkdir(parents=True)
+    database = data / "shop.db"
+    connection = sqlite3.connect(str(database))
+    connection.execute(
+        "CREATE TABLE pair (left_col INTEGER NOT NULL, right_col INTEGER NOT NULL, note TEXT, "
+        "PRIMARY KEY (left_col, right_col))"
+    )
+    connection.commit()
+    connection.close()
+    dialog = FromTableDialog(
+        project_root=str(root),
+        stem="pair",
+        chrome=_chrome(),
+        date_format="yyyy-MM-dd",
+        name_reason=lambda: None,
+    )
+    try:
+        dialog.set_database(str(database), "shop")
+        assert not dialog.create_button().isEnabled()
+        assert dialog.disabled_reason() == NO_KEY % "pair"
+    finally:
+        dialog.close()
+
+
+def test_add_connection_keeps_or_selects(tmp_path: Path, qapp: object) -> None:
+    from app.features.form_builder.engine.data.connections import Connection, ConnectionSet, save_connections
+
+    del qapp
+
+    def _file(folder: Path, name: str) -> None:
+        folder.mkdir(parents=True, exist_ok=True)
+        connection = sqlite3.connect(str(folder / name))
+        connection.execute("CREATE TABLE customer (id INTEGER PRIMARY KEY, name TEXT)")
+        connection.commit()
+        connection.close()
+
+    kept = tmp_path / "kept"
+    _file(kept / "data", "shop.db")
+    _file(kept / "data", "other.db")
+    shop = Connection("shop", "Shop", "sqlite", file="data/shop.db")
+    other = Connection("other", "Other", "sqlite", file="data/other.db")
+    save_connections(str(kept), ConnectionSet((shop,)))
+
+    def add_other() -> None:
+        save_connections(str(kept), ConnectionSet((shop, other)))
+
+    dialog = FromTableDialog(
+        project_root=str(kept),
+        stem="customer",
+        chrome=_chrome(),
+        date_format="yyyy-MM-dd",
+        name_reason=lambda: None,
+        add_connection=add_other,
+    )
+    try:
+        assert dialog.findChild(QComboBox, "formBuilder.fromTable.connection").currentData() == "shop"
+        before = dialog.findChild(QListWidget, "formBuilder.fromTable.tables").item(0).text()
+        dialog.findChild(QPushButton, "formBuilder.fromTable.addConnection").click()
+        QApplication.processEvents()
+        assert dialog.findChild(QComboBox, "formBuilder.fromTable.connection").currentData() == "shop"
+        assert dialog.findChild(QListWidget, "formBuilder.fromTable.tables").item(0).text() == before
+    finally:
+        dialog.close()
+
+    fresh = tmp_path / "fresh"
+    _file(fresh / "data", "shop.db")
+
+    def add_first() -> None:
+        save_connections(str(fresh), ConnectionSet((shop,)))
+
+    opened = FromTableDialog(
+        project_root=str(fresh),
+        stem="customer",
+        chrome=_chrome(),
+        date_format="yyyy-MM-dd",
+        name_reason=lambda: None,
+        add_connection=add_first,
+    )
+    try:
+        assert opened.findChild(QComboBox, "formBuilder.fromTable.connection").count() == 0
+        opened.findChild(QPushButton, "formBuilder.fromTable.addConnection").click()
+        QApplication.processEvents()
+        assert opened.findChild(QComboBox, "formBuilder.fromTable.connection").currentData() == "shop"
+        assert opened.findChild(QListWidget, "formBuilder.fromTable.tables").count() == 1
+    finally:
+        opened.close()
+
+
+def test_line_memory_is_per_table_and_clears_when_the_schema_changes(tmp_path: Path, qapp: object) -> None:
+    from dataclasses import replace
+
+    from app.features.form_builder.engine.data.schema import Column, Schema
+
+    del qapp
+    dialog = _shop_dialog(tmp_path, "invoice")
+    try:
+        _select_table(dialog, "invoices")
+        dialog._lines.setChecked(False)
+        _select_table(dialog, "customers")
+        _select_table(dialog, "invoices")
+        assert not dialog._lines.isChecked()
+        schema = dialog.schema()
+        assert schema is not None
+        tables = []
+        for table in schema.tables:
+            if table.name == "invoices":
+                table = replace(table, columns=table.columns + (Column("extra", "TEXT", True),))
+            tables.append(table)
+        dialog._use_schema(
+            Schema(schema.connection, schema.engine, schema.server, schema.read_at, schema.driver, tuple(tables))
+        )
+        _select_table(dialog, "invoices")
+        assert dialog._lines.isChecked()
+    finally:
+        dialog.close()
+
+
+def test_packing_list_record_is_created_after_its_list(tmp_path: Path, qapp: object, monkeypatch: pytest.MonkeyPatch) -> None:
+    from app.features.form_builder.engine.data.schema import Column, Schema, Table
+    from app.features.form_builder.engine.project.create import CreateResult
+    from app.features.form_builder.engine.project.forms import FormScope
+
+    del qapp
+    calls = []
+    focused = []
+
+    def fake_perform(window, *, template, stem, directory, ui_text, first_widget):
+        del window, template, directory, ui_text, first_widget
+        calls.append(stem)
+        forms = tmp_path / "forms"
+        return CreateResult(
+            (),
+            (),
+            FormScope(
+                kind="project",
+                ui_path=str(forms / ("%s.ui" % stem)),
+                project_root=str(tmp_path),
+                generated_path=str(forms / ("ui_%s.py" % stem)),
+                window_path=str(forms / ("%s_window.py" % stem)),
+                module_name="forms.ui_%s" % stem,
+            ),
+            None,
+        )
+
+    monkeypatch.setattr("app.features.form_builder.integration.new_form.perform_create", fake_perform)
+    (tmp_path / "forms").mkdir()
+    window = QWidget()
+    surface = _surface(tmp_path, window)
+    surface._focus_data = focused.append
+    dialog = FromTableDialog(
+        project_root=str(tmp_path),
+        stem="packing_list",
+        chrome=_chrome(),
+        date_format="yyyy-MM-dd",
+        name_reason=lambda: None,
+    )
+    try:
+        dialog._connection_name = "shop"
+        dialog._use_schema(
+            Schema(
+                "shop",
+                "sqlite",
+                "",
+                "2026-11-03T00:00:00",
+                "sqlite",
+                (Table("packing_list", (Column("id", "INTEGER", False), Column("title", "TEXT", True)), key="id"),),
+            )
+        )
+        dialog.findChild(QComboBox, "formBuilder.fromTable.make").setCurrentIndex(2)
+        surface._create_from_dialog(dialog)
+        assert calls == ["packing_list_list", "packing_list"]
+        assert os.path.basename(focused[-1]) == "packing_list.ui"
+    finally:
+        dialog.close()
+
+
+def test_create_from_dialog_writes_nothing_on_a_clash(tmp_path: Path, qapp: object) -> None:
+    del qapp
+    root = tmp_path / "proj"
+    (root / "forms").mkdir(parents=True)
+    (root / "cbcs").mkdir()
+    window = QWidget()
+
+    class Project:
+        project_root = str(root)
+
+    window._loaded_project = Project()
+    surface = _surface(root, window)
+    dialog = _shop_dialog(root, "invoice")
+    try:
+        _select_table(dialog, "invoices")
+        dialog.findChild(QComboBox, "formBuilder.fromTable.make").setCurrentIndex(2)
+        (root / "forms" / "invoice_list.py").write_text("# kept\n", encoding="utf-8")
+        before = sorted(path.relative_to(root).as_posix() for path in root.rglob("*") if path.is_file())
+        surface._create_from_dialog(dialog)
+        after = sorted(path.relative_to(root).as_posix() for path in root.rglob("*") if path.is_file())
+        assert after == before
+        assert (root / "forms" / "invoice_list.py").read_text(encoding="utf-8") == "# kept\n"
+        assert not (root / "forms" / "invoice.ui").is_file()
+        status = surface.widget().findChild(QLabel, "formBuilder.newForm.status")
+        assert status is not None and "invoice_list.py" in status.text()
+    finally:
+        dialog.close()
+
+
+def test_create_from_dialog_undoes_on_the_editor_tab(tmp_path: Path, qapp: object) -> None:
+    import json
+
+    from app.features.form_builder.engine.ids import IdAllocator
+    from app.features.form_builder.engine.ui4.reader import read_ui
+    from app.features.form_builder.engine.ui4.writer import write_ui
+    from app.project.project_service import open_project
+    from app.shell.main_window import MainWindow
+    from testing.main_window_shutdown import shutdown_main_window_for_test
+
+    root = tmp_path / "proj"
+    (root / "forms").mkdir(parents=True)
+    (root / "main.py").write_text("print(1)\n", encoding="utf-8")
+    meta = root / "cbcs"
+    meta.mkdir()
+    (meta / "project.json").write_text(
+        json.dumps({"schema_version": 2, "name": "Shop", "default_entry": "main.py"}) + "\n",
+        encoding="utf-8",
+    )
+    window = MainWindow(state_root=str((tmp_path / "state").resolve()))
+    dialog = None
+    try:
+        window._loaded_project = open_project(str(root))
+        surface = _surface(root, window)
+        dialog = _shop_dialog(root, "customer")
+        _select_table(dialog, "customers")
+        dialog.findChild(QComboBox, "formBuilder.fromTable.make").setCurrentIndex(0)
+        dialog._lines.setChecked(False)
+        surface._create_from_dialog(dialog)
+        QApplication.processEvents()
+        ui_path = os.path.abspath(str(root / "forms" / "customer.ui"))
+        tab = window._tab_content_registry.surface_for_path(ui_path)
+        assert tab is not None
+        assert len(tab.session.log.entries()) == 1
+        text = write_ui(tab.session.document).text
+        assert "New customer" in text
+        assert tab.undo() is True
+        assert not tab.session.document.by_name("name")
+        disk = read_ui(
+            (root / "forms" / "customer.ui").read_text(encoding="utf-8"),
+            allocator=IdAllocator(),
+        )
+        assert "New customer" in write_ui(disk.document).text
+    finally:
+        if dialog is not None:
+            dialog.close()
+        shutdown_main_window_for_test(window, qapp)
+
+
+def test_data_sections_stack_and_the_footer_stays_at_the_bottom(tmp_path: Path, qapp: object) -> None:
+    from app.features.form_builder.engine.project.from_table_plan import plan_forms
+    from app.features.form_builder.qtside.data_panel.panel import DataPanel
+    from app.features.form_builder.qtside.dialogs.table_apply import open_plan
+    from app.qt.QtWidgets import QSizePolicy
+    from tests.form_builder.engine.test_m8_3d_from_table import _invoice_request, _shop
+
+    del qapp
+    root, schema = _shop(tmp_path)
+    session = open_plan(plan_forms(_invoice_request(), schema).forms[0], schema, str(root))
+
+    class Bench(QWidget):
+        def __init__(self) -> None:
+            super().__init__()
+            self.session = session
+
+    bench = Bench()
+    panel = DataPanel(bench)
+    try:
+        panel.resize(320, 720)
+        panel.show()
+        QApplication.processEvents()
+        footer = panel.findChild(QWidget, "formBuilder.data.schemaFooter")
+        source = panel.findChild(QWidget, "formBuilder.data.sourceLine")
+        assert footer is not None and source is not None
+        assert enum_value(source.sizePolicy().verticalPolicy()) == enum_value(QSizePolicy.Policy.Maximum)
+        assert footer.y() + footer.height() >= panel.height() - 40
+        assert source.y() < 80
+        assert footer.y() - source.y() > 200
+        layout = panel.layout()
+        footer_at = layout.indexOf(footer)
+        spacer = layout.itemAt(footer_at - 1)
+        assert spacer is not None and spacer.spacerItem() is not None
+    finally:
+        panel.close()
+        session.dispose()

@@ -60,6 +60,16 @@ def is_identifier(name: str) -> bool:
     return bool(_IDENT.match(name))
 
 
+def name_usable(name: str) -> bool:
+    """True when ``quote_ident`` will quote ``name``. Spaces and hyphens pass. A quote does not."""
+
+    try:
+        quote_ident(name)
+    except IdentifierError:
+        return False
+    return True
+
+
 def quote_ident(name: str) -> str:
     """Double-quote ``name``. A space stays inside the quotes. A break-out is refused."""
 
@@ -252,6 +262,39 @@ def set_line_position(dialect: str, table: str, position: str, key: str) -> Stat
     _dialect(dialect)
     text = update_head(dialect, table) + " " + assignment_piece(dialect, position) + key_clause(dialect, key)
     return Statement(text, ("position", "key"), "Number %s" % singular(table))
+
+
+def insert_line_at_next_position(
+    dialect: str,
+    table: str,
+    columns: Sequence[str],
+    key: str,
+    link: str,
+    position: str,
+) -> Statement:
+    """Insert a line and set ``position`` to one past the max for this link.
+
+    ``columns`` are the grid columns. The link value is a parameter twice: once
+    for the max subquery, then once for the link column. Existing rows are not
+    updated.
+    """
+
+    _dialect(dialect)
+    names = tuple(columns) + (position, link)
+    marks = [placeholder(dialect) for _column in columns]
+    marks.append(
+        "(SELECT COALESCE(MAX(%s), 0) + 1 FROM %s WHERE %s = %s)"
+        % (quote_ident(position), quote_ident(table), quote_ident(link), placeholder(dialect))
+    )
+    marks.append(placeholder(dialect))
+    text = "INSERT INTO %s (%s) VALUES (%s)" % (
+        quote_ident(table),
+        ", ".join(quote_ident(column) for column in names),
+        ", ".join(marks),
+    )
+    if dialect == "postgres":
+        text = "%s RETURNING %s" % (text, quote_ident(key))
+    return Statement(text, tuple(columns) + ("link", "link"), "Insert %s" % singular(table))
 
 def like_pattern(text: str) -> str:
     """Contains-search value. ``\\``, ``%`` and ``_`` are escaped, then wrapped in ``%``.
@@ -850,8 +893,10 @@ __all__ = [
     "conflict_sql",
     "delete_row",
     "find_keys",
+    "insert_line_at_next_position",
     "insert_row",
     "is_identifier",
+    "name_usable",
     "key_clause",
     "ListRead",
     "adapt_user_sql",

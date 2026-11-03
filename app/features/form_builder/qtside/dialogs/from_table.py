@@ -124,7 +124,8 @@ class FromTableDialog(QDialog):
         self._footer = ""
         self._read_reason = ""
         self._current_table = ""
-        self._line_memory: Dict[str, Tuple[bool, str, str]] = {}
+        self._line_memory: Dict[Tuple[str, str], Tuple[bool, str, str]] = {}
+        self._schema_tokens: Dict[str, Tuple[object, ...]] = {}
         self._preview_widget: Optional[QWidget] = None
         self._preview_view: Optional[QGraphicsView] = None
         self._build()
@@ -431,11 +432,22 @@ class FromTableDialog(QDialog):
         self._use_schema(outcome.schema)
 
     def _use_schema(self, schema: Schema) -> None:
+        token = tuple(
+            (table.name, tuple((column.name, column.type, column.nullable) for column in table.columns))
+            for table in schema.tables
+        )
+        previous = self._schema_tokens.get(self._connection_name)
+        if previous is not None and previous != token:
+            self._line_memory = {
+                key: value for key, value in self._line_memory.items() if key[0] != self._connection_name
+            }
+        self._schema_tokens[self._connection_name] = token
         self._schema = schema
         install_schema_reader(self._project_root)
         self._current_table = ""
         self._tables.clear()
         self._mappings.clear()
+        self._release_mapping_editors()
         self._mapping.setRowCount(0)
         if not schema.tables:
             self._show_preview_message("This database has no tables.")
@@ -459,7 +471,7 @@ class FromTableDialog(QDialog):
         if not name:
             return
         if self._current_table and self._current_table != name:
-            self._line_memory[self._current_table] = (
+            self._line_memory[self._memory_key(self._current_table)] = (
                 self._lines.isChecked(),
                 str(self._lines_table.currentData() or ""),
                 str(self._lines_link.currentData() or ""),
@@ -471,7 +483,22 @@ class FromTableDialog(QDialog):
         self._fill_mapping(columns)
         self._fill_lines(name)
 
+    def _memory_key(self, table_name: str) -> Tuple[str, str]:
+        return (self._connection_name, table_name)
+
+    def _release_mapping_editors(self) -> None:
+        table = self._mapping
+        for row in range(table.rowCount()):
+            for column in range(table.columnCount()):
+                if table.cellWidget(row, column) is not None:
+                    table.removeCellWidget(row, column)
+        for child in list(table.findChildren(QComboBox)):
+            child.hide()
+            child.setParent(None)
+            child.deleteLater()
+
     def _fill_mapping(self, columns: List[TableColumn]) -> None:
+        self._release_mapping_editors()
         self._loading = True
         self._mapping.setRowCount(len(columns))
         for row, column in enumerate(columns):
@@ -562,7 +589,7 @@ class FromTableDialog(QDialog):
         raise KeyError(column)
 
     def _shows_as_combo(self, widget_class: str) -> QComboBox:
-        combo = QComboBox(self._mapping)
+        combo = QComboBox()
         combo.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Fixed)
         chosen = 0
         for index, (qt_name, word) in enumerate(_SHOWS_AS_WORDS):
@@ -699,7 +726,7 @@ class FromTableDialog(QDialog):
         children = child_tables(self._schema, table_name) if self._schema is not None else ()
         for child in children:
             self._lines_table.addItem(child.name, child.name)
-        remembered = self._line_memory.get(table_name)
+        remembered = self._line_memory.get(self._memory_key(table_name))
         chosen = remembered[1] if remembered else ""
         if not chosen and self._schema is not None:
             for child in children:
@@ -769,9 +796,11 @@ class FromTableDialog(QDialog):
             from app.features.form_builder.qtside.dialogs.table_apply import render_plans
 
             made = render_plans(draft, self._schema, self._project_root)
+            planned = plan_forms(draft, self._schema)
+            kinds = {form.stem: form.kind for form in planned.forms}
             record = ""
             for stem, body in made:
-                if draft.make == "list" or not stem.endswith("_list"):
+                if draft.make == "list" or kinds.get(stem) == "record":
                     record = body
                     break
             text = record
