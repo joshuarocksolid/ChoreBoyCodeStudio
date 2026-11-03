@@ -16,7 +16,7 @@ from app.features.form_builder.engine.data.check import run_checks
 from app.features.form_builder.engine.data.connections import Connection, ConnectionSet, save_connections
 from app.features.form_builder.engine.data.connections_module import render_connections_module
 from app.features.form_builder.engine.data.schema import Column, Reference, Schema, Table
-from app.features.form_builder.engine.data.source import RecordSource, write_data
+from app.features.form_builder.engine.data.source import RecordSource, Source, write_data
 from app.features.form_builder.engine.ids import IdAllocator
 from app.features.form_builder.engine.project.forms import FormScope
 from app.features.form_builder.engine.ui4.reader import read_ui
@@ -554,7 +554,7 @@ def _document(text: str) -> Any:
     return read_ui(text, allocator=IdAllocator()).document
 
 
-def _xml(source: RecordSource, widgets: Sequence[Tuple[str, str, str, str]]) -> str:
+def _xml(source: Source, widgets: Sequence[Tuple[str, str, str, str]]) -> str:
     parts = [
         '<?xml version="1.0" encoding="UTF-8"?>\n<ui version="4.0">\n <class>Invoice</class>\n',
         ' <widget class="QDialog" name="Invoice">\n',

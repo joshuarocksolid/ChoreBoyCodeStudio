@@ -6,6 +6,7 @@ from typing import Any, List, Sequence
 
 from app.features.form_builder.qtside.data_panel.model import (
     dialect_of,
+    list_source,
     load_columns,
     order_of,
     record_source,
@@ -38,6 +39,9 @@ def statements_for(session: object, host: object = None) -> List[Any]:
     if module is None:
         raise RuntimeError(_MISSING)
     document = session.document
+    listed = list_source(document)
+    if listed is not None:
+        return _list_statements(module, session, listed, host)
     source = record_source(document)
     if source is None:
         return []
@@ -57,6 +61,24 @@ def statements_for(session: object, host: object = None) -> List[Any]:
         module.delete_row(dialect, table, key),
     ]
     return made
+
+
+def _list_statements(module: Any, session: object, source: Any, host: object) -> List[Any]:
+    dialect = dialect_of(session, source.connection, host)
+    opened = getattr(source, "open", None)
+    key = getattr(opened, "key", "") or ""
+    made = module.list_read(
+        dialect,
+        source.table,
+        source.columns,
+        source.sql,
+        source.search,
+        tuple(item.column for item in source.filters),
+        source.order,
+        source.limit,
+        key,
+    )
+    return [made.rows, made.total]
 
 
 def render(statements: Sequence[Any]) -> str:
