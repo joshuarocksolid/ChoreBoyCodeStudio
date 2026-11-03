@@ -52,6 +52,18 @@ class ColumnKind:
     nullable: bool = True
 
 
+def is_sqlite_rowid(declared: str, *, without_rowid: bool = False) -> bool:
+    """True only for a column declared exactly ``INTEGER`` on a rowid table.
+
+    ``BIGINT`` and ``INT`` have integer affinity and are not the rowid alias.
+    ``WITHOUT ROWID`` has no rowid alias even when the type is ``INTEGER``.
+    """
+
+    if without_rowid:
+        return False
+    return " ".join(declared.strip().lower().split()) == "integer"
+
+
 def sqlite_affinity(declared: str) -> str:
     """SQLite's affinity of a declared type. Empty and blob stay ``BLOB``."""
 
@@ -145,6 +157,18 @@ def from_sql(kind: ColumnKind, value: object, engine: str) -> object:
         if isinstance(value, datetime.date):
             return value
         return datetime.date.fromisoformat(str(value)[:10])
+    if family == "time":
+        if isinstance(value, datetime.datetime):
+            return value.time()
+        if isinstance(value, datetime.time):
+            return value
+        return datetime.time.fromisoformat(str(value))
+    if family == "datetime":
+        if isinstance(value, datetime.datetime):
+            return value
+        if isinstance(value, datetime.date):
+            return datetime.datetime(value.year, value.month, value.day)
+        return datetime.datetime.fromisoformat(str(value).replace("T", " "))
     if family == "text":
         if isinstance(value, (bytes, bytearray)):
             return bytes(value).decode("utf-8")
@@ -237,6 +261,7 @@ __all__ = [
     "describe",
     "formula_kind",
     "from_sql",
+    "is_sqlite_rowid",
     "sqlite_affinity",
     "to_sql",
 ]

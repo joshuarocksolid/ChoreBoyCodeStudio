@@ -25,7 +25,10 @@ from app.features.form_builder.engine.data.sql import (
     select_keys,
     update_head,
 )
-from app.features.form_builder.engine.data.types import describe
+from app.features.form_builder.engine.data.types import describe, is_sqlite_rowid
+from app.features.form_builder.engine.diagnostics import CODES, DiagnosticLocation, FormDiagnostic
+
+import app.features.form_builder.engine.diagnostic_codes.fb3xx_data  # noqa: F401
 from app.features.form_builder.engine.logic import compat
 from app.features.form_builder.engine.logic.storage import FORMULA_KEYS
 from app.features.form_builder.engine.ui4.document import UiDocument
@@ -39,11 +42,13 @@ _WIDGET_IO = {
     "QSpinBox": "int",
     "QDoubleSpinBox": "decimal",
     "QDateEdit": "date",
-    "QTimeEdit": "text",
-    "QDateTimeEdit": "text",
+    "QTimeEdit": "time",
+    "QDateTimeEdit": "datetime",
     "QCheckBox": "bool",
     "QComboBox": "data",
 }
+
+_NULL_TEXT = " "
 
 
 @dataclass(frozen=True)
@@ -56,6 +61,8 @@ class _Field:
     writable: bool
     display: str
     points_to: str
+    error_label: str = ""
+    item_data: bool = True
 
 
 def _leave_lines(doc: UiDocument, ctx: CodegenContext) -> Tuple[str, ...]:
@@ -95,17 +102,23 @@ class RecordExpander:
         source = _source(doc)
         if source is None:
             return Contribution()
+        engine, problem = _engine(ctx, source.connection)
+        if engine is None:
+            return Contribution(diagnostics=(_connection_diagnostic(doc, problem or "FB301", source.connection),))
         _install_guard()
-        engine = _engine(ctx, source.connection)
         fields = _fields(doc, ctx, source, engine)
         record_word = source.record_word or singular(source.table)
         order = source.order or ((source.key, "asc"),)
         search = source.search or tuple(field.column for field in fields if field.family == "text" and field.writable)
-        check = source.conflicts != "overwrite"
+        # The conflict clause stays on. "Keep mine" is a separate source setting.
+        check = True
+        allow_keep = bool(source.allow_overwrite or source.conflicts == "overwrite")
         hooks = source.hooks or Hooks()
-        methods = _methods(source, fields, engine, record_word, order, search, check, hooks)
+        rowid = _uses_rowid(engine, _schema_table(doc, source), source.key, fields)
+        methods = _methods(source, fields, engine, record_word, order, search, check, hooks, allow_keep, rowid)
         imports = _imports(fields, not _closing_generates(doc))
         setup: List[str] = []
+        setup.extend(_null_markers(fields))
         if not _closing_generates(doc):
             setup.extend(_own_filter(ctx.form_param))
         connects: List[Tuple[str, str]] = []
@@ -136,7 +149,7 @@ class RecordExpander:
         )
 
 
-def _methods(source, fields, engine, record_word, order, search, check, hooks) -> List[Method]:
+def _methods(source, fields, engine, record_word, order, search, check, hooks, allow_keep, rowid) -> List[Method]:
     noun = record_word
     table = source.table
     key = source.key
@@ -144,9 +157,10 @@ def _methods(source, fields, engine, record_word, order, search, check, hooks) -
     columns = tuple(field.column for field in fields)
     load_columns = columns if key in columns else columns + (key,)
     writable = tuple(field for field in fields if field.writable and field.column != key)
-    # A bound key is written only when the person typed one. The insert list is the other columns.
-    insert_columns = tuple(field.column for field in writable)
-    pieces = _sql(engine, table, key, noun, order, search, load_columns, insert_columns, writable, check)
+    # A typed key that is not the SQLite rowid alias belongs in the INSERT.
+    typed_key = any(field.column == key and field.writable for field in fields) and not rowid
+    insert_columns = ((key,) if typed_key else ()) + tuple(field.column for field in writable)
+    pieces = _sql(engine, table, key, noun, order, search, load_columns, insert_columns, writable, check, rowid)
     bodies = {
         "cbcs_open": ("key=None", _open_body(pieces, connection)),
         "_cbcs_show": ("_index", _show_body(pieces, connection, fields, hooks)),
@@ -163,10 +177,13 @@ def _methods(source, fields, engine, record_word, order, search, check, hooks) -
         "cbcs_is_dirty": ("", ["return self._cbcs_is_dirty()"]),
         "cbcs_current_key": ("", ["return getattr(self, %s, None)" % _q("_cbcs_key")]),
         "_cbcs_like_pattern": ("_text", _pattern_body()),
+        "_cbcs_db_parts": ("_error", _db_parts_body()),
         "_cbcs_show_db_error": ("_error", _error_body(noun, fields)),
         "_cbcs_ask_delete": ("", _delete_ask_body(noun)),
         "_cbcs_tell_deleted": ("", _deleted_body(noun)),
-        "_cbcs_conflict": ("", _conflict_body(noun, source.conflicts == "overwrite")),
+        "_cbcs_clear_errors": ("", _clear_errors_body(fields)),
+        "_cbcs_show_field": ("_widget, _label, _message", _show_field_body()),
+        "_cbcs_conflict": ("", _conflict_body(noun, allow_keep)),
         "cbcs_save": ("", _save_body(hooks)),
         "_cbcs_write": ("_overwrite", _write_sql_body(pieces, connection, fields, writable, check, hooks)),
         "cbcs_delete": ("", _delete_body(pieces, connection, hooks)),
@@ -194,7 +211,7 @@ def _methods(source, fields, engine, record_word, order, search, check, hooks) -
     return methods
 
 
-def _sql(engine, table, key, noun, order, search, load_columns, insert_columns, writable, check):
+def _sql(engine, table, key, noun, order, search, load_columns, insert_columns, writable, check, rowid):
     conflict = tuple(field.column for field in writable)
     tail = key_clause(engine, key)
     if check:
@@ -214,6 +231,8 @@ def _sql(engine, table, key, noun, order, search, load_columns, insert_columns, 
         "search": tuple(search),
         "engine": engine,
         "exists": load_one(engine, table, (key,), key, noun).text,
+        "key": key,
+        "rowid": bool(rowid),
     }
 
 
@@ -267,6 +286,7 @@ def _show_body(pieces, connection, fields, hooks) -> List[str]:
         [
             "self._cbcs_loaded = _raw",
             "self._cbcs_fill_record(_raw)",
+            "self._cbcs_clear_errors()",
             "self.cbcs_write_fields(_raw)",
             "self._cbcs_saved_fields = self.cbcs_read_fields()",
             "self._cbcs_ready = True",
@@ -293,6 +313,7 @@ def _new_body(fields, hooks) -> List[str]:
         "self._cbcs_index = -1",
         "self._cbcs_loaded = {}",
         "self._cbcs_record = {}",
+        "self._cbcs_clear_errors()",
         "self.cbcs_write_fields({})",
         "self._cbcs_saved_fields = self.cbcs_read_fields()",
         "self._cbcs_ready = True",
@@ -319,21 +340,27 @@ def _read_field(field: _Field) -> List[str]:
     elif field.io == "plain":
         lines = ["_text = %s.toPlainText()" % widget]
     elif field.io == "int":
-        return ["%s = int(%s.value())" % (key, widget)]
+        return _read_number(field, key, "int")
     elif field.io == "decimal":
-        return ["%s = Decimal(str(%s.value()))" % (key, widget)]
+        return _read_number(field, key, "Decimal(str(%s.value()))" % widget)
     elif field.io == "bool":
-        return ["%s = True if %s.isChecked() else False" % (key, widget)]
+        return _read_bool(field, key)
     elif field.io == "date":
-        return [
-            "_day = %s.date()" % widget,
-            "if _day.isValid():",
-            "    %s = _day.toPython()" % key,
-            "else:",
-            "    %s = None" % key,
-        ]
+        return _read_date(field, key)
+    elif field.io == "time":
+        return _read_minimum(field, key, "%s.time()" % widget, "%s.minimumTime()" % widget, "%s.time().toPython()" % widget)
+    elif field.io == "datetime":
+        return _read_minimum(
+            field,
+            key,
+            "%s.dateTime()" % widget,
+            "%s.minimumDateTime()" % widget,
+            "%s.dateTime().toPython()" % widget,
+        )
     elif field.io == "data":
-        return ["%s = %s.currentData()" % (key, widget)]
+        if field.item_data:
+            return ["%s = %s.currentData()" % (key, widget)]
+        lines = ["_text = %s.currentText()" % widget]
     else:
         lines = ["_text = %s.text()" % widget]
     if field.family == "text" and field.nullable:
@@ -341,6 +368,69 @@ def _read_field(field: _Field) -> List[str]:
     else:
         lines.append("%s = _text" % key)
     return lines
+
+
+def _read_number(field: _Field, key: str, expression: str) -> List[str]:
+    widget = "self.%s" % field.widget
+    if expression == "int":
+        value = "int(%s.value())" % widget
+    else:
+        value = expression
+    if not field.nullable:
+        return ["%s = %s" % (key, value)]
+    return [
+        "if %s.value() == %s.minimum():" % (widget, widget),
+        "    %s = None" % key,
+        "else:",
+        "    %s = %s" % (key, value),
+    ]
+
+
+def _read_bool(field: _Field, key: str) -> List[str]:
+    widget = "self.%s" % field.widget
+    if not field.nullable:
+        return ["%s = True if %s.isChecked() else False" % (key, widget)]
+    return [
+        "_state = %s.checkState()" % widget,
+        "if _state == Qt.CheckState.PartiallyChecked:",
+        "    %s = None" % key,
+        "else:",
+        "    %s = True if %s.isChecked() else False" % (key, widget),
+    ]
+
+
+def _read_date(field: _Field, key: str) -> List[str]:
+    widget = "self.%s" % field.widget
+    lines = ["_day = %s.date()" % widget]
+    if field.nullable:
+        lines.extend(
+            [
+                "if _day == %s.minimumDate():" % widget,
+                "    %s = None" % key,
+                "elif _day.isValid():",
+                "    %s = _day.toPython()" % key,
+                "else:",
+                "    %s = None" % key,
+            ]
+        )
+        return lines
+    return lines + [
+        "if _day.isValid():",
+        "    %s = _day.toPython()" % key,
+        "else:",
+        "    %s = None" % key,
+    ]
+
+
+def _read_minimum(field: _Field, key: str, current: str, minimum: str, value: str) -> List[str]:
+    if not field.nullable:
+        return ["%s = %s" % (key, value)]
+    return [
+        "if %s == %s:" % (current, minimum),
+        "    %s = None" % key,
+        "else:",
+        "    %s = %s" % (key, value),
+    ]
 
 
 def _write_body(fields: Sequence[_Field]) -> List[str]:
@@ -374,58 +464,126 @@ def _write_field(field: _Field) -> List[str]:
                 "        %s.setPlainText(str(_value))" % widget,
             ]
         )
-    elif field.io == "int":
-        lines.extend(
-            [
-                "    if _value is None or _value == %s:" % _q(""),
-                "        %s.setValue(%s.minimum())" % (widget, widget),
-                "    else:",
-                "        %s.setValue(int(_value))" % widget,
-            ]
-        )
+    if field.io == "int":
+        lines.extend(_write_number(widget, "int(_value)", field.nullable))
     elif field.io == "decimal":
-        lines.extend(
-            [
-                "    if _value is None or _value == %s:" % _q(""),
-                "        %s.setValue(0.0)" % widget,
-                "    else:",
-                "        %s.setValue(float(_value))" % widget,
-            ]
-        )
+        lines.extend(_write_number(widget, "float(_value)", field.nullable))
     elif field.io == "bool":
-        lines.append("    %s.setChecked(True if _value else False)" % widget)
+        lines.extend(_write_bool(widget, field.nullable))
     elif field.io == "date":
-        lines.extend(
-            [
-                "    if _value is None or _value == %s:" % _q(""),
-                "        %s.setDate(QDate())" % widget,
-                "    elif isinstance(_value, datetime):",
-                "        _day = _value.date()",
-                "        %s.setDate(QDate(_day.year, _day.month, _day.day))" % widget,
-                "    elif isinstance(_value, date):",
-                "        %s.setDate(QDate(_value.year, _value.month, _value.day))" % widget,
-                "    else:",
-                "        _day = date.fromisoformat(str(_value)[:10])",
-                "        %s.setDate(QDate(_day.year, _day.month, _day.day))" % widget,
-            ]
-        )
+        lines.extend(_write_date(widget, field.nullable))
+    elif field.io == "time":
+        lines.extend(_write_time(widget, field.nullable))
+    elif field.io == "datetime":
+        lines.extend(_write_datetime(widget, field.nullable))
     elif field.io == "data":
-        lines.extend(
-            [
-                "    _picked = -1",
-                "    _i = 0",
-                "    while _i < %s.count():" % widget,
-                "        if %s.itemData(_i) == _value:" % widget,
-                "            _picked = _i",
-                "            break",
-                "        _i = _i + 1",
-                "    %s.setCurrentIndex(_picked)" % widget,
-            ]
-        )
+        lines.extend(_write_combo(widget, field.item_data))
     else:
         lines.append("    %s.setText(%s if _value is None else str(_value))" % (widget, _q("")))
     lines.extend(["finally:", "    %s.blockSignals(False)" % widget])
     return lines
+
+
+def _write_number(widget: str, cast: str, nullable: bool) -> List[str]:
+    if nullable:
+        blank = "        %s.setValue(%s.minimum())" % (widget, widget)
+    elif cast.startswith("int"):
+        blank = "        %s.setValue(0)" % widget
+    else:
+        blank = "        %s.setValue(0.0)" % widget
+    return [
+        "    if _value is None or _value == %s:" % _q(""),
+        blank,
+        "    else:",
+        "        %s.setValue(%s)" % (widget, cast),
+    ]
+
+
+def _write_bool(widget: str, nullable: bool) -> List[str]:
+    if not nullable:
+        return ["    %s.setChecked(True if _value else False)" % widget]
+    return [
+        "    if _value is None:",
+        "        %s.setCheckState(Qt.CheckState.PartiallyChecked)" % widget,
+        "    else:",
+        "        %s.setChecked(True if _value else False)" % widget,
+    ]
+
+
+def _write_date(widget: str, nullable: bool) -> List[str]:
+    blank = "        %s.setDate(%s.minimumDate())" % (widget, widget) if nullable else "        %s.setDate(%s.minimumDate())" % (widget, widget)
+    return [
+        "    if _value is None or _value == %s:" % _q(""),
+        blank,
+        "    elif isinstance(_value, datetime):",
+        "        _day = _value.date()",
+        "        %s.setDate(QDate(_day.year, _day.month, _day.day))" % widget,
+        "    elif isinstance(_value, date):",
+        "        %s.setDate(QDate(_value.year, _value.month, _value.day))" % widget,
+        "    else:",
+        "        _day = date.fromisoformat(str(_value)[:10])",
+        "        %s.setDate(QDate(_day.year, _day.month, _day.day))" % widget,
+    ]
+
+
+def _write_time(widget: str, nullable: bool) -> List[str]:
+    return [
+        "    if _value is None or _value == %s:" % _q(""),
+        "        %s.setTime(%s.minimumTime())" % (widget, widget) if nullable else "        %s.setTime(QTime(0, 0, 0))",
+        "    else:",
+        "        if isinstance(_value, datetime):",
+        "            _clock = _value.time()",
+        "        elif isinstance(_value, time):",
+        "            _clock = _value",
+        "        else:",
+        "            _clock = time.fromisoformat(str(_value))",
+        "        %s.setTime(QTime(_clock.hour, _clock.minute, _clock.second, _clock.microsecond // 1000))" % widget,
+    ]
+
+
+def _write_datetime(widget: str, nullable: bool) -> List[str]:
+    blank = (
+        "        %s.setDateTime(%s.minimumDateTime())" % (widget, widget)
+        if nullable
+        else "        %s.setDateTime(QDateTime(QDate(2000, 1, 1), QTime(0, 0, 0)))" % widget
+    )
+    return [
+        "    if _value is None or _value == %s:" % _q(""),
+        blank,
+        "    else:",
+        "        if isinstance(_value, datetime):",
+        "            _stamp = _value",
+        "        elif isinstance(_value, date):",
+        "            _stamp = datetime(_value.year, _value.month, _value.day)",
+        "        else:",
+        "            _stamp = datetime.fromisoformat(str(_value).replace(%s, %s))" % (_q("T"), _q(" ")),
+        "        _clock = _stamp.time()",
+        "        %s.setDateTime(QDateTime(QDate(_stamp.year, _stamp.month, _stamp.day), QTime(_clock.hour, _clock.minute, _clock.second, _clock.microsecond // 1000)))" % widget,
+    ]
+
+
+def _write_combo(widget: str, item_data: bool) -> List[str]:
+    if item_data:
+        return [
+            "    _picked = -1",
+            "    _i = 0",
+            "    while _i < %s.count():" % widget,
+            "        if %s.itemData(_i) == _value:" % widget,
+            "            _picked = _i",
+            "            break",
+            "        _i = _i + 1",
+            "    %s.setCurrentIndex(_picked)" % widget,
+        ]
+    return [
+        "    if _value is None:",
+        "        %s.setCurrentIndex(-1)" % widget,
+        "    else:",
+        "        _picked = %s.findText(str(_value))" % widget,
+        "        if _picked < 0:",
+        "            %s.setCurrentText(str(_value))" % widget,
+        "        else:",
+        "            %s.setCurrentIndex(_picked)" % widget,
+    ]
 
 
 def _dirty_body(writable: Sequence[_Field]) -> List[str]:
@@ -522,7 +680,49 @@ def _bind_family(field: _Field, engine: str) -> List[str]:
         else:
             lines.append("return _text")
         return lines
+    if family == "time":
+        return _bind_clock(engine, "time")
+    if family == "datetime":
+        return _bind_clock(engine, "datetime")
     return ["return _value"]
+
+
+def _bind_clock(engine: str, family: str) -> List[str]:
+    lines = [
+        "if _value is None or _value == %s:" % _q(""),
+        "    return None",
+    ]
+    if family == "time":
+        lines.extend(
+            [
+                "if isinstance(_value, datetime):",
+                "    _clock = _value.time()",
+                "elif isinstance(_value, time):",
+                "    _clock = _value",
+                "else:",
+                "    _clock = time.fromisoformat(str(_value))",
+            ]
+        )
+        if engine == "postgres":
+            lines.append("return _clock")
+        else:
+            lines.append("return _clock.isoformat()")
+        return lines
+    lines.extend(
+        [
+            "if isinstance(_value, datetime):",
+            "    _stamp = _value",
+            "elif isinstance(_value, date):",
+            "    _stamp = datetime(_value.year, _value.month, _value.day)",
+            "else:",
+            "    _stamp = datetime.fromisoformat(str(_value).replace(%s, %s))" % (_q("T"), _q(" ")),
+        ]
+    )
+    if engine == "postgres":
+        lines.append("return _stamp")
+    else:
+        lines.append("return _stamp.isoformat(sep=%s)" % _q(" "))
+    return lines
 
 
 def _from_body(fields: Sequence[_Field]) -> List[str]:
@@ -569,6 +769,26 @@ def _from_family(family: str) -> List[str]:
             "    return _value",
             "return date.fromisoformat(str(_value)[:10])",
         ]
+    if family == "time":
+        return [
+            "if _value is None or _value == %s:" % _q(""),
+            "    return None",
+            "if isinstance(_value, datetime):",
+            "    return _value.time()",
+            "if isinstance(_value, time):",
+            "    return _value",
+            "return time.fromisoformat(str(_value))",
+        ]
+    if family == "datetime":
+        return [
+            "if _value is None or _value == %s:" % _q(""),
+            "    return None",
+            "if isinstance(_value, datetime):",
+            "    return _value",
+            "if isinstance(_value, date):",
+            "    return datetime(_value.year, _value.month, _value.day)",
+            "return datetime.fromisoformat(str(_value).replace(%s, %s))" % (_q("T"), _q(" ")),
+        ]
     return [
         "if _value is None:",
         "    return None",
@@ -612,51 +832,161 @@ def _pattern_body() -> List[str]:
 
 
 def _error_body(noun: str, fields: Sequence[_Field]) -> List[str]:
-    labels = []
-    points = []
-    for field in fields:
-        labels.append("%s: %s" % (_q(field.column), _q(field.display)))
-        if field.points_to:
-            points.append("%s: %s" % (_q(field.column), _q(field.points_to)))
-    label_map = "{" + ", ".join(labels) + "}" if labels else "{}"
-    point_map = "{" + ", ".join(points) + "}" if points else "{}"
+    labels = ", ".join("%s: %s" % (_q(field.column), _q(field.display)) for field in fields)
+    widgets = ", ".join("%s: self.%s" % (_q(field.column), field.widget) for field in fields)
+    marks = ", ".join(
+        "%s: self.%s" % (_q(field.column), field.error_label) for field in fields if field.error_label
+    )
+    points = ", ".join("%s: %s" % (_q(field.column), _q(field.points_to)) for field in fields if field.points_to)
+    unique = "Another %s already uses this %%s." % noun
+    required = "%s is required."
+    points_to = "%s must be one of the %s records."
     return [
-        "_text = str(_error)",
-        "_state = %s" % _q(""),
-        "for _attr in (%s, %s):" % (_q("sqlstate"), _q("pgcode")),
-        "    _value = getattr(_error, _attr, None)",
-        "    if isinstance(_value, str) and _value:",
-        "        _state = _value",
-        "_diag = getattr(_error, %s, None)" % _q("diag"),
-        "if not _state and _diag is not None:",
-        "    _value = getattr(_diag, %s, None)" % _q("sqlstate"),
-        "    if isinstance(_value, str):",
-        "        _state = _value",
-        "_column = %s" % _q(""),
-        "if %s in _text:" % _q("constraint failed:"),
-        "    _tail = _text.split(%s, 1)[1].strip()" % _q("constraint failed:"),
-        "    if %s in _tail:" % _q("."),
-        "        _column = _tail.split(%s)[-1].strip()" % _q("."),
-        "if not _column and _diag is not None:",
-        "    _value = getattr(_diag, %s, None)" % _q("column_name"),
-        "    if isinstance(_value, str):",
-        "        _column = _value",
-        "_labels = %s" % label_map,
-        "_points = %s" % point_map,
-        "_label = _labels.get(_column, _column or %s)" % _q("this field"),
-        "_table = _points.get(_column, %s)" % _q("related"),
-        "if _state == %s or %s in _text:" % (_q("23505"), _q("UNIQUE constraint failed")),
-        "    QMessageBox.warning(self._form, %s, %s %% _label)" % (_q(""), _q("Another %s already uses this %%s." % noun)),
+        "self._cbcs_clear_errors()",
+        "_state, _column, _detail, _constraint, _text = self._cbcs_db_parts(_error)",
+        "_labels = {%s}" % labels,
+        "_widgets = {%s}" % widgets,
+        "_marks = {%s}" % marks,
+        "_points = {%s}" % points,
+        "if _column not in _labels:",
+        "    _best = %s" % _q(""),
+        "    for _name in _labels:",
+        "        if _name and _constraint and _name in _constraint and len(_name) > len(_best):",
+        "            _best = _name",
+        "    _column = _best",
+        "_label = _labels.get(_column, %s)" % _q(""),
+        "_table = _points.get(_column, %s)" % _q(""),
+        "_mapped = %s" % _q(""),
+        "if _label and (_state == %s or %s in _text):" % (_q("23505"), _q("UNIQUE constraint failed")),
+        "    _mapped = %s %% _label" % _q(unique),
+        "elif _label and (_state == %s or %s in _text):" % (_q("23502"), _q("NOT NULL constraint failed")),
+        "    _mapped = %s %% _label" % _q(required),
+        "elif _label and _state == %s:" % _q("23503"),
+        "    _mapped = %s %% (_label, _table or %s)" % (_q(points_to), _q("related")),
+        "if _mapped:",
+        "    _widget = _widgets.get(_column)",
+        "    _mark = _marks.get(_column)",
+        "    if _widget is not None and _mark is not None:",
+        "        self._cbcs_show_field(_widget, _mark, _mapped)",
+        "        _widget.setFocus()",
+        "        return",
+        "    QMessageBox.warning(self._form, %s, _mapped)" % _q(""),
         "    return",
-        "if _state == %s or %s in _text:" % (_q("23502"), _q("NOT NULL constraint failed")),
-        "    QMessageBox.warning(self._form, %s, %s %% _label)" % (_q(""), _q("%s is required.")),
-        "    return",
-        "if _state == %s or %s in _text:" % (_q("23503"), _q("FOREIGN KEY constraint failed")),
-        "    QMessageBox.warning(self._form, %s, %s %% (_label, _table))"
-        % (_q(""), _q("%s must be one of the %s records.")),
+        "if not _text:",
         "    return",
         "QMessageBox.warning(self._form, %s, _text)" % _q(""),
     ]
+
+
+def _db_parts_body() -> List[str]:
+    return [
+        "_text = %s" % _q(""),
+        "_state = %s" % _q(""),
+        "_column = %s" % _q(""),
+        "_detail = %s" % _q(""),
+        "_constraint = %s" % _q(""),
+        "_args = getattr(_error, %s, ())" % _q("args"),
+        "_payload = _args[0] if _args else None",
+        "if isinstance(_payload, dict):",
+        "    _state = _payload.get(%s) or %s" % (_q("C"), _q("")),
+        "    _column = _payload.get(%s) or %s" % (_q("c"), _q("")),
+        "    _detail = _payload.get(%s) or %s" % (_q("D"), _q("")),
+        "    _constraint = _payload.get(%s) or %s" % (_q("n"), _q("")),
+        "    _text = _payload.get(%s) or %s" % (_q("M"), _q("")),
+        "    if not isinstance(_state, str):",
+        "        _state = str(_state or %s)" % _q(""),
+        "    if not isinstance(_column, str):",
+        "        _column = %s" % _q(""),
+        "    if not isinstance(_detail, str):",
+        "        _detail = %s" % _q(""),
+        "    if not isinstance(_constraint, str):",
+        "        _constraint = %s" % _q(""),
+        "    if not isinstance(_text, str):",
+        "        _text = %s" % _q(""),
+        "if not _state:",
+        "    for _attr in (%s, %s):" % (_q("sqlstate"), _q("pgcode")),
+        "        _value = getattr(_error, _attr, None)",
+        "        if isinstance(_value, str) and _value:",
+        "            _state = _value",
+        "_diag = getattr(_error, %s, None)" % _q("diag"),
+        "if _diag is not None:",
+        "    if not _state:",
+        "        _value = getattr(_diag, %s, None)" % _q("sqlstate"),
+        "        if isinstance(_value, str) and _value:",
+        "            _state = _value",
+        "    if not _column:",
+        "        _value = getattr(_diag, %s, None)" % _q("column_name"),
+        "        if isinstance(_value, str) and _value:",
+        "            _column = _value",
+        "    if not _detail:",
+        "        _value = getattr(_diag, %s, None)" % _q("message_detail"),
+        "        if isinstance(_value, str) and _value:",
+        "            _detail = _value",
+        "    if not _constraint:",
+        "        _value = getattr(_diag, %s, None)" % _q("constraint_name"),
+        "        if isinstance(_value, str) and _value:",
+        "            _constraint = _value",
+        "    if not _text:",
+        "        _value = getattr(_diag, %s, None)" % _q("message_primary"),
+        "        if isinstance(_value, str) and _value:",
+        "            _text = _value",
+        "if not _text:",
+        "    _shown = str(_error)",
+        "    if not (_shown[:1] == %s and _shown[-1:] == %s):" % (_q("{"), _q("}")),
+        "        _text = _shown",
+        "if not _column and %s in _text:" % _q("constraint failed:"),
+        "    _tail = _text.split(%s, 1)[1].strip()" % _q("constraint failed:"),
+        "    if %s in _tail and %s not in _text:" % (_q("."), _q("FOREIGN KEY constraint failed")),
+        "        _column = _tail.split(%s)[-1].strip().strip(%s)" % (_q("."), _q("'\"")),
+        "if not _column and %s in _detail:" % _q("Key ("),
+        "    _inside = _detail.split(%s, 1)[1]" % _q("Key ("),
+        "    _column = _inside.split(%s, 1)[0].strip().strip(%s)" % (_q(")"), _q('"')),
+        "return (_state, _column, _detail, _constraint, _text)",
+    ]
+
+
+def _clear_errors_body(fields: Sequence[_Field]) -> List[str]:
+    lines = []
+    for field in fields:
+        widget = "self.%s" % field.widget
+        lines.append("%s.setToolTip(%s)" % (widget, _q("")))
+        lines.append("if %s.property(%s):" % (widget, _q("cbcsInvalid")))
+        lines.append("    %s.setProperty(%s, False)" % (widget, _q("cbcsInvalid")))
+        if field.error_label:
+            label = "self.%s" % field.error_label
+            lines.append("%s.setText(%s)" % (label, _q("")))
+            lines.append("%s.setVisible(False)" % label)
+    if not lines:
+        lines.append("return None")
+    return lines
+
+
+def _show_field_body() -> List[str]:
+    return [
+        "if _label is not None:",
+        "    _label.setText(_message)",
+        "    _label.setVisible(True if _message else False)",
+        "_widget.setToolTip(_message)",
+        "_showing = True if _message else False",
+        "if _widget.property(%s) != _showing:" % _q("cbcsInvalid"),
+        "    _widget.setProperty(%s, _showing)" % _q("cbcsInvalid"),
+        "    _style = _widget.style()",
+        "    _style.unpolish(_widget)",
+        "    _style.polish(_widget)",
+    ]
+
+
+def _null_markers(fields: Sequence[_Field]) -> List[str]:
+    lines = []
+    for field in fields:
+        widget = "self.%s" % field.widget
+        if field.nullable and field.io in ("int", "decimal", "date", "time", "datetime"):
+            lines.append("%s.setSpecialValueText(%s)" % (widget, _q(_NULL_TEXT)))
+        if field.nullable and field.io == "bool":
+            lines.append("%s.setTristate(True)" % widget)
+        if field.error_label:
+            lines.append("self.%s.setVisible(False)" % field.error_label)
+    return lines
 
 
 def _delete_ask_body(noun: str) -> List[str]:
@@ -729,6 +1059,7 @@ def _write_sql_body(pieces, connection, fields, writable, check, hooks) -> List[
         "_inserted = False",
         "class _CbcsStop(Exception):",
         "    pass",
+        "_db_error = None",
         "try:",
         "    with cbcs_connections.work(%s) as _conn:" % _q(connection),
         "        _cursor = _conn.cursor()",
@@ -741,8 +1072,12 @@ def _write_sql_body(pieces, connection, fields, writable, check, hooks) -> List[
     lines.append("                _cursor.execute(%s, tuple(_params))" % _q(pieces["insert"]))
     if pieces["engine"] == "postgres":
         lines.append("                _key = _cursor.fetchone()[0]")
-    else:
+    elif pieces["rowid"]:
         lines.append("                _key = _cursor.lastrowid")
+    else:
+        lines.append(
+            "                _key = self._cbcs_bind(%s, _fields.get(%s))" % (_q(pieces["key"]), _q(pieces["key"]))
+        )
     lines.extend(
         [
             "                _inserted = True",
@@ -823,8 +1158,8 @@ def _write_sql_body(pieces, connection, fields, writable, check, hooks) -> List[
             "        except _CbcsStop:",
             "            raise",
             "        except Exception as _error:",
-            "            self._cbcs_show_db_error(_error)",
-            "            raise _CbcsStop(%s)" % _q("db"),
+            "            _db_error = _error",
+            "            raise",
         "except _CbcsStop as _stopped:",
         "    if _stopped.args and _stopped.args[0] == %s:" % _q("conflict"),
         "        return self._cbcs_conflict()",
@@ -832,6 +1167,10 @@ def _write_sql_body(pieces, connection, fields, writable, check, hooks) -> List[
         "        self._cbcs_tell_deleted()",
         "        return False",
         "    return False",
+        "except Exception as _error:",
+        "    self._cbcs_show_db_error(_db_error if _db_error is not None else _error)",
+        "    return False",
+        "self._cbcs_clear_errors()",
         "self._cbcs_saved_fields = self.cbcs_read_fields()",
         "self._cbcs_ready = True",
         "self._cbcs_new = False",
@@ -880,12 +1219,9 @@ def _delete_body(pieces, connection, hooks) -> List[str]:
             "try:",
             "    with cbcs_connections.work(%s) as _conn:" % _q(connection),
             "        _cursor = _conn.cursor()",
-            "        try:",
-            "            _cursor.execute(%s, (_key,))" % _q(pieces["delete"]),
-            "        except Exception as _error:",
-            "            self._cbcs_show_db_error(_error)",
-            "            raise",
-            "except Exception:",
+            "        _cursor.execute(%s, (_key,))" % _q(pieces["delete"]),
+            "except Exception as _error:",
+            "    self._cbcs_show_db_error(_error)",
             "    return False",
             "_kept = []",
             "for _item in self._cbcs_keys:",
@@ -962,7 +1298,9 @@ def _find_body(pieces, connection) -> List[str]:
         "with cbcs_connections.work(%s) as _conn:" % _q(connection),
         "    _cursor = _conn.cursor()",
     ]
-    if count:
+    if count == 1:
+        lines.append("    _cursor.execute(%s, (_pattern,))" % _q(pieces["find"]))
+    elif count:
         lines.append("    _cursor.execute(%s, (%s))" % (_q(pieces["find"]), params))
     else:
         lines.append("    _cursor.execute(%s)" % _q(pieces["find"]))
@@ -1083,10 +1421,20 @@ def _imports(fields: Sequence[_Field], own_filter: bool) -> List[Tuple[str, str]
     ios = {field.io for field in fields}
     if "decimal" in families or "decimal" in ios:
         found.append(("decimal", "Decimal"))
-    if "date" in families or "date" in ios:
+    if families.intersection(("date", "time", "datetime")) or ios.intersection(("date", "time", "datetime")):
         found.append(("datetime", "date"))
         found.append(("datetime", "datetime"))
+        found.append(("datetime", "time"))
+    if "date" in families or "date" in ios:
         found.append(("PySide6.QtCore", "QDate"))
+    if "time" in families or "time" in ios:
+        found.append(("PySide6.QtCore", "QTime"))
+    if "datetime" in families or "datetime" in ios:
+        found.append(("PySide6.QtCore", "QDate"))
+        found.append(("PySide6.QtCore", "QTime"))
+        found.append(("PySide6.QtCore", "QDateTime"))
+    if any(field.nullable and field.io == "bool" for field in fields):
+        found.append(("PySide6.QtCore", "Qt"))
     if own_filter:
         found.extend(
             [
@@ -1159,15 +1507,19 @@ def _fields(doc: UiDocument, ctx: CodegenContext, source: RecordSource, engine: 
         io = _WIDGET_IO.get(node.class_name or "")
         if io is None:
             continue
+        family, nullable, points, kind_read_only, json_column = _family(table, column, engine, io)
         mode = node.prop("cbcsBindMode")
-        read_only = False
         if mode is not None and isinstance(mode.value, StringValue):
             read_only = read_bind_mode(mode.value.text).read_only
+        else:
+            read_only = kind_read_only
+        if json_column:
+            read_only = True
         calculated = False
         value = node.value("cbcsValue")
         if isinstance(value, (StringValue, CStringValue)) and value.text.strip():
             calculated = True
-        family, nullable, points = _family(table, column, engine, io)
+        item_data = _combo_has_data(node) if io == "data" else True
         found.append(
             _Field(
                 name,
@@ -1176,17 +1528,26 @@ def _fields(doc: UiDocument, ctx: CodegenContext, source: RecordSource, engine: 
                 family,
                 nullable,
                 not read_only and not calculated,
-                column.replace("_", " "),
+                _display(doc, name),
                 points,
+                _error_label_name(node, ctx),
+                item_data,
             )
         )
     return tuple(found)
 
 
-def _family(table, column: str, engine: str, io: str) -> Tuple[str, bool, str]:
-    widget_family = {"int": "int", "decimal": "decimal", "date": "date", "bool": "bool"}.get(io, "text")
+def _family(table, column: str, engine: str, io: str) -> Tuple[str, bool, str, bool, bool]:
+    widget_family = {
+        "int": "int",
+        "decimal": "decimal",
+        "date": "date",
+        "time": "time",
+        "datetime": "datetime",
+        "bool": "bool",
+    }.get(io, "text")
     if table is None:
-        return widget_family, True, ""
+        return widget_family, True, "", False, False
     for spec in table.columns:
         if spec.name != column:
             continue
@@ -1199,10 +1560,11 @@ def _family(table, column: str, engine: str, io: str) -> Tuple[str, bool, str]:
         )
         points = spec.references.table if spec.references is not None else ""
         family = kind.direction or widget_family
-        if io == "date" and family == "text":
-            family = "date"
-        return family, spec.nullable, points
-    return widget_family, True, ""
+        if io in ("date", "time", "datetime") and family == "text":
+            family = io
+        base = spec.type.strip().lower().split("(", 1)[0].strip()
+        return family, spec.nullable, points, bool(kind.read_only), base in ("json", "jsonb")
+    return widget_family, True, "", False, False
 
 
 def _schema_table(doc: UiDocument, source: RecordSource):
@@ -1217,13 +1579,13 @@ def _schema_table(doc: UiDocument, source: RecordSource):
     return None
 
 
-def _engine(ctx: CodegenContext, connection: str) -> str:
+def _engine(ctx: CodegenContext, connection: str) -> Tuple[Optional[str], Optional[str]]:
     root = _project_root(ctx.forms_dir)
     if root is None:
-        return "sqlite"
+        return None, "FB301"
     path = os.path.join(root, "connections.json")
     if not os.path.isfile(path):
-        return "sqlite"
+        return None, "FB301"
     try:
         from app.features.form_builder.engine.data.connections import read_connections
 
@@ -1234,13 +1596,83 @@ def _engine(ctx: CodegenContext, connection: str) -> str:
             handle.close()
         found, _error = read_connections(text, project_root=root)
     except OSError:
-        return "sqlite"
+        return None, "FB302"
     if found is None:
-        return "sqlite"
+        return None, "FB302"
     for item in found.connections:
         if item.name == connection and item.engine in ("sqlite", "postgres"):
-            return item.engine
-    return "sqlite"
+            return item.engine, None
+    return None, "FB301"
+
+
+def _uses_rowid(engine: str, table, key: str, fields: Sequence[_Field]) -> bool:
+    if engine != "sqlite":
+        return False
+    key_field = next((field for field in fields if field.column == key and field.writable), None)
+    if table is None:
+        if key_field is not None and key_field.io not in ("int",):
+            return False
+        return True
+    for spec in table.columns:
+        if spec.name != key:
+            continue
+        return is_sqlite_rowid(spec.type, without_rowid=bool(getattr(table, "without_rowid", False)))
+    return key_field is None
+
+
+def _connection_diagnostic(doc: UiDocument, code: str, name: str) -> FormDiagnostic:
+    info = CODES[code]
+    title = info.title
+    message = title.format(name=name) if "{name}" in title else title
+    root = doc.root
+    return FormDiagnostic(
+        code=info.code,
+        severity=info.severity,
+        message=message,
+        location=DiagnosticLocation(
+            node_id=getattr(root, "id", None),
+            object_name=getattr(root, "object_name", None),
+            property="cbcsData",
+        ),
+        source="codegen",
+    )
+
+
+def _display(doc: UiDocument, name: str) -> str:
+    from app.features.form_builder.engine.query.tab_stops import display_name
+
+    text = display_name(doc, name)
+    if text.endswith(":"):
+        text = text[:-1].rstrip()
+    return text or name
+
+
+def _combo_has_data(node) -> bool:
+    """True when a combo item carries a value other than its visible text."""
+
+    try:
+        items = node.children("items")
+    except Exception:
+        return False
+    for item in items:
+        try:
+            props = item.properties()
+        except Exception:
+            continue
+        for entry in props:
+            if getattr(entry, "name", "") != "text":
+                return True
+    return False
+
+
+def _error_label_name(node, ctx: CodegenContext) -> str:
+    value = node.value("cbcsErrorLabel")
+    if not isinstance(value, StringValue):
+        return ""
+    name = value.text.strip()
+    if name and compat.is_name(name) and name in ctx.attribute_names:
+        return name
+    return ""
 
 
 def _project_root(forms_dir: Optional[str]) -> Optional[str]:

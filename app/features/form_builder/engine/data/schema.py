@@ -46,6 +46,7 @@ class Table:
     key: Optional[str] = None
     triggers: bool = False
     rows: Optional[int] = None
+    without_rowid: bool = False
 
 
 @dataclass(frozen=True)
@@ -165,6 +166,7 @@ def _table(obj: JsonObject) -> Tuple[Optional[Table], Optional[str]]:
             key if isinstance(key, str) else None,
             obj.get("triggers") is True,
             None if rows is None else int(rows),
+            obj.get("withoutRowid") is True,
         ),
         None,
     )
@@ -177,6 +179,8 @@ def _table_object(table: Table) -> JsonObject:
     pairs.append(("triggers", table.triggers))
     if table.rows is not None:
         pairs.append(("rows", table.rows))
+    if table.without_rowid:
+        pairs.append(("withoutRowid", True))
     pairs.append(("columns", tuple(_column_object(column) for column in table.columns)))
     return JsonObject(tuple(pairs))
 

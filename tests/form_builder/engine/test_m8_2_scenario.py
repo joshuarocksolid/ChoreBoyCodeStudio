@@ -165,6 +165,21 @@ def test_a_table_without_one_key_is_fb306() -> None:
     bound = _document(_xml(RecordSource("shop", "invoices", "code"), (("QLineEdit", "notesEdit", "notes", ""),)))
     assert any(item.code == "FB306" for item in run_checks(bound, None, text_key))
     assert [item.code for item in run_checks(bound, None, None) if item.code == "FB306"] == []
+    integer = _schema((Column("id", "INTEGER", False),), "id")
+    assert [item.code for item in run_checks(doc, None, integer) if item.code == "FB306"] == []
+    bigint = _schema((Column("id", "BIGINT", False),), "id")
+    assert any(item.code == "FB306" for item in run_checks(doc, None, bigint))
+    without = Schema(
+        "shop",
+        "sqlite",
+        "",
+        "2026-01-01T00:00:00",
+        "sqlite3",
+        (Table("invoices", (Column("id", "INTEGER", False),), key="id", without_rowid=True),),
+    )
+    assert any(item.code == "FB306" for item in run_checks(doc, None, without))
+    typed = _document(_xml(RecordSource("shop", "invoices", "code"), (("QLineEdit", "codeEdit", "code", ""),)))
+    assert [item.code for item in run_checks(typed, None, text_key) if item.code == "FB306"] == []
 
 
 def test_a_symbol_in_a_name_is_fb307() -> None:
@@ -271,6 +286,8 @@ class record_window:
         seen: Optional[List[str]] = None,
         filename: str = "invoice.ui",
         connection_file: str = "data/shop.db",
+        schema: Optional[Schema] = None,
+        during: Optional[Callable[[], None]] = None,
     ) -> None:
         self._tmp = tmp_path
         self._ui = ui_text
@@ -281,6 +298,8 @@ class record_window:
         self._seen = seen if seen is not None else []
         self._filename = filename
         self._connection_file = connection_file
+        self._schema = schema
+        self._during = during
         self._restore: Optional[Callable[[], None]] = None
         self.host: Any = None
         self.db: Optional[Path] = None
@@ -298,11 +317,19 @@ class record_window:
             render_connections_module(value, project_slug="m82"),
             encoding="utf-8",
         )
+        if self._schema is not None:
+            from app.features.form_builder.engine.data.schema import write_schema
+            from app.features.form_builder.engine.data.schema_cache import install_schema_reader
+
+            folder = root / "cbcs" / "schema"
+            folder.mkdir(parents=True)
+            (folder / "shop.json").write_text(write_schema(self._schema), encoding="utf-8")
+            install_schema_reader(str(root))
         source = _generate(root, ui_path, self._ui)
         generated = forms / ("ui_%s.py" % ui_path.stem)
         generated.write_text(source, encoding="utf-8")
         module = _load_module(generated, "ui_%s_m82" % ui_path.stem)
-        _install_boxes(module, self._seen, self._questions, self._choose, self._finder)
+        _install_boxes(module, self._seen, self._questions, self._choose, self._finder, self._during)
         previous = sys.modules.get("cbcs_connections")
         connections = _load_module(root / "cbcs_connections.py", "cbcs_connections")
         sys.path.insert(0, str(root))
@@ -321,6 +348,10 @@ class record_window:
         app.processEvents()
 
         def restore() -> None:
+            if self._schema is not None:
+                from app.features.form_builder.engine.data.schema import set_schema_reader
+
+                set_schema_reader(None)
             closer = getattr(connections, "close_all", None)
             if closer is not None:
                 closer()
@@ -380,6 +411,7 @@ def _install_boxes(
     questions: Optional[List[str]],
     choose: Optional[Callable[[str], str]],
     finder: Optional[Callable[[], Tuple[str, bool]]],
+    during: Optional[Callable[[], None]] = None,
 ) -> None:
     from PySide6.QtWidgets import QMessageBox as RealBox
 
@@ -402,10 +434,14 @@ def _install_boxes(
         @staticmethod
         def warning(_parent: object, _title: str, text: str) -> object:  # type: ignore[override]
             seen.append(text)
+            if during is not None:
+                during()
             return RealBox.StandardButton.Ok
 
         def exec(self) -> int:  # type: ignore[override]  # noqa: A003 - Qt spells it exec
             seen.append(self.text())
+            if during is not None:
+                during()
             label = choose(self.text()) if choose is not None else None
             picked = None
             for button in self.buttons():

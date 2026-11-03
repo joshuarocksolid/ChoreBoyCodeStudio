@@ -29,6 +29,9 @@ class _Binding(QWidget):
         self.setObjectName("formBuilder.inspectorData.binding")
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 8, 0, 0)
+        self._column_label = QLabel("Column", self)
+        self._column_label.setObjectName("formBuilder.inspectorData.columnLabel")
+        layout.addWidget(self._column_label)
         self._column = QComboBox(self)
         self._column.setObjectName("formBuilder.inspectorData.column")
         layout.addWidget(self._column)
@@ -57,7 +60,7 @@ class _Binding(QWidget):
         self._column.blockSignals(True)
         self._read_only.blockSignals(True)
         self._column.clear()
-        self._column.addItem("(not bound)", "")
+        self._column.addItem("Bind", "")
         node = _selected_field(session)
         source = record_source(session.document) if session is not None else None
         names: tuple = ()
@@ -69,6 +72,7 @@ class _Binding(QWidget):
         current = bind_text(node) if node is not None else ""
         found = self._column.findData(current)
         self._column.setCurrentIndex(found if found >= 0 else 0)
+        self._column_label.setText("Column" if current else "Not bound")
         self._words.setText(_words(session, source, current))
         self._read_only.setChecked(read_only(node) if node is not None else False)
         self._read_only.setEnabled(bool(current))

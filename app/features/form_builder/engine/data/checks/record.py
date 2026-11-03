@@ -17,7 +17,7 @@ from app.features.form_builder.engine.data.check import DataCheck
 from app.features.form_builder.engine.data.schema import Schema, schema_for
 from app.features.form_builder.engine.data.source import read_bind, read_bind_mode, read_data, singular
 from app.features.form_builder.engine.data.sql import is_identifier
-from app.features.form_builder.engine.data.types import describe, sqlite_affinity
+from app.features.form_builder.engine.data.types import describe, is_sqlite_rowid, sqlite_affinity
 from app.features.form_builder.engine.diagnostics import CODES, DiagnosticLocation, FormDiagnostic
 from app.features.form_builder.engine.ui4.values import NumberValue, StringValue
 
@@ -149,7 +149,7 @@ def _key(doc: object, connections: object, schema: object) -> Iterable[FormDiagn
     column = _column(table, table.key)
     if column is None:
         return ()
-    if sqlite_affinity(column.type) == "INTEGER":
+    if is_sqlite_rowid(column.type, without_rowid=bool(getattr(table, "without_rowid", False))):
         return ()
     if _writable_bound(doc, table.key):
         return ()

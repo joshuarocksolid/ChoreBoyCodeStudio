@@ -120,13 +120,12 @@ def work(name):
     _DEPTH[name] = _DEPTH.get(name, 0) + 1
     try:
         yield connection
+        if outer:
+            connection.commit()
     except BaseException:
         if outer:
             _rollback(connection)
         raise
-    else:
-        if outer:
-            connection.commit()
     finally:
         _DEPTH[name] = _DEPTH.get(name, 0) - 1
         if _DEPTH.get(name, 0) <= 0:

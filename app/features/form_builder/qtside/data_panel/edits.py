@@ -16,7 +16,7 @@ from app.features.form_builder.engine.logic.codec import Step
 from app.features.form_builder.engine.logic.events_codec import EventStep
 from app.features.form_builder.engine.ui4.nodes import LayoutNode, WidgetNode
 from app.features.form_builder.engine.ui4.spec import Fragment, NodeSpec, PropertyEntry
-from app.features.form_builder.engine.ui4.values import NumberValue, StringValue
+from app.features.form_builder.engine.ui4.values import NumberValue, SizePolicyValue, StringValue
 from app.features.form_builder.qtside.data_panel.model import (
     HOOK_ROWS,
     bind_text,
@@ -41,7 +41,7 @@ _BAR = (
     ("lastButton", "QPushButton", "Last", "Ctrl+End", "form.position < form.count", "last"),
     ("newButton", "QPushButton", "New", "Ctrl+N", "", "new"),
     ("saveButton", "QPushButton", "Save", "Ctrl+S", "form.isDirty or form.isNew", "save"),
-    ("revertButton", "QPushButton", "Undo", "", "form.isDirty", "revert"),
+    ("revertButton", "QPushButton", "Revert", "", "form.isDirty", "revert"),
     ("deleteButton", "QPushButton", "Delete", "", "not form.isNew", "delete"),
     ("findButton", "QPushButton", "Find", "Ctrl+F", "", "find"),
 )
@@ -328,7 +328,10 @@ def _box_placement(layout: LayoutNode):
 def _toolbar_spec() -> NodeSpec:
     widgets = []
     for name, class_name, text, shortcut, _formula, _verb in _BAR:
-        props = [PropertyEntry("property", "text", StringValue(text))]
+        props = [
+            PropertyEntry("property", "text", StringValue(text)),
+            PropertyEntry("property", "sizePolicy", SizePolicyValue("Fixed", "Fixed")),
+        ]
         if shortcut:
             props.append(PropertyEntry("property", "shortcut", StringValue(shortcut)))
         widgets.append(

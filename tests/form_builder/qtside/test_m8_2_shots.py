@@ -34,7 +34,8 @@ from app.features.form_builder.qtside.data_panel.panel import DataPanel
 from app.features.form_builder.qtside.data_panel.sheets import ConnectSheet, SqlDialog
 from app.features.form_builder.qtside.inspector.data_page import DataPage
 from app.qt.QtCore import QTimer
-from app.qt.QtWidgets import QApplication, QMessageBox, QWidget
+from app.qt.QtGui import QColor, QPalette
+from app.qt.QtWidgets import QApplication, QLabel, QMessageBox, QWidget
 from app.shell.theme_tokens import tokens_from_palette
 
 pytestmark = pytest.mark.unit
@@ -86,6 +87,28 @@ _SCHEMA = Schema(
     ),
 )
 
+_RUNTIME_SCHEMA = Schema(
+    "office",
+    "sqlite",
+    "SQLite",
+    "2026-11-02T16:00:00",
+    "sqlite3",
+    (
+        Table(
+            "invoices",
+            (
+                Column("id", "INTEGER", False),
+                Column("invoice_no", "TEXT", False, unique=True),
+                Column("customer_id", "INTEGER", True),
+                Column("invoice_date", "date", True),
+                Column("notes", "TEXT", True),
+                Column("total", "NUMERIC", True),
+            ),
+            key="id",
+        ),
+    ),
+)
+
 
 def test_data_tab_shots(qapp, tmp_path: Path) -> None:
     directory = os.environ.get("CBCS_FB_SCREENSHOT_DIR", "").strip()
@@ -112,7 +135,7 @@ def test_data_tab_shots(qapp, tmp_path: Path) -> None:
             bind_field(session, session.document.by_name("notesEdit")[0], "notes")
             connected = DataPanel(host)
             connected.reload()
-            _shoot(connected, qapp, root, "connected-data", 440, 520)
+            _shoot(connected, qapp, root, "connected-data", 640, 420)
             sql_dialog = SqlDialog(host, session)
             _shoot(sql_dialog, qapp, root, "show-sql", 680, 520)
             notes = session.document.by_name("notesEdit")[0]
@@ -145,10 +168,14 @@ def _runtime(qapp: QApplication, tmp_path: Path, root: Path) -> None:
     data.mkdir()
     database = data / "office.sqlite"
     connection = sqlite3.connect(str(database))
-    connection.execute("CREATE TABLE invoices (id INTEGER PRIMARY KEY, notes TEXT)")
+    connection.execute("CREATE TABLE invoices (id INTEGER PRIMARY KEY, invoice_no TEXT NOT NULL UNIQUE, customer_id INTEGER, invoice_date TEXT, notes TEXT, total NUMERIC)")
     connection.executemany(
-        "INSERT INTO invoices (id, notes) VALUES (?, ?)",
-        ((1, "First"), (2, "Second"), (3, "Third")),
+        "INSERT INTO invoices (id, invoice_no, customer_id, invoice_date, notes, total) VALUES (?, ?, ?, ?, ?, ?)",
+        (
+            (1, "INV-1", 1, "2026-01-15", "First", 10),
+            (2, "INV-2", 1, "2026-02-15", "Second", 20),
+            (3, "INV-3", 1, None, "Third", 30),
+        ),
     )
     connection.commit()
     connection.close()
@@ -158,15 +185,23 @@ def _runtime(qapp: QApplication, tmp_path: Path, root: Path) -> None:
         slug="shots",
     )
     _cache(project)
-    set_schema_reader(lambda _doc, _name: _SCHEMA)
+    set_schema_reader(lambda _doc, _name: _RUNTIME_SCHEMA)
     text = """<?xml version="1.0" encoding="UTF-8"?>
 <ui version="4.0">
  <class>InvoiceForm</class>
  <widget class="QWidget" name="InvoiceForm">
   <layout class="QVBoxLayout" name="verticalLayout">
-   <item>
-    <widget class="QLineEdit" name="notesEdit"/>
-   </item>
+   <item><widget class="QLabel" name="invoiceNoLabel"><property name="text"><string>Invoice number</string></property><property name="buddy"><cstring>invoiceNoEdit</cstring></property></widget></item>
+   <item><widget class="QLineEdit" name="invoiceNoEdit"><property name="cbcsErrorLabel" stdset="0"><string notr="true">invoiceNoError</string></property></widget></item>
+   <item><widget class="QLabel" name="invoiceNoError"><property name="text"><string></string></property></widget></item>
+   <item><widget class="QLabel" name="customerLabel"><property name="text"><string>Customer</string></property><property name="buddy"><cstring>customerIdSpin</cstring></property></widget></item>
+   <item><widget class="QSpinBox" name="customerIdSpin"/></item>
+   <item><widget class="QLabel" name="dateLabel"><property name="text"><string>Invoice date</string></property><property name="buddy"><cstring>invoiceDateEdit</cstring></property></widget></item>
+   <item><widget class="QDateEdit" name="invoiceDateEdit"/></item>
+   <item><widget class="QLabel" name="notesLabel"><property name="text"><string>Notes</string></property><property name="buddy"><cstring>notesEdit</cstring></property></widget></item>
+   <item><widget class="QLineEdit" name="notesEdit"/></item>
+   <item><widget class="QLabel" name="totalLabel"><property name="text"><string>Total</string></property><property name="buddy"><cstring>totalSpin</cstring></property></widget></item>
+   <item><widget class="QDoubleSpinBox" name="totalSpin"/></item>
   </layout>
  </widget>
 </ui>
@@ -184,9 +219,16 @@ def _runtime(qapp: QApplication, tmp_path: Path, root: Path) -> None:
     try:
         connect_form(
             session,
-            RecordSource("office", "invoices", "id", conflicts="overwrite"),
+            RecordSource("office", "invoices", "id", allow_overwrite=True),
         )
-        bind_field(session, session.document.by_name("notesEdit")[0], "notes")
+        for widget_name, column in (
+            ("invoiceNoEdit", "invoice_no"),
+            ("customerIdSpin", "customer_id"),
+            ("invoiceDateEdit", "invoice_date"),
+            ("notesEdit", "notes"),
+            ("totalSpin", "total"),
+        ):
+            bind_field(session, session.document.by_name(widget_name)[0], column)
         insert_record_toolbar(session)
         written = write_ui(session.document).text
         ui_path.write_text(written, encoding="utf-8")
@@ -208,9 +250,22 @@ def _runtime(qapp: QApplication, tmp_path: Path, root: Path) -> None:
         shown = label.text() if label is not None and hasattr(label, "text") else ""
         print("record label:", repr(shown))
         if shown == "Record 2 of 3":
-            _shoot(window, qapp, root, "record-window", 760, 220)
+            _shoot(window, qapp, root, "record-window", 420, 480)
         else:
             print("runtime shot missing: record window did not show Record 2 of 3")
+        if hasattr(ui, "cbcs_next") and hasattr(ui, "invoiceDateEdit"):
+            ui.cbcs_next()
+            if ui.invoiceDateEdit.text().strip() == "":
+                _shoot(window, qapp, root, "null-date", 420, 480)
+            else:
+                print("runtime shot missing: null date showed", repr(ui.invoiceDateEdit.text()))
+        if hasattr(ui, "cbcs_save") and hasattr(ui, "invoiceNoEdit") and hasattr(ui, "invoiceNoError"):
+            ui.invoiceNoEdit.setText("INV-1")
+            ui.cbcs_save()
+            if ui.invoiceNoError.isVisible() and "already uses" in ui.invoiceNoError.text():
+                _shoot(window, qapp, root, "db-error", 420, 480)
+            else:
+                print("runtime shot missing: database error label", repr(getattr(ui.invoiceNoError, "text", lambda: "")()))
         if hasattr(ui, "_cbcs_confirm_leave") and hasattr(ui, "notesEdit"):
             ui.notesEdit.setText("Changed")
             _grab_modal(ui._cbcs_confirm_leave, qapp, root, "unsaved-prompt")
@@ -238,7 +293,17 @@ def _grab_modal(call: Callable[[], object], qapp: QApplication, root: Path, name
             return
         for mode in _MODES:
             tokens = tokens_from_palette(box.palette(), force_mode=mode)
+            box.setObjectName("formBuilder.dataChrome")
+            ink = QColor(tokens.text_primary)
+            palette = box.palette()
+            palette.setColor(QPalette.ColorRole.Window, QColor(tokens.panel_bg))
+            palette.setColor(QPalette.ColorRole.WindowText, ink)
+            palette.setColor(QPalette.ColorRole.Text, ink)
+            palette.setColor(QPalette.ColorRole.ButtonText, ink)
+            box.setPalette(palette)
             box.setStyleSheet(chrome_qss(tokens, "formBuilder.dataChrome"))
+            for label in box.findChildren(QLabel):
+                label.setStyleSheet("color: %s; background: transparent;" % tokens.text_primary)
             qapp.processEvents()
             path = root / ("%s-%s.png" % (name, mode))
             box.grab().save(str(path))

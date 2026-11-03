@@ -21,12 +21,10 @@ from app.features.form_builder.qtside.data_panel.model import (
 )
 from app.features.form_builder.qtside.data_panel.sections_ext import PanelSection
 from app.qt.QtCore import QByteArray, Qt
-from app.qt.QtGui import QDrag
+from app.qt.QtGui import QCursor, QDrag
 from app.qt.QtWidgets import (
-    QHBoxLayout,
+    QGridLayout,
     QLabel,
-    QPushButton,
-    QScrollArea,
     QSizePolicy,
     QVBoxLayout,
     QWidget,
@@ -76,29 +74,31 @@ class _Row(QWidget):
         self.setObjectName("formBuilder.data.columnRow")
         self.setProperty("column", column.name)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
-        self.setMinimumHeight(24)
+        self.setFixedHeight(24)
         self._section = section
         self._column = column
         self._press: Optional[object] = None
-        layout = QHBoxLayout(self)
-        layout.setContentsMargins(0, 2, 0, 2)
+        layout = QGridLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setHorizontalSpacing(8)
+        layout.setColumnStretch(0, 1)
+        layout.setColumnMinimumWidth(1, 112)
         name = QLabel(column.name, self)
-        name.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Preferred)
-        layout.addWidget(name)
-        badges = QLabel(_badges(section, column), self)
-        badges.setProperty("fbFaint", True)
-        layout.addWidget(badges)
-        words = QLabel(self)
-        words.setWordWrap(True)
-        words.setMaximumWidth(184)
-        words.setProperty("fbFaint", True)
-        layout.addWidget(words, 1)
-        self._words = words
-        self._bound = QPushButton(self)
+        name.setFixedWidth(112)
+        name.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+        layout.addWidget(name, 0, 0)
+        self._words = QLabel(self)
+        self._words.setFixedWidth(148)
+        self._words.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+        layout.addWidget(self._words, 0, 1)
+        self._badges = QLabel(self)
+        self._badges.setProperty("fbFaint", True)
+        self._badges.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Preferred)
+        layout.addWidget(self._badges, 0, 2)
+        self._bound = QLabel(self)
         self._bound.setObjectName("formBuilder.data.bound")
-        self._bound.setFlat(True)
-        self._bound.clicked.connect(self._select)
-        layout.addWidget(self._bound)
+        self._bound.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        layout.addWidget(self._bound, 0, 3)
         self.refresh()
 
     def refresh(self) -> None:
@@ -107,12 +107,18 @@ class _Row(QWidget):
         engine = column_engine(session.document, source, session, self._section) if source is not None and session is not None else "sqlite"
         kind = column_kind(self._column, engine, lookup=True)
         self._words.setText(str(getattr(kind, "words", "")))
+        self._badges.setText(_badges(self._section, self._column))
         field = bound_field(session.document, self._column.name) if session is not None else ""
-        self._bound.setText(field or "(not bound)")
-        if not field:
-            self._bound.setProperty("fbFaint", True)
-        else:
+        if field:
+            self._bound.setText(field)
+            self._bound.setProperty("fbLink", True)
             self._bound.setProperty("fbFaint", False)
+            self._bound.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        else:
+            self._bound.setText("(not bound)")
+            self._bound.setProperty("fbLink", False)
+            self._bound.setProperty("fbFaint", True)
+            self._bound.setCursor(QCursor(Qt.CursorShape.ArrowCursor))
         phrase = "bound to %s" % field if field else "not bound"
         self.setAccessibleName("%s, %s, %s" % (self._column.name, getattr(kind, "words", ""), phrase))
 
@@ -126,6 +132,10 @@ class _Row(QWidget):
             session.selection.set((ids[0],), source=SelectionSource.PROGRAM)
 
     def mousePressEvent(self, event: object) -> None:  # noqa: N802
+        child = self.childAt(event_pos(event))  # type: ignore[attr-defined]
+        if child is self._bound and self._bound.property("fbLink"):
+            self._select()
+            return
         self._press = event_pos(event)
         super().mousePressEvent(event)  # type: ignore[arg-type]
 
@@ -165,16 +175,15 @@ class _Columns(QWidget):
     def __init__(self, host: Any) -> None:
         super().__init__(host)
         self.setObjectName("formBuilder.data.columns")
+        self.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
         self._host = host
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 8, 0, 0)
-        self._scroll = QScrollArea(self)
-        self._scroll.setWidgetResizable(True)
-        self._inner = QWidget()
+        self._inner = QWidget(self)
         self._rows = QVBoxLayout(self._inner)
         self._rows.setContentsMargins(0, 0, 0, 0)
-        self._scroll.setWidget(self._inner)
-        layout.addWidget(self._scroll)
+        self._rows.setSpacing(0)
+        layout.addWidget(self._inner)
         self._hook = _Hook(self)
         register_mime_hook(self._hook)
         self.destroyed.connect(lambda: unregister_mime_hook(self._hook))
@@ -197,7 +206,6 @@ class _Columns(QWidget):
         table = table_of(session.document, source)
         for column in getattr(table, "columns", ()) or ():
             self._rows.addWidget(_Row(self._inner, self, column))
-        self._rows.addStretch(1)
 
 
 def _create(host: Any) -> QWidget:

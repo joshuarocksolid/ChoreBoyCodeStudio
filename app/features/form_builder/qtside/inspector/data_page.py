@@ -4,6 +4,9 @@ from __future__ import annotations
 
 from typing import Dict, Sequence
 
+from types import SimpleNamespace
+
+from app.features.form_builder.qtside.checkbox_qss import checkbox_indicators
 from app.qt.QtWidgets import QVBoxLayout, QWidget
 
 from app.features.form_builder.qtside.data_panel.host import note_data_tab
@@ -61,7 +64,7 @@ class DataPage(QWidget):
         border = border or faint
         width = focus_width if focus_width > 0 else 1
         body = "QWidget#formBuilder\\.dataBody"
-        self.setStyleSheet(
+        sheet = (
             "%s { background: %s; color: %s; }"
             "%s QLabel { color: %s; background: transparent; }"
             "%s QLabel#formBuilder\\.inspectorData\\.sentence, %s QLabel#formBuilder\\.inspectorData\\.notBound,"
@@ -82,6 +85,14 @@ class DataPage(QWidget):
                 body, text,
             )
         )
+        marks = SimpleNamespace(
+            focus_border_width=width,
+            accent=accent,
+            border=border,
+            input_bg=input_bg,
+            panel_bg=panel,
+        )
+        self.setStyleSheet(sheet + checkbox_indicators(marks))
 
     def _show(self, class_name: str) -> None:
         sections = default_registry().sections()

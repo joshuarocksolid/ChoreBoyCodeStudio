@@ -36,6 +36,7 @@ _RECORD_KEYS = (
     "order",
     "openAt",
     "conflicts",
+    "allowOverwrite",
     "deleteLines",
     "search",
     "hooks",
@@ -78,6 +79,7 @@ class RecordSource:
     order: Optional[Tuple[Tuple[str, str], ...]] = None
     open_at: Optional[str] = None
     conflicts: Optional[str] = None
+    allow_overwrite: bool = False
     delete_lines: Optional[bool] = None
     search: Tuple[str, ...] = ()
     hooks: Optional[Hooks] = None
@@ -287,6 +289,13 @@ def _read_record(obj: JsonObject) -> DataRead:
     conflicts = values.get("conflicts")
     if not isinstance(conflicts, str) or conflicts in ("", "check"):
         conflicts = None
+    allow_raw = values.get("allowOverwrite")
+    if allow_raw is None:
+        allow_overwrite = False
+    elif isinstance(allow_raw, bool):
+        allow_overwrite = allow_raw
+    else:
+        return DataRead(None, "allowOverwrite must be true or false")
     delete_lines = values.get("deleteLines")
     if delete_lines is True or delete_lines is None:
         stored_delete: Optional[bool] = None
@@ -311,6 +320,7 @@ def _read_record(obj: JsonObject) -> DataRead:
             order,
             open_at,
             conflicts,
+            allow_overwrite,
             stored_delete,
             _strings(values.get("search")),
             hooks,
@@ -331,6 +341,8 @@ def _record_object(value: RecordSource) -> JsonObject:
         pairs.append(("openAt", value.open_at))
     if value.conflicts and value.conflicts != "check":
         pairs.append(("conflicts", value.conflicts))
+    if value.allow_overwrite:
+        pairs.append(("allowOverwrite", True))
     if value.delete_lines is False:
         pairs.append(("deleteLines", False))
     if value.search:

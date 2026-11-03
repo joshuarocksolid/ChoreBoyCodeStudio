@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+from app.features.form_builder.qtside.checkbox_qss import checkbox_indicators
+
 
 def chrome_qss(tokens: object, root_name: str) -> str:
     width = int(getattr(tokens, "focus_border_width", 1) or 1)
     name = root_name.replace(".", "\\.")
-    return (
+    sheet = (
         "QWidget#%s { background: %s; color: %s; }"
         "QLabel { color: %s; background: transparent; }"
         "QLabel[fbFaint=\"true\"] { color: %s; }"
@@ -18,6 +20,8 @@ def chrome_qss(tokens: object, root_name: str) -> str:
         "QPushButton:disabled, QToolButton:disabled { color: %s; }"
         "QPushButton:focus, QToolButton:focus { border: %dpx solid %s; }"
         "QCheckBox { color: %s; background: transparent; }"
+        "QLabel[fbLink=\"true\"] { color: %s; }"
+        "QMessageBox QLabel, QLabel#qt_msgbox_label { color: %s; background: transparent; }"
     ) % (
         name,
         tokens.panel_bg,  # type: ignore[attr-defined]
@@ -38,7 +42,10 @@ def chrome_qss(tokens: object, root_name: str) -> str:
         width,
         tokens.accent,  # type: ignore[attr-defined]
         tokens.text_primary,  # type: ignore[attr-defined]
+        tokens.accent,  # type: ignore[attr-defined]
+        tokens.text_primary,  # type: ignore[attr-defined]
     )
+    return sheet + checkbox_indicators(tokens)
 
 
 def apply_chrome(widget: object, tokens: object) -> None:

@@ -89,7 +89,11 @@ def like_piece(dialect: str, column: str) -> str:
 
     op = "ILIKE" if _dialect(dialect) == "postgres" else "LIKE"
     # A date or number has no LIKE operator on PostgreSQL 9.3. Text does.
-    return "CAST(%s AS TEXT) %s %s ESCAPE '\\'" % (quote_ident(column), op, placeholder(dialect))
+    # standard_conforming_strings is on, so a plain '\\' is two characters.
+    # E'\\' is one backslash. SQLite keeps the ordinary string.
+    one = "\\"
+    escape = "E'%s%s'" % (one, one) if dialect == "postgres" else "'%s'" % one
+    return "CAST(%s AS TEXT) %s %s ESCAPE %s" % (quote_ident(column), op, placeholder(dialect), escape)
 
 
 def assign_sql(dialect: str, column: str) -> str:
@@ -237,7 +241,8 @@ def _order_by(key: str, order: Sequence[Sequence[str]]) -> str:
         parts.append("%s %s" % (quote_ident(str(column)), last))
     if not parts:
         last = "ASC"
-    parts.append("%s %s" % (quote_ident(key), last))
+    if not any(item[0] == key for item in order if len(item) == 2):
+        parts.append("%s %s" % (quote_ident(key), last))
     return " ORDER BY " + ", ".join(parts)
 
 

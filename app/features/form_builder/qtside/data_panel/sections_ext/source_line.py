@@ -25,12 +25,14 @@ def _create(host: Any) -> QWidget:
     change.setObjectName("formBuilder.data.change")
     change.clicked.connect(lambda: _change(host))
     layout.addWidget(change)
-    more = QPushButton("More", body)
+    more = QPushButton("\u22ef", body)
     more.setObjectName("formBuilder.data.more")
+    more.setStyleSheet("QPushButton::menu-indicator { image: none; width: 0px; }")
     menu = QMenu(more)
     menu.addAction("Show SQL", lambda: _menu(host, "sql"))
     menu.addAction("Python hooks\u2026", lambda: _menu(host, "hooks"))
-    menu.addAction("Disconnect", lambda: _menu(host, "disconnect"))
+    menu.addAction("Eject to code\u2026", lambda: _menu(host, "eject"))
+    menu.addAction("Disconnect\u2026", lambda: _menu(host, "disconnect"))
     more.setMenu(menu)
     layout.addWidget(more)
 
@@ -65,6 +67,9 @@ def _menu(host: Any, which: str) -> None:
         return
     if which == "hooks":
         open_hooks_sheet(host)
+        return
+    if which == "eject":
+        narrate(host, "Eject to code is not available on this form yet.")
         return
     session = owner_session(host)
     if session is None:

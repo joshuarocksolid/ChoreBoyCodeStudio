@@ -37,6 +37,7 @@ from app.qt.QtWidgets import (
     QPlainTextEdit,
     QApplication,
     QPushButton,
+    QSizePolicy,
     QVBoxLayout,
     QWidget,
 )
@@ -128,6 +129,10 @@ class SourceForm(QWidget):
         self._filter.setObjectName("formBuilder.data.tableFilter")
         self._tables = QListWidget(self)
         self._tables.setObjectName("formBuilder.data.tables")
+        self._tables.setFixedHeight(8 * 24)
+        self._tables.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self._keep = QCheckBox("Let people keep their version on a conflict", self)
+        self._keep.setObjectName("formBuilder.data.allowOverwrite")
         self._key = QLabel(self)
         self._key.setObjectName("formBuilder.data.key")
         self._notice = QLabel(self)
@@ -165,6 +170,7 @@ class SourceForm(QWidget):
             ("Order", order_box),
             ("Opens at", self._opens),
             ("Record word", self._word),
+            ("", self._keep),
         ):
             if title:
                 label = QLabel(title, self)
@@ -197,6 +203,7 @@ class SourceForm(QWidget):
         self.reload()
         if source is None:
             self._word_edited = False
+            self._keep.setChecked(False)
             self._on_table()
             self._loading = False
             return
@@ -212,6 +219,7 @@ class SourceForm(QWidget):
             self._opens.setCurrentIndex(found)
         self._word.setText(record_word(source))
         self._word_edited = source.record_word not in (None, "")
+        self._keep.setChecked(bool(source.allow_overwrite or source.conflicts == "overwrite"))
         self._loading = False
 
     def source(self) -> Optional[RecordSource]:
@@ -234,6 +242,7 @@ class SourceForm(QWidget):
             record_word=None if not word or word == default_word else word,
             order=None if order == ((str(key), "asc"),) else order,
             open_at=None if open_at in (None, "", "first") else str(open_at),
+            allow_overwrite=self._keep.isChecked(),
         )
 
     def _reload_tables(self) -> None:

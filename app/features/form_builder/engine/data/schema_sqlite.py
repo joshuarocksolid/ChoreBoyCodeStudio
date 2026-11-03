@@ -68,7 +68,14 @@ def _table(connection: sqlite3.Connection, name: str, triggers: bool) -> Table:
                 references.get(column),
             )
         )
-    return Table(name, tuple(columns), key, triggers, _rows(connection, name))
+    return Table(
+        name,
+        tuple(columns),
+        key,
+        triggers,
+        _rows(connection, name),
+        _without_rowid(connection, name),
+    )
 
 
 def _unique_columns(connection: sqlite3.Connection, table: str) -> set:
@@ -116,6 +123,15 @@ def _pragma(connection: sqlite3.Connection, name: str, argument: str) -> Sequenc
     description = cursor.description or ()
     keys = [str(item[0]) for item in description]
     return [dict(zip(keys, row)) for row in cursor.fetchall()]
+
+
+def _without_rowid(connection: sqlite3.Connection, name: str) -> bool:
+    row = connection.execute(
+        "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?",
+        (name,),
+    ).fetchone()
+    text = "" if row is None or row[0] is None else str(row[0]).upper()
+    return "WITHOUT ROWID" in text
 
 
 def _ident(name: str) -> str:

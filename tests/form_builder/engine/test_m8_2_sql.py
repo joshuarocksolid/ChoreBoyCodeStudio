@@ -41,10 +41,12 @@ def _like(dialect: str) -> str:
 def test_select_keys_orders_by_the_source_then_the_key(dialect: str) -> None:
     statement = select_keys(dialect, "invoices", "id", _ORDER)
     assert statement.text == (
-        'SELECT "id" FROM "invoices" ORDER BY "invoice_date" DESC, "id" DESC, "id" DESC'
+        'SELECT "id" FROM "invoices" ORDER BY "invoice_date" DESC, "id" DESC'
     )
     assert statement.params_order == ()
     assert statement.caption == "List invoice keys"
+    dated = select_keys(dialect, "invoices", "id", (("invoice_date", "desc"),))
+    assert dated.text == 'SELECT "id" FROM "invoices" ORDER BY "invoice_date" DESC, "id" DESC'
     bare = select_keys(dialect, "invoices", "id", ())
     assert bare.text == 'SELECT "id" FROM "invoices" ORDER BY "id" ASC'
 
@@ -109,14 +111,15 @@ def test_find_uses_like_or_ilike_with_one_backslash(dialect: str) -> None:
     statement = find_keys(dialect, "invoices", "id", _ORDER, ("invoice_no", "notes"))
     mark = _mark(dialect)
     op = _like(dialect)
+    escape = "E'\\\\'" if dialect == "postgres" else "'\\'"
     assert statement.text == (
-        'SELECT "id" FROM "invoices" WHERE (CAST("invoice_no" AS TEXT) %s %s ESCAPE \'\\\' OR CAST("notes" AS TEXT) %s %s ESCAPE \'\\\')'
-        % (op, mark, op, mark)
-        + ' ORDER BY "invoice_date" DESC, "id" DESC, "id" DESC'
+        "SELECT \"id\" FROM \"invoices\" WHERE (CAST(\"invoice_no\" AS TEXT) %s %s ESCAPE %s OR CAST(\"notes\" AS TEXT) %s %s ESCAPE %s)"
+        % (op, mark, escape, op, mark, escape)
+        + ' ORDER BY "invoice_date" DESC, "id" DESC'
     )
     assert statement.params_order == ("find:invoice_no", "find:notes")
     assert statement.caption == "Find invoice keys"
-    assert statement.text.count("\\") == 2
+    assert statement.text.count("\\") == (4 if dialect == "postgres" else 2)
 
 
 def test_a_bad_name_is_not_quoted() -> None:
