@@ -155,6 +155,7 @@ def test_outline_item_text_screenshots(qapp: QApplication, tmp_path) -> None:  #
     folder = os.environ.get("CBCS_FB_SCREENSHOT_DIR") or ""
     if not folder:
         pytest.skip("CBCS_FB_SCREENSHOT_DIR is not set")
+        return
     out = Path(folder)
     out.mkdir(parents=True, exist_ok=True)
     parent = QWidget()

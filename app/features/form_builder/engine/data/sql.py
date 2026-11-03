@@ -580,6 +580,88 @@ PG8000_SCAN_SENTENCE = (
 )
 
 
+def statement_words(sql: str) -> Optional[Tuple[str, ...]]:
+    """Words outside quotes and comments, with ``;`` kept as its own word.
+
+    ``None`` when a quote or a block comment is unfinished. ``SELECT '--'; COMMIT``
+    is ``("SELECT", ";", "COMMIT")``.
+    """
+
+    words = _sql_words(sql)
+    if words is None:
+        return None
+    return tuple(words)
+
+
+def has_extra_statement(sql: str) -> bool:
+    """True when another statement follows a semicolon, or a quote is unfinished.
+
+    A single trailing semicolon is still one statement.
+    """
+
+    words = statement_words(sql)
+    if words is None:
+        return True
+    seen_word = False
+    after = False
+    for word in words:
+        if word == ";":
+            if seen_word:
+                after = True
+            continue
+        if word in ("(", ")"):
+            if after:
+                return True
+            continue
+        if after:
+            return True
+        seen_word = True
+    return False
+
+
+def sql_without_comments(sql: str) -> str:
+    """SQL with ``--`` and ``/* */`` removed. Quotes, including ``E'…'`` and ``$tag$``, stay."""
+
+    out: List[str] = []
+    index = 0
+    length = len(sql)
+    while index < length:
+        char = sql[index]
+        nxt = sql[index + 1] if index + 1 < length else ""
+        if char == "-" and nxt == "-":
+            end = sql.find("\n", index + 2)
+            index = length if end < 0 else end
+            continue
+        if char == "/" and nxt == "*":
+            end = sql.find("*/", index + 2)
+            index = length if end < 0 else end + 2
+            continue
+        if char in ("E", "e") and nxt == "'" and not _ident_before(sql, index):
+            end = _end_escape_string(sql, index + 2)
+            out.append(sql[index:min(end, length)])
+            index = end
+            continue
+        tag = _dollar_tag(sql, index)
+        if tag is not None:
+            closer = "$%s$" % tag
+            end = sql.find(closer, index + len(closer))
+            if end < 0:
+                out.append(sql[index:])
+                break
+            end = end + len(closer)
+            out.append(sql[index:end])
+            index = end
+            continue
+        if char in ("'", '"'):
+            end = _end_quote(sql, index + 1, char)
+            out.append(sql[index:min(end, length)])
+            index = end
+            continue
+        out.append(char)
+        index += 1
+    return "".join(out).strip()
+
+
 def pg8000_scan_closed(sql: str) -> bool:
     """True when pg8000 would be outside quotes before a placeholder.
 

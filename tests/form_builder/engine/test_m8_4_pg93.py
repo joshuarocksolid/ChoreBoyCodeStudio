@@ -238,6 +238,125 @@ def test_an_update_outside_work_stops_on_the_session_lock_timeout(driver: str) -
     assert elapsed < 4.5
 
 
+@pytest.mark.parametrize("driver", ["psycopg", "pg8000"])
+@pytest.mark.parametrize("mode", ["rollback", "would_run"])
+def test_a_second_statement_and_a_side_effect_call_do_not_stick(driver: str, mode: str) -> None:
+    from app.features.form_builder.qtside.preview.child.try_connections import SEQUENCE_WARNING, activate
+
+    raw, fields = _connect(driver)
+    _reset(raw)
+    before = _fingerprint(raw)
+    seq_before = _sequence(raw)
+    view = "side-%s-%s" % (driver, mode)
+    session = begin_try(_start(view, _spec(fields, mode)), drivers=(driver,))
+    assert session is not None
+    try:
+        module = __import__("cbcs_connections")
+        module.set_password("shop", fields["password"])
+        with activate(view):
+            with module.work("shop") as connection:
+                cursor = connection.cursor()
+                cursor.execute("UPDATE m84_invoices SET notes='multi' WHERE id=1; COMMIT")
+                cursor.execute("SELECT 1; UPDATE m84_invoices SET notes='multi2' WHERE id=1; COMMIT")
+                cursor.execute("UPDATE m84_invoices SET notes='w1' WHERE id=1")
+                cursor.execute("SELECT 1; COMMIT")
+                cursor.execute("SELECT '--'; COMMIT")
+                cursor.execute("SELECT setval('m84_invoices_id_seq', 500)")
+                cursor.execute("SELECT set_config('statement_timeout', '0', false)")
+                cursor.execute("EXPLAIN (ANALYZE) UPDATE m84_invoices SET notes='explained' WHERE id=1")
+                cursor.execute("EXPLAIN ANALYSE UPDATE m84_invoices SET notes='explained' WHERE id=1")
+                cursor.execute("SELECT nextval('m84_invoices_id_seq')")
+                if mode == "rollback":
+                    assert cursor.fetchall()
+                if mode == "would_run":
+                    cursor.execute("SELECT pg_terminate_backend(0)")
+                    cursor.execute("SELECT lo_import('/tmp/cbcs-no-such')")
+                    cursor.execute("SELECT dblink_connect('host=127.0.0.1')")
+            opened = module.open_connection("shop")
+            assert not hasattr(opened, "_raw")
+    finally:
+        end_all()
+        after = _fingerprint(raw)
+        seq_after = _sequence(raw)
+        _reset(raw)
+        raw.close()
+    assert after == before
+    text = " ".join(item.sentence for item in session.notes)
+    assert "Another statement" in text
+    assert "setval" in text
+    assert "set_config" in text
+    if mode == "would_run":
+        assert seq_after == seq_before
+        assert "pg_terminate_backend" in text
+    else:
+        assert any(item.sentence == SEQUENCE_WARNING.format(n=seq_after, sequence="m84_invoices_id_seq", record="invoice") for item in session.notes)
+
+
+@pytest.mark.parametrize("driver", ["psycopg", "pg8000"])
+def test_set_config_cannot_disable_the_try_timeout(driver: str) -> None:
+    from app.features.form_builder.qtside.preview.child.try_connections import STATEMENT_TIMEOUT, CbcsConnectionError, activate
+
+    raw, fields = _connect(driver)
+    _reset(raw)
+    view = "timeout-%s" % driver
+    begin_try(_start(view, _spec(fields, "rollback")), drivers=(driver,))
+    try:
+        module = __import__("cbcs_connections")
+        module.set_password("shop", fields["password"])
+        started = time.monotonic()
+        with activate(view):
+            with pytest.raises(CbcsConnectionError) as caught:
+                with module.work("shop") as connection:
+                    cursor = connection.cursor()
+                    cursor.execute("SELECT set_config('statement_timeout', '0', false)")
+                    cursor.execute("SELECT pg_sleep(7)")
+        elapsed = time.monotonic() - started
+    finally:
+        end_all()
+        _reset(raw)
+        raw.close()
+    assert STATEMENT_TIMEOUT in str(caught.value)
+    assert elapsed < 9
+
+
+@pytest.mark.parametrize("driver", ["psycopg", "pg8000"])
+def test_a_read_outside_work_does_not_block_another_session(driver: str) -> None:
+    from app.features.form_builder.qtside.preview.child.try_connections import activate
+
+    raw, fields = _connect(driver)
+    _reset(raw)
+    before = _fingerprint(raw)
+    view = "nolock-%s" % driver
+    begin_try(_start(view, _spec(fields, "rollback")), drivers=(driver,))
+    other = _connect(driver)[0]
+    try:
+        module = __import__("cbcs_connections")
+        module.set_password("shop", fields["password"])
+        with activate(view):
+            cursor = module.open_connection("shop").cursor()
+            cursor.execute("SELECT id FROM m84_invoices")
+            assert cursor.fetchall()
+        held = other.cursor()
+        held.execute("SET lock_timeout = '2s'")
+        held.execute("ALTER TABLE m84_invoices ADD COLUMN zz int")
+        other.rollback()
+    finally:
+        other.close()
+        end_all()
+        after = _fingerprint(raw)
+        _reset(raw)
+        raw.close()
+    assert after == before
+
+
+def _sequence(raw: Any) -> int:
+    cursor = raw.cursor()
+    cursor.execute("SELECT last_value FROM m84_invoices_id_seq")
+    value = int(cursor.fetchone()[0])
+    raw.commit()
+    return value
+
+
 def _with_policy(spec: TryConnectionSpec, policy: str) -> TryConnectionSpec:
     from dataclasses import replace
 
@@ -259,6 +378,7 @@ def _connect(driver: str) -> Tuple[Any, dict]:
             import psycopg  # type: ignore[import]
         except ImportError:
             pytest.skip("psycopg is not installed")
+            return None, fields
         connection = psycopg.connect(raw_dsn)
         connection.autocommit = False
         return connection, fields
@@ -266,6 +386,7 @@ def _connect(driver: str) -> Tuple[Any, dict]:
         import pg8000.dbapi as pg8000  # type: ignore[import]
     except ImportError:
         pytest.skip("pg8000 is not installed")
+        return None, fields
     port = int(fields.get("port") or "5432")
     connection = pg8000.connect(
         user=fields["user"],

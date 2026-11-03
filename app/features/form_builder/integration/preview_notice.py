@@ -375,9 +375,7 @@ class PreviewNotices:
 
     def close(self) -> None:
         if self._trying:
-            pool = self._pool
-            if pool is not None:
-                self._send_try_stop(pool)
+            self._send_try_stop(self._pool_or_shared())
             self._trying = False
         if self._unsubscribe is not None:
             self._unsubscribe()

@@ -18,6 +18,7 @@ from app.features.form_builder.qtside.preview.child.try_connections import (
     LOCK_TIMEOUT,
     OWN_CONNECTION,
     SAVED_ROLLED_BACK,
+    GENERIC_TIMEOUT,
     STATEMENT_TIMEOUT,
     TRIGGER_WARNING,
     backup_sqlite,
@@ -563,6 +564,218 @@ def test_try_stop_is_sent_when_try_ends() -> None:
     notices._trying = True
     notices.close()
     assert any(isinstance(item, TryStop) for item in pool.sent)
+
+
+def test_a_second_statement_does_not_change_the_scratch_copy(tmp_path: Path, qapp: Any) -> None:
+    root, db = _project(tmp_path)
+    before = _hash(db)
+    session = begin_try(_message("view-multi", db, "scratch", project_root=str(root)))
+    assert session is not None
+    try:
+        from app.features.form_builder.qtside.preview.child.try_connections import activate
+
+        module = __import__("cbcs_connections")
+        with activate("view-multi"):
+            with module.work("shop") as connection:
+                cursor = connection.cursor()
+                cursor.execute("UPDATE invoices SET notes='multi' WHERE id=1; COMMIT")
+                cursor.execute("SELECT '--'; UPDATE invoices SET notes='hidden' WHERE id=1")
+        scratch = sqlite3.connect(session.scratch_file("shop"))
+        note = scratch.execute("SELECT notes FROM invoices WHERE id = 1").fetchone()
+        scratch.close()
+        sentences = [item.sentence for item in session.notes]
+    finally:
+        end_all()
+    assert note is not None
+    assert note[0] != "multi"
+    assert note[0] != "hidden"
+    assert any("Another statement" in item for item in sentences)
+    assert _hash(db) == before
+
+
+def test_a_read_outside_work_lets_another_connection_write(tmp_path: Path, qapp: Any) -> None:
+    root, db = _project(tmp_path)
+    before = _hash(db)
+    session = begin_try(_message("view-out", db, "scratch", project_root=str(root)))
+    assert session is not None
+    try:
+        from app.features.form_builder.qtside.preview.child.try_connections import activate
+
+        module = __import__("cbcs_connections")
+        with activate("view-out"):
+            cursor = module.open_connection("shop").cursor()
+            cursor.execute("SELECT id FROM invoices")
+            rows = cursor.fetchall()
+        assert rows
+        other = sqlite3.connect(session.scratch_file("shop"))
+        other.execute("PRAGMA busy_timeout=300")
+        other.execute("UPDATE invoices SET notes='from-other' WHERE id=1")
+        other.commit()
+        seen = other.execute("SELECT notes FROM invoices WHERE id=1").fetchone()
+        other.close()
+        assert not hasattr(module.open_connection("shop"), "_raw")
+    finally:
+        end_all()
+    assert seen == ("from-other",)
+    assert _hash(db) == before
+
+
+def test_an_imported_record_stays_new_after_a_rolled_back_save(tmp_path: Path, qapp: Any, monkeypatch: pytest.MonkeyPatch) -> None:
+    root, db = _project(tmp_path)
+    before = _hash(db)
+    forms = root / "forms"
+    forms.mkdir(parents=True, exist_ok=True)
+    (forms / "__init__.py").write_text("", encoding="utf-8")
+    ui_path = forms / "invoice.ui"
+    text = invoice_ui()
+    ui_path.write_text(text, encoding="utf-8")
+    (forms / "invoice_window.py").write_text(_generate(root, ui_path, text), encoding="utf-8")
+    monkeypatch.syspath_prepend(str(root))
+    seen: List[str] = []
+    begin_try(_message("view-list", db, "rollback", project_root=str(root)))
+    try:
+        import importlib
+
+        import sys
+
+        from app.features.form_builder.qtside.preview.child.try_connections import activate
+        from PySide6.QtWidgets import QDialog
+
+        sys.modules.pop("forms", None)
+        sys.modules.pop("forms.invoice_window", None)
+        with activate("view-list"):
+            namespace: dict = {}
+            exec("from forms.invoice_window import Ui_Invoice", namespace)  # noqa: S102
+            module = importlib.import_module("forms.invoice_window")
+        _install_boxes(module, seen, None, _choose, None)
+        ui_cls = _ui_class(module)
+
+        class Host(QDialog):
+            def __init__(self) -> None:
+                super().__init__()
+                self.ui = ui_cls()
+                with activate("view-list"):
+                    self.ui.setupUi(self)
+
+        host = Host()
+        host.show()
+        ui = host.ui
+        before_keys = list(ui._cbcs_keys)
+        ui.cbcs_new()
+        ui.invoiceNoEdit.setText("INV-LIST")
+        ui.customerIdSpin.setValue(1)
+        ui.invoiceDateEdit.setText("2026-04-02")
+        ui.notesEdit.setText("from-list")
+        assert ui.cbcs_save() is True
+        assert ui._cbcs_form_is_new() is True
+        assert list(ui._cbcs_keys) == before_keys
+        ui.notesEdit.setText("from-list-again")
+        assert ui.cbcs_save() is True
+        host.hide()
+    finally:
+        end_all()
+    assert _hash(db) == before
+
+
+def test_two_open_tries_follow_the_form_that_was_imported(tmp_path: Path, qapp: Any, monkeypatch: pytest.MonkeyPatch) -> None:
+    root, db = _project(tmp_path)
+    package = tmp_path / "pkg"
+    forms = package / "forms"
+    forms.mkdir(parents=True)
+    (forms / "__init__.py").write_text("", encoding="utf-8")
+    (forms / "record_window.py").write_text(
+        "def which():\n    import cbcs_connections\n    return cbcs_connections.writes_stick()\n",
+        encoding="utf-8",
+    )
+    monkeypatch.syspath_prepend(str(package))
+    begin_try(_message("view-a", db, "rollback", project_root=str(root)))
+    begin_try(_message("view-b", db, "scratch", project_root=str(root)))
+    try:
+        import sys
+
+        from app.features.form_builder.qtside.preview.child.try_connections import activate
+
+        for name in ("forms", "forms.record_window", "forms.invoice_window"):
+            sys.modules.pop(name, None)
+        with activate("view-a"):
+            namespace: dict = {}
+            exec("from forms.record_window import which", namespace)  # noqa: S102
+        assert namespace["which"]() is False
+    finally:
+        end_all()
+
+
+def test_production_attach_sends_try_stop_when_the_preview_closes(monkeypatch: pytest.MonkeyPatch) -> None:
+    from app.features.form_builder.engine.ipc.protocol import TryStop
+    from app.features.form_builder.integration import preview_notice
+    from app.features.form_builder.integration.preview_control import PreviewControl
+
+    sent: List[object] = []
+
+    class Pool:
+        def request(self, message: object, _callback: object) -> str:
+            sent.append(message)
+            return "1"
+
+        def subscribe(self, _view: object, _callback: object) -> object:
+            return lambda: None
+
+    pool = Pool()
+    monkeypatch.setattr(
+        "app.features.form_builder.qtside.preview.pool.PreviewPool.shared",
+        staticmethod(lambda: pool),
+    )
+    surface = type("Surface", (), {"_preview_listener": None})()
+    notices = preview_notice.attach(surface, object())
+    notices._trying = True
+    PreviewControl(surface, notices).close()
+    assert any(isinstance(item, TryStop) for item in sent)
+
+
+def test_a_secret_ask_holds_try_stop_until_the_password_returns(tmp_path: Path, qapp: Any, monkeypatch: pytest.MonkeyPatch) -> None:
+    from app.features.form_builder.engine.ipc.protocol import ProvideSecret, TryStop, encode_frame
+    from app.features.form_builder.qtside.preview.child.session import ChildSession
+    from app.features.form_builder.qtside.preview.child.try_connections import CbcsConnectionError
+
+    class Writer:
+        def send(self, _message: object) -> None:
+            return None
+
+    db = _bare(tmp_path)
+    begin_try(_message("view-secret", db, "rollback"))
+    child = ChildSession(Writer(), qapp)  # type: ignore[arg-type]
+    child.push_line(encode_frame(TryStop(request_id="stop", view_id="view-secret")))
+    child.push_line(encode_frame(ProvideSecret(request_id="sec", connection="shop", secret="pw")))
+    try:
+        assert child._ask_secret("shop") == "pw"
+        assert session_for("view-secret") is not None
+        child.drain()
+        assert session_for("view-secret") is None
+    finally:
+        end_all()
+
+    child._secrets.clear()
+    child.push_line(encode_frame(TryStop(request_id="stop", view_id="view-secret")))
+    ticks = {"n": 0}
+
+    def clock() -> float:
+        ticks["n"] += 1
+        return 0 if ticks["n"] < 5 else 1000
+
+    monkeypatch.setattr("app.features.form_builder.qtside.preview.child.session.time.monotonic", clock)
+    with pytest.raises(CbcsConnectionError):
+        child._ask_secret("shop")
+
+
+def test_a_different_timeout_does_not_say_five_seconds() -> None:
+    class Fault(Exception):
+        def __init__(self, state: str, text: str = "") -> None:
+            super().__init__(text)
+            self.sqlstate = state
+
+    assert explain_database_error(Fault("57014", "annulation"), "invoice", try_set_timeout=True) == STATEMENT_TIMEOUT
+    assert explain_database_error(Fault("57014", "statement timeout 30s"), "invoice", try_set_timeout=True) == GENERIC_TIMEOUT
+    assert explain_database_error(Fault("57014", "canceling statement due to user request"), "invoice", try_set_timeout=True) is None
 
 
 def _project(tmp_path: Path) -> Tuple[Path, Path]:

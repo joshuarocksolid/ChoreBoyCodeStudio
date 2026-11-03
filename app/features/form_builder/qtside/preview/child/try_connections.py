@@ -8,6 +8,7 @@ imports happen inside ``open_connection`` when a session actually connects.
 
 from __future__ import annotations
 
+import builtins
 import contextlib
 import contextvars
 import os
@@ -17,14 +18,18 @@ import sqlite3
 import sys
 import tempfile
 import types
+import weakref
 from dataclasses import dataclass, field
 from typing import Callable, Dict, Iterator, List, Optional, Sequence, Tuple
 from urllib.parse import quote
 
+from app.features.form_builder.engine.data.sql import has_extra_statement, sql_without_comments, statement_words
 from app.features.form_builder.engine.ipc.protocol import TryConnectionSpec, TryDataPlan, TryStart
 
 LOCK_TIMEOUT = "Another user is editing this {record}. Try stopped waiting after 2 seconds."
 STATEMENT_TIMEOUT = "This query took longer than 5 seconds, so Try stopped it."
+GENERIC_TIMEOUT = "This query took too long, so Try stopped it."
+_TIMEOUT_SPAN = re.compile(r"(\d+)\s*(milliseconds|millisecond|ms|seconds|second|secs|sec|s|minutes|minute|min)\b", re.IGNORECASE)
 SAVED_ROLLED_BACK = "Saved, then rolled back"
 OWN_CONNECTION = "This form uses your own connection method, so Try only shows what it would run."
 SEQUENCE_WARNING = (
@@ -46,11 +51,21 @@ _CONTROL = {
     "SECURITY", "RESET",
 }
 _MODULE_NAME = "cbcs_connections"
+_SKIP_IMPORT = ("app.", "PySide", "shiboken", "importlib", "encodings", "cbcs_connections")
+_EXPLAIN_OPTIONS = {
+    "ANALYZE", "ANALYSE", "VERBOSE", "COSTS", "BUFFERS", "TIMING", "FORMAT",
+    "SETTINGS", "WAL", "SUMMARY", "TRUE", "FALSE", "ON", "OFF",
+}
 _CLOSED_ENV = "CBCS_TRY_CLOSED"
 _secret_asker: Optional[Callable[[str], str]] = None
 
 _current: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar("cbcs_try_view", default=None)
 _sessions: Dict[str, "TrySession"] = {}
+_imported_by: Dict[str, str] = {}
+_saved_import: Optional[Callable[..., object]] = None
+_conn_raw: "weakref.WeakKeyDictionary[object, object]" = weakref.WeakKeyDictionary()
+_cur_raw: "weakref.WeakKeyDictionary[object, object]" = weakref.WeakKeyDictionary()
+_cur_owner: "weakref.WeakKeyDictionary[object, object]" = weakref.WeakKeyDictionary()
 _module: Optional[types.ModuleType] = None
 _saved_module: object = None
 _pushed = False
@@ -66,14 +81,31 @@ class SqlNote:
     kind: str = "ran"
 
 
-def explain_database_error(exc: BaseException, record_word: str) -> Optional[str]:
-    """The UX sentence for SQLSTATE 55P03 or 57014, or None when it is some other error."""
+def explain_database_error(
+    exc: BaseException,
+    record_word: str,
+    *,
+    try_set_timeout: bool = False,
+) -> Optional[str]:
+    """The UX sentence for SQLSTATE 55P03 or 57014, or None when it is some other error.
+
+    ``try_set_timeout`` is true when this Try connection set ``statement_timeout``
+    to 5 seconds. A 57014 that names some other duration is not that limit.
+    """
 
     state = _sqlstate(exc)
     record = record_word or "record"
     if state == "55P03":
         return LOCK_TIMEOUT.format(record=record)
-    if state == "57014" and "statement timeout" in str(exc).lower():
+    if state != "57014":
+        return None
+    text = _error_text(exc)
+    if "lock timeout" in text or "user request" in text:
+        return None
+    span = _timeout_span_ms(text)
+    if span is not None and span != 5000:
+        return GENERIC_TIMEOUT
+    if "statement timeout" in text or (try_set_timeout and span is None):
         return STATEMENT_TIMEOUT
     return None
 
@@ -574,11 +606,81 @@ def _bound(fn: types.FunctionType, view_id: str, name: str) -> types.FunctionTyp
 
 def _lookup(view_id: Optional[str] = None) -> Optional[TrySession]:
     chosen = view_id if view_id is not None else _current.get()
+    if chosen is None:
+        chosen = _view_on_stack()
     if chosen is not None:
         return _sessions.get(chosen)
     if len(_sessions) == 1:
         return next(iter(_sessions.values()))
     return None
+
+
+def _view_on_stack() -> Optional[str]:
+    """The Try view that imported the module now on the stack."""
+
+    frame: Optional[types.FrameType] = sys._getframe(1)
+    while frame is not None:
+        name = frame.f_globals.get("__name__")
+        if isinstance(name, str):
+            view = _imported_by.get(name)
+            if view is not None:
+                return view
+        frame = frame.f_back
+    return None
+
+
+def _install_import_hook() -> None:
+    """Bind form classes imported while a Try view is current."""
+
+    global _saved_import
+    if _saved_import is not None:
+        return
+    _saved_import = builtins.__import__
+
+    def _hooked(
+        name: str,
+        globals: Optional[Dict[str, object]] = None,
+        locals: Optional[Dict[str, object]] = None,
+        fromlist: Sequence[str] = (),
+        level: int = 0,
+    ) -> object:
+        module = _saved_import(name, globals, locals, fromlist, level)  # type: ignore[misc]
+        _notice_import(module, fromlist)
+        return module
+
+    builtins.__import__ = _hooked  # type: ignore[assignment]
+
+
+def _remove_import_hook() -> None:
+    global _saved_import
+    if _saved_import is None:
+        return
+    builtins.__import__ = _saved_import  # type: ignore[assignment]
+    _saved_import = None
+    _imported_by.clear()
+
+
+def _notice_import(module: object, fromlist: Sequence[str]) -> None:
+    try:
+        view = _current.get()
+        if view is None or not _sessions:
+            return
+        seen: List[object] = [module]
+        for item in fromlist:
+            if item and item != "*":
+                found = getattr(module, item, None)
+                if isinstance(found, types.ModuleType):
+                    seen.append(found)
+        for found in seen:
+            name = getattr(found, "__name__", "")
+            if not isinstance(name, str) or not name or name.startswith(_SKIP_IMPORT):
+                continue
+            _imported_by[name] = view
+            for value in list(vars(found).values()):
+                if isinstance(value, type):
+                    bind_form_class(value, view)
+    except Exception:
+        return None
 
 
 def _require() -> TrySession:
@@ -596,6 +698,7 @@ def _install_module() -> None:
     if _module is None:
         _module = _build_module()
     sys.modules[_MODULE_NAME] = _module
+    _install_import_hook()
 
 
 def _restore_module() -> None:
@@ -611,6 +714,7 @@ def _restore_module() -> None:
     _module = None
     _saved_module = None
     _pushed = False
+    _remove_import_hook()
 
 
 def _build_module() -> types.ModuleType:
@@ -713,19 +817,21 @@ def _proxy(raw: object, session: TrySession, spec: TryConnectionSpec, *, rollbac
     raw_module = type(raw).__module__
 
     def commit(self: object) -> None:
-        if _commits(self._spec):  # type: ignore[attr-defined]
-            self._raw.commit()  # type: ignore[attr-defined]
+        if _commits(spec):
+            raw.commit()  # type: ignore[attr-defined]
         else:
-            _rollback(self)
+            _rollback_handle(raw)
 
     def rollback_fn(self: object) -> None:
-        _rollback(self)
+        _rollback_handle(raw)
 
     def cursor(self: object) -> object:
-        return _TracingCursor(self._raw.cursor(), session, spec)  # type: ignore[attr-defined]
+        made = _TracingCursor(raw.cursor(), session, spec)  # type: ignore[attr-defined]
+        _cur_owner[made] = raw
+        return made
 
     def close(self: object) -> None:
-        self._raw.close()  # type: ignore[attr-defined]
+        raw.close()  # type: ignore[attr-defined]
 
     def execute(self: object, sql: str, params: object = None) -> object:
         made = self.cursor()  # type: ignore[attr-defined]
@@ -759,9 +865,7 @@ def _proxy(raw: object, session: TrySession, spec: TryConnectionSpec, *, rollbac
         },
     )
     proxy = cls()
-    proxy._raw = raw  # type: ignore[attr-defined]
-    proxy._session = session  # type: ignore[attr-defined]
-    proxy._spec = spec  # type: ignore[attr-defined]
+    _conn_raw[proxy] = raw
     return proxy
 
 
@@ -769,7 +873,7 @@ class _TracingCursor:
     """Logs every statement. Would-run writes never reach the server."""
 
     def __init__(self, raw: object, session: TrySession, spec: TryConnectionSpec) -> None:
-        self._raw = raw
+        _cur_raw[self] = raw
         self._session = session
         self._spec = spec
         self._fake_rowcount: Optional[int] = None
@@ -778,9 +882,25 @@ class _TracingCursor:
         self._serving_fake = False
         self._last_sql = ""
         self._last_values: Tuple[object, ...] = ()
+        self._held = False
+        self._held_rows: Optional[List[object]] = None
+        self._held_at = 0
+        self._held_rowcount: Optional[int] = None
+        self._held_description: object = None
+        self._held_lastrowid: object = None
 
     def execute(self, sql: str, params: object = None) -> object:
         values = _param_tuple(params)
+        self._held = False
+        self._held_rows = None
+        blocked = _blocked_sentence(sql, self._spec)
+        if blocked:
+            self._session.note(SqlNote(blocked, sql, values, "would_run"))
+            self._serving_fake = True
+            self._fake_rowcount = 0
+            self._fake_key = None
+            self._fake_row = None
+            return self
         kind = _classify(sql)
         if kind == "control":
             word = _first_word(sql) or "that statement"
@@ -806,13 +926,19 @@ class _TracingCursor:
             elif self._point(sql, values) is not None:
                 self._fake_row = self._point(sql, values)
             return self
+        driver = _cur_raw[self]
         try:
             if params is None:
-                self._raw.execute(sql)  # type: ignore[attr-defined]
+                driver.execute(sql)  # type: ignore[attr-defined]
             else:
-                self._raw.execute(sql, params)  # type: ignore[attr-defined]
+                driver.execute(sql, params)  # type: ignore[attr-defined]
         except Exception as exc:
-            mapped = explain_database_error(exc, self._spec.record_word)
+            self._release_outside()
+            mapped = explain_database_error(
+                exc,
+                self._spec.record_word,
+                try_set_timeout=self._spec.engine == "postgres",
+            )
             if mapped is not None:
                 raise CbcsConnectionError(mapped) from None
             raise
@@ -826,19 +952,32 @@ class _TracingCursor:
         if writing:
             self._session._wrote = True
             self._effects(verb, sql, values)
+        self._release_outside()
+        if self._spec.mode == "rollback":
+            self._note_nextval(sql)
         return self
 
     def executemany(self, sql: str, seq: object) -> object:
         rows = list(seq)  # type: ignore[arg-type]
+        if _blocked_sentence(sql, self._spec):
+            for params in rows:
+                self.execute(sql, params)
+            return self
         kind = _classify(sql)
         if kind == "control" or (kind == "write" and (self._spec.mode == "would_run" or self._spec.own_hook)):
             for params in rows:
                 self.execute(sql, params)
             return self
+        driver = _cur_raw[self]
         try:
-            self._raw.executemany(sql, rows)  # type: ignore[attr-defined]
+            driver.executemany(sql, rows)  # type: ignore[attr-defined]
         except Exception as exc:
-            mapped = explain_database_error(exc, self._spec.record_word)
+            self._release_outside()
+            mapped = explain_database_error(
+                exc,
+                self._spec.record_word,
+                try_set_timeout=self._spec.engine == "postgres",
+            )
             if mapped is not None:
                 raise CbcsConnectionError(mapped) from None
             raise
@@ -847,17 +986,21 @@ class _TracingCursor:
         self._session.note(SqlNote(_sentence("Ran", sql, ()), sql, (), "ran"))
         if kind == "write":
             self._session._wrote = True
+        self._release_outside()
         return self
 
     def fetchmany(self, size: Optional[int] = None) -> object:
         if self._serving_fake:
             return []
+        if self._held:
+            return self._take(size)
+        driver = _cur_raw[self]
         if size is None:
-            return self._raw.fetchmany()  # type: ignore[attr-defined]
-        return self._raw.fetchmany(size)  # type: ignore[attr-defined]
+            return driver.fetchmany()  # type: ignore[attr-defined]
+        return driver.fetchmany(size)  # type: ignore[attr-defined]
 
     def close(self) -> None:
-        closer = getattr(self._raw, "close", None)
+        closer = getattr(_cur_raw.get(self), "close", None)
         if callable(closer):
             closer()
 
@@ -870,7 +1013,10 @@ class _TracingCursor:
             if self._fake_key is not None:
                 return (self._fake_key,)
             return None
-        row = self._raw.fetchone()  # type: ignore[attr-defined]
+        if self._held:
+            found = self._take(1)
+            return found[0] if found else None
+        row = _cur_raw[self].fetchone()  # type: ignore[attr-defined]
         if self._spec.mode == "would_run" or self._spec.own_hook:
             overlaid = self._overlay(self._last_sql, self._last_values, row)
             if overlaid is not None:
@@ -884,23 +1030,74 @@ class _TracingCursor:
                 self._fake_row = None
                 return [row]
             return []
-        return self._raw.fetchall()  # type: ignore[attr-defined]
+        if self._held:
+            return self._take(None)
+        return _cur_raw[self].fetchall()  # type: ignore[attr-defined]
 
     @property
     def rowcount(self) -> int:
         if self._fake_rowcount is not None:
             return self._fake_rowcount
-        return int(getattr(self._raw, "rowcount", -1))
+        if self._held and self._held_rowcount is not None:
+            return self._held_rowcount
+        return int(getattr(_cur_raw.get(self), "rowcount", -1))
 
     @property
     def lastrowid(self) -> object:
         if self._fake_key is not None:
             return self._fake_key
-        return getattr(self._raw, "lastrowid", None)
+        if self._held:
+            return self._held_lastrowid
+        return getattr(_cur_raw.get(self), "lastrowid", None)
 
     @property
     def description(self) -> object:
-        return getattr(self._raw, "description", None)
+        if self._held:
+            return self._held_description
+        return getattr(_cur_raw.get(self), "description", None)
+
+    def _take(self, size: Optional[int]) -> List[object]:
+        rows = self._held_rows or []
+        if size is None:
+            found = rows[self._held_at:]
+            self._held_at = len(rows)
+            return found
+        found = rows[self._held_at:self._held_at + size]
+        self._held_at += len(found)
+        return found
+
+    def _release_outside(self) -> None:
+        """A statement outside ``work()`` must not keep a transaction open."""
+
+        if self._session._depth.get(self._spec.name, 0) > 0:
+            return
+        driver = _cur_raw.get(self)
+        if driver is None:
+            return
+        self._held_rowcount = int(getattr(driver, "rowcount", -1))
+        self._held_description = getattr(driver, "description", None)
+        self._held_lastrowid = getattr(driver, "lastrowid", None)
+        if self._held_description:
+            try:
+                self._held_rows = list(driver.fetchall())  # type: ignore[attr-defined]
+            except Exception:
+                self._held_rows = []
+        else:
+            self._held_rows = None
+        self._held_at = 0
+        self._held = True
+        _rollback_handle(_cur_owner.get(self))
+
+    def _note_nextval(self, sql: str) -> None:
+        if self._spec.engine != "postgres":
+            return
+        for match in _NEXTVAL.finditer(sql):
+            sequence = match.group(1)
+            number = self._sequence_value(sequence)
+            self._session.warn_once(
+                ("seq", sequence),
+                SEQUENCE_WARNING.format(n=number, sequence=sequence, record=self._spec.record_word or "record"),
+            )
 
     def _remember_write(self, verb: str, sql: str, values: Tuple[object, ...]) -> None:
         table = _table(sql)
@@ -993,39 +1190,49 @@ class _TracingCursor:
     def _sequence_value(self, sequence: str) -> object:
         if self._spec.engine != "postgres":
             return self.lastrowid if self.lastrowid is not None else "?"
-        raw = None
+        raw: object = None
+        probe: object = None
+        value: object = "?"
         try:
             probe = self._session.open_connection(self._spec.name).cursor()  # type: ignore[union-attr]
-            raw = getattr(probe, "_raw", probe)
-            raw.execute("SAVEPOINT cbcs_try_seq")
-            raw.execute("SELECT currval(%s::regclass)", (sequence,))
-            row = raw.fetchone()
-            raw.execute("RELEASE SAVEPOINT cbcs_try_seq")
+            found = _cur_raw.get(probe, probe)
+            if found is None:
+                return "?"
+            raw = found
+            raw.execute("SAVEPOINT cbcs_try_seq")  # type: ignore[attr-defined]
+            raw.execute("SELECT currval(%s::regclass)", (sequence,))  # type: ignore[attr-defined]
+            row = raw.fetchone()  # type: ignore[attr-defined]
+            raw.execute("RELEASE SAVEPOINT cbcs_try_seq")  # type: ignore[attr-defined]
+            if row:
+                value = row[0]
         except Exception:
             if raw is not None:
                 try:
                     raw.execute("ROLLBACK TO SAVEPOINT cbcs_try_seq")
                 except Exception:
-                    return "?"
-            return "?"
-        if not row:
-            return "?"
-        return row[0]
-
-
-def _session_shadow_init() -> None:
-    return None
+                    value = "?"
+            value = "?"
+        if raw is not None and self._session._depth.get(self._spec.name, 0) == 0:
+            _rollback_handle(_cur_owner.get(probe) if probe is not None else None)
+        return value
 
 
 def _set_local(connection: object) -> None:
     cursor = connection.cursor()
-    raw = getattr(cursor, "_raw", cursor)
-    raw.execute("SET LOCAL statement_timeout = '5s'")
-    raw.execute("SET LOCAL lock_timeout = '2s'")
+    raw = _cur_raw.get(cursor, cursor)
+    if raw is None:
+        return
+    raw.execute("SET LOCAL statement_timeout = '5s'")  # type: ignore[attr-defined]
+    raw.execute("SET LOCAL lock_timeout = '2s'")  # type: ignore[attr-defined]
 
 
 def _rollback(connection: object) -> None:
-    raw = getattr(connection, "_raw", connection)
+    _rollback_handle(_conn_raw.get(connection, connection))
+
+
+def _rollback_handle(raw: object) -> None:
+    if raw is None:
+        return
     method = getattr(raw, "rollback", None)
     if callable(method):
         try:
@@ -1083,20 +1290,80 @@ def _quote(name: str) -> str:
 
 
 def _strip_comments(sql: str) -> str:
-    out: List[str] = []
-    index = 0
-    while index < len(sql):
-        if sql.startswith("/*", index):
-            end = sql.find("*/", index + 2)
-            index = len(sql) if end < 0 else end + 2
+    return sql_without_comments(sql)
+
+
+def _blocked_sentence(sql: str, spec: TryConnectionSpec) -> str:
+    """A sentence when this string must not reach the server, else ''."""
+
+    if has_extra_statement(sql):
+        return "Try did not run this. Another statement follows the semicolon."
+    mode = "would_run" if spec.own_hook or spec.mode == "would_run" else spec.mode
+    for name in _call_names(sql):
+        if _refused_call(name, mode):
+            return "Try did not run %s." % name
+    return ""
+
+
+def _call_names(sql: str) -> Tuple[str, ...]:
+    words = statement_words(sql)
+    if not words:
+        return ()
+    found: List[str] = []
+    for index, word in enumerate(words):
+        if word in (";", "(", ")"):
             continue
-        if sql.startswith("--", index):
-            end = sql.find("\n", index)
-            index = len(sql) if end < 0 else end + 1
-            continue
-        out.append(sql[index])
+        if index + 1 < len(words) and words[index + 1] == "(":
+            found.append(word.lower())
+    return tuple(found)
+
+
+def _refused_call(name: str, mode: str) -> bool:
+    if name in ("setval", "set_config"):
+        return True
+    if mode != "would_run":
+        return False
+    if name in ("nextval", "pg_terminate_backend", "pg_cancel_backend"):
+        return True
+    if name.startswith("pg_advisory_") or name.startswith("lo_") or name.startswith("dblink"):
+        return True
+    return False
+
+
+def _explained_verb(sql: str) -> Optional[str]:
+    """The verb under ``EXPLAIN (ANALYZE)``, or None when EXPLAIN does not run it."""
+
+    words = statement_words(sql)
+    if not words or words[0].upper() != "EXPLAIN":
+        return None
+    index = 1
+    options: List[str] = []
+    if index < len(words) and words[index] == "(":
+        depth = 0
+        while index < len(words):
+            token = words[index]
+            if token == "(":
+                depth += 1
+            elif token == ")":
+                depth -= 1
+                index += 1
+                if depth == 0:
+                    break
+                continue
+            else:
+                options.append(token.upper())
+            index += 1
+    else:
+        while index < len(words) and words[index].upper() in _EXPLAIN_OPTIONS:
+            options.append(words[index].upper())
+            index += 1
+    if "ANALYZE" not in options and "ANALYSE" not in options:
+        return None
+    while index < len(words) and words[index] in (";", "(", ")"):
         index += 1
-    return "".join(out).strip()
+    if index >= len(words):
+        return ""
+    return words[index].upper()
 
 
 def _first_word(sql: str) -> str:
@@ -1125,10 +1392,20 @@ def _classify(sql: str) -> str:
     if word == "PRAGMA":
         return "control" if "=" in _strip_comments(sql) else "read"
     if word == "EXPLAIN":
-        rest = _strip_comments(sql)[len("EXPLAIN"):].strip()
-        if _first_word(rest) == "ANALYZE":
+        verb = _explained_verb(sql)
+        if verb is None:
+            return "read"
+        if not verb:
             return "write"
-        return "read"
+        if verb in ("SELECT", "SHOW", "VALUES", "TABLE"):
+            return "read"
+        if verb == "WITH":
+            if _CTE_WRITE.search(_strip_comments(sql)):
+                return "write"
+            return "read"
+        if verb in _CONTROL:
+            return "control"
+        return "write"
     if word == "WITH":
         if _CTE_WRITE.search(_strip_comments(sql)):
             return "write"
@@ -1190,6 +1467,36 @@ def _sentence(prefix: str, sql: str, params: Tuple[object, ...]) -> str:
         return "%s: %s" % (prefix, compact)
     word = "value" if count == 1 else "values"
     return "%s: %s (%d %s)" % (prefix, compact, count, word)
+
+
+def _error_text(exc: BaseException) -> str:
+    parts = [str(exc)]
+    diag = getattr(exc, "diag", None)
+    if diag is not None:
+        for attr in ("message_primary", "message_detail"):
+            value = getattr(diag, attr, None)
+            if isinstance(value, str):
+                parts.append(value)
+    args = getattr(exc, "args", ())
+    if args and isinstance(args[0], dict):
+        for key in ("M", "D"):
+            value = args[0].get(key)
+            if isinstance(value, str):
+                parts.append(value)
+    return " ".join(parts).lower()
+
+
+def _timeout_span_ms(text: str) -> Optional[int]:
+    match = _TIMEOUT_SPAN.search(text)
+    if match is None:
+        return None
+    amount = int(match.group(1))
+    unit = match.group(2).lower()
+    if unit in ("ms", "millisecond", "milliseconds"):
+        return amount
+    if unit in ("min", "minute", "minutes"):
+        return amount * 60000
+    return amount * 1000
 
 
 def _sqlstate(exc: BaseException) -> str:

@@ -467,6 +467,7 @@ class ChildSession:
             return cached
         self._writer.send(NeedSecret(view_id=self._current_view or "", connection=name))
         deadline = time.monotonic() + 120
+        held: list[str] = []
         while time.monotonic() < deadline:
             self._app.processEvents()
             try:
@@ -477,11 +478,22 @@ class ChildSession:
                 self._queue.put(None)
                 break
             decoded = decode_line(line.rstrip("\r\n"))
+            if isinstance(decoded, TryStop):
+                held.append(line)
+                continue
             if isinstance(decoded, ProvideSecret) and decoded.connection == name:
                 self._provide_secret(decoded)
+                self._requeue(held)
                 return decoded.secret or ""
             self._handle_line(line)
-        raise RuntimeError("Try needs the password for %s." % name)
+        self._requeue(held)
+        from app.features.form_builder.qtside.preview.child.try_connections import CbcsConnectionError
+
+        raise CbcsConnectionError("Try needs the password for %s." % name)
+
+    def _requeue(self, held: list) -> None:
+        for line in held:
+            self._queue.put(line)
 
     def _provide_secret(self, message: ProvideSecret) -> None:
         # The secret stays in memory. It is not written to a log frame.
