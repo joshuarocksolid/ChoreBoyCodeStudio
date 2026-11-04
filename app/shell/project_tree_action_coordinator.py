@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Callable, Generic, Optional, Sequence, TypeVar
 
 from app.project.file_operations import copy_path, create_directory, create_file, delete_path, duplicate_path, move_path, rename_path
+from app.project.path_removed import notify_path_removed
 from app.shell.breakpoint_store import BreakpointStore
 from app.shell.project_rescan_workflow import RefreshTier
 from app.shell.project_tree_controller import ProjectTreeController, TreeEditorWidget
@@ -111,6 +112,7 @@ class ProjectTreeActionCoordinator(Generic[W]):
         if not result.success:
             return result.message
         self.close_deleted_editor_paths(target_path)
+        notify_path_removed(str(Path(target_path).expanduser().resolve()))
         self._refresh(RefreshTier.TREE_ENTRIES)
         return None
 
@@ -128,6 +130,7 @@ class ProjectTreeActionCoordinator(Generic[W]):
             result = delete_path(target_path)
             if result.success:
                 self.close_deleted_editor_paths(target_path)
+                notify_path_removed(str(Path(target_path).expanduser().resolve()))
                 deleted_paths.append(target_path)
             else:
                 failed.append(f"{Path(target_path).name}: {result.message}")
@@ -225,6 +228,14 @@ class ProjectTreeActionCoordinator(Generic[W]):
         rewrite_imports: bool = True,
         carry_file_state: bool = True,
     ) -> None:
+        source_resolved = str(Path(source_path).expanduser().resolve())
+        destination_resolved = str(Path(destination_path).expanduser().resolve())
+        if (
+            source_resolved.lower().endswith(".ui")
+            and Path(source_resolved).parent != Path(destination_resolved).parent
+            and not Path(source_resolved).exists()
+        ):
+            notify_path_removed(source_resolved)
         self._project_tree_controller.apply_path_move_updates(
             source_path,
             destination_path,

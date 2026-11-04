@@ -99,13 +99,27 @@ def _cbcs_plan_lines(
     # Park above every stored position, whether or not the schema cache recorded
     # UNIQUE (link, position). A negative park trips CHECK (position > 0).
     if position_column and movers:
-        ceiling = 0
+        # First free integer above every stored position. Decimal and float
+        # positions count. bool is a Real only because it subclasses int.
+        # Imports stay inside so the generated module, which execs this source, has them.
+        import decimal
+        import math
+        import numbers
+
+        ceiling = 1
         for row in snapshot:
             pos = row.get(position_column)
-            if type(pos) is int and pos > ceiling:
-                ceiling = pos
+            # Decimal is NUMERIC and is not a numbers.Real. bool is a Real
+            # only because it subclasses int.
+            if isinstance(pos, bool):
+                continue
+            if not isinstance(pos, (numbers.Real, decimal.Decimal)):
+                continue
+            slot = int(math.floor(pos)) + 1
+            if slot > ceiling:
+                ceiling = slot
         for ordinal, pair in enumerate(movers):
-            ops.append(("park", pair[0], ceiling + 1 + ordinal))
+            ops.append(("park", pair[0], ceiling + ordinal))
     for key, final in movers:
         ops.append(("position", key, final))
     for index, row in enumerate(current):

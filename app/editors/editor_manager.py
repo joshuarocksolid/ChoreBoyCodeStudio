@@ -36,6 +36,12 @@ def _has_surrogate(text: str) -> bool:
     return any(0xD800 <= ord(char) <= 0xDFFF for char in text)
 
 
+NON_UTF8_UI_NOTICE = (
+    "This form can't be opened in the form builder: the file isn't UTF-8. "
+    "It's open read-only so its bytes stay as they are."
+)
+
+
 class EditorManager:
     """Owns open-tab state and file-backed read/save operations.
 
@@ -64,6 +70,8 @@ class EditorManager:
             last_known_mtime=self._read_file_mtime(normalized_path),
             is_preview=preview,
         )
+        if Path(normalized_path).suffix.lower() == ".ui" and _has_surrogate(content):
+            tab.byte_lock_reason = NON_UTF8_UI_NOTICE
         return self._add_tab(tab, preview=preview)
 
     def open_file_with_content(
@@ -153,6 +161,8 @@ class EditorManager:
     ) -> EditorTabState:
         """Replace tab buffer content authoritatively."""
         tab = self._require_tab(file_path)
+        if tab.byte_lock_reason:
+            return tab
         tab.update_content(content)
         if tab.is_preview and tab.is_dirty:
             self._promote(tab)
@@ -163,10 +173,10 @@ class EditorManager:
     def save_tab(self, file_path: str) -> EditorTabState:
         """Save current content for an open tab back to disk."""
         tab = self._require_tab(file_path)
+        if tab.byte_lock_reason:
+            raise ValueError(tab.byte_lock_reason)
         path = Path(tab.file_path)
         text = tab.current_content
-        # A .ui that was not UTF-8 is held with surrogateescape so a save writes
-        # the same bytes back. A strict UTF-8 write would refuse or drop them.
         errors = "surrogateescape" if _has_surrogate(text) else "strict"
         atomic_write_text(path, text, errors=errors)
         tab.mark_saved(last_known_mtime=self._read_file_mtime(tab.file_path), saved_text=text)

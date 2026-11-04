@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple
 
 from app.features.form_builder.engine.codegen.api import generate_form_module
+from app.features.form_builder.engine.logic.verbs.m7 import leaving_stems
 from app.features.form_builder.engine.diagnostics import FormDiagnostic
 from app.features.form_builder.engine.ids import IdAllocator
 from app.features.form_builder.engine.project.adoption import (
@@ -180,7 +181,8 @@ def plan_rename(project_root: str, old_ui: str, new_ui: str, fs: OsFileSystem) -
     )
     if moved_text != source_text:
         edits.append(TextEdit(path=new_abs, old=source_text, new=moved_text))
-    if old_stem != new_stem:
+    same_folder = os.path.dirname(old_abs) == os.path.dirname(new_abs)
+    if old_stem != new_stem and same_folder:
         extra_edits, extra_generated, extra_notices = _retarget_other_forms(
             root,
             fs,
@@ -193,6 +195,12 @@ def plan_rename(project_root: str, old_ui: str, new_ui: str, fs: OsFileSystem) -
         notices.extend(extra_notices)
     else:
         extra_generated = []
+    if not same_folder:
+        # openForm resolves in the generating form's folder, so a form left
+        # behind cannot see the moved file. Report that now. Do not rewrite it.
+        diagnostics.extend(
+            item for _path, item in open_form_problems(root, os.path.dirname(old_abs), old_stem, fs)
+        )
     regenerated = [RegeneratedFile(path=new_scope.generated_path, text=generated.text)] + list(extra_generated)
     rewritten = {os.path.abspath(item.path) for item in regenerated}
     edits = [edit for edit in edits if os.path.abspath(edit.path) not in rewritten]
@@ -264,8 +272,11 @@ def _retarget_other_forms(
     edits = []
     generated = []
     notices = []
+    old_dir = os.path.dirname(os.path.abspath(old_abs))
     for path in project_ui_files(root):
         if same_path(path, old_abs):
+            continue
+        if os.path.dirname(os.path.abspath(path)) != old_dir:
             continue
         try:
             text = fs.read_text(path)
@@ -300,6 +311,47 @@ def _retarget_other_forms(
             continue
         generated.append(RegeneratedFile(path=scope.generated_path, text=result.text))
     return edits, generated, notices
+
+
+def open_form_problems(
+    root: str, folder: str, stem: str, fs: OsFileSystem
+) -> List[Tuple[str, FormDiagnostic]]:
+    """FB120 for forms in ``folder`` whose open-form step names ``stem``.
+
+    The check is the same generate the Problems panel uses. Nothing is written.
+    Each pair is the opener's ``.ui`` path and one diagnostic.
+    """
+
+    found: List[Tuple[str, FormDiagnostic]] = []
+    folder_abs = os.path.abspath(folder)
+    adopted = adopted_forms(root, fs)
+    for path in project_ui_files(root):
+        if os.path.dirname(os.path.abspath(path)) != folder_abs:
+            continue
+        if os.path.splitext(os.path.basename(path))[0] == stem:
+            continue
+        try:
+            text = fs.read_text(path)
+        except (OSError, UnicodeError):
+            continue
+        if stem not in text:
+            continue
+        scope = classify_form(path, project_root=root, adopted=adopted)
+        if not scope.generates:
+            continue
+        previous = leaving_stems((stem,))
+        try:
+            try:
+                document = read_ui(text, allocator=IdAllocator()).document
+                result = generate_form_module(document, scope=scope, source_bytes=text.encode("utf-8"))
+            except (OSError, UnicodeError, UiReadError):
+                continue
+        finally:
+            leaving_stems(previous)
+        for item in result.diagnostics:
+            if item.code == "FB120" and stem in (item.message or ""):
+                found.append((path, item))
+    return found
 
 
 def _occupied(old_ui: str, new_ui: str, fs: OsFileSystem) -> Optional[str]:

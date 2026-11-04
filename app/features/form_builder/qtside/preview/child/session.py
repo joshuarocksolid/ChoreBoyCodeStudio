@@ -65,11 +65,19 @@ from app.features.form_builder.qtside.preview.child.stdio import FrameWriter
 
 
 class _View:
-    def __init__(self, widget: QWidget, revision: int, scale: float, module_name: str = "") -> None:
+    def __init__(
+        self,
+        widget: QWidget,
+        revision: int,
+        scale: float,
+        module_name: str = "",
+        module: object = None,
+    ) -> None:
         self.widget = widget
         self.revision = revision
         self.scale = scale
         self.module_name = module_name
+        self.module = module
         #: The size the form asked for, before a screen profile clamped it.
         self.natural = (widget.width(), widget.height())
         self.screen: tuple = ()
@@ -110,13 +118,13 @@ def _drop_app_filter(app: QApplication, filt: QObject) -> None:
         return
 
 
-def _drop_preview_module(name: str) -> None:
-    """Drop a module this child built in memory. Project imports stay."""
+def _drop_preview_module(name: str, module: object = None) -> None:
+    """Drop the module object this view registered. A replacement under the same name stays."""
 
-    if not name:
+    if not name or module is None:
         return
-    module = sys.modules.get(name)
-    if module is None:
+    current = sys.modules.get(name)
+    if current is not module:
         return
     filename = getattr(module, "__file__", "")
     if isinstance(filename, str) and filename.startswith("<"):
@@ -124,13 +132,26 @@ def _drop_preview_module(name: str) -> None:
 
 
 def _drop_view(view: "_View") -> None:
-    """Destroy the preview window now. ``deleteLater`` does not run inside nested event loops."""
+    """Destroy the preview window.
 
-    _drop_preview_module(view.module_name)
+    ``deleteLater`` does not run inside a nested event loop, so a lone loop
+    deletes now. A loop already inside another (a dialog is open) waits.
+    """
+
+    _drop_preview_module(view.module_name, view.module)
     widget = view.widget
     try:
         widget.hide()
     except RuntimeError:
+        return
+    from app.qt.QtCore import QThread
+
+    try:
+        nested = QThread.currentThread().loopLevel() > 1
+    except Exception:
+        nested = False
+    if nested:
+        widget.deleteLater()
         return
     from app.qt.qt_compat import delete_now
 
@@ -368,6 +389,7 @@ class ChildSession:
                 message.revision,
                 scale,
                 message.module_name or "",
+                built.module,
             )
             self._dress(message.view_id, message.appearance, first=True)
         except Exception:
@@ -609,11 +631,12 @@ class ChildSession:
         revision: int,
         scale: float,
         module_name: str = "",
+        module: object = None,
     ) -> None:
         previous = self._views.pop(view_id, None)
         if previous is not None:
             _drop_view(previous)
-        self._views[view_id] = _View(widget, revision, scale, module_name)
+        self._views[view_id] = _View(widget, revision, scale, module_name, module)
         self._last_view_change = time.monotonic()
 
     def _apply_appearance(self, appearance: object) -> None:
@@ -681,7 +704,7 @@ class ChildSession:
 
                 end_try(view_id)
                 self._views.pop(view_id)
-                _drop_preview_module(view.module_name)
+                _drop_preview_module(view.module_name, view.module)
                 widget.deleteLater()
                 self._last_view_change = time.monotonic()
                 self._writer.send(ViewClosed(view_id=view_id, reason="user"))

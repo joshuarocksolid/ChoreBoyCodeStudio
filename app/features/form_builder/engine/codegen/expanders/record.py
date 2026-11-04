@@ -230,6 +230,7 @@ def _methods(source, fields, engine, record_word, order, search, check, hooks, a
         bodies["_cbcs_note_unparsed"] = ("_column, _kind, _shown", _note_body())
     if any(field.nullable and field.io == "time" for field in fields):
         bodies["_cbcs_time_touched"] = ("widget", _time_touched_body())
+        bodies["_cbcs_clear_time"] = ("widget", _clear_time_body())
     if any(field.io == "decimal" for field in writable):
         bodies["_cbcs_numbers_match"] = ("_left, _right, _places", _numbers_match_body())
     methods = []
@@ -648,6 +649,50 @@ def _time_touched_body() -> List[str]:
         "    return",
         "widget.setProperty(%s, False)" % _q("cbcsTimeBlank"),
         "widget.setSpecialValueText(%s)" % _q(""),
+    ]
+
+
+def _clear_time_body() -> List[str]:
+    """Delete, Backspace on a full selection, or the Clear menu item."""
+
+    return [
+        "widget._cbcs_time_arming = True",
+        "widget.setProperty(%s, True)" % _q("cbcsTimeBlank"),
+        "widget.setSpecialValueText(%s)" % _q(_NULL_TEXT),
+        "widget.setTime(widget.minimumTime())",
+        "widget._cbcs_time_arming = False",
+    ]
+
+
+def _time_clear_class() -> List[str]:
+    """UX_SPEC does not name a clear gesture for a nullable date. Time uses Delete, Backspace, and Clear."""
+
+    return [
+        "class _CbcsTimeClear(QObject):",
+        "    def __init__(self, ui, widget):",
+        "        super().__init__(widget)",
+        "        self._ui = ui",
+        "        self._widget = widget",
+        "        widget.installEventFilter(self)",
+        "        _line = widget.lineEdit()",
+        "        if _line is not None:",
+        "            _line.installEventFilter(self)",
+        "            _line.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)",
+        "            _line.customContextMenuRequested.connect(self._menu)",
+        "    def _menu(self, _pos):",
+        "        _line = self._widget.lineEdit()",
+        "        if _line is None:",
+        "            return",
+        "        _menu = _line.createStandardContextMenu()",
+        "        _menu.addAction(%s, lambda: self._ui._cbcs_clear_time(self._widget))" % _q("Clear"),
+        "        _menu.popup(_line.mapToGlobal(_pos))",
+        "    def eventFilter(self, _watched, _event):",
+        "        if _event.type() == QEvent.Type.KeyPress and _event.key() in (Qt.Key.Key_Delete, Qt.Key.Key_Backspace):",
+        "            _line = self._widget.lineEdit()",
+        "            if _line is not None and _line.text() and _line.selectedText() == _line.text():",
+        "                self._ui._cbcs_clear_time(self._widget)",
+        "                return True",
+        "        return False",
     ]
 
 
@@ -1182,6 +1227,8 @@ def _below_minimum(widget: str, io: str) -> List[str]:
 
 def _null_markers(fields: Sequence[_Field]) -> List[str]:
     lines = []
+    if any(field.nullable and field.io == "time" for field in fields):
+        lines.extend(_time_clear_class())
     for field in fields:
         widget = "self.%s" % field.widget
         if field.nullable and field.io in ("int", "decimal", "date", "datetime"):
@@ -1193,6 +1240,7 @@ def _null_markers(fields: Sequence[_Field]) -> List[str]:
             lines.append(
                 "%s.timeChanged.connect(lambda *_a, _w=%s: self._cbcs_time_touched(_w))" % (widget, widget)
             )
+            lines.append("self._cbcs_time_clear_%s = _CbcsTimeClear(self, %s)" % (field.widget, widget))
         if field.nullable and field.io == "bool":
             lines.append("%s.setTristate(True)" % widget)
         if field.error_label:
@@ -1699,6 +1747,15 @@ def _imports(fields: Sequence[_Field], own_filter: bool, extras: Sequence[Tuple[
         found.append(("PySide6.QtCore", "QDateTime"))
     if any(field.nullable and field.io == "bool" for field in fields):
         found.append(("PySide6.QtCore", "Qt"))
+    if any(field.nullable and field.io == "time" for field in fields):
+        found.extend(
+            (
+                ("PySide6.QtCore", "QObject"),
+                ("PySide6.QtCore", "QEvent"),
+                ("PySide6.QtCore", "Qt"),
+                ("PySide6.QtWidgets", "QMenu"),
+            )
+        )
     if own_filter:
         found.extend(
             [

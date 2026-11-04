@@ -6,19 +6,16 @@ as it was stored. Nothing here writes the filesystem.
 
 from __future__ import annotations
 
+import re
 from dataclasses import replace
-from typing import Optional, Sequence, Tuple
+from typing import List, Optional, Sequence, Tuple
 
-from app.features.form_builder.engine.commands.base import CommandRejected
-from app.features.form_builder.engine.commands.catalog import SetLogic
-from app.features.form_builder.engine.commands.log import CommandLog, SelectionSnapshot
 from app.features.form_builder.engine.data.source import ListSource, read_data, write_data
 from app.features.form_builder.engine.ids import IdAllocator
 from app.features.form_builder.engine.logic.codec import parse_steps, write_steps
 from app.features.form_builder.engine.logic.storage import is_signal_property, is_user_logic_key
 from app.features.form_builder.engine.ui4.reader import read_ui
 from app.features.form_builder.engine.ui4.values import StringValue
-from app.features.form_builder.engine.ui4.writer import write_ui
 
 
 def missing_form_sentence(stem: str) -> str:
@@ -30,37 +27,69 @@ def missing_form_sentence(stem: str) -> str:
 def retarget_ui_text(text: str, old: str, new: str) -> Optional[str]:
     """``.ui`` text with ``old`` form stems pointed at ``new``, or None when nothing changed.
 
-    A property that cannot be read is left byte for byte. The caller writes the
-    result only when this returns text.
+    The edit replaces that property's form name inside its ``<string>`` and
+    leaves every other byte alone, including comments and Designer spacing.
+    A property that cannot be read is left as it was.
     """
 
     if not old or old == new or old not in text:
         return None
-    allocator = IdAllocator()
-    document = read_ui(text, allocator=allocator).document
-    holder = {"snap": SelectionSnapshot((), None)}
-
-    def provider() -> SelectionSnapshot:
-        return holder["snap"]
-
-    log = CommandLog(document, allocator, selection_provider=provider)
-    changed = False
-    for node in list(log.document.iter_preorder()):
+    document = read_ui(text, allocator=IdAllocator()).document
+    keys: List[str] = []
+    for node in document.iter_preorder():
         for entry in node.properties():
             if not is_user_logic_key(entry.name) or not isinstance(entry.value, StringValue):
                 continue
             updated = _retarget_property(entry.name, entry.value.text, old, new)
             if updated is None or updated == entry.value.text:
                 continue
-            try:
-                outcome = log.execute(SetLogic(node.id, entry.name, updated))
-            except CommandRejected:
-                continue
-            if not getattr(outcome, "noop", False):
-                changed = True
-    if not changed:
+            if entry.name not in keys:
+                keys.append(entry.name)
+    if not keys:
         return None
-    return write_ui(log.document).text
+    edited = text
+    for key in keys:
+        edited = _replace_form_in_property(edited, key, old, new)
+    if edited == text:
+        return None
+    return edited
+
+
+_PROPERTY = re.compile(
+    r"(<property\b[^>]*\bname=\"(?P<name>[^\"]+)\"[^>]*>)(?P<body>.*?)(</property>)",
+    re.DOTALL,
+)
+
+
+def _replace_form_in_property(text: str, key: str, old: str, new: str) -> str:
+    """Swap the form name inside one property. Other properties stay byte for byte."""
+
+    def swap(match: re.Match[str]) -> str:
+        if match.group("name") != key:
+            return match.group(0)
+        body = match.group("body")
+        replaced = _swap_form_token(body, old, new)
+        if replaced == body:
+            return match.group(0)
+        return match.group(1) + replaced + match.group(4)
+
+    return _PROPERTY.sub(swap, text)
+
+
+def _swap_form_token(fragment: str, old: str, new: str) -> str:
+    """Replace a JSON ``form`` value. Quoted and XML-escaped quotes both count."""
+
+    patterns = (
+        (r'("form"\s*:\s*")' + re.escape(old) + r'(")', r"\g<1>" + new + r"\g<2>"),
+        (
+            r"(&quot;form&quot;\s*:\s*&quot;)" + re.escape(old) + r"(&quot;)",
+            r"\g<1>" + new + r"\g<2>",
+        ),
+    )
+    edited = fragment
+    for pattern, repl in patterns:
+        edited = re.sub(pattern, repl, edited)
+    return edited
 
 
 def _retarget_property(key: str, text: str, old: str, new: str) -> Optional[str]:

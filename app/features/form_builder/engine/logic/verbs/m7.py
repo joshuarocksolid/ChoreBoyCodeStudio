@@ -539,12 +539,30 @@ def _window_class(stem: str) -> str:
     return "".join(part[:1].upper() + part[1:] for part in parts) + "Window"
 
 
+_leaving: Tuple[str, ...] = ()
+
+
+def leaving_stems(stems: Tuple[str, ...]) -> Tuple[str, ...]:
+    """Stems a check should treat as already gone from their folder.
+
+    A cross-folder move still has the file until apply. The forms left behind
+    are checked before that, so the stem is named here for that check only.
+    """
+
+    global _leaving
+    previous = _leaving
+    _leaving = stems
+    return previous
+
+
 def form_is_generated(stem: str, folder: Optional[str], known: Tuple[str, ...] = ()) -> bool:
     """False when this generate can see the forms folder and the form is not in it.
 
     ``known`` names stems that this save is about to put in the folder, so a
     rename can regenerate the forms that open the new name before the file exists.
     """
+    if stem in _leaving:
+        return False
     if stem in known:
         return compat.is_name(stem)
     if not compat.is_name(stem):

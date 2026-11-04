@@ -13,7 +13,7 @@ from app.features.form_builder.engine.ids import IdAllocator
 from app.features.form_builder.engine.logic.codec import parse_steps, write_steps
 from app.features.form_builder.engine.project.adoption import scope_for
 from app.features.form_builder.engine.project.create import create_form
-from app.features.form_builder.engine.project.form_refs import missing_form_sentence
+from app.features.form_builder.engine.project.form_refs import missing_form_sentence, retarget_ui_text
 from app.features.form_builder.engine.project.fs import OsFileSystem
 from app.features.form_builder.engine.project.rename import apply, plan_rename
 from app.features.form_builder.engine.project.save import write_generated
@@ -77,3 +77,98 @@ def test_rename_follows_an_open_form_step_and_delete_names_it(tmp_path: Path) ->
     result = generate_form_module(document, scope=scope, source_bytes=sale.read_bytes())
     messages = [item.message for item in result.diagnostics if item.code == "FB120"]
     assert messages == [missing_form_sentence("client")]
+
+
+_COMMENTED = """<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <!-- keep me -->
+ <widget class="QWidget" name="Form">
+  <property name="cbcsOnClicked" stdset="0">
+   <string>[{"do": "openForm", "form": "x", "mode": "dialog"}]</string>
+  </property>
+ </widget>
+</ui>
+"""
+
+
+def test_retarget_changes_only_the_open_form_name() -> None:
+    updated = retarget_ui_text(_COMMENTED, "x", "y")
+    assert updated == _COMMENTED.replace('"form": "x"', '"form": "y"')
+    assert "<!-- keep me -->" in updated
+
+
+def test_a_cross_folder_move_leaves_both_reports_and_names_the_form(tmp_path: Path) -> None:
+    root = tmp_path / "proj"
+    fs = OsFileSystem()
+    left = root / "forms" / "a"
+    right = root / "forms" / "b"
+    assert create_form(str(root), "report", fs, directory=str(left)).refused is None
+    assert create_form(str(root), "report", fs, directory=str(right)).refused is None
+    assert create_form(str(root), "x", fs, directory=str(left)).refused is None
+    opener = left / "report.ui"
+    other = right / "report.ui"
+    _arm(opener, "x")
+    other.write_text(_COMMENTED, encoding="utf-8")
+    opener_bytes = opener.read_bytes()
+    other_bytes = other.read_bytes()
+    generated = (left / "ui_report.py").read_bytes()
+    plan = plan_rename(str(root), str(left / "x.ui"), str(right / "y.ui"), fs)
+    assert plan.reason is None, plan.reason
+    assert [item.message for item in plan.diagnostics if item.code == "FB120"] == [missing_form_sentence("x")]
+    apply(plan, fs)
+    assert opener.read_bytes() == opener_bytes
+    assert other.read_bytes() == other_bytes
+    assert (left / "ui_report.py").read_bytes() == generated
+
+
+def test_deleting_a_form_from_the_tree_names_it_without_rewriting(tmp_path: Path) -> None:
+    from types import SimpleNamespace
+
+    from app.features.form_builder.integration.form_removal import install_form_removal
+    from app.project.path_removed import set_path_removed_listener
+    from app.shell.breakpoint_store import BreakpointStore
+    from app.shell.project_tree_action_coordinator import ProjectTreeActionCoordinator
+
+    root = tmp_path / "proj"
+    fs = OsFileSystem()
+    assert create_form(str(root), "customer", fs).refused is None
+    assert create_form(str(root), "sale", fs).refused is None
+    sale = root / "forms" / "sale.ui"
+    _arm(sale, "customer")
+    _regenerate(root, "sale", fs)
+    sale_bytes = sale.read_bytes()
+    generated = (root / "forms" / "ui_sale.py").read_bytes()
+    published = []
+    window = SimpleNamespace(
+        _loaded_project=SimpleNamespace(project_root=str(root)),
+        _problems_controller=SimpleNamespace(
+            apply_lint_diagnostics_result=lambda path, rows: published.append((path, list(rows)))
+        ),
+    )
+    install_form_removal(window)
+    coordinator = ProjectTreeActionCoordinator(
+        project_tree_controller=SimpleNamespace(close_deleted_editor_paths=lambda *_a, **_k: None),
+        open_tab_paths=lambda: [],
+        widget_for_path=lambda _path: None,
+        tab_index_for_path=lambda _path: -1,
+        remove_tab_at_index=lambda _index: None,
+        release_tab_content=lambda _path: None,
+        rekey_tab_content=lambda _old, _new: None,
+        close_editor_file=lambda _path: None,
+        breakpoint_store=BreakpointStore(),
+        refresh_breakpoints_list=lambda: None,
+        remap_editor_paths=lambda _old, _new: {},
+        update_tab_path_and_name=lambda _index, _path: None,
+        apply_breakpoints_to_widget=lambda _widget, _bps: None,
+        update_widget_language=lambda _widget, _path: None,
+        maybe_rewrite_imports=lambda _src, _dst: None,
+        refresh_project=lambda _tier: None,
+    )
+    try:
+        assert coordinator.handle_delete(str(root / "forms" / "customer.ui")) is None
+    finally:
+        set_path_removed_listener(None)
+    assert sale.read_bytes() == sale_bytes
+    assert (root / "forms" / "ui_sale.py").read_bytes() == generated
+    messages = [row.message for _path, rows in published for row in rows if row.code == "FB120"]
+    assert messages == [missing_form_sentence("customer")]

@@ -67,6 +67,7 @@ class EditorTabState:
         self.content_source = content_source
         self.content_source_unsubscribe = content_source_unsubscribe
         self.virtual_tab = False
+        self.byte_lock_reason: str | None = None
 
     @classmethod
     def from_file(

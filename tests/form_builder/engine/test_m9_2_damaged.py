@@ -7,7 +7,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from app.editors.editor_manager import EditorManager
+from app.editors.code_editor_widget import CodeEditorWidget
+from app.editors.editor_manager import NON_UTF8_UI_NOTICE, EditorManager
 from app.features.form_builder.engine.ids import IdAllocator
 from app.features.form_builder.engine.ui4.reader import UiReadError, read_ui
 from app.features.form_builder.engine.ui4.writer import write_ui
@@ -99,6 +100,83 @@ def test_a_ui_that_is_not_utf8_opens_as_text_and_saves_the_same_bytes(tmp_path: 
     provider = FormTabProvider()
     with pytest.raises(ProviderDeclined) as caught:
         provider.create_surface(SimpleNamespace(file_path=str(path), initial_text=text, project_root=None))  # type: ignore[arg-type]
-    assert caught.value.reason == "This form can't be opened in the form builder: the file isn't UTF-8."
-    manager.save_tab(str(path))
+    assert caught.value.reason == NON_UTF8_UI_NOTICE
+    with pytest.raises(ValueError, match="read-only"):
+        manager.save_tab(str(path))
+    assert path.read_bytes() == raw
+
+
+def test_a_latin1_ui_stays_unchanged_when_the_text_editor_saves(tmp_path: Path, qapp: object) -> None:
+    """The text widget replaces a bad byte. Save still leaves the file alone."""
+
+    del qapp
+    from types import SimpleNamespace
+
+    from app.qt.QtGui import QPalette
+    from app.qt.QtWidgets import QApplication, QWidget
+    from app.shell.editor_tab_factory import EditorTabFactory
+    from app.shell.save_workflow import SaveWorkflow
+    from app.shell.theme_tokens import tokens_from_palette
+
+    raw = (
+        b'<?xml version="1.0" encoding="ISO-8859-1"?>\n'
+        b'<ui version="4.0"><widget class="QWidget" name="Form">'
+        b'<property name="windowTitle"><string>caf\xe9</string></property>'
+        b"</widget></ui>\n"
+    )
+    path = tmp_path / "cafe.ui"
+    path.write_bytes(raw)
+    manager = EditorManager()
+    opened = manager.open_file(str(path))
+    window = SimpleNamespace(
+        _editor_tab_width=4,
+        _editor_font_family="monospace",
+        _editor_indent_style="spaces",
+        _editor_indent_size=4,
+        _editor_hover_tooltip_enabled=False,
+        _editor_auto_reindent_flat_python_paste=False,
+        _completion_min_chars=1,
+        _shell_preferences_runtime=SimpleNamespace(completion_mode=lambda: "off"),
+        _editor_tab_workflow=SimpleNamespace(
+            effective_font_size=lambda: 12,
+            apply_runtime_intelligence_preferences_to_editor=lambda _widget: None,
+            attach_editor_bindings=lambda *_args: None,
+        ),
+        _shell_theme_workflow=SimpleNamespace(
+            resolve_theme_tokens=lambda: tokens_from_palette(QApplication.instance().palette() or QPalette())
+        ),
+        _workspace_controller=SimpleNamespace(register_editor=lambda *_args: None),
+    )
+    parent = QWidget()
+    editor = EditorTabFactory(window)._build_bound_source_editor(  # type: ignore[arg-type]
+        opened,
+        parent=parent,
+        theme_tokens=None,
+    )
+    assert isinstance(editor, CodeEditorWidget)
+    assert editor.isReadOnly()
+    shown = editor.toPlainText()
+    assert shown.encode("utf-8", "surrogateescape") != raw
+    editor.insertPlainText("Z")
+    manager.update_tab_content(str(path), shown)
+    assert manager.get_tab(str(path)).current_content.encode("utf-8", "surrogateescape") == raw
+    told: list[str] = []
+
+    def _warn(*args: object, **_kwargs: object) -> int:
+        told.append(str(args[-1]))
+        return 0
+
+    workflow = SaveWorkflow.__new__(SaveWorkflow)
+    workflow._host = SimpleNamespace(dialog_parent=lambda: None)  # type: ignore[attr-defined]
+    workflow._editor_manager = lambda: manager  # type: ignore[method-assign]
+    import app.shell.save_workflow as save_workflow
+
+    previous = save_workflow.QMessageBox.warning
+    save_workflow.QMessageBox.warning = _warn  # type: ignore[method-assign]
+    try:
+        assert workflow.save_tab(str(path), check_stale_disk=False) is False
+        assert workflow.save_tab(str(path), checkpoint_source="auto_save_to_file", check_stale_disk=False) is False
+    finally:
+        save_workflow.QMessageBox.warning = previous  # type: ignore[method-assign]
+    assert told and "read-only" in told[0]
     assert path.read_bytes() == raw

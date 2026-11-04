@@ -17,6 +17,7 @@ from app.features.form_builder.integration.qrc_provider import (
     is_qrc,
 )
 from app.features.form_builder.integration.surface import FormSurface
+from app.editors.editor_manager import NON_UTF8_UI_NOTICE
 from app.shell.tab_content_providers import ProviderDeclined, TabMatchContext, TabSurfaceRequest
 
 
@@ -35,9 +36,7 @@ class FormTabProvider:
         if is_qrc(request.file_path):
             return QrcTabProvider().create_surface(request)
         if _not_utf8(request.initial_text):
-            raise ProviderDeclined(
-                "This form can't be opened in the form builder: the file isn't UTF-8."
-            )
+            raise ProviderDeclined(NON_UTF8_UI_NOTICE)
         try:
             scope = form_scope(request.file_path, request.project_root)
             session = FormSession.open(request.initial_text, path=request.file_path, scope=scope)
