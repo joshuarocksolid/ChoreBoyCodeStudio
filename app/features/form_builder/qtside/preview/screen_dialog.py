@@ -50,7 +50,9 @@ class ScreenDialog(QDialog):
         self.setAccessibleName("Add a screen")
         self.setModal(True)
         self._on_done = on_done
+        outer = QVBoxLayout(self)
         form = QFormLayout()
+        outer.addLayout(form)
         self.name = QLineEdit(self)
         self.name.setObjectName("formBuilder.screenName")
         self.name.setAccessibleName("Name")
@@ -79,8 +81,6 @@ class ScreenDialog(QDialog):
         cancel.setObjectName("formBuilder.screenCancel")
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
-        outer = QVBoxLayout(self)
-        outer.addLayout(form)
         outer.addWidget(buttons)
         self._add.setDefault(True)
         self.name.textChanged.connect(lambda _text: self._sync())

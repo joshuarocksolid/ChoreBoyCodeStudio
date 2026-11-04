@@ -189,6 +189,14 @@ def _classify_import(
             category=CATEGORY_VENDORED_NATIVE,
         )
 
+    # FreeCAD provides the PySide shim. A probe that never imported it is not a missing module.
+    if module_name in ("PySide", "PySide.QtCore", "PySide.QtGui", "PySide.QtWidgets"):
+        return ClassifiedModule(
+            module_name=module_name,
+            top_level=top_level,
+            category=CATEGORY_RUNTIME,
+        )
+
     return ClassifiedModule(
         module_name=module_name,
         top_level=top_level,

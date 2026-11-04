@@ -100,14 +100,7 @@ def _bare_reference() -> dict:
     return json.loads(proc.stdout)
 
 
-def test_application_stylesheet_rules_are_tooltip_only(qapp: QApplication) -> None:
-    saved = qapp.styleSheet()
-    try:
-        qapp.setStyleSheet("QToolTip { color: #ffffff; background-color: #000000; }")
-        assert selectors_are_tooltip_only(qapp.styleSheet())
-        qapp.setStyleSheet("QToolTip:disabled, QToolTip { color: #ffffff; }")
-        assert selectors_are_tooltip_only(qapp.styleSheet())
-        qapp.setStyleSheet("QWidget { color: red; }\nQToolTip { color: white; }")
-        assert selectors_are_tooltip_only(qapp.styleSheet()) is False
-    finally:
-        qapp.setStyleSheet(saved)
+def test_application_stylesheet_rules_are_tooltip_only() -> None:
+    assert selectors_are_tooltip_only("QToolTip { color: #ffffff; background-color: #000000; }")
+    assert selectors_are_tooltip_only("QToolTip:disabled, QToolTip { color: #ffffff; }")
+    assert selectors_are_tooltip_only("QWidget { color: red; }\nQToolTip { color: white; }") is False

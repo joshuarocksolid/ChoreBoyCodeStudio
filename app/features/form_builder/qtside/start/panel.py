@@ -518,6 +518,7 @@ class NewFormPanel(QWidget):
         column.addWidget(self._sentence)
 
         name_row = QHBoxLayout()
+        column.addLayout(name_row)
         self._name = QLineEdit(self._column)
         self._name.setObjectName("formBuilder.newForm.name")
         self._name.textChanged.connect(self._on_name_changed)
@@ -530,7 +531,6 @@ class NewFormPanel(QWidget):
         self._folder.setObjectName("formBuilder.newForm.folder")
         self._folder.currentIndexChanged.connect(self._on_folder_changed)
         name_row.addWidget(self._folder, 1)
-        column.addLayout(name_row)
 
         self._error = QLabel("", self._column)
         self._error.setObjectName("formBuilder.newForm.nameError")

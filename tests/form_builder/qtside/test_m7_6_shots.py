@@ -20,10 +20,11 @@ from app.features.form_builder.qtside.preview.child.session import ChildSession
 from app.features.form_builder.integration.preview_notice import preview_request
 from app.qt.QtWidgets import QApplication, QLabel, QLineEdit, QTreeWidget, QWidget
 from app.shell.theme_tokens import tokens_from_palette
+from app.features.form_builder.engine.logic.checks import Preset, write_checks
+from app.features.form_builder.engine.logic.events_codec import EventStep, call_step, write_list
 from tests.form_builder.qtside.test_m7_6_try import (
     _Session,
     _Writer,
-    _invoice_text,
     _prop,
     _scope,
     _window_text,
@@ -40,35 +41,82 @@ _MODES = (
 _EMAIL = "Enter an email address like name@example.com"
 
 
+def _field(class_name: str, name: str, body: str) -> str:
+    return '<widget class="%s" name="%s">%s</widget>' % (class_name, name, body)
+
+
+def _label(name: str, text: str, buddy: str = "") -> str:
+    buddy_xml = ('<property name="buddy"><cstring>%s</cstring></property>' % buddy) if buddy else ""
+    return _field(
+        "QLabel",
+        name,
+        '<property name="text"><string>%s</string></property>%s' % (text, buddy_xml),
+    )
+
+
+def _row(row: int, label: str, field: str) -> str:
+    return (
+        '<item row="%d" column="0">%s</item><item row="%d" column="1">%s</item>'
+        % (row, label, row, field)
+    )
+
+
 def _shot_text() -> str:
-    text = _invoice_text()
-    # The Logic panel's invoice names this field from its buddy. What ran uses
-    # that same name, so the shot form carries the same label.
-    label = (
-        '<item row="6" column="0">'
-        '<widget class="QLabel" name="discountRateLabel">'
-        '<property name="text"><string>Discount rate</string></property>'
-        '<property name="buddy"><cstring>discountEdit</cstring></property>'
-        "</widget></item>"
+    """One form: Discount, Discount rate, Qty, Price, Line total, Email, Save.
+
+    Rows sit together. Spare space is below Save, which is sized to its text.
+    """
+
+    checks = write_checks((Preset("email", None),))
+    assert checks is not None
+    steps = write_list((EventStep("validate"), call_step("save_invoice")))
+    rows = (
+        _row(0, _label("discountLabel", "Discount"), _field(
+            "QCheckBox", "discountCheck", '<property name="text"><string></string></property>',
+        )),
+        _row(1, _label("discountRateLabel", "Discount rate", "discountEdit"), _field(
+            "QLineEdit", "discountEdit", _prop("cbcsEnabledWhen", "discountCheck"),
+        )),
+        _row(2, _label("qtyLabel", "Qty"), _field("QSpinBox", "qtySpin", "")),
+        _row(3, _label("priceLabel", "Price"), _field(
+            "QDoubleSpinBox", "priceSpin", '<property name="decimals"><number>2</number></property>',
+        )),
+        _row(4, _label("lineTotalName", "Line total", "lineTotalLabel"), _field(
+            "QLabel", "lineTotalLabel", _prop("cbcsValue", "qtySpin * priceSpin") + _prop("cbcsFormat", "money"),
+        )),
+        _row(5, _label("emailLabel", "Email"), _field(
+            "QLineEdit", "emailEdit", _prop("cbcsValidate", checks) + _prop("cbcsErrorLabel", "emailError"),
+        )),
+        '<item row="6" column="0" colspan="2">%s</item>' % _field(
+            "QLabel", "emailError", '<property name="text"><string></string></property>',
+        ),
     )
-    text = text.replace('<item row="0" column="0">', label + '<item row="0" column="0">', 1)
-    text = text.replace(
-        '<widget class="QLineEdit" name="emailEdit">',
-        '<widget class="QLineEdit" name="emailEdit">%s' % _prop("cbcsErrorLabel", "emailError"),
-    )
-    extra = (
-        '<item row="4" column="1">'
-        '<widget class="QLabel" name="emailError">'
-        '<property name="text"><string></string></property>'
-        "</widget></item>"
-        '<item row="5" column="1">'
-        '<widget class="QLabel" name="noteLabel">%s</widget></item>'
-        % _prop("cbcsValue", "window.note()")
-    )
-    needle = '</layout>\n   </item>\n   <item>\n    <widget class="QPushButton" name="saveButton">'
-    if needle not in text:
-        raise AssertionError("invoice layout changed")
-    return text.replace(needle, extra + needle, 1)
+    save = _field("QPushButton", "saveButton", '<property name="text"><string>Save</string></property>' + _prop("cbcsOnClicked", steps))
+    return """<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>Invoice</class>
+ <widget class="QDialog" name="Invoice">
+  <property name="geometry"><rect><x>0</x><y>0</y><width>360</width><height>280</height></rect></property>
+  <property name="windowTitle"><string>Invoice</string></property>
+  <layout class="QVBoxLayout" name="verticalLayout">
+   <item>
+    <layout class="QFormLayout" name="formLayout">
+     %s
+    </layout>
+   </item>
+   <item>
+    <layout class="QHBoxLayout" name="saveRow">
+     <item><spacer name="saveSpacer"><property name="orientation"><enum>Qt::Horizontal</enum></property><property name="sizeHint" stdset="0"><size><width>40</width><height>20</height></size></property></spacer></item>
+     <item>%s</item>
+    </layout>
+   </item>
+   <item><spacer name="belowSpacer"><property name="orientation"><enum>Qt::Vertical</enum></property><property name="sizeHint" stdset="0"><size><width>20</width><height>40</height></size></property></spacer></item>
+  </layout>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>
+""" % ("".join(rows), save)
 
 
 def _live(qapp: QApplication, tmp_path: Path) -> tuple:

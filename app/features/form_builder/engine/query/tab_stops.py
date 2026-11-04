@@ -96,14 +96,32 @@ def display_name(doc: UiDocument, object_name: str) -> str:
     return found
 
 
-def _display_name(doc: UiDocument, object_name: str) -> str:
+_BUDDIES: weakref.WeakKeyDictionary = weakref.WeakKeyDictionary()
+
+
+def _buddy_captions(doc: UiDocument) -> Dict[str, str]:
+    """Field name to the first label caption that names it. One walk per revision."""
+
+    cached = _BUDDIES.get(doc)
+    if cached is not None and cached[0] == doc.revision:
+        return cached[1]
+    found: Dict[str, str] = {}
     for label_id in labels(doc):
-        if buddy_of(doc, label_id) != object_name:
+        buddy = buddy_of(doc, label_id)
+        if not buddy or buddy in found:
             continue
         text = caption(doc, label_id)
         label = doc.get(label_id)
         if text and text != getattr(label, "object_name", ""):
-            return text
+            found[buddy] = text
+    _BUDDIES[doc] = (doc.revision, found)
+    return found
+
+
+def _display_name(doc: UiDocument, object_name: str) -> str:
+    text = _buddy_captions(doc).get(object_name)
+    if text:
+        return text
     found = doc.by_name(object_name)
     node = doc.get(found[0]) if found else None
     if isinstance(node, WidgetNode):

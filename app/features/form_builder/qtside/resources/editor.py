@@ -92,6 +92,7 @@ class QrcSurface(QWidget):
 
         head = QHBoxLayout()
         head.setSpacing(0)
+        root.addLayout(head)
         self._pictures = self._segment("Pictures", "formBuilder.qrcPictures")
         self._xml = self._segment("XML", "formBuilder.qrcXml")
         self._pictures.setChecked(True)
@@ -103,7 +104,6 @@ class QrcSurface(QWidget):
         self._title = QLabel(new_path_label(source.path, source.project_root), self)
         self._title.setObjectName("formBuilder.qrcTitle")
         head.addWidget(self._title, 1)
-        root.addLayout(head)
 
         self._bar = QWidget(self)
         bar = QHBoxLayout(self._bar)

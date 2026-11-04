@@ -254,6 +254,7 @@ class RowPopover(QFrame):
         outer.addWidget(self._body)
         footer = QHBoxLayout()
         footer.setContentsMargins(0, 0, 0, 0)
+        outer.addLayout(footer)
         self._reset = QPushButton("Reset", self)
         self._reset.setObjectName("formBuilder.popoverReset")
         self._reset.clicked.connect(self._on_reset)
@@ -265,7 +266,6 @@ class RowPopover(QFrame):
         footer.addWidget(self._reset, 0)
         footer.addStretch(1)
         footer.addWidget(self._done, 0)
-        outer.addLayout(footer)
         self._apply_style()
         if not large:
             self.setMaximumWidth(MAX_WIDTH)

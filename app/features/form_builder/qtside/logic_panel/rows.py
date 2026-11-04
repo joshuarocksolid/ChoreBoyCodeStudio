@@ -187,6 +187,7 @@ class LogicRow(QWidget):
         line = QHBoxLayout()
         line.setContentsMargins(0, 0, 0, 0)
         line.setSpacing(6)
+        column.addLayout(line)
         self._glyph = QLabel(self)
         self._glyph.setFixedSize(16, 16)
         self._glyph.setFocusPolicy(_NO_FOCUS)
@@ -209,10 +210,10 @@ class LogicRow(QWidget):
         self._aside.setVisible(bool(face.aside))
         line.addWidget(self._aside, 1)
         self._title.setVisible(bool(face.title))
-        column.addLayout(line)
         body_line = QHBoxLayout()
         body_line.setContentsMargins(0, 0, 0, 0)
         body_line.setSpacing(0)
+        column.addLayout(body_line)
         indent = QWidget(self)
         indent.setFixedWidth(12)
         indent.setAttribute(_TRANSPARENT, True)
@@ -221,7 +222,6 @@ class LogicRow(QWidget):
         self._body.setObjectName("formBuilder.logic.formula")
         self._body.setVisible(bool(face.body))
         body_line.addWidget(self._body, 1)
-        column.addLayout(body_line)
         ignored, preferred = _policies()
         self.setSizePolicy(ignored, preferred)  # type: ignore[arg-type]
 

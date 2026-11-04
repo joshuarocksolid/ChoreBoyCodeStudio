@@ -136,6 +136,7 @@ def test_data_tab_shots(qapp, tmp_path: Path) -> None:
             connected = DataPanel(host)
             connected.reload()
             _shoot(connected, qapp, root, "connected-data", 640, 420)
+            _shoot(connected, qapp, root, "connected-data-184", 184, 420)
             sql_dialog = SqlDialog(host, session)
             _shoot(sql_dialog, qapp, root, "show-sql", 680, 520)
             notes = session.document.by_name("notesEdit")[0]
@@ -144,6 +145,7 @@ def test_data_tab_shots(qapp, tmp_path: Path) -> None:
             bound.show()
             bound.paint("QLineEdit")
             _shoot(bound, qapp, root, "inspector-bound", 360, 240)
+            _shoot(bound, qapp, root, "inspector-bound-236", 236, 480)
             paid = session.document.by_name("paidCheck")[0]
             bind_field(session, paid, "invoice_date")
             session.selection.set((paid,), source=SelectionSource.PROGRAM)
@@ -244,6 +246,7 @@ def _runtime(qapp: QApplication, tmp_path: Path, root: Path) -> None:
         window.setObjectName("formBuilder.recordWindow")
         ui = ui_cls()
         ui.setupUi(window)
+        window.ui = ui  # type: ignore[attr-defined]
         if hasattr(ui, "cbcs_next"):
             ui.cbcs_next()
         label = getattr(ui, "positionLabel", None)
@@ -368,7 +371,12 @@ def _shoot(widget: QWidget, qapp: QApplication, root: Path, name: str, width: in
                 int(tokens.focus_border_width or 1),
             )
         else:
-            apply_chrome(widget, tokens)
+            if hasattr(widget, "ui"):
+                from app.features.form_builder.qtside.theme.runtime import pin_runtime_look
+
+                pin_runtime_look(widget)
+            else:
+                apply_chrome(widget, tokens)
         fit = getattr(widget, "fit_to_contents", None)
         if callable(fit):
             fit()

@@ -50,6 +50,49 @@ def test_dirty_check_for_twenty_fields_stays_under_the_ceiling(tmp_path: Path) -
         assert max(samples) < 50
 
 
+def test_a_bad_stored_date_opens_blank_and_stays_unsaved(tmp_path: Path) -> None:
+    def prepare(root: Path) -> Path:
+        path = _wide_db(root)
+        connection = sqlite3.connect(str(path))
+        connection.execute("UPDATE wide SET when_on = '4/2/2026'")
+        connection.commit()
+        connection.close()
+        return path
+
+    with record_window(tmp_path, _wide_ui(), prepare, filename="wide.ui", connection_file="data/wide.db") as (host, db):
+        assert host.ui._cbcs_is_dirty() is False
+        assert host.ui._cbcs_status_line == "when_on has a value that isn't a date ('4/2/2026'); it's shown blank."
+        host.ui.n0Edit.setText(host.ui.n0Edit.text() + "x")
+        assert host.ui.cbcs_save() is True
+    connection = sqlite3.connect(str(db))
+    try:
+        stored = connection.execute("SELECT when_on FROM wide WHERE id = 1").fetchone()[0]
+    finally:
+        connection.close()
+    assert stored == "4/2/2026"
+
+
+def test_extra_decimal_places_do_not_mark_the_record_dirty(tmp_path: Path) -> None:
+    def prepare(root: Path) -> Path:
+        path = _wide_db(root)
+        connection = sqlite3.connect(str(path))
+        connection.execute("UPDATE wide SET amount = '1.239'")
+        connection.commit()
+        connection.close()
+        return path
+
+    with record_window(tmp_path, _wide_ui(), prepare, filename="wide.ui", connection_file="data/wide.db") as (host, db):
+        assert host.ui._cbcs_is_dirty() is False
+        host.ui.n0Edit.setText(host.ui.n0Edit.text() + "x")
+        assert host.ui.cbcs_save() is True
+    connection = sqlite3.connect(str(db))
+    try:
+        stored = connection.execute("SELECT amount FROM wide WHERE id = 1").fetchone()[0]
+    finally:
+        connection.close()
+    assert str(stored) == "1.239"
+
+
 def _wide_ui() -> str:
     widgets = []
     for index in range(20):

@@ -234,6 +234,7 @@ class FromTableDialog(QDialog):
     def _build(self) -> None:
         root = QVBoxLayout(self)
         path_row = QHBoxLayout()
+        root.addLayout(path_row)
         database = QLabel("Connection", self)
         database.setObjectName("formBuilder.fromTable.databaseLabel")
         path_row.addWidget(database)
@@ -248,9 +249,9 @@ class FromTableDialog(QDialog):
         self._path = QLabel("", self)
         self._path.setObjectName("formBuilder.fromTable.path")
         path_row.addWidget(self._path)
-        root.addLayout(path_row)
 
         options = QHBoxLayout()
+        root.addLayout(options)
         make_label = QLabel("Make", self)
         make_label.setObjectName("formBuilder.fromTable.makeLabel")
         options.addWidget(make_label)
@@ -276,7 +277,6 @@ class FromTableDialog(QDialog):
         self._lines_link.currentIndexChanged.connect(lambda _index: self._sync_button())
         options.addWidget(self._lines_link)
         options.addStretch(1)
-        root.addLayout(options)
 
         body = QHBoxLayout()
         root.addLayout(body, 1)
@@ -302,7 +302,9 @@ class FromTableDialog(QDialog):
         body.addWidget(preview_host, 2)
 
         footer = QHBoxLayout()
+        root.addLayout(footer)
         start_box = QVBoxLayout()
+        footer.addLayout(start_box, 1)
         self._start = QCheckBox("Open this screen when the app starts", self)
         self._start.setObjectName("formBuilder.fromTable.start")
         self._start_user = False
@@ -312,7 +314,6 @@ class FromTableDialog(QDialog):
         self._start_note.setWordWrap(True)
         start_box.addWidget(self._start)
         start_box.addWidget(self._start_note)
-        footer.addLayout(start_box, 1)
         self._reason = QLabel("", self)
         self._reason.setObjectName("formBuilder.fromTable.reason")
         footer.addWidget(self._reason, 1)
@@ -327,7 +328,6 @@ class FromTableDialog(QDialog):
         self._create.setFixedHeight(28)
         self._create.clicked.connect(self.create_requested.emit)
         footer.addWidget(self._create)
-        root.addLayout(footer)
         self._chain_tabs()
         self._fit_columns()
 

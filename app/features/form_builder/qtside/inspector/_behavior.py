@@ -28,6 +28,27 @@ from app.qt.QtWidgets import QSizePolicy, QVBoxLayout, QWidget
 logger = logging.getLogger(__name__)
 
 
+def _formula_only(document: object) -> bool:
+    """True when every edit since the last non-formula write was a formula.
+
+    The event list, the checks and the method list do not change on those
+    writes. The State rows do.
+    """
+
+    held = getattr(document, "_formula_edits", None)
+    if getattr(document, "_formula_pending", False):
+        return True
+    if not isinstance(held, tuple) or len(held) != 2:
+        return False
+    before, edits = held
+    revision = getattr(document, "revision", None)
+    if not isinstance(before, int) or revision == before or not edits:
+        return False
+    from app.features.form_builder.engine.logic.storage import FORMULA_KEYS
+
+    return all(key in FORMULA_KEYS for _node, key in edits)
+
+
 def _legacy_section() -> Optional[BehaviorSection]:
     """The M3 list, until M6.1b deletes its file."""
     try:
@@ -91,6 +112,8 @@ class BehaviorPage(QWidget):
             refresh()
 
     def paint(self, view: BehaviorView) -> None:
+        document = self._services.session.document
+        formula = _formula_only(document)
         inputs = SectionInputs(view, self._services, tuple(self._services.session.selection.state.ids))
         position = 0
         for section in self.sections():
@@ -114,7 +137,10 @@ class BehaviorPage(QWidget):
                     widget.show()
                 else:
                     widget.hide()
+                if formula and section.section_id != "state" and getattr(widget, "_cbcs_paint_rev", None) is not None:
+                    continue
                 self._call(section, widget, "paint", inputs)
+                setattr(widget, "_cbcs_paint_rev", document.revision)
             else:
                 self._layout.removeWidget(widget)
                 widget.hide()

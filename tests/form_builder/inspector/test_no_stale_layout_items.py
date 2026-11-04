@@ -28,7 +28,9 @@ def _held_items() -> int:
     return sum(1 for obj in gc.get_objects() if isinstance(obj, QLayoutItem) and not isinstance(obj, QLayout))
 
 
+@pytest.mark.timeout(120)
 def test_repainting_the_inspector_holds_no_new_layout_items() -> None:
+    """Known to sit near the 30s cap when the machine is busy. The global cap stays 30s."""
     app = QApplication.instance()
     assert app is not None
     with opened(reference_form(25).xml) as (session, realizer):

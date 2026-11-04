@@ -133,6 +133,7 @@ class FormDesignerSettingsPage(QWidget):
         column.setSpacing(10)
         form = QFormLayout()
         form.setSpacing(8)
+        column.addLayout(form)
 
         self.style_combo = QComboBox(self)
         self.style_combo.setObjectName("formBuilder.settings.previewStyle")
@@ -166,7 +167,6 @@ class FormDesignerSettingsPage(QWidget):
             label = QLabel(text, self)
             label.setBuddy(widget)
             form.addRow(label, widget)
-        column.addLayout(form)
         column.addWidget(self.prewarm)
         column.addWidget(self.qt_names)
 

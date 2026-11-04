@@ -1222,3 +1222,26 @@ def _move(ui: Any, source: int, target: int) -> None:
     row = model.takeRow(source)
     model.insertRow(target, row)
 
+
+def test_a_bad_line_date_opens_blank_and_stays_unsaved(tmp_path: Path) -> None:
+    def prepare(root: Path) -> Path:
+        path = _prepare(root)
+        connection = sqlite3.connect(str(path))
+        connection.execute("UPDATE invoice_lines SET needed = '4/2/2026' WHERE id = 1")
+        connection.commit()
+        connection.close()
+        return path
+
+    with record_window(tmp_path, _ui(), prepare, schema=_invoice_schema()) as (host, db):
+        assert host.ui._cbcs_is_dirty() is False
+        assert _value(host.ui, 0, "needed") is None
+        assert "needed has a value that isn't a date ('4/2/2026')" in host.ui._cbcs_status_line
+        _set(host.ui, 0, "description", "kept")
+        assert host.ui.cbcs_save() is True
+    connection = sqlite3.connect(str(db))
+    try:
+        stored = connection.execute("SELECT needed FROM invoice_lines WHERE id = 1").fetchone()[0]
+    finally:
+        connection.close()
+    assert stored == "4/2/2026"
+

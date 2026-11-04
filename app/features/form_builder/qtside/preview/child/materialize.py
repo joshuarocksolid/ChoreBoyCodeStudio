@@ -71,6 +71,9 @@ class FormMaterializer:
                 host = factory(ui_cls, source)
             else:
                 host = _host_for(ui_cls, source, methods, self.on_would_call)
+                from app.features.form_builder.qtside.theme.runtime import pin_runtime_look
+
+                pin_runtime_look(host)
             _ensure_size(host)
             host.show()
             return host
@@ -111,6 +114,9 @@ class FormMaterializer:
                 record_failures=not failures,
             )
         _ensure_size(widget)
+        from app.features.form_builder.qtside.theme.runtime import pin_runtime_look
+
+        pin_runtime_look(widget)
         widget.show()
         return Materialized(widget, tuple(failures))
 

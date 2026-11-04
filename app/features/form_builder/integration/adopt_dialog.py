@@ -105,9 +105,9 @@ class AdoptDialog(QDialog):
         if close is not None:
             close.setDefault(True)
         row = QHBoxLayout()
+        outer.addLayout(row)
         row.addStretch(1)
         row.addWidget(buttons)
-        outer.addLayout(row)
         self.apply_theme(tokens)
 
     def apply_theme(self, tokens: ShellThemeTokens) -> None:
@@ -141,6 +141,7 @@ class AdoptDialog(QDialog):
         layout = QVBoxLayout(frame)
         layout.setContentsMargins(0, 0, 0, 0)
         header = QHBoxLayout()
+        layout.addLayout(header)
         label = QLabel(title, frame)
         label.setObjectName("formBuilder.adoptTitle")
         header.addWidget(label, 1)
@@ -148,7 +149,6 @@ class AdoptDialog(QDialog):
         copy.setObjectName(button_name)
         copy.setAccessibleName(accessible_name)
         header.addWidget(copy)
-        layout.addLayout(header)
         edit = QPlainTextEdit(text, frame)
         edit.setObjectName(edit_name)
         edit.setAccessibleName(editor_name)

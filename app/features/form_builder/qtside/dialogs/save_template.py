@@ -119,6 +119,7 @@ class SaveTemplatePopover(QFrame):
         column.addWidget(self.caption)
 
         buttons = QHBoxLayout()
+        column.addLayout(buttons)
         buttons.addStretch(1)
         self.save_button = QPushButton(SAVE_LABEL, self)
         self.save_button.setObjectName(OBJECT_NAME + ".save")
@@ -129,7 +130,6 @@ class SaveTemplatePopover(QFrame):
         self.cancel_button.setAutoDefault(False)
         buttons.addWidget(self.save_button)
         buttons.addWidget(self.cancel_button)
-        column.addLayout(buttons)
 
         self.setFixedWidth(WIDTH)
         apply_level2_shadow(self, chrome)

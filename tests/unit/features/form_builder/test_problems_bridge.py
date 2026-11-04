@@ -41,6 +41,19 @@ def test_a_form_diagnostic_keeps_its_code_and_names_the_widget() -> None:
     assert "node" not in row.detail
 
 
+def test_fb312_drops_the_search_screen_bracket() -> None:
+    diagnostic = _row("FB312")
+    diagnostic = FormDiagnostic(
+        code="FB312",
+        severity=Severity.WARNING,
+        message="This lookup has no search screen. [Use a search screen instead]",
+        location=diagnostic.location,
+        source=diagnostic.source,
+    )
+    rows = code_diagnostics_for_form("/tmp/invoice.ui", (diagnostic,))
+    assert rows[0].message == "This lookup has no search screen."
+
+
 def test_internal_codes_stay_out_unless_debug_is_on(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("CBCS_FB_DEBUG", raising=False)
     assert code_diagnostics_for_form("/tmp/invoice.ui", (_row("FB900"),)) == []

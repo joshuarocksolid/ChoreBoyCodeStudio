@@ -57,6 +57,7 @@ class RepairDialog(QDialog):
                 order.append(fix.missing)
         for missing in order:
             row = QHBoxLayout()
+            layout.addLayout(row)
             label = QLabel(missing, self)
             label.setObjectName("formBuilder.repairName.%s" % missing)
             name_font = QFont(UI_EDITOR_FONT_FAMILY_DEFAULT)
@@ -78,7 +79,6 @@ class RepairDialog(QDialog):
             row.addWidget(label)
             row.addWidget(arrow)
             row.addWidget(combo, 1)
-            layout.addLayout(row)
             uses = QLabel(_uses_line(fixes, missing, document), self)
             uses.setObjectName("formBuilder.repairUses.%s" % missing)
             uses.setProperty("repairUses", True)

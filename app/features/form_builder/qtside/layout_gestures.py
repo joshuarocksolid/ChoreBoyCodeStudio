@@ -216,6 +216,7 @@ class _Question(QFrame):
         text.setMaximumWidth(380)
         column.addWidget(text)
         row = QHBoxLayout()
+        column.addLayout(row)
         row.addStretch(1)
         self.cancel = QPushButton(prompt.cancel, self)
         self.accept = QPushButton(prompt.accept, self)
@@ -223,7 +224,6 @@ class _Question(QFrame):
             # Enter presses the focused button; outside a QDialog that is off by default.
             button.setAutoDefault(True)
             row.addWidget(button)
-        column.addLayout(row)
         self._accepted = False
         self._loop = QEventLoop(self)
         self.accept.clicked.connect(lambda: self._finish(True))

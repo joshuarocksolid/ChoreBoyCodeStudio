@@ -85,6 +85,9 @@ def code_diagnostics_for_form(
         if fixes:
             detail["fixes"] = json.dumps([list(pair) for pair in fixes], ensure_ascii=True)
         message = item.message
+        if item.code == "FB312":
+            message = message.replace(" [Use a search screen instead]", "").replace("[Use a search screen instead]", "")
+            message = message.rstrip()
         rows.append(
             CodeDiagnostic(
                 code=item.code,
