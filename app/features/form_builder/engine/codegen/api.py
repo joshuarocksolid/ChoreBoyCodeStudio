@@ -11,7 +11,7 @@ from __future__ import annotations
 import ast
 import hashlib
 import os
-from typing import Optional
+from typing import Optional, Tuple
 
 from app.features.form_builder.engine.codegen.api_types import (
     CODEGEN_VERSION,
@@ -92,6 +92,7 @@ def generate_form_module(
     source_bytes: Optional[bytes],
     options: CodegenOptions = CodegenOptions(),
     trace: bool = False,
+    known_stems: Tuple[str, ...] = (),
 ) -> CodegenResult:
     """Generate ``ui_<name>.py`` for a project or adopted form.
 
@@ -137,6 +138,7 @@ def generate_form_module(
         trace=trace,
         window=_window_facts(scope),
         formats=read_formats(scope.project_root),
+        known_stems=known_stems,
     )
     if pieces.refused:
         return CodegenResult(

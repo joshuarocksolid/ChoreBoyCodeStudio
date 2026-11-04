@@ -163,6 +163,7 @@ class _EmitCtx:
         self.window = ctx.window
         self.formats = ctx.formats
         self.forms_dir = ctx.forms_dir
+        self.known_stems = ctx.known_stems
         self.doc = doc
         self.classes = classes
         self.bag = bag
