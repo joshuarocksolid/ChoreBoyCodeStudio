@@ -240,15 +240,15 @@ class PropertiesPage(QWidget):
             widget.hide()
         self._content_layout.addStretch(1)
         self._scroll.setWidget(self._content)
-        tools = QHBoxLayout()
-        tools.setContentsMargins(0, 0, 0, 0)
-        tools.setSpacing(0)
-        tools.addWidget(self._search, 1)
-        tools.addWidget(self._more, 0)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
+        tools = QHBoxLayout()
+        tools.setContentsMargins(0, 0, 0, 0)
+        tools.setSpacing(0)
         layout.addLayout(tools)
+        tools.addWidget(self._search, 1)
+        tools.addWidget(self._more, 0)
         layout.addWidget(self._pill)
         layout.addWidget(self._scroll, 1)
         self.setFocusProxy(self._search)
@@ -1052,15 +1052,15 @@ class _Row(QWidget):
         # changed, the line's left margin holds the bar's 2 px and the 6 px
         # after it, so the columns line up.
         self._head: Optional[QHBoxLayout] = None
-        self._line = QHBoxLayout()
-        self._line.setContentsMargins(_BAR_SLOT, 0, 0, 0)
-        self._line.setSpacing(_ROW_GAP)
-        self._line.addWidget(self._label_col, 0)
-        self._line.addWidget(self._slot, 1)
         self._outer = QVBoxLayout(self)
         self._outer.setContentsMargins(0, 2, 0, 2)
         self._outer.setSpacing(2)
+        self._line = QHBoxLayout()
+        self._line.setContentsMargins(_BAR_SLOT, 0, 0, 0)
+        self._line.setSpacing(_ROW_GAP)
         self._outer.addLayout(self._line)
+        self._line.addWidget(self._label_col, 0)
+        self._line.addWidget(self._slot, 1)
 
     def _bar_widget(self) -> QFrame:
         if self._bar is None:
@@ -1098,12 +1098,12 @@ class _Row(QWidget):
         self._line.removeWidget(self._label_col)
         if self._bar is not None:
             self._line.removeWidget(self._bar)
+        self._line.setContentsMargins(0, 0, 0, 0)
+        self._line.insertLayout(0, head, 0)
         head.addWidget(self._label_col, 0)
         if self._bar is not None:
             head.insertWidget(0, self._bar, 0)
             head.setContentsMargins(0, 0, 0, 0)
-        self._line.setContentsMargins(0, 0, 0, 0)
-        self._line.insertLayout(0, head, 0)
         self._head = head
         return head
 

@@ -100,6 +100,22 @@ def test_classify_module_returns_missing_when_no_match_found(tmp_path: Path) -> 
     assert classification.category == CATEGORY_MISSING
 
 
+def test_classify_module_treats_the_freecad_pyside_shim_as_runtime(tmp_path: Path) -> None:
+    known = frozenset({"FreeCAD"})
+    widgets = classify_module(
+        project_root=tmp_path,
+        module_name="PySide.QtWidgets",
+        known_runtime_modules=known,
+    )
+    assert widgets.category == CATEGORY_RUNTIME
+    printing = classify_module(
+        project_root=tmp_path,
+        module_name="PySide.QtPrintSupport",
+        known_runtime_modules=known,
+    )
+    assert printing.category == CATEGORY_MISSING
+
+
 def test_has_compiled_extension_candidate_detects_top_level_so(tmp_path: Path) -> None:
     (tmp_path / "fastlib.cpython-39-x86_64-linux-gnu.so").write_bytes(b"")
 

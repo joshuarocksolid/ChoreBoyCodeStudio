@@ -33,6 +33,7 @@ def ask_steer(parent: QWidget, sentence: str) -> Optional[str]:
     label.setWordWrap(True)
     column.addWidget(label)
     buttons = QHBoxLayout()
+    column.addLayout(buttons)
     rule = QPushButton("Make it a rule", dialog)
     rule.setObjectName("formBuilder.steer.rule")
     rule.setDefault(True)
@@ -42,7 +43,6 @@ def ask_steer(parent: QWidget, sentence: str) -> Optional[str]:
     connect.setAutoDefault(True)
     buttons.addWidget(rule)
     buttons.addWidget(connect)
-    column.addLayout(buttons)
     choice = {"value": None}
 
     def pick_rule() -> None:

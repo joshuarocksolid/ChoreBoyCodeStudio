@@ -276,6 +276,7 @@ class _KindRow:
         line = QHBoxLayout()
         line.setContentsMargins(_BAR_SLOT, 0, 0, 0)
         line.setSpacing(6)
+        outer.addLayout(line)
         label = _Caption("Kind", self.widget)
         label.setMaximumWidth(_LABEL)
         label.setToolTip("How the layout arranges what is inside it.")
@@ -283,6 +284,7 @@ class _KindRow:
         strip = QHBoxLayout()
         strip.setContentsMargins(0, 0, 0, 0)
         strip.setSpacing(2)
+        line.addLayout(strip, 1)
         self._buttons: Dict[str, QToolButton] = {}
         for kind_id in SEGMENTS:
             button = _KindButton(kind_id, self.widget)
@@ -295,8 +297,6 @@ class _KindRow:
             button.clicked.connect(lambda _checked=False, chosen=kind_id: on_pick(chosen))
             self._buttons[kind_id] = button
             strip.addWidget(button, 1)
-        line.addLayout(strip, 1)
-        outer.addLayout(line)
         self._error = QLabel(self.widget)
         self._error.setObjectName("formBuilder.rowError")
         self._error.setWordWrap(True)

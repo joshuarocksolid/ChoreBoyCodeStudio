@@ -80,6 +80,7 @@ class WhatRan(QWidget):
         title.setObjectName("preview.whatRan.title")
         layout.addWidget(title)
         buttons = QHBoxLayout()
+        layout.addLayout(buttons)
         self._clear = QPushButton("Clear", self)
         self._clear.setObjectName("preview.whatRan.clear")
         self._copy = QPushButton("Copy", self)
@@ -87,7 +88,6 @@ class WhatRan(QWidget):
         buttons.addWidget(self._clear)
         buttons.addWidget(self._copy)
         buttons.addStretch(1)
-        layout.addLayout(buttons)
         self._list = QTreeWidget(self)
         self._list.setObjectName("preview.whatRan.list")
         self._list.setColumnCount(3)
@@ -123,6 +123,10 @@ class WhatRan(QWidget):
             item.setToolTip(1, line.sentence)
             item.setToolTip(2, _source_tip(line, self._names))
             if line.kind == "sql":
+                full = QTreeWidgetItem(["", line.sentence, ""])
+                full.setToolTip(1, line.sentence)
+                full.setData(0, _user_role(), TryLine(line.sentence, line.ref, line.source, "sql"))
+                item.addChild(full)
                 for value in line.details:
                     child = QTreeWidgetItem(["", value, ""])
                     child.setToolTip(1, value)
@@ -318,27 +322,12 @@ class WindowValues(QWidget):
             _connect(editor, name, annotation or "", self.changed.emit)
 
     def apply_chrome(self, chrome: FormChrome) -> None:
-        width = int(chrome.focus_width or 1)
-        _paint(self, chrome.panel, chrome.text)
-        self.setStyleSheet(
-            """
-            background: %s; color: %s;
-            QLabel { color: %s; background: %s; }
-            QLineEdit, QComboBox { background: %s; color: %s; border: 1px solid %s; }
-            QLineEdit:focus, QComboBox:focus { border: %dpx solid %s; }
-            """
-            % (
-                chrome.panel,
-                chrome.text,
-                chrome.text,
-                chrome.panel,
-                chrome.input or chrome.panel,
-                chrome.text,
-                chrome.border,
-                width,
-                chrome.accent,
-            )
-        )
+        """Window values sit with the form, on the light palette, not the editor theme."""
+
+        del chrome
+        from app.features.form_builder.qtside.theme.runtime import pin_runtime_look
+
+        pin_runtime_look(self)
 
 
 class DataStrip(QWidget):
@@ -475,6 +464,7 @@ class TryChrome(QWidget):
     def adopt(self, form: QWidget) -> None:
         form.setParent(self._form_parent)
         self._form_layout.addWidget(form)
+        self._keep_form_style()
 
     def apply_chrome(self, chrome: FormChrome) -> None:
         self._chrome = chrome
@@ -516,19 +506,16 @@ class TryChrome(QWidget):
         )
 
     def _keep_form_style(self) -> None:
-        """The person's form keeps the style it opened with. Only the chrome is themed."""
-        native = self._native
-        for widget in (self._column, self._form_parent):
-            widget.setPalette(native)
-            widget.setAutoFillBackground(True)
+        """The person's form keeps the light runtime look. Only the chrome is themed."""
+
+        from app.features.form_builder.qtside.theme.runtime import pin_runtime_look
+
+        self.values.apply_chrome(self._chrome)
         host = self._form_layout.itemAt(0)
         form = host.widget() if host is not None else None
         if form is None:
             return
-        form.setPalette(native)
-        form.setAutoFillBackground(True)
-        for child in form.findChildren(QWidget):
-            child.setPalette(native)
+        pin_runtime_look(form)
 
 
 def _ink_for(fill: str, fallback: str) -> str:
@@ -627,14 +614,19 @@ class _SentenceDelegate(QStyledItemDelegate):
             painter.restore()
             super().paint(painter, option, index)  # type: ignore[arg-type]
             return
+        parent = index.parent() if hasattr(index, "parent") else None
+        expanded = parent is not None and parent.isValid()
         style.drawPrimitive(QStyle.PE_PanelItemViewItem, opt, painter, widget)
         metrics = QFontMetrics(opt.font)
         suffix = (" " + count) if count else ""
         rect = style.subElementRect(QStyle.SE_ItemViewItemText, opt, widget)
         if rect.width() <= 0:
             rect = opt.rect
-        room = max(0, rect.width() - (_advance(metrics, suffix) if suffix else 0))
-        shown = metrics.elidedText(body, _elide_right(), room)
+        if expanded:
+            shown = body
+        else:
+            room = max(0, rect.width() - (_advance(metrics, suffix) if suffix else 0))
+            shown = metrics.elidedText(body, _elide_right(), room)
         selected = bool(enum_value(opt.state) & enum_value(QStyle.State_Selected))
         color = opt.palette.highlightedText().color() if selected else opt.palette.text().color()
         painter.setPen(color)

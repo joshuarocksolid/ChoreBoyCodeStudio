@@ -104,6 +104,32 @@ def isolate_widget(widget: QWidget) -> None:
     widget.setFont(startup_font())
 
 
+def pin_runtime_look(root: QWidget) -> None:
+    """The user's form, as the app will show it: Fusion and the light palette.
+
+    Editor chrome stays off this subtree. A stylesheet on the form is what
+    paints line edits dark while spin boxes and table viewports stay light.
+    The form keeps the font it already has, including a screen profile.
+    """
+
+    root.setStyleSheet("")
+    root.setStyle(_fusion_for(root))
+    light = QPalette(runtime_palette())
+    root.setPalette(light)
+    root.setAutoFillBackground(True)
+    finder = getattr(root, "findChildren", None)
+    if not callable(finder):
+        return
+    found = finder(QWidget)
+    if not isinstance(found, (list, tuple)):
+        return
+    for child in found:
+        if not isinstance(child, QWidget):
+            continue
+        child.setStyleSheet("")
+        child.setPalette(light)
+
+
 def silence_design_shortcuts(root: QWidget) -> None:
     """Drop key sequences on a design-time copy of the form.
 

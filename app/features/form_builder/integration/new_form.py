@@ -525,7 +525,9 @@ class NewFormSurface:
         try:
             apply_plan(session, plan, schema)
         except Exception:
-            return self._write_rendered(result, text)
+            written = self._write_rendered(result, text)
+            self._drop_empty_tab(surface, result, written)
+            return written
         from app.features.form_builder.engine.project.fs import OsFileSystem
         from app.features.form_builder.engine.project.save import write_generated
         from app.features.form_builder.engine.ui4.writer import write_ui
@@ -537,6 +539,49 @@ class NewFormSurface:
         if callable(mark):
             mark(finished)
         return result
+
+    def _drop_empty_tab(self, surface: object, result: CreateResult, written: CreateResult) -> None:
+        """The tab was opened on the empty skeleton. Disk has the rendered form, or nothing.
+
+        A later save of the empty document would overwrite the rendered file.
+        Reload the tab from disk. If that fails, or the write itself failed, close the tab.
+        """
+
+        scope = result.scope
+        if scope is None:
+            return
+        path = os.path.abspath(scope.ui_path)
+        if written.refused or written.scope is None:
+            self._close_tab(path)
+            return
+        try:
+            with open(path, encoding="utf-8") as handle:
+                disk = handle.read()
+        except OSError:
+            self._close_tab(path)
+            return
+        session = getattr(surface, "session", None)
+        log = getattr(session, "log", None)
+        execute = getattr(log, "execute", None)
+        if not callable(execute):
+            self._close_tab(path)
+            return
+        from app.features.form_builder.engine.commands.catalog import ReplaceDocument
+
+        try:
+            execute(ReplaceDocument(disk, reason="reload"))
+        except Exception:
+            self._close_tab(path)
+            return
+        mark = getattr(surface, "mark_saved", None)
+        if callable(mark):
+            mark(disk)
+
+    def _close_tab(self, path: str) -> None:
+        workflow = getattr(self._host(), "_editor_tab_workflow", None)
+        closer = getattr(workflow, "close_tab_discarding_edits", None)
+        if callable(closer):
+            closer(path)
 
     def _write_rendered(self, result: CreateResult, text: str) -> CreateResult:
         """Replace the empty skeleton with the rendered form. Remove it if that write fails."""

@@ -120,6 +120,7 @@ def build_rename_question(parent: Optional[QWidget], sentence: str) -> QDialog:
     label.setObjectName("formBuilder.connections.renameText")
     layout.addWidget(label)
     row = QHBoxLayout()
+    layout.addLayout(row)
     row.addStretch(1)
     update = QPushButton("Update", dialog)
     update.setObjectName("formBuilder.connections.renameUpdate")
@@ -130,7 +131,6 @@ def build_rename_question(parent: Optional[QWidget], sentence: str) -> QDialog:
     cancel.clicked.connect(dialog.reject)
     row.addWidget(update)
     row.addWidget(cancel)
-    layout.addLayout(row)
     dialog.resize(440, 160)
     return dialog
 
@@ -205,6 +205,7 @@ class ConnectionsPage(QWidget):
         column.addWidget(self._empty)
 
         empty_buttons = QHBoxLayout()
+        column.addLayout(empty_buttons)
         self._add_sqlite = QPushButton("+ Add SQLite file", self)
         self._add_sqlite.setObjectName("formBuilder.connections.addSqlite")
         self._add_postgres = QPushButton("+ Add PostgreSQL", self)
@@ -214,16 +215,18 @@ class ConnectionsPage(QWidget):
         empty_buttons.addWidget(self._add_sqlite)
         empty_buttons.addWidget(self._add_postgres)
         empty_buttons.addStretch(1)
-        column.addLayout(empty_buttons)
         self._empty_buttons = (self._add_sqlite, self._add_postgres)
 
         body = QHBoxLayout()
+        column.addLayout(body, 1)
         left = QVBoxLayout()
+        body.addLayout(left, 1)
         self._list = QListWidget(self)
         self._list.setObjectName("formBuilder.connections.list")
         self._list.currentRowChanged.connect(self._on_row)
         left.addWidget(self._list, 1)
         actions = QHBoxLayout()
+        left.addLayout(actions)
         self._add = QPushButton("+ Add", self)
         self._add.setObjectName("formBuilder.connections.add")
         menu = QMenu(self._add)
@@ -240,8 +243,6 @@ class ConnectionsPage(QWidget):
         actions.addWidget(self._duplicate)
         actions.addWidget(self._remove)
         actions.addStretch(1)
-        left.addLayout(actions)
-        body.addLayout(left, 1)
 
         self._editor = QWidget(self)
         self._editor.setObjectName("formBuilder.connections.editor")
@@ -260,6 +261,8 @@ class ConnectionsPage(QWidget):
         form.addRow("Code", self._code)
 
         file_row = QHBoxLayout()
+        self._file_row = file_row
+        form.addRow("File", file_row)
         self._file = QLineEdit(self._editor)
         self._file.setObjectName("formBuilder.connections.file")
         self._choose = QPushButton("Choose\u2026", self._editor)
@@ -268,8 +271,6 @@ class ConnectionsPage(QWidget):
         self._file.editingFinished.connect(self._on_field)
         file_row.addWidget(self._file, 1)
         file_row.addWidget(self._choose)
-        self._file_row = file_row
-        form.addRow("File", file_row)
 
         self._host = QLineEdit(self._editor)
         self._host.setObjectName("formBuilder.connections.host")
@@ -317,6 +318,7 @@ class ConnectionsPage(QWidget):
                 label.setMinimumWidth(label_width)
 
         setup_row = QHBoxLayout()
+        form.addRow("Setup", setup_row)
         self._setup = QLabel("none", self._editor)
         self._setup.setObjectName("formBuilder.connections.setup")
         self._create_setup_button = QPushButton("Create setup function", self._editor)
@@ -325,7 +327,6 @@ class ConnectionsPage(QWidget):
         setup_row.addWidget(self._setup)
         setup_row.addWidget(self._create_setup_button)
         setup_row.addStretch(1)
-        form.addRow("Setup", setup_row)
 
         self._try_sql = QCheckBox("In Try, only show the SQL", self._editor)
         self._try_sql.setObjectName("formBuilder.connections.trySql")
@@ -333,6 +334,7 @@ class ConnectionsPage(QWidget):
         form.addRow("", self._try_sql)
 
         test_row = QHBoxLayout()
+        form.addRow("", test_row)
         self._test_button = QPushButton("Test", self._editor)
         self._test_button.setObjectName("formBuilder.connections.test")
         self._test_button.clicked.connect(self._test)
@@ -341,9 +343,7 @@ class ConnectionsPage(QWidget):
         self._result.setWordWrap(True)
         test_row.addWidget(self._test_button)
         test_row.addWidget(self._result, 1)
-        form.addRow("", test_row)
         body.addWidget(self._editor, 2)
-        column.addLayout(body, 1)
         self._load()
 
     def showEvent(self, event: object) -> None:  # noqa: N802

@@ -226,6 +226,10 @@ def _methods(source, fields, engine, record_word, order, search, check, hooks, a
         "_cbcs_open_new": ("", ["self.cbcs_open()", "self._cbcs_start_new()"]),
         "_cbcs_find_note": ("_count", _find_note_body()),
     }
+    if any(field.family in ("date", "time", "datetime") for field in fields) or has_lines:
+        bodies["_cbcs_note_unparsed"] = ("_column, _kind, _shown", _note_body())
+    if any(field.io == "decimal" for field in writable):
+        bodies["_cbcs_numbers_match"] = ("_left, _right, _places", _numbers_match_body())
     methods = []
     for name, (params, lines) in bodies.items():
         methods.append(Method(name=name, body="\n".join(lines), source_ref="record", params=params))
@@ -506,11 +510,11 @@ def _write_field(field: _Field) -> List[str]:
     elif field.io == "bool":
         lines.extend(_write_bool(widget, field.nullable))
     elif field.io == "date":
-        lines.extend(_write_date(widget, field.nullable))
+        lines.extend(_write_date(widget, field.nullable, field.column))
     elif field.io == "time":
-        lines.extend(_write_time(widget, field.nullable))
+        lines.extend(_write_time(widget, field.nullable, field.column))
     elif field.io == "datetime":
-        lines.extend(_write_datetime(widget, field.nullable))
+        lines.extend(_write_datetime(widget, field.nullable, field.column))
     elif field.io == "data":
         lines.extend(_write_combo(field.widget, field.item_data, field.lookup))
     else:
@@ -545,8 +549,9 @@ def _write_bool(widget: str, nullable: bool) -> List[str]:
     ]
 
 
-def _write_date(widget: str, nullable: bool) -> List[str]:
-    blank = "        %s.setDate(%s.minimumDate())" % (widget, widget) if nullable else "        %s.setDate(%s.minimumDate())" % (widget, widget)
+def _write_date(widget: str, nullable: bool, column: str) -> List[str]:
+    del nullable
+    blank = "        %s.setDate(%s.minimumDate())" % (widget, widget)
     return [
         "    if _value is None or _value == %s:" % _q(""),
         blank,
@@ -556,27 +561,42 @@ def _write_date(widget: str, nullable: bool) -> List[str]:
         "    elif isinstance(_value, date):",
         "        %s.setDate(QDate(_value.year, _value.month, _value.day))" % widget,
         "    else:",
-        "        _day = date.fromisoformat(str(_value)[:10])",
-        "        %s.setDate(QDate(_day.year, _day.month, _day.day))" % widget,
+        "        try:",
+        "            _day = date.fromisoformat(str(_value)[:10])",
+        "        except ValueError:",
+        "            _note = getattr(self, %s, None)" % _q("_cbcs_note_unparsed"),
+        "            if _note is not None:",
+        "                _note(%s, %s, _value)" % (_q(column), _q("date")),
+        "    " + blank,
+        "        else:",
+        "            %s.setDate(QDate(_day.year, _day.month, _day.day))" % widget,
     ]
 
 
-def _write_time(widget: str, nullable: bool) -> List[str]:
+def _write_time(widget: str, nullable: bool, column: str) -> List[str]:
+    blank = "        %s.setTime(%s.minimumTime())" % (widget, widget) if nullable else "        %s.setTime(QTime(0, 0, 0))"
     return [
         "    if _value is None or _value == %s:" % _q(""),
-        "        %s.setTime(%s.minimumTime())" % (widget, widget) if nullable else "        %s.setTime(QTime(0, 0, 0))",
+        blank,
         "    else:",
-        "        if isinstance(_value, datetime):",
-        "            _clock = _value.time()",
-        "        elif isinstance(_value, time):",
-        "            _clock = _value",
+        "        try:",
+        "            if isinstance(_value, datetime):",
+        "                _clock = _value.time()",
+        "            elif isinstance(_value, time):",
+        "                _clock = _value",
+        "            else:",
+        "                _clock = time.fromisoformat(str(_value))",
+        "        except ValueError:",
+        "            _note = getattr(self, %s, None)" % _q("_cbcs_note_unparsed"),
+        "            if _note is not None:",
+        "                _note(%s, %s, _value)" % (_q(column), _q("time")),
+        "    " + blank,
         "        else:",
-        "            _clock = time.fromisoformat(str(_value))",
-        "        %s.setTime(QTime(_clock.hour, _clock.minute, _clock.second, _clock.microsecond // 1000))" % widget,
+        "            %s.setTime(QTime(_clock.hour, _clock.minute, _clock.second, _clock.microsecond // 1000))" % widget,
     ]
 
 
-def _write_datetime(widget: str, nullable: bool) -> List[str]:
+def _write_datetime(widget: str, nullable: bool, column: str) -> List[str]:
     blank = (
         "        %s.setDateTime(%s.minimumDateTime())" % (widget, widget)
         if nullable
@@ -586,14 +606,21 @@ def _write_datetime(widget: str, nullable: bool) -> List[str]:
         "    if _value is None or _value == %s:" % _q(""),
         blank,
         "    else:",
-        "        if isinstance(_value, datetime):",
-        "            _stamp = _value",
-        "        elif isinstance(_value, date):",
-        "            _stamp = datetime(_value.year, _value.month, _value.day)",
+        "        try:",
+        "            if isinstance(_value, datetime):",
+        "                _stamp = _value",
+        "            elif isinstance(_value, date):",
+        "                _stamp = datetime(_value.year, _value.month, _value.day)",
+        "            else:",
+        "                _stamp = datetime.fromisoformat(str(_value).replace(%s, %s))" % (_q("T"), _q(" ")),
+        "        except ValueError:",
+        "            _note = getattr(self, %s, None)" % _q("_cbcs_note_unparsed"),
+        "            if _note is not None:",
+        "                _note(%s, %s, _value)" % (_q(column), _q("date and time")),
+        "    " + blank,
         "        else:",
-        "            _stamp = datetime.fromisoformat(str(_value).replace(%s, %s))" % (_q("T"), _q(" ")),
-        "        _clock = _stamp.time()",
-        "        %s.setDateTime(QDateTime(QDate(_stamp.year, _stamp.month, _stamp.day), QTime(_clock.hour, _clock.minute, _clock.second, _clock.microsecond // 1000)))" % widget,
+        "            _clock = _stamp.time()",
+        "            %s.setDateTime(QDateTime(QDate(_stamp.year, _stamp.month, _stamp.day), QTime(_clock.hour, _clock.minute, _clock.second, _clock.microsecond // 1000)))" % widget,
     ]
 
 
@@ -632,12 +659,21 @@ def _dirty_body(writable: Sequence[_Field]) -> List[str]:
         "_saved = self._cbcs_saved_fields",
     ]
     for field in writable:
-        lines.extend(
-            [
-                "if _fields.get(%s) != _saved.get(%s):" % (_q(field.column), _q(field.column)),
-                "    return True",
-            ]
-        )
+        if field.io == "decimal":
+            lines.extend(
+                [
+                    "if not self._cbcs_numbers_match(_fields.get(%s), _saved.get(%s), self.%s.decimals()):"
+                    % (_q(field.column), _q(field.column), field.widget),
+                    "    return True",
+                ]
+            )
+        else:
+            lines.extend(
+                [
+                    "if _fields.get(%s) != _saved.get(%s):" % (_q(field.column), _q(field.column)),
+                    "    return True",
+                ]
+            )
     lines.extend(
         [
             "_lines = getattr(self, %s, False)" % _q("_cbcs_lines_dirty"),
@@ -776,13 +812,77 @@ def _from_body(fields: Sequence[_Field], extras: Sequence[Tuple[str, str]] = ())
         word = "if" if first else "elif"
         first = False
         lines.append("%s _column == %s:" % (word, _q(column)))
-        for line in _from_family(family):
+        for line in _from_family(family, column):
             lines.append("    " + line)
     lines.append("return _value")
     return lines
 
 
-def _from_family(family: str) -> List[str]:
+def _parse_clock(column: str, kind: str, body: List[str]) -> List[str]:
+    """Blank stays blank. A stored string that is not a date or time is shown blank.
+
+    The raw value stays in ``_cbcs_loaded``. Save writes a column only when the
+    widget differs from the snapshot, so an untouched blank does not overwrite it.
+    """
+
+    lines = [
+        "if _value is None or _value == %s:" % _q(""),
+        "    return None",
+    ]
+    lines.extend(body[:-1])
+    lines.extend(
+        [
+            "try:",
+            "    " + body[-1],
+            "except ValueError:",
+            "    _note = getattr(self, %s, None)" % _q("_cbcs_note_unparsed"),
+            "    if _note is not None:",
+            "        _note(%s, %s, _value)" % (_q(column), _q(kind)),
+            "    return None",
+        ]
+    )
+    return lines
+
+
+def _note_body() -> List[str]:
+    return [
+        "_key = (_column, \"%s\" % (_shown,))",
+        "_seen = getattr(self, %s, None)" % _q("_cbcs_bad_noted"),
+        "if not isinstance(_seen, set):",
+        "    _seen = set()",
+        "    self._cbcs_bad_noted = _seen",
+        "if _key in _seen:",
+        "    return",
+        "_seen.add(_key)",
+        "_text = \"%s has a value that isn't a %s (%r); it's shown blank.\" % (_column, _kind, _shown)",
+        "self._cbcs_status_line = _text",
+        "_form = getattr(self, %s, None)" % _q("_form"),
+        "_top = _form.window() if _form is not None and hasattr(_form, %s) else None" % _q("window"),
+        "_show = getattr(_top, %s, None)" % _q("statusBar"),
+        "if not callable(_show) and _form is not None:",
+        "    _show = getattr(_form, %s, None)" % _q("statusBar"),
+        "if callable(_show):",
+        "    _show().showMessage(_text)",
+    ]
+
+
+def _numbers_match_body() -> List[str]:
+    return [
+        "if _left == _right:",
+        "    return True",
+        "if _left is None or _right is None:",
+        "    return False",
+        "try:",
+        "    _unit = Decimal(1).scaleb(-int(_places))",
+        "    _a = _left if isinstance(_left, Decimal) else Decimal(str(_left))",
+        "    _b = _right if isinstance(_right, Decimal) else Decimal(str(_right))",
+        "    return _a.quantize(_unit) == _b.quantize(_unit)",
+        "except Exception:",
+        "    return False",
+    ]
+
+
+def _from_family(family: str, column: str = "") -> List[str]:
     if family == "int":
         return ["if _value is None or _value == %s:" % _q(""), "    return None", "return int(_value)"]
     if family == "decimal":
@@ -800,35 +900,29 @@ def _from_family(family: str) -> List[str]:
             "return True if _value else False",
         ]
     if family == "date":
-        return [
-            "if _value is None or _value == %s:" % _q(""),
-            "    return None",
+        return _parse_clock(column, "date", [
             "if isinstance(_value, datetime):",
             "    return _value.date()",
             "if isinstance(_value, date):",
             "    return _value",
             "return date.fromisoformat(str(_value)[:10])",
-        ]
+        ])
     if family == "time":
-        return [
-            "if _value is None or _value == %s:" % _q(""),
-            "    return None",
+        return _parse_clock(column, "time", [
             "if isinstance(_value, datetime):",
             "    return _value.time()",
             "if isinstance(_value, time):",
             "    return _value",
             "return time.fromisoformat(str(_value))",
-        ]
+        ])
     if family == "datetime":
-        return [
-            "if _value is None or _value == %s:" % _q(""),
-            "    return None",
+        return _parse_clock(column, "date and time", [
             "if isinstance(_value, datetime):",
             "    return _value",
             "if isinstance(_value, date):",
             "    return datetime(_value.year, _value.month, _value.day)",
             "return datetime.fromisoformat(str(_value).replace(%s, %s))" % (_q("T"), _q(" ")),
-        ]
+        ])
     return [
         "if _value is None:",
         "    return None",
@@ -1146,9 +1240,17 @@ def _write_sql_body(pieces, connection, fields, writable, check, hooks, events=N
         ]
     )
     for field in writable:
+        if field.io == "decimal":
+            differ = "not self._cbcs_numbers_match(_fields.get(%s), self._cbcs_saved_fields.get(%s), self.%s.decimals())" % (
+                _q(field.column),
+                _q(field.column),
+                field.widget,
+            )
+        else:
+            differ = "_fields.get(%s) != self._cbcs_saved_fields.get(%s)" % (_q(field.column), _q(field.column))
         lines.extend(
             [
-                "                if _fields.get(%s) != self._cbcs_saved_fields.get(%s):" % (_q(field.column), _q(field.column)),
+                "                if %s:" % differ,
                 "                    _sets.append(%s)" % _q(pieces["assign"][field.column]),
                 "                    _params.append(self._cbcs_bind(%s, _fields.get(%s)))" % (_q(field.column), _q(field.column)),
             ]

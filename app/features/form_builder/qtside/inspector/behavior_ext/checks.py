@@ -288,11 +288,11 @@ class _SentenceLink(QWidget):
             row = QHBoxLayout()
             row.setContentsMargins(0, 0, 0, 0)
             row.setSpacing(8)
+            self._box.setSpacing(0)
+            self._box.addLayout(row)
             row.addWidget(self.words, 0, _TOP)
             row.addWidget(self.link, 0, _TOP)
             row.addStretch(1)
-            self._box.setSpacing(0)
-            self._box.addLayout(row)
         else:
             self._box.setSpacing(2)
             self._box.addWidget(self.words)

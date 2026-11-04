@@ -1680,8 +1680,6 @@ def _param_tuple(params: object) -> Tuple[object, ...]:
 
 def _sentence(prefix: str, sql: str, params: Tuple[object, ...]) -> str:
     compact = " ".join(sql.split())
-    if len(compact) > 40:
-        compact = compact[:37] + "…"
     count = len(params)
     if not count:
         return "%s: %s" % (prefix, compact)

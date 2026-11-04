@@ -650,12 +650,12 @@ def _convert_body(families, nulls, engine: str, outbound: bool) -> List[str]:
         word = "if" if first else "elif"
         first = False
         lines.append("%s _column == %s:" % (word, py_string(name)))
-        lines.extend("    " + line for line in _family_lines(family, nulls.get(name, True), engine, outbound))
+        lines.extend("    " + line for line in _family_lines(family, nulls.get(name, True), engine, outbound, name))
     lines.append("return _value")
     return lines
 
 
-def _family_lines(family: str, nullable: bool, engine: str, outbound: bool) -> List[str]:
+def _family_lines(family: str, nullable: bool, engine: str, outbound: bool, column: str = "") -> List[str]:
     if not outbound:
         lines = ["if _value is None:", "    return None"]
         if family == "int":
@@ -673,15 +673,23 @@ def _family_lines(family: str, nullable: bool, engine: str, outbound: bool) -> L
         elif family == "date":
             lines.extend(
                 [
+                    "if _value == %s:" % py_string(""),
+                    "    return None",
                     "if isinstance(_value, datetime):",
                     "    return _value.date()",
                     "if isinstance(_value, date):",
                     "    return _value",
-                    "return date.fromisoformat(str(_value)[:10])",
+                    "try:",
+                    "    return date.fromisoformat(str(_value)[:10])",
+                    "except ValueError:",
+                    "    _note = getattr(self, %s, None)" % py_string("_cbcs_note_unparsed"),
+                    "    if _note is not None:",
+                    "        _note(_column, %s, _value)" % py_string("date"),
+                    "    return None",
                 ]
             )
         elif family in ("time", "datetime"):
-            return _from_family(family)
+            return _from_family(family, column)
         elif family == "text":
             lines.extend(
                 [
@@ -893,30 +901,63 @@ def _editor_data_body() -> List[str]:
         "        _editor.setValue(0.0 if _value is None else float(_value))",
         "    return",
         "if _kind == %s:" % py_string("date"),
-        "    if _value is None and _nullable:",
+        "    if _value is None or _value == %s:" % py_string(""),
+        "        if _nullable or _value is None or _value == %s:" % py_string(""),
+        "            _editor.setDate(_editor.minimumDate())",
+        "            return",
+        "    try:",
+        "        if isinstance(_value, datetime):",
+        "            _day = _value.date()",
+        "        elif isinstance(_value, date):",
+        "            _day = _value",
+        "        else:",
+        "            _day = date.fromisoformat(str(_value)[:10])",
+        "    except ValueError:",
+        "        _note = getattr(self, %s, None)" % py_string("_cbcs_note_unparsed"),
+        "        if _note is not None:",
+        "            _names = getattr(self, %s, ())" % py_string("_cbcs_line_names"),
+        "            _col = _names[_index.column()] if _index.column() < len(_names) else %s" % py_string("date"),
+        "            _note(_col, %s, _value)" % py_string("date"),
         "        _editor.setDate(_editor.minimumDate())",
-        "    else:",
-        "        _day = _value if isinstance(_value, date) else date.fromisoformat(str(_value)[:10])",
-        "        _editor.setDate(QDate(_day.year, _day.month, _day.day))",
+        "        return",
+        "    _editor.setDate(QDate(_day.year, _day.month, _day.day))",
         "    return",
         "if _kind == %s:" % py_string("time"),
         "    if _value is None and _nullable:",
         "        _editor.setTime(_editor.minimumTime())",
-        "    else:",
+        "        return",
+        "    try:",
         "        if isinstance(_value, datetime):",
         "            _clock = _value.time()",
         "        elif isinstance(_value, time):",
         "            _clock = _value",
         "        else:",
         "            _clock = time.fromisoformat(str(_value or %s))" % py_string("00:00:00"),
-        "        _editor.setTime(QTime(_clock.hour, _clock.minute, _clock.second))",
+        "    except ValueError:",
+        "        _note = getattr(self, %s, None)" % py_string("_cbcs_note_unparsed"),
+        "        if _note is not None:",
+        "            _names = getattr(self, %s, ())" % py_string("_cbcs_line_names"),
+        "            _col = _names[_index.column()] if _index.column() < len(_names) else %s" % py_string("time"),
+        "            _note(_col, %s, _value)" % py_string("time"),
+        "        _editor.setTime(_editor.minimumTime())",
+        "        return",
+        "    _editor.setTime(QTime(_clock.hour, _clock.minute, _clock.second))",
         "    return",
         "if _kind == %s:" % py_string("datetime"),
         "    if _value is None and _nullable:",
         "        _editor.setDateTime(_editor.minimumDateTime())",
-        "    else:",
+        "        return",
+        "    try:",
         "        _stamp = _value if isinstance(_value, datetime) else datetime.fromisoformat(str(_value).replace('T', ' '))",
-        "        _editor.setDateTime(QDateTime(_stamp.year, _stamp.month, _stamp.day, _stamp.hour, _stamp.minute, _stamp.second))",
+        "    except ValueError:",
+        "        _note = getattr(self, %s, None)" % py_string("_cbcs_note_unparsed"),
+        "        if _note is not None:",
+        "            _names = getattr(self, %s, ())" % py_string("_cbcs_line_names"),
+        "            _col = _names[_index.column()] if _index.column() < len(_names) else %s" % py_string("when"),
+        "            _note(_col, %s, _value)" % py_string("date and time"),
+        "        _editor.setDateTime(_editor.minimumDateTime())",
+        "        return",
+        "    _editor.setDateTime(QDateTime(_stamp.year, _stamp.month, _stamp.day, _stamp.hour, _stamp.minute, _stamp.second))",
         "    return",
         "if _kind == %s:" % py_string("lookup"),
         "    _found = _editor.findData(_value)",
@@ -1050,7 +1091,7 @@ def _line_from_body(carried: Sequence[Tuple[str, str, str]]) -> List[str]:
         word = "if" if first else "elif"
         first = False
         lines.append("%s _table == %s and _column == %s:" % (word, py_string(table), py_string(column)))
-        for line in _from_family(family):
+        for line in _from_family(family, column):
             lines.append("    " + line)
     lines.append("return _value")
     return lines

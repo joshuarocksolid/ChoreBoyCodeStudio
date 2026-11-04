@@ -60,6 +60,7 @@ class WrapPopover(QFrame):
         column.addWidget(header)
         grid = QGridLayout()
         grid.setSpacing(6)
+        column.addLayout(grid)
         self.tiles: List[QToolButton] = []
         self._reasons: List[str] = []
         for index, kind_id in enumerate(POPOVER):
@@ -77,7 +78,6 @@ class WrapPopover(QFrame):
             grid.addWidget(tile, index // _COLUMNS, index % _COLUMNS)
             self.tiles.append(tile)
             self._reasons.append(offer.reason)
-        column.addLayout(grid)
         self.note = QLabel("", self)
         self.note.setObjectName("formBuilder.wrapNote")
         self.note.setProperty("note", True)

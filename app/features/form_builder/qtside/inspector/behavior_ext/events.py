@@ -736,6 +736,7 @@ class _Row(QWidget):
         text_col = QVBoxLayout()
         text_col.setContentsMargins(0, 0, 0, 0)
         text_col.setSpacing(0)
+        line.addLayout(text_col, 1)
         self._label = QLabel(head, self)
         self._label.setWordWrap(True)
         self._label.setMinimumWidth(0)
@@ -760,7 +761,6 @@ class _Row(QWidget):
             only.setSizePolicy(only_policy)
             only.setStyleSheet("color: %s; background: transparent;" % body._chrome.faint)
             text_col.addWidget(only)
-        line.addLayout(text_col, 1)
         # Step rows build the menu button on hover or focus. Header rows show it
         # immediately. A by-name row puts it last, after the place link.
         self._menu: Optional[QToolButton] = None
