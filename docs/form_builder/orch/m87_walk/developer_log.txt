@@ -1,0 +1,479 @@
+THEME light project /tmp/pytest-of-ubuntu/pytest-17/test_qt_developer_walk0/shop
+STEP 01 open phase=open
+  keys: (no key)
+  focus: shell.activityBar.btn.explorer acc=''
+  status: shell.startupStatusLabel='Startup: Runtime issues (7/9 checks) | Syntax highlighting off' | shell.pythonToolingStatusLabel='Python: tools ready | no project' | shell.projectStatusLabel='Project: Shop' | shell.editorStatusLabel='Editor: no file' | shell.completionModeStatusLabel='Completion: Manual · Ctrl+Space (Global setting)' | shell.runStatusLabel='Run: idle'
+  inspector:
+    (empty)
+  data:
+    (empty)
+  dialogs:
+    (empty)
+STEP 02 new-form phase=create
+  keys: Alt+Key_F -> focus=shell.menuBar sel=() | Key_Down -> focus=shell.menu.file sel=() | Key_Down -> focus=shell.menu.file sel=() | Key_Down -> focus=shell.menu.file sel=() | Key_Return -> focus=formBuilder.newForm.name sel=()
+  focus: formBuilder.newForm.name acc=''
+  status: shell.startupStatusLabel='Startup: Runtime issues (7/9 checks) | Syntax highlighting off' | shell.pythonToolingStatusLabel='Python: tools ready | no project' | shell.projectStatusLabel='Project: Shop' | shell.editorStatusLabel='Editor: no file' | shell.completionModeStatusLabel='Completion: Manual · Ctrl+Space (Global setting)' | shell.runStatusLabel='Run: idle'
+  inspector:
+    (empty)
+  data:
+    (empty)
+  dialogs:
+    (empty)
+STEP 03 name phase=create
+  keys: Control+Key_A -> focus=formBuilder.newForm.name sel=() | type 'invoice' -> focus=formBuilder.newForm.name
+  focus: formBuilder.newForm.name acc=''
+  status: shell.startupStatusLabel='Startup: Runtime issues (7/9 checks) | Syntax highlighting off' | shell.pythonToolingStatusLabel='Python: tools ready | no project' | shell.projectStatusLabel='Project: Shop' | shell.editorStatusLabel='Editor: no file' | shell.completionModeStatusLabel='Completion: Manual · Ctrl+Space (Global setting)' | shell.runStatusLabel='Run: idle'
+  inspector:
+    (empty)
+  data:
+    (empty)
+  dialogs:
+    (empty)
+STEP 04 card-from_table phase=create
+  keys: Key_Tab -> focus=formBuilder.newForm.folder sel=() | Key_Tab -> focus=formBuilder.newForm.card.data_entry sel=() | Key_Tab -> focus=formBuilder.newForm.card.list_detail sel=() | Key_Tab -> focus=formBuilder.newForm.card.table_search sel=() | Key_Tab -> focus=formBuilder.newForm.card.dialog_ok_cancel sel=() | Key_Tab -> focus=formBuilder.newForm.card.dialog_buttons_right sel=() | Key_Tab -> focus=formBuilder.newForm.card.widget sel=() | Key_Tab -> focus=formBuilder.newForm.card.main_window sel=() | Key_Tab -> focus=formBuilder.newForm.card.dialog sel=() | Key_Tab -> focus=formBuilder.newForm.card.wizard sel=() | Key_Tab -> focus=formBuilder.newForm.card.from_table sel=()
+  focus: formBuilder.newForm.card.from_table acc='Build a form from a table'
+  status: shell.startupStatusLabel='Startup: Runtime issues (7/9 checks) | Syntax highlighting off' | shell.pythonToolingStatusLabel='Python: tools ready | no project' | shell.projectStatusLabel='Project: Shop' | shell.editorStatusLabel='Editor: no file' | shell.completionModeStatusLabel='Completion: Manual · Ctrl+Space (Global setting)' | shell.runStatusLabel='Run: idle'
+  inspector:
+    (empty)
+  data:
+    (empty)
+  dialogs:
+    (empty)
+NOTE phase=create tables customers, invoice_lines, invoices, products
+CONFUSION phase=create Focus left the dialog (now formBuilder.fromTable.make), so the next key had to be aimed before it would land.
+NOTE phase=create create button 'Create invoice form with 5 fields and lines and a list' enabled=True
+STEP 05 make-invoice phase=create
+  keys: Key_Tab -> focus=formBuilder.fromTable.addConnection sel=() | Key_Tab -> focus=formBuilder.fromTable.make sel=() | Key_Tab -> focus=formBuilder.fromTable.lines sel=() | Key_Tab -> focus=formBuilder.fromTable.linesTable sel=() | Key_Tab -> focus=formBuilder.fromTable.tables sel=() | Key_Home -> focus=formBuilder.fromTable.tables sel=() | Key_Down -> focus=formBuilder.fromTable.tables sel=() | Key_Down -> focus=formBuilder.fromTable.tables sel=() | Key_Tab -> focus=formBuilder.fromTable.mapping sel=() | Key_Tab -> focus=formBuilder.fromTable.mapping sel=() | Key_Tab -> focus=formBuilder.fromTable.mapping sel=() | Key_Tab -> focus=QComboBox sel=() | Key_Tab -> focus=formBuilder.fromTable.mapping sel=() | Key_Tab -> focus=formBuilder.fromTable.mapping sel=() | Key_Tab -> focus=formBuilder.fromTable.mapping sel=() | Key_Tab -> focus=formBuilder.fromTable.mapping sel=() | Key_Tab -> focus=QComboBox sel=() | Key_Tab -> focus=formBuilder.fromTable.mapping sel=() | Key_Tab -> focus=formBuilder.fromTable.mapping sel=() | Key_Tab -> focus=formBuilder.fromTable.mapping sel=() | Key_Down -> focus=formBuilder.fromTable.make sel=() | Key_Down -> focus=formBuilder.fromTable.make sel=() | Key_Tab -> focus=formBuilder.fromTable.lines sel=() | Key_Tab -> focus=formBuilder.fromTable.linesTable sel=() | Key_Tab -> focus=formBuilder.fromTable.tables sel=() | Key_Tab -> focus=formBuilder.fromTable.mapping sel=() | Key_Tab -> focus=formBuilder.fromTable.mapping sel=() | Key_Tab -> focus=QComboBox sel=() | Key_Tab -> focus=formBuilder.fromTable.mapping sel=() | Key_Tab -> focus=formBuilder.fromTable.mapping sel=() | Key_Tab -> focus=formBuilder.fromTable.mapping sel=() | Key_Tab -> focus=formBuilder.fromTable.mapping sel=() | Key_Tab -> focus=QComboBox sel=() | Key_Tab -> focus=formBuilder.fromTable.mapping sel=() | Key_Space -> focus=formBuilder.canvas sel=()
+  focus: formBuilder.canvas acc='Form canvas'
+  status: shell.startupStatusLabel='Startup: Runtime issues (7/9 checks) | Syntax highlighting off' | shell.pythonToolingStatusLabel='Python: tools ready | no project' | shell.projectStatusLabel='Project: Shop' | shell.editorStatusLabel='Delete line · Push button · column 3 of the horizontal layout' | shell.completionModeStatusLabel='Completion: Manual · Ctrl+Space (Global setting)' | shell.runStatusLabel='Run: idle'
+  inspector:
+    (empty)
+  data:
+    (empty)
+  dialogs:
+    WINDOW 'Invoice' Invoice
+    Record 1 of 1
+    Invoice
+    Line No
+    Product
+    Description
+    Qty
+    Price
+    First
+    Previous
+    Next
+    Last
+    New
+    Save
+    Revert
+    Delete
+    Find
+    0
+    0
+    0
+    0
+    0.00
+    0.00
+    WINDOW 'InvoiceList' InvoiceList
+    New
+    Open
+    WINDOW 'Invoice' Invoice
+    Record 1 of 1
+    Invoice No
+    Customer
+    Invoice Date
+    Notes
+    Total
+    First
+    Previous
+    Next
+    Last
+    New
+    Save
+    Revert
+    Delete
+    Find
+    0.00
+    0.00
+    WINDOW 'Invoice' Invoice
+    Record 1 of 1
+    Invoice No
+    Customer
+    Invoice Date
+    Notes
+    Total
+    First
+    Previous
+    Next
+    Last
+    New
+    Save
+    Revert
+    Delete
+    Find
+    Add line
+    Delete line
+    0.00
+    0.00
+    WINDOW 'Invoice' Invoice
+    Record 1 of 1
+    Invoice No
+    Customer
+    Invoice Date
+    Notes
+    Total
+    First
+    Previous
+    Next
+    Last
+    New
+    Save
+    Revert
+    Delete
+    Find
+    Add line
+    Delete line
+    0.00
+    0.00
+NOTE phase=create wrote invoice.ui and list=True
+NOTE phase=create widgets Invoice, geometry, windowTitle, cbcsLogic, cbcsData, formLayout, recordBar, leftMargin, topMargin, rightMargin, bottomMargin, firstButton, text, sizePolicy, shortcut, cbcsEnabledWhen, cbcsOnClicked, previousButton, text, sizePolicy, shortcut, cbcsEnabledWhen, cbcsOnClicked, positionLabel, text, sizePolicy, cbcsValue, nextButton, text, sizePolicy, shortcut, cbcsEnabledWhen, cbcsOnClicked, lastButton, text, sizePolicy, shortcut, cbcsEnabledWhen, cbcsOnClicked, newButton, text, sizePolicy, shortcut, cbcsOnClicked, saveButton, text, sizePolicy, shortcut, cbcsEnabledWhen, cbcsOnClicked, revertButton, text, sizePolicy, cbcsEnabledWhen, cbcsOnClicked, deleteButton, text, sizePolicy, cbcsEnabledWhen, cbcsOnClicked, findButton, text, sizePolicy, shortcut, cbcsOnClicked, label, text, buddy, invoice_no, sizePolicy, cbcsBind, label_2, text, buddy, customer_id, sizePolicy, cbcsBind, cbcsLookup, label_3, text, buddy, invoice_date, sizePolicy, cbcsBind, label_4, text, buddy, notes, sizePolicy, cbcsBind, label_5, text, buddy, total, sizePolicy, cbcsBind, linesBox, leftMargin, topMargin, rightMargin, bottomMargin, invoice_linesView, minimumHeight, sizePolicy, cbcsRows, lineButtons, leftMargin, topMargin, rightMargin, bottomMargin, lineButtonSpacer, orientation, sizeHint, addLineButton, text, sizePolicy, cbcsOnClicked, deleteLineButton, text, sizePolicy, cbcsOnClicked
+NOTE phase=create data tab on open: 
+STEP 06 opened-record phase=create
+  keys: (no key)
+  focus: formBuilder.structure acc='Form structure'
+  status: shell.startupStatusLabel='Startup: Runtime issues (7/9 checks) | Syntax highlighting off' | shell.pythonToolingStatusLabel='Python: tools ready | no project' | shell.projectStatusLabel='Project: Shop' | shell.editorStatusLabel='Delete line · Push button · column 3 of the horizontal layout' | shell.completionModeStatusLabel='Completion: Manual · Ctrl+Space (Global setting)' | shell.runStatusLabel='Run: idle'
+  inspector:
+    (empty)
+  data:
+    (empty)
+  dialogs:
+    WINDOW 'InvoiceList' InvoiceList
+    New
+    Open
+    WINDOW 'Invoice' Invoice
+    Record 1 of 1
+    Invoice No
+    Customer
+    Invoice Date
+    Notes
+    Total
+    First
+    Previous
+    Next
+    Last
+    New
+    Save
+    Revert
+    Delete
+    Find
+    Add line
+    Delete line
+    0.00
+    0.00
+    WINDOW 'Invoice' Invoice
+    Record 1 of 1
+    Invoice No
+    Customer
+    Invoice Date
+    Notes
+    Total
+    First
+    Previous
+    Next
+    Last
+    New
+    Save
+    Revert
+    Delete
+    Find
+    Add line
+    Delete line
+    0.00
+    0.00
+STEP 07 hooks phase=hook
+  keys: Control+Shift+Key_D -> focus=formBuilder.dataPanel sel=('deleteLineButton',) | Key_Tab -> focus=formBuilder.runBehavior sel=('deleteLineButton',) | Key_Tab -> focus=formBuilder.data.change sel=('deleteLineButton',) | Key_Tab -> focus=formBuilder.data.more sel=('deleteLineButton',) | Key_Space -> focus=formBuilder.data.more sel=('deleteLineButton',)
+  focus: formBuilder.data.more acc=''
+  status: shell.startupStatusLabel='Startup: Runtime issues (7/9 checks) | Syntax highlighting off' | shell.pythonToolingStatusLabel='Python: tools ready | no project' | shell.projectStatusLabel='Project: Shop' | shell.editorStatusLabel='Delete line · Push button · column 3 of the horizontal layout' | shell.completionModeStatusLabel='Completion: Manual · Ctrl+Space (Global setting)' | shell.runStatusLabel='Run: idle'
+  inspector:
+    (empty)
+  data:
+    (empty)
+  dialogs:
+    WINDOW 'InvoiceList' InvoiceList
+    New
+    Open
+    WINDOW '' 
+    
+    WINDOW 'Invoice' Invoice
+    Record 1 of 1
+    Invoice No
+    Customer
+    Invoice Date
+    Notes
+    Total
+    First
+    Previous
+    Next
+    Last
+    New
+    Save
+    Revert
+    Delete
+    Find
+    Add line
+    Delete line
+    0.00
+    0.00
+    WINDOW 'Invoice' Invoice
+    Record 1 of 1
+    Invoice No
+    Customer
+    Invoice Date
+    Notes
+    Total
+    First
+    Previous
+    Next
+    Last
+    New
+    Save
+    Revert
+    Delete
+    Find
+    Add line
+    Delete line
+    0.00
+    0.00
+NOTE phase=hook window has before_save False
+CONFUSION phase=hook Create on Before saving did not write def before_save in invoice_window.py.
+CONFUSION phase=sql Focus left the dialog (now formBuilder.data.more), so the next key had to be aimed before it would land.
+STEP 08 show-sql phase=sql
+  keys: Control+Shift+Key_D -> focus=formBuilder.dataPanel sel=('deleteLineButton',) | Key_Tab -> focus=QMenu sel=('deleteLineButton',) | Key_Tab -> focus=QMenu sel=('deleteLineButton',) | Key_Tab -> focus=QMenu sel=('deleteLineButton',) | Key_Tab -> focus=QMenu sel=('deleteLineButton',) | Key_Tab -> focus=QMenu sel=('deleteLineButton',) | Key_Tab -> focus=QMenu sel=('deleteLineButton',) | Key_Tab -> focus=QMenu sel=('deleteLineButton',) | Key_Tab -> focus=QMenu sel=('deleteLineButton',) | Key_Tab -> focus=QMenu sel=('deleteLineButton',) | Key_Tab -> focus=QMenu sel=('deleteLineButton',) | Key_Tab -> focus=QMenu sel=('deleteLineButton',) | Key_Tab -> focus=QMenu sel=('deleteLineButton',) | Key_Space -> focus=formBuilder.data.more sel=('deleteLineButton',)
+  focus: formBuilder.data.more acc=''
+  status: shell.startupStatusLabel='Startup: Runtime issues (7/9 checks) | Syntax highlighting off' | shell.pythonToolingStatusLabel='Python: tools ready | no project' | shell.projectStatusLabel='Project: Shop' | shell.editorStatusLabel='Delete line · Push button · column 3 of the horizontal layout' | shell.completionModeStatusLabel='Completion: Manual · Ctrl+Space (Global setting)' | shell.runStatusLabel='Run: idle'
+  inspector:
+    (empty)
+  data:
+    (empty)
+  dialogs:
+    WINDOW 'InvoiceList' InvoiceList
+    New
+    Open
+    WINDOW '' 
+    
+    WINDOW 'Invoice' Invoice
+    Record 1 of 1
+    Invoice No
+    Customer
+    Invoice Date
+    Notes
+    Total
+    First
+    Previous
+    Next
+    Last
+    New
+    Save
+    Revert
+    Delete
+    Find
+    Add line
+    Delete line
+    0.00
+    0.00
+    WINDOW 'Invoice' Invoice
+    Record 1 of 1
+    Invoice No
+    Customer
+    Invoice Date
+    Notes
+    Total
+    First
+    Previous
+    Next
+    Last
+    New
+    Save
+    Revert
+    Delete
+    Find
+    Add line
+    Delete line
+    0.00
+    0.00
+NOTE phase=setup no PostgreSQL server in this walk; the setup function is written and marked, not executed
+CONFUSION phase=setup Connections does not list Shop postgres. Rows: ,
+STEP 09 settings phase=setup
+  keys: Alt+Key_F -> focus=shell.menuBar sel=('deleteLineButton',) | Key_Down -> focus=shell.menu.file sel=('deleteLineButton',) | Key_Down -> focus=shell.menu.file sel=('deleteLineButton',) | Key_Down -> focus=shell.menu.file sel=('deleteLineButton',) | Key_Down -> focus=shell.menu.file sel=('deleteLineButton',) | Key_Down -> focus=shell.menu.file sel=('deleteLineButton',) | Key_Down -> focus=shell.menu.file sel=('deleteLineButton',) | Key_Down -> focus=shell.menu.file sel=('deleteLineButton',) | Key_Down -> focus=shell.menu.file sel=('deleteLineButton',) | Key_Down -> focus=shell.menu.file sel=('deleteLineButton',) | Key_Down -> focus=shell.menu.file sel=('deleteLineButton',) | Key_Down -> focus=shell.menu.file sel=('deleteLineButton',) | Key_Down -> focus=shell.menu.file sel=('deleteLineButton',) | Key_Down -> focus=shell.menu.file sel=('deleteLineButton',) | Key_Right -> focus=qt_tabwidget_tabbar sel=('deleteLineButton',) | Key_Right -> focus=qt_tabwidget_tabbar sel=('deleteLineButton',) | Key_Right -> focus=qt_tabwidget_tabbar sel=('deleteLineButton',) | Key_Right -> focus=qt_tabwidget_tabbar sel=('deleteLineButton',) | Key_Right -> focus=qt_tabwidget_tabbar sel=('deleteLineButton',) | Key_Right -> focus=qt_tabwidget_tabbar sel=('deleteLineButton',) | Key_Down -> focus=formBuilder.connections.list sel=('deleteLineButton',) | Key_Down -> focus=formBuilder.connections.list sel=('deleteLineButton',) | Key_Down -> focus=formBuilder.connections.list sel=('deleteLineButton',) | Key_Down -> focus=formBuilder.connections.list sel=('deleteLineButton',) | Key_Down -> focus=formBuilder.connections.list sel=('deleteLineButton',) | Key_Down -> focus=formBuilder.connections.list sel=('deleteLineButton',) | Key_Down -> focus=formBuilder.connections.list sel=('deleteLineButton',) | Key_Down -> focus=formBuilder.connections.list sel=('deleteLineButton',) | Key_Down -> focus=formBuilder.connections.list sel=('deleteLineButton',) | Key_Down -> focus=formBuilder.connections.list sel=('deleteLineButton',) | Key_Down -> focus=formBuilder.connections.list sel=('deleteLineButton',) | Key_Down -> focus=formBuilder.connections.list sel=('deleteLineButton',) | Key_Tab -> focus=formBuilder.connections.add sel=('deleteLineButton',) | Key_Tab -> focus=formBuilder.connections.duplicate sel=('deleteLineButton',) | Key_Tab -> focus=formBuilder.connections.remove sel=('deleteLineButton',) | Key_Tab -> focus=formBuilder.connections.title sel=('deleteLineButton',) | Key_Tab -> focus=formBuilder.connections.code sel=('deleteLineButton',) | Key_Tab -> focus=formBuilder.connections.host sel=('deleteLineButton',) | Key_Tab -> focus=formBuilder.connections.port sel=('deleteLineButton',) | Key_Tab -> focus=formBuilder.connections.database sel=('deleteLineButton',) | Key_Tab -> focus=formBuilder.connections.user sel=('deleteLineButton',) | Key_Tab -> focus=formBuilder.connections.schema sel=('deleteLineButton',) | Key_Tab -> focus=formBuilder.connections.password sel=('deleteLineButton',) | Key_Tab -> focus=formBuilder.connections.createSetup sel=('deleteLineButton',) | Key_Space -> focus=formBuilder.connections.trySql sel=('deleteLineButton',) | Key_Tab -> focus=formBuilder.connections.test sel=('deleteLineButton',) | Key_Tab -> focus=shell.settingsDialog.okBtn sel=('deleteLineButton',) | Key_Space -> focus=formBuilder.data.more sel=('deleteLineButton',) | Key_Return -> focus=formBuilder.data.more sel=('deleteLineButton',)
+  focus: formBuilder.data.more acc=''
+  status: shell.startupStatusLabel='Startup: Runtime issues (7/9 checks) | Syntax highlighting off' | shell.pythonToolingStatusLabel='Python: tools ready | no project' | shell.projectStatusLabel='Project: Shop (project overrides)' | shell.editorStatusLabel='Delete line · Push button · column 3 of the horizontal layout' | shell.completionModeStatusLabel='Completion: Manual · Ctrl+Space (Global setting)' | shell.runStatusLabel='Run: idle'
+  inspector:
+    (empty)
+  data:
+    (empty)
+  dialogs:
+    WINDOW 'InvoiceList' InvoiceList
+    New
+    Open
+    WINDOW 'Invoice' Invoice
+    Record 1 of 1
+    Invoice No
+    Customer
+    Invoice Date
+    Notes
+    Total
+    First
+    Previous
+    Next
+    Last
+    New
+    Save
+    Revert
+    Delete
+    Find
+    Add line
+    Delete line
+    0.00
+    0.00
+    WINDOW 'Invoice' Invoice
+    Record 1 of 1
+    Invoice No
+    Customer
+    Invoice Date
+    Notes
+    Total
+    First
+    Previous
+    Next
+    Last
+    New
+    Save
+    Revert
+    Delete
+    Find
+    Add line
+    Delete line
+    0.00
+    0.00
+CONFUSION phase=setup connection_setup.py did not open.
+STEP 10 search-path phase=setup
+  keys: Control+Key_P -> focus=shell.quickOpen.input sel=('deleteLineButton',) | type 'connection_setup.py' -> focus=shell.quickOpen.input | Key_Return -> focus=shell.quickOpen.input sel=('deleteLineButton',)
+  focus: shell.quickOpen.input acc=''
+  status: shell.startupStatusLabel='Startup: Runtime issues (7/9 checks) | Syntax highlighting off' | shell.pythonToolingStatusLabel='Python: tools ready | no project' | shell.projectStatusLabel='Project: Shop (project overrides)' | shell.editorStatusLabel='Delete line · Push button · column 3 of the horizontal layout' | shell.completionModeStatusLabel='Completion: Manual · Ctrl+Space (Global setting)' | shell.runStatusLabel='Run: idle'
+  inspector:
+    (empty)
+  data:
+    (empty)
+  dialogs:
+    WINDOW 'InvoiceList' InvoiceList
+    New
+    Open
+    WINDOW '' shell.quickOpen
+    No matching files
+    0 of 13 files
+    connection_setup.py
+    WINDOW 'Invoice' Invoice
+    Record 1 of 1
+    Invoice No
+    Customer
+    Invoice Date
+    Notes
+    Total
+    First
+    Previous
+    Next
+    Last
+    New
+    Save
+    Revert
+    Delete
+    Find
+    Add line
+    Delete line
+    0.00
+    0.00
+    WINDOW 'Invoice' Invoice
+    Record 1 of 1
+    Invoice No
+    Customer
+    Invoice Date
+    Notes
+    Total
+    First
+    Previous
+    Next
+    Last
+    New
+    Save
+    Revert
+    Delete
+    Find
+    Add line
+    Delete line
+    0.00
+    0.00
+CONFUSION phase=setup connection_setup.py does not set search_path.
+STEP 11 eject-dialog phase=eject
+  keys: Control+Shift+Key_D -> focus=formBuilder.dataPanel sel=('deleteLineButton',) | Key_Tab -> focus=formBuilder.runBehavior sel=('deleteLineButton',) | Key_Tab -> focus=formBuilder.data.change sel=('deleteLineButton',) | Key_Tab -> focus=formBuilder.data.more sel=('deleteLineButton',) | Key_Space -> focus=QMenu sel=('deleteLineButton',)
+  focus: formBuilder.data.more acc=''
+  status: shell.startupStatusLabel='Startup: Runtime issues (7/9 checks) | Syntax highlighting off' | shell.pythonToolingStatusLabel='Python: tools ready | no project' | shell.projectStatusLabel='Project: Shop (project overrides)' | shell.editorStatusLabel='Delete line · Push button · column 3 of the horizontal layout' | shell.completionModeStatusLabel='Completion: Manual · Ctrl+Space (Global setting)' | shell.runStatusLabel='Run: idle'
+  inspector:
+    (empty)
+  data:
+    (empty)
+  dialogs:
+    WINDOW 'InvoiceList' InvoiceList
+    New
+    Open
+    WINDOW '' 
+    
+    WINDOW 'Invoice' Invoice
+    Record 1 of 1
+    Invoice No
+    Customer
+    Invoice Date
+    Notes
+    Total
+    First
+    Previous
+    Next
+    Last
+    New
+    Save
+    Revert
+    Delete
+    Find
+    Add line
+    Delete line
+    0.00
+    0.00
+    WINDOW 'Invoice' Invoice
+    Record 1 of 1
+    Invoice No
+    Customer
+    Invoice Date
+    Notes
+    Total
+    First
+    Previous
+    Next
+    Last
+    New
+    Save
+    Revert
+    Delete
+    Find
+    Add line
+    Delete line
+    0.00
+    0.00
+CONFUSION phase=eject Eject did not put confirm_leave in invoice_window.py.
+COUNTS open=1 create=5 hook=1 sql=1 setup=2 eject=1 total=11
+CONFUSIONS 7
+Focus left the dialog (now formBuilder.fromTable.make), so the next key had to be aimed before it would land.
+Create on Before saving did not write def before_save in invoice_window.py.
+Focus left the dialog (now formBuilder.data.more), so the next key had to be aimed before it would land.
+Connections does not list Shop postgres. Rows: ,
+connection_setup.py did not open.
+connection_setup.py does not set search_path.
+Eject did not put confirm_leave in invoice_window.py.
