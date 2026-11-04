@@ -1,3 +1,4 @@
+# pyright: reportAttributeAccessIssue=false
 """ui4 catalog rows the ledger still had open.
 
 Each element is read into the document, kept through a second save, and still
