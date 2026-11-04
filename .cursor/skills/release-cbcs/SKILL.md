@@ -1,11 +1,11 @@
 ---
 name: release-cbcs
-description: Package a ChoreBoy-compatible product zip and prove it on the live VM before mailing, tagging, or handing a shop installer. Use when releasing, mailing LibrePy, tagging v*, running package.py for a product zip, or verifying an installer.
+description: Package a ChoreBoy-compatible product zip and prove it on a cbfarm lease before mailing, tagging, or handing a shop installer. Use when releasing, mailing LibrePy, tagging v*, running package.py for a product zip, or verifying an installer. The Debian lab is only the verify-cbcs fallback.
 ---
 
 # Release ChoreBoy Code Studio
 
-Do not mail or tag a product zip until this list is green on the real ChoreBoy VM.
+Do not mail or tag a product zip until this list is green on a cbfarm lease. `control-cbcs` defaults to the farm. `--backend lab` is only for the cases named in verify-cbcs (the scenario runner, and FreeCAD 1.1 / PySide6 on `ChoreBoyExp`).
 
 ## Vendor
 
@@ -39,4 +39,4 @@ Pass only if all of these hold:
 
 Keep shots under `~/ChoreBoy/artifacts/verify-cbcs/<run-id>/`. Then `$CONTROL stop "$SID"`.
 
-If another `cbapp` session is live, wait or refuse. Do not stop a session this run did not start.
+If another verify session is live, wait or refuse. Do not stop a session this run did not start. `stop` does not release a farm lease that was already in `CBFARM_ENV`.
