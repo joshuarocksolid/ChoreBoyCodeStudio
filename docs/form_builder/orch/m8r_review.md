@@ -11,10 +11,10 @@ K31–K34 run back to back in one MainWindow, keys only, in `tests/form_builder/
 | id | screen | heuristic | what's wrong | severity | fix | status |
 | --- | --- | --- | --- | --- | --- | --- |
 | M8R-1 | record-window dark, null-date dark | consistency | Invoice number "INV-2" sat on a dark field. Invoice date "2/15/26" and Total "20.00" sat on white fields. | S2 | Generated windows use the light runtime palette. Editor chrome stays on the strip, the banner, and What ran. | Fixed |
-| M8R-2 | preview What ran, dark, 100% | match with the real form | "Discount rate" was painted on the Discount checkbox, under the form in the old fixture. | S2 | The label is the first row of the window, buddy of discountEdit. | Fixed |
+| M8R-2 | preview What ran, dark, 100% | match with the real form | "Discount rate" floated in a gap. The Discount row had an empty field. "$6.00" sat where Line total should be. Email had no label. | S2 | One form: Discount, Discount rate, Qty, Price, Line total, Email, then the check message. Save is at the bottom right, sized to its text. | Fixed |
 | M8R-3 | Try, dark, What ran | visibility | A SELECT was cut to 40 characters before paint, so the row ended at "ORDER BY". | S2 | Elide at the painted width. Full statement is the tooltip and the first expanded row. | Fixed |
 | M8R-4 | list running, dark | consistency | New and Open stacked full width. | S2 | The shot uses the generated `listButtons` row. | Fixed |
-| M8R-5 | left Data tab at 184 px, dark | visibility of status | The footer reads "Columns read 2 Refresh". The "2 Nov 14:02" time is clipped. The column list above it is readable. | S3 | Leave it. Wrapping the footer is a later width pass. | Open |
+| M8R-5 | left Data tab at 184 px, dark | visibility of status | The footer reads "Columns read 2 Refresh". The "2 Nov 14:02" time is clipped. The column list above it is readable. | S2 | The sentence wraps to the tab width. Refresh is on the next line, at the right. | Fixed |
 
 200% shots are the same layouts at twice the pixels. High contrast editor themes leave the generated form on the light palette, which is the Preview/Try decision. Show SQL, Eject, and the inspector Data tab at 236 px ("Column", "notes", "Only show never save") were readable in dark.
 
@@ -47,17 +47,39 @@ Lane B, not this worktree: UX-M8-003 on the VM, PostgreSQL from the VM, AppArmor
 
 ## Item 13 profiles
 
-One run on this Mac. Load average 1.89, 2.06, 2.03 on 16 cores. Not a busy machine. Budgets were not changed. The harness is the same one the budget tests use, with `CBCS_FB_VALIDATE=0` and offscreen Qt. Samples are one side only, not five alternating runs.
+Follow-up on the same Mac, 16 cores. Budgets were not changed. The harness is the M7 one (`CBCS_FB_VALIDATE=0`, offscreen Qt). Commit is `commit` minus the paired bare repaint, warmup dropped, n=19.
 
-The number would decide whether to re-baseline section 12. It would not decide a code change in this lane. The outline miss is a full spoken-name walk. The other two sit on Qt paint.
+Bisect of that commit row, one run each, load about 2.8. `3000ecd8` has no harness. p95 ms:
 
-| point | budget | this run | limiter |
+| commit | what | p95 |
+| --- | --- | --- |
+| 170b34c4 | M7.R | 18.5 |
+| 603ef1d4 | M8.0 docs | 17.8 |
+| 1e8c7ea4 | M8.0s | 20.7 |
+| 922194ed | M8.1 | 19.4 |
+| 927d1161 | M8.6 | 19.4 |
+| 1d38d857 | M8.2 | 18.5 |
+| fcffe44c | M8.3a | 19.2 |
+| 9b0c238b | M8.3b | 18.1 |
+| a1e1b980 | M8.3c | 15.2 |
+| 88357fa3 | M8.3d | 22.8 |
+| b752a478 | M8.4 | 21.3 |
+| 53caa910 | M8.5 | 26.9 |
+| c19cbdf9 | vendor symlink | 19.4 |
+| 7b2888dd | M8.7 | 24.9 |
+| 7cce4ab5 | lane A | 26.8 |
+
+cProfile, 8 commits. M8.3c execute is 2 ms. At M8.3d, `publish_session` / `run_checks` is 4.5 ms on every rule. At M8.7, `silence_design_shortcuts` walks every widget on every changeset and adds 5.4 ms. Paint is flat across those three.
+
+After: data checks skip a behavior-only edit, the shortcut walk runs when a widget is created or a shortcut changes, and a formula commit repaints the State rows only. Outline looks up each buddy caption once per revision.
+
+| point | budget | after | note |
 | --- | --- | --- | --- |
-| Outline patch, 300 widgets, 15 samples after 3 warmup | 2 ms | p50 4.17 ms, p95 4.25 ms, fail | `spoken_display` rebuilds every widget name on a caption patch. cProfile of the row is dominated by `display_name` and `buddy_of` inside `_retitle`. The caption itself was rewritten, so the timed work happened. |
-| Inspector select in the shell, 15 samples | 16 ms | p50 16.08 ms, p95 17.42 ms, fail | The timed flush is just over the cap. cProfile of the whole row is `setStyleSheet` and `show` during setup, which is outside that 17 ms. First build was 138.9 ms and is not in the p95. |
-| Commit a rule, added, 19 samples | 17 ms | p50 25.69 ms, p95 26.41 ms, fail | The inspector showed the stored "Visible when" text, so the commit happened. cProfile of the commit is `processEvents` and the canvas viewport paint. |
+| Outline patch, 15 samples | 2 ms | p50 1.73, p95 1.75, pass | Load 1.28. Was 4.25. |
+| Inspector select, 15 samples | 16 ms | p50 14.60, p95 16.60, fail | Load 1.28. First build 126 ms, not in the p95. Left as noise around 16. |
+| Commit a rule, 19 samples | 17 ms | p50 16.5–16.8. Best p95 17.2. Other runs 17.6–18.6 | Load 1.3–2.5. Was 26.4. One sample in the 19 still spikes, so p95 is not reliably under 17. The cluster is. Today's M7.R remeasure was 18.5. |
 
-Proposal, for a later budget edit, not applied here. Outline patch 5 ms. Inspector select 20 ms. Commit a rule 30 ms. The outline number is tight across the 15 samples, so it is not a spike. The commit number is one run and higher than the earlier 16.2–17.7 ms band. Repeat it on an idle machine before accepting 30.
+The 5 / 20 / 30 ms re-baseline is not applied. Outline is back under 2 ms. Inspector stays at 16 ms. Commit stays at 17 ms.
 
 ## New sentences
 
