@@ -198,7 +198,9 @@ def _host_for(
             return host
         except AttributeError as exc:
             error = exc
-            host.deleteLater()
+            from app.qt.qt_compat import delete_now
+
+            delete_now(host)
     assert error is not None
     raise error
 
