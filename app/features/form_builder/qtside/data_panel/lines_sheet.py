@@ -222,11 +222,11 @@ class LinesSheet(QDialog):
         for column in table.columns:
             self._order.addItem(column.name, column.name)
             self._number.addItem(column.name, column.name)
-        self._prefer(self._link, self._existing.link if self._existing is not None else (links[0].name if links else ""))
+        _prefer(self._link, self._existing.link if self._existing is not None else (links[0].name if links else ""))
         order = self._existing.order if self._existing is not None else _guess_order(table)
-        self._prefer(self._order, order)
+        _prefer(self._order, order)
         number = self._existing.position if self._existing is not None else order
-        self._prefer(self._number, number)
+        _prefer(self._number, number)
         engine = column_engine(self._session.document, self._source, self._session)
         shown = {}
         if self._existing is not None:

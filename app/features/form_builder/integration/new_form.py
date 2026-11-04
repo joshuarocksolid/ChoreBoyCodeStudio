@@ -33,7 +33,7 @@ from app.features.form_builder.integration.provider import FormTabProvider
 from app.features.form_builder.qtside.dialogs.from_table import FromTableDialog, locale_date_format
 from app.features.form_builder.qtside.start.panel import NewFormPanel
 from app.features.form_builder.qtside.start.wizard import WIZARD_KEY, wizard_document
-from app.qt.qt_compat import exec_qt
+from app.qt.qt_compat import exec_qt, wrapper_is_valid
 from app.shell.tab_content_providers import TabMatchContext, TabSurfaceRequest
 from app.shell.theme_tokens import ShellThemeTokens
 
@@ -411,6 +411,7 @@ class NewFormSurface:
         )
         dialog.create_requested.connect(lambda: self._create_from_dialog(dialog))
         exec_qt(dialog)
+        dialog.deleteLater()
 
     def _create_from_dialog(self, dialog: FromTableDialog) -> None:
         from app.features.form_builder.qtside.dialogs.table_apply import render_plans
@@ -444,7 +445,7 @@ class NewFormSurface:
         for stem, text in ordered:
             result = self._create_planned(stem, text, kinds.get(stem, ""), planned, schema)
             if result.refused:
-                self._panel.show_status(result.refused)
+                report_status(self._panel, self._host(), result.refused)
                 return
             if result.scope is not None and kinds.get(stem) != "list":
                 record_path = result.scope.ui_path
@@ -452,6 +453,10 @@ class NewFormSurface:
                 record_path = result.scope.ui_path
         # Accept while the dialog still exists. Opening the new form can close
         # the New form tab, and the dialog was parented there.
+        if dialog.wants_start_screen():
+            from app.features.form_builder.engine.project.start_screen import apply_start_screen
+
+            apply_start_screen(root, dialog)
         if dialog.isVisible():
             dialog.accept()
         self._focus_data(record_path)
@@ -601,6 +606,22 @@ class NewFormSurface:
 
     def _host(self) -> object:
         return self._window
+
+
+def report_status(panel: object, window: object, text: str) -> None:
+    """Show ``text`` on the New form panel, or on the main window once that panel is gone."""
+
+    if wrapper_is_valid(panel):
+        show = getattr(panel, "show_status", None)
+        if callable(show):
+            try:
+                show(text)
+                return
+            except RuntimeError:
+                pass
+    status = getattr(window, "statusBar", None)
+    if callable(status):
+        status().showMessage(text)
 
 
 def ask_delete_template(parent: QWidget, name: str) -> bool:

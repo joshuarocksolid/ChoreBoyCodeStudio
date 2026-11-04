@@ -73,21 +73,26 @@ class _Row(QWidget):
         self.setObjectName("formBuilder.data.columnRow")
         self.setProperty("column", column.name)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
-        self.setFixedHeight(24)
+        self.setMinimumHeight(24)
         self._section = section
         self._column = column
         self._press: Optional[object] = None
+        self._narrow: Optional[bool] = None
         layout = QGridLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setHorizontalSpacing(8)
         layout.setColumnStretch(0, 1)
-        layout.setColumnMinimumWidth(1, 112)
-        name = QLabel(column.name, self)
-        name.setFixedWidth(112)
-        name.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
-        layout.addWidget(name, 0, 0)
+        layout.setColumnMinimumWidth(1, 0)
+        self._name = QLabel(column.name, self)
+        self._name.setObjectName("formBuilder.data.columnName")
+        self._name.setMinimumWidth(0)
+        self._name.setWordWrap(True)
+        self._name.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+        layout.addWidget(self._name, 0, 0)
         self._words = QLabel(self)
-        self._words.setFixedWidth(148)
+        self._words.setObjectName("formBuilder.data.columnWords")
+        self._words.setMinimumWidth(0)
+        self._words.setWordWrap(True)
         self._words.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         layout.addWidget(self._words, 0, 1)
         self._badges = QLabel(self)
@@ -120,6 +125,28 @@ class _Row(QWidget):
             self._bound.setCursor(QCursor(Qt.CursorShape.ArrowCursor))
         phrase = "bound to %s" % field if field else "not bound"
         self.setAccessibleName("%s, %s, %s" % (self._column.name, getattr(kind, "words", ""), phrase))
+        self._fit_width(self.width())
+
+    def resizeEvent(self, event: object) -> None:  # noqa: N802
+        super().resizeEvent(event)  # type: ignore[arg-type]
+        self._fit_width(self.width())
+
+    def _fit_width(self, width: int) -> None:
+        """At the 184 px Data tab and the 236 px inspector, type words sit under the name."""
+
+        narrow = 0 < width <= 236
+        if narrow == self._narrow:
+            return
+        self._narrow = narrow
+        grid = self.layout()
+        if not isinstance(grid, QGridLayout):
+            return
+        if narrow:
+            grid.addWidget(self._name, 0, 0, 1, 2)
+            grid.addWidget(self._words, 1, 0, 1, 4)
+            return
+        grid.addWidget(self._name, 0, 0, 1, 1)
+        grid.addWidget(self._words, 0, 1, 1, 1)
 
     def _select(self) -> None:
         session = session_of(self._section)

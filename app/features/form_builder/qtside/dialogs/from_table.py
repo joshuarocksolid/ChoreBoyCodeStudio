@@ -285,7 +285,9 @@ class FromTableDialog(QDialog):
         self._mapping = QTableWidget(0, len(_HEADERS), self)
         self._mapping.setObjectName("formBuilder.fromTable.mapping")
         self._mapping.setHorizontalHeaderLabels(list(_HEADERS))
+        self._mapping.setTabKeyNavigation(False)
         self._mapping.itemChanged.connect(self._on_item_changed)
+        self._mapping.installEventFilter(self)
         self._mapping.viewport().installEventFilter(self)
         self._fitting_columns = False
         body.addWidget(self._mapping, 3)
@@ -297,6 +299,17 @@ class FromTableDialog(QDialog):
         body.addWidget(preview_host, 2)
 
         footer = QHBoxLayout()
+        start_box = QVBoxLayout()
+        self._start = QCheckBox("Open this screen when the app starts", self)
+        self._start.setObjectName("formBuilder.fromTable.start")
+        self._start_user = False
+        self._start.toggled.connect(self._on_start_toggled)
+        self._start_note = QLabel("", self)
+        self._start_note.setObjectName("formBuilder.fromTable.startNote")
+        self._start_note.setWordWrap(True)
+        start_box.addWidget(self._start)
+        start_box.addWidget(self._start_note)
+        footer.addLayout(start_box, 1)
         self._reason = QLabel("", self)
         self._reason.setObjectName("formBuilder.fromTable.reason")
         footer.addWidget(self._reason, 1)
@@ -312,6 +325,7 @@ class FromTableDialog(QDialog):
         self._create.clicked.connect(self.create_requested.emit)
         footer.addWidget(self._create)
         root.addLayout(footer)
+        self._chain_tabs()
         self._fit_columns()
 
     def showEvent(self, event: object) -> None:  # type: ignore[override]
@@ -376,13 +390,12 @@ class FromTableDialog(QDialog):
             for item in loaded.connections:
                 self._connections[item.name] = item
                 self._connection.addItem(item.title or item.name, item.name)
-                # `before` is the set from the last load. A name that appears
-                # after Add connection is the one the person just made. On the
-                # first open every name is new, and the first row is the one
-                # they already have.
+                # `before` is the set from the last load. A name that was not
+                # in that set is the connection just added. The first open
+                # passes no `before`, so the first saved connection stays put.
                 if before is not None and item.name not in known:
                     fresh = item.name
-        target = prefer if prefer in self._connections else fresh
+        target = fresh or (prefer if prefer in self._connections else "")
         if not target and self._connection.count():
             target = str(self._connection.itemData(0) or "")
         index = self._connection.findData(target) if target else -1
@@ -614,7 +627,82 @@ class FromTableDialog(QDialog):
             return
         self._set_shows_as(row, str(chosen))
 
+    def wants_start_screen(self) -> bool:
+        offer = getattr(self, "_start_offer", None)
+        return bool(offer is not None and offer.enabled and self._start.isChecked())
+
+    def start_module(self) -> str:
+        offer = getattr(self, "_start_offer", None)
+        return "" if offer is None else offer.module
+
+    def start_class(self) -> str:
+        offer = getattr(self, "_start_offer", None)
+        return "" if offer is None else offer.class_name
+
+    def start_sentence(self) -> str:
+        return self._start_note.text()
+
+    def _on_start_toggled(self, _checked: bool) -> None:
+        if self._start.isEnabled():
+            self._start_user = True
+
+    def _sync_start(self) -> None:
+        from app.features.form_builder.engine.project.start_screen import offer
+
+        made = offer(
+            self._project_root,
+            self._stem,
+            str(self._make.currentData() or "record"),
+            template_bytes=_template_main_bytes(self._project_root),
+        )
+        self._start_offer = made
+        self._start.blockSignals(True)
+        self._start.setEnabled(made.enabled)
+        if made.enabled:
+            if not self._start_user:
+                self._start.setChecked(True)
+            self._start_note.setText("")
+        else:
+            self._start.setChecked(False)
+            self._start_note.setText(made.sentence)
+        self._start.blockSignals(False)
+        self._start_note.setVisible(not made.enabled)
+
+    def _chain_tabs(self) -> None:
+        """Tables, the grid, then Make and the buttons. Tab must leave the grid."""
+
+        order = (
+            self._connection,
+            self._tables,
+            self._mapping,
+            self._make,
+            self._lines,
+            self._lines_link,
+            self._cancel,
+            self._create,
+        )
+        for earlier, later in zip(order, order[1:]):
+            QWidget.setTabOrder(earlier, later)
+
+    def _open_shows_as(self, event: object) -> bool:
+        key = enum_value(getattr(event, "key")())
+        mods = enum_value(getattr(event, "modifiers")())
+        alt_down = key == enum_value(Qt.Key_Down) and bool(mods & enum_value(Qt.AltModifier))
+        if key not in (enum_value(Qt.Key_F2), enum_value(Qt.Key_Space)) and not alt_down:
+            return False
+        if self._mapping.currentColumn() != 3:
+            return False
+        box = self._mapping.cellWidget(self._mapping.currentRow(), 3)
+        if not isinstance(box, QComboBox):
+            return False
+        box.setFocus()
+        box.showPopup()
+        return True
+
     def eventFilter(self, watched: object, event: object) -> bool:  # type: ignore[override]
+        if watched is self._mapping and enum_value(getattr(event, "type")()) == enum_value(QEvent.KeyPress):
+            if self._open_shows_as(event):
+                return True
         viewport = self._mapping.viewport()
         if watched is viewport and enum_value(getattr(event, "type")()) == enum_value(QEvent.Resize):
             self._fit_columns()
@@ -678,6 +766,7 @@ class FromTableDialog(QDialog):
             editor.setFixedWidth(max(rect.width(), 1))
 
     def _sync_button(self) -> None:
+        self._sync_start()
         count = self.included_count()
         table = self._tables.currentItem()
         name = table.text() if table is not None else ""
@@ -835,11 +924,6 @@ class FromTableDialog(QDialog):
         self._preview_view = view
         self._swap_preview(view, widget)
         QTimer.singleShot(0, self._fit_preview)
-        from app.qt.QtWidgets import QApplication
-
-        focus = QApplication.focusWidget()
-        if focus is not None:
-            focus.setFocus()
 
     def _fit_preview(self) -> None:
         view = self._preview_view
@@ -927,6 +1011,21 @@ class FromTableDialog(QDialog):
                 chrome.border,
             )
         )
+
+
+def _template_main_bytes(project_root: str) -> Optional[bytes]:
+    """``templates/<id>/main.py`` for the project, read from the application root."""
+
+    from app.bootstrap.paths import resolve_app_root
+    from app.features.form_builder.engine.project.start_screen import project_template_id
+
+    template_id = project_template_id(project_root)
+    if not template_id:
+        return None
+    path = resolve_app_root() / "templates" / template_id / "main.py"
+    if not path.is_file():
+        return None
+    return path.read_bytes()
 
 
 def _now() -> str:

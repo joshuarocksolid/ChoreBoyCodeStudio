@@ -415,8 +415,13 @@ class ConnectionsPage(QWidget):
         try:
             self._list.clear()
             for connection in self._items:
-                item = QListWidgetItem()
+                title = connection.title or connection.name
+                item = QListWidgetItem(title)
+                role = getattr(getattr(Qt, "ItemDataRole", Qt), "AccessibleTextRole", None)
+                if role is not None:
+                    item.setData(role, title)
                 row = _Row(connection.title, engine_line(connection), self._list)
+                row.setAccessibleName(title)
                 item.setSizeHint(row.sizeHint())
                 self._list.addItem(item)
                 self._list.setItemWidget(item, row)

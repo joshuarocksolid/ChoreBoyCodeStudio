@@ -26,6 +26,7 @@ def _create(host: Any) -> QWidget:
     layout.addWidget(change)
     more = QPushButton("\u22ef", body)
     more.setObjectName("formBuilder.data.more")
+    more.setAccessibleName("More data actions")
     more.setStyleSheet("QPushButton::menu-indicator { image: none; width: 0px; }")
     menu = QMenu(more)
     menu.addAction("Show SQL", lambda: _menu(host, "sql"))

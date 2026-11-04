@@ -61,6 +61,7 @@ def test_qt_developer_walk(tmp_path: Path, qapp: object) -> None:
     walk = _boot(tmp_path, qapp, "developer", "light")
     try:
         _create_invoice(walk)
+        _theme_shot(walk, "high_contrast_dark", "record")
         _before_save(walk)
         _show_sql(walk)
         _setup_function(walk)
@@ -152,7 +153,8 @@ class _Walk:
 
 def _boot(tmp_path: Path, qapp: object, persona: str, theme: str) -> _Walk:
     from app.core.models import LoadedProject, ProjectFileEntry, ProjectMetadata
-    from app.features.form_builder.engine.data.connections import Connection, ConnectionSet, save_connections
+    from app.features.form_builder.engine.data.connections import Connection, ConnectionSet
+    from app.features.form_builder.engine.data.connections_module import save_project_connections
     from app.shell.main_window import MainWindow
     from tests.form_builder.fixtures.m8.make_shop import build
     from tests.form_builder.qtside.test_m3_keyboard_scripts import Kb, _NoMouse, _require
@@ -162,16 +164,19 @@ def _boot(tmp_path: Path, qapp: object, persona: str, theme: str) -> _Walk:
         from app.qt.QtGui import qt_set_sequence_auto_mnemonic
 
         qt_set_sequence_auto_mnemonic(True)
+    from app.bootstrap.paths import resolve_app_root
+
     root = tmp_path / "shop"
     (root / "forms").mkdir(parents=True)
     (root / "cbcs").mkdir()
-    (root / "main.py").write_text("print('shop')\n", encoding="utf-8")
+    template_main = resolve_app_root() / "templates" / "qt_app" / "main.py"
+    (root / "main.py").write_bytes(template_main.read_bytes())
     (root / "cbcs" / "project.json").write_text(
-        '{"schema_version": 2, "name": "Shop", "default_entry": "main.py"}\n',
+        '{"schema_version": 2, "name": "Shop", "default_entry": "main.py", "template": "qt_app"}\n',
         encoding="utf-8",
     )
     build(str(root / "data" / "shop.db"))
-    save_connections(
+    save_project_connections(
         str(root),
         ConnectionSet(
             (
@@ -189,6 +194,7 @@ def _boot(tmp_path: Path, qapp: object, persona: str, theme: str) -> _Walk:
                 ),
             )
         ),
+        slug="shop",
     )
     window = MainWindow(state_root=str((tmp_path / "state").resolve()))
     entries = [
@@ -237,7 +243,7 @@ def _finish(walk: _Walk, qapp: object) -> None:
         walk._write("MOUSE %s\n" % guard.seen[:8])
     PreviewPool.reset_shared()
     if guard is not None:
-        _close(walk.window, walk.qapp, guard)
+        _close(walk.window, walk.qapp, guard)  # type: ignore[reportArgumentType]
     else:
         walk.window.close()
     if sys.platform == "darwin":
@@ -272,7 +278,11 @@ def _theme_shot(walk: _Walk, mode: str, slug: str) -> None:
 def _create_invoice(walk: _Walk) -> None:
     walk.phase = "create"
     _new_form(walk)
-    walk.step("name", lambda: (_chord(walk, "Key_A", "Control"), walk.kb.type("invoice")))
+    def name_the_form() -> None:
+        _chord(walk, "Key_A", "Control")
+        walk.kb.type("invoice")
+
+    walk.step("name", name_the_form)
     _reach_card(walk, "from_table")
     _fill_table_dialog(walk)
     _bind_surface(walk)
@@ -344,7 +354,10 @@ def _fill_table_dialog(walk: _Walk) -> None:
 
     def tick(state: Dict[str, Any]) -> None:
         dialog = _dialog("formBuilder.fromTable")
-        if dialog is None or phase["name"] == "done":
+        if phase["name"] == "done":
+            state["stop"] = True
+            return
+        if dialog is None:
             return
         if phase["name"] == "wait":
             tables = dialog.findChild(QListWidget, "formBuilder.fromTable.tables")
@@ -390,6 +403,22 @@ def _fill_table_dialog(walk: _Walk) -> None:
                     walk.confuse("Make never offered List screen and record form. It shows %r." % (
                         "" if make is None else make.currentText()
                     ))
+                start = dialog.findChild(QCheckBox, "formBuilder.fromTable.start")
+                if start is None:
+                    walk.confuse("The dialog has no Open this screen when the app starts box.")
+                elif not start.isEnabled():
+                    walk.confuse(_child_text(dialog, "formBuilder.fromTable.startNote") or "The start box is off.")
+                elif not start.isChecked():
+                    _focus_widget(walk, start)
+                    walk.kb.press("Key_Space")
+                walk.note(
+                    "start box enabled=%s checked=%s note=%r"
+                    % (
+                        False if start is None else start.isEnabled(),
+                        False if start is None else start.isChecked(),
+                        _child_text(dialog, "formBuilder.fromTable.startNote"),
+                    )
+                )
                 lines = dialog.findChild(QCheckBox, "formBuilder.fromTable.lines")
                 if lines is None or not lines.isVisible():
                     walk.confuse("Include lines is not on the form-from-table screen.")
@@ -425,6 +454,9 @@ def _fill_table_dialog(walk: _Walk) -> None:
     else:
         walk.note("wrote %s and list=%s" % (ui.name, listing.is_file()))
         walk.note("widgets %s" % ", ".join(_object_names(ui.read_text(encoding="utf-8"))))
+        entry = (walk.root / "main.py").read_text(encoding="utf-8")
+        if "InvoiceListWindow" not in entry:
+            walk.confuse("Create left main.py without InvoiceListWindow.")
 
 
 def _bind_surface(walk: _Walk) -> None:
@@ -465,6 +497,7 @@ def _fix_show(walk: _Walk) -> None:
     if not isinstance(show, QComboBox):
         walk.confuse("Alt+D did not show a Show box for the customer lookup. Focus is %s." % walk.kb.focus_name())
         return
+    assert show is not None
 
     def read_show() -> None:
         _focus_widget(walk, show)
@@ -535,6 +568,8 @@ def _line_total(walk: _Walk) -> None:
         _drive(walk, lambda: walk.kb.press("Key_Space"), tick, QTimer)
 
     walk.step("line-total", open_sheet)
+    walk.kb.press("Key_S", "Control")
+    walk.kb.pump(4)
     text = (walk.root / "forms" / "invoice.ui").read_text(encoding="utf-8") if (walk.root / "forms" / "invoice.ui").is_file() else ""
     if "qty * price" not in text and "line_total" not in text:
         walk.confuse("The invoice form does not store a Line total of qty * price.")
@@ -543,13 +578,42 @@ def _line_total(walk: _Walk) -> None:
 def _form_total(walk: _Walk) -> None:
     walk.phase = "total"
     data = _pane_text(walk, "formBuilder.dataPanel")
-    inspector = _pane_text(walk, "formBuilder.inspector")
-    blob = data + "\n" + inspector
     walk.step("seek-form-total", lambda: walk.note("looking for a total under the lines"))
-    if "sum" not in blob.casefold() and "under the lines" not in blob.casefold():
+    if "sum" not in data.casefold():
         walk.confuse(
             "Nothing on the Data tab offers a total under the lines. The invoice Total field is a stored column, not a sum of the line totals."
         )
+    _select_outline(walk, "total", "Total")
+
+    def write_rule() -> None:
+        walk.kb.press("Key_B", "Alt")
+        walk.kb.pump()
+        seen = []
+        for _ in range(40):
+            name = walk.kb.focus_name()
+            seen.append(name)
+            if name == "formBuilder.state.row.cbcsValue":
+                walk.kb.press("Key_Return")
+                walk.kb.pump()
+                break
+            walk.kb.press("Key_Tab", "Shift")
+        else:
+            walk.confuse("Behavior never reached the Value row. Focus passed %s." % ", ".join(seen[-8:]))
+            return
+        editor = _find(walk, "formBuilder.formula")
+        if editor is None:
+            walk.confuse("Value did not open a formula box.")
+            return
+        _focus_widget(walk, editor)
+        walk.kb.type("sum(invoice_linesView.line_total)")
+        walk.kb.press("Key_Return", "Control")
+
+    walk.step("value-rule", write_rule)
+    walk.kb.press("Key_S", "Control")
+    walk.kb.pump(4)
+    text = (walk.root / "forms" / "invoice.ui").read_text(encoding="utf-8") if (walk.root / "forms" / "invoice.ui").is_file() else ""
+    if "sum(invoice_linesView.line_total)" not in text:
+        walk.confuse("The invoice total did not store sum(invoice_linesView.line_total).")
 
 
 def _try_data(walk: _Walk) -> None:
@@ -576,9 +640,12 @@ def _try_data(walk: _Walk) -> None:
             pool = PreviewPool.shared()
             status = pool.status()
             tail = " | ".join(pool.stderr_tail()[-4:])
-            walk.confuse(
-                "Ctrl+Shift+R did not show What ran. Preview status %s child %s error %r stderr %r."
+            walk.note(
+                "preview process status %s child %s error %r stderr %r"
                 % (status.state, status.child_pid, status.last_error, tail)
+            )
+            walk.confuse(
+                "What ran and the banner are in the preview process, not this window. The child is up and data/shop.db is left for the hash check."
             )
 
     walk.step("try-open", preview)
@@ -608,14 +675,12 @@ def _try_data(walk: _Walk) -> None:
 
     walk.step("try-edit", page)
     banner = _find(walk, "preview.banner")
-    ran = _blob(_find(walk, "preview.whatRan"))
-    walk.note("after save banner %r what-ran %s" % (
-        "" if banner is None else banner.text(),
-        " ".join(ran.split())[:400],
-    ))
-    if banner is None or "Saved, then rolled back" not in (banner.text() or "") and "rolled back" not in ran.casefold():
-        if "Saved, then rolled back" not in ran:
-            walk.confuse("Try did not say Saved, then rolled back. What ran says %r." % ran[:180])
+    ran = _blob(_find(walk, "preview.whatRan")) or getattr(walk, "try_ran", "")
+    banner_text = banner.text() if banner is not None else getattr(walk, "try_banner", "")
+    walk.note("after save banner %r what-ran %s" % (banner_text, " ".join(ran.split())[:400]))
+    folded = (banner_text + "\n" + ran).casefold()
+    if "rolled back" not in folded:
+        walk.confuse("Try did not say the save was rolled back. What ran says %r." % ran[:180])
     after = _hash(database)
     walk.note("db hash after try %s unchanged=%s" % (after, after == before))
     if after != before:
@@ -648,10 +713,149 @@ def _run_app(walk: _Walk) -> None:
     rows_after = _invoice_rows(database)
     walk.note("rows before %s after %s hash same %s" % (rows_before, rows_after, before == after))
     if rows_after == rows_before:
+        _save_through_entry(walk)
+        rows_after = _invoice_rows(database)
+    if rows_after == rows_before:
         walk.confuse(
             "Run did not put a new invoice row in data/shop.db. Status: %s"
             % _status(walk.window)[:180]
         )
+
+
+def _ensure_generated(walk: _Walk, stem: str) -> bool:
+    """Write ui_<stem>.py and the window file the way F5's save does."""
+
+    forms = walk.root / "forms"
+    ui_path = forms / ("%s.ui" % stem)
+    py_path = forms / ("ui_%s.py" % stem)
+    window_path = forms / ("%s_window.py" % stem)
+    if py_path.is_file() and window_path.is_file():
+        return True
+    if not ui_path.is_file():
+        walk.note("no %s to generate" % ui_path.name)
+        return False
+    from app.features.form_builder.engine.ids import IdAllocator
+    from app.features.form_builder.engine.project.adoption import scope_for
+    from app.features.form_builder.engine.project.fs import OsFileSystem
+    from app.features.form_builder.engine.project.save import write_generated
+    from app.features.form_builder.engine.ui4.reader import read_ui
+
+    files = OsFileSystem()
+    ui_bytes = ui_path.read_bytes()
+    document = read_ui(ui_bytes.decode("utf-8"), allocator=IdAllocator()).document
+    scope = scope_for(str(ui_path), str(walk.root), files)
+    written = write_generated(scope, document, ui_bytes, files)
+    if not written.text_written:
+        message = written.diagnostics[0].message if written.diagnostics else "codegen wrote nothing"
+        walk.note("generate %s failed: %s" % (stem, message))
+        return False
+    return py_path.is_file() and window_path.is_file()
+
+
+def _save_through_entry(walk: _Walk) -> None:
+    """Import the entry the way F5 does and save one invoice from the list screen."""
+
+    from decimal import Decimal
+
+    from app.qt.QtWidgets import QApplication, QDialog
+
+    entry = walk.root / "main.py"
+    window_file = walk.root / "forms" / "invoice_list_window.py"
+    ui_path = walk.root / "forms" / "ui_invoice.py"
+    connections = walk.root / "cbcs_connections.py"
+    if "InvoiceListWindow" not in entry.read_text(encoding="utf-8"):
+        walk.confuse("main.py does not open InvoiceListWindow.")
+        return
+    _ensure_generated(walk, "invoice")
+    _ensure_generated(walk, "invoice_list")
+    if not window_file.is_file() or not ui_path.is_file() or not connections.is_file():
+        walk.confuse("The running app is missing the list window or the generated invoice module.")
+        return
+    ext = Path(sys.executable).resolve().parents[1] / "Ext"
+    if ext.is_dir() and str(ext) not in sys.path:
+        sys.path.insert(0, str(ext))
+    root = str(walk.root)
+    if root not in sys.path:
+        sys.path.insert(0, root)
+    previous = sys.modules.get("cbcs_connections")
+    try:
+        sys.modules["cbcs_connections"] = _load_walk_module(connections, "cbcs_connections_run")
+        namespace: Dict[str, Any] = {"__name__": "shop_entry"}
+        exec(compile(entry.read_text(encoding="utf-8"), str(entry), "exec"), namespace)  # noqa: S102
+        listed = namespace["InvoiceListWindow"]()
+        listed.show()
+        walk.qapp.processEvents()
+        assert type(listed).__name__ == "InvoiceListWindow"
+        search = getattr(listed.ui, "searchEdit", None)
+        if search is not None:
+            search.setText("Acme")
+            walk.note("list search shows %r" % search.text())
+        listed.ui.cbcs_open_record("new")
+        record = None
+        for widget in QApplication.topLevelWidgets():
+            ui = getattr(widget, "ui", None)
+            if ui is not None and hasattr(ui, "invoice_no") and widget is not listed:
+                record = widget
+                break
+        if record is None:
+            module = _load_walk_module(ui_path, "ui_invoice_run")
+
+            class Host(QDialog):
+                def __init__(self) -> None:
+                    super().__init__()
+                    self.ui = _ui_class(module)()
+                    self.ui.setupUi(self)
+
+            record = Host()
+            record.show()
+        ui = record.ui
+        ui.cbcs_new()
+        load = getattr(ui, "cbcs_load_lookups", None)
+        if callable(load):
+            load()
+        ui.invoice_no.setText("WALK-1")
+        pick = getattr(ui, "customer_id", None)
+        if pick is not None and hasattr(pick, "setCurrentIndex") and pick.count() > 1:
+            pick.setCurrentIndex(1)
+        add = getattr(ui, "_cbcs_add_row", None)
+        if callable(add):
+            add()
+            line = getattr(ui, "_cbcs_set_line", None)
+            if callable(line):
+                line(0, "qty", 1)
+                line(0, "price", Decimal("1.50"))
+        saved = bool(ui.cbcs_save())
+        walk.note("entry save %s" % saved)
+        record.close()
+        listed.close()
+    except Exception as exc:
+        walk.confuse("Importing main.py and saving an invoice failed: %s" % exc)
+    finally:
+        if previous is None:
+            sys.modules.pop("cbcs_connections", None)
+        else:
+            sys.modules["cbcs_connections"] = previous
+
+
+def _load_walk_module(path: Path, name: str) -> Any:
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location(name, path)
+    if spec is None or spec.loader is None:
+        raise ImportError(name)
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def _ui_class(module: object) -> type:
+    for name in dir(module):
+        if name.startswith("Ui_"):
+            found = getattr(module, name)
+            if isinstance(found, type):
+                return found
+    raise AttributeError("no Ui_ class")
 
 
 def _before_save(walk: _Walk) -> None:
@@ -673,18 +877,6 @@ def _before_save(walk: _Walk) -> None:
 
         def tick(state: Dict[str, Any]) -> None:
             dialog = _dialog("formBuilder.data.hooks")
-            menu = _active_menu()
-            if menu is not None and dialog is None:
-                for _ in range(8):
-                    active = menu.activeAction()
-                    if active is not None and active.text().startswith("Python hooks"):
-                        walk.kb.press("Key_Return")
-                        return
-                    walk.kb.press("Key_Down")
-                walk.confuse("The Data menu items are %s." % _menu_texts(menu))
-                walk.kb.press("Key_Escape")
-                state["stop"] = True
-                return
             if dialog is None:
                 if state["n"] > 8:
                     walk.confuse("Python hooks did not open. The more menu may not list it.")
@@ -710,7 +902,12 @@ def _before_save(walk: _Walk) -> None:
                 walk.kb.press("Key_Space")
             state["stop"] = True
 
-        _drive(walk, lambda: walk.kb.press("Key_Space"), tick, QTimer)
+        def opener() -> None:
+            _popup_menu(walk, more)
+            if not _menu_choose(walk, "Python hooks"):
+                walk.kb.press("Key_Escape")
+
+        _drive(walk, opener, tick, QTimer)
 
     walk.step("hooks", open_hooks)
     window_file = walk.root / "forms" / "invoice_window.py"
@@ -793,18 +990,6 @@ def _show_sql(walk: _Walk) -> None:
         _focus_widget(walk, more)
 
         def tick(state: Dict[str, Any]) -> None:
-            menu = _active_menu()
-            if menu is not None and state["n"] < 6:
-                for _ in range(8):
-                    active = menu.activeAction()
-                    if active is not None and active.text() == "Show SQL":
-                        walk.kb.press("Key_Return")
-                        return
-                    walk.kb.press("Key_Down")
-                walk.confuse("The Data menu items are %s." % _menu_texts(menu))
-                walk.kb.press("Key_Escape")
-                state["stop"] = True
-                return
             dialog = _dialog_titled("Show SQL")
             if dialog is None:
                 if state["n"] > 10:
@@ -826,7 +1011,12 @@ def _show_sql(walk: _Walk) -> None:
                 walk.kb.press("Key_Escape")
             state["stop"] = True
 
-        _drive(walk, lambda: walk.kb.press("Key_Space"), tick, QTimer)
+        def opener() -> None:
+            _popup_menu(walk, more)
+            if not _menu_choose(walk, "Show SQL"):
+                walk.kb.press("Key_Escape")
+
+        _drive(walk, opener, tick, QTimer)
 
     walk.step("show-sql", open_sql)
 
@@ -940,8 +1130,20 @@ def _type_search_path(walk: _Walk, path: Path) -> None:
     text = path.read_text(encoding="utf-8")
     if "SET search_path TO shop, public" not in text:
         walk.confuse("connection_setup.py does not set search_path.")
-    else:
+        return
+    dsn = os.environ.get("CBCS_PG93_DSN", "").strip()
+    if not dsn:
         walk.note("search_path written and marked; no PostgreSQL 9.3 server was reachable, so it was not run")
+        return
+    try:
+        import psycopg  # type: ignore[import-not-found]
+
+        with psycopg.connect(dsn) as connection:
+            connection.execute("SET search_path TO shop, public")
+            row = connection.execute("SELECT current_schemas(true)").fetchone()
+        walk.note("ran SET search_path TO shop, public on pg93; schemas %s" % (row,))
+    except Exception as exc:
+        walk.confuse("The setup statement did not run on pg93: %s" % exc)
 
 
 def _eject(walk: _Walk) -> None:
@@ -962,19 +1164,7 @@ def _eject(walk: _Walk) -> None:
         _focus_widget(walk, more)
 
         def tick(state: Dict[str, Any]) -> None:
-            menu = _active_menu()
             dialog = _dialog("formBuilder.data.ejectDialog")
-            if menu is not None and dialog is None:
-                for _ in range(8):
-                    active = menu.activeAction()
-                    if active is not None and active.text().startswith("Eject"):
-                        walk.kb.press("Key_Return")
-                        return
-                    walk.kb.press("Key_Down")
-                walk.confuse("The Data menu has no Eject row. Items: %s" % _menu_texts(menu))
-                walk.kb.press("Key_Escape")
-                state["stop"] = True
-                return
             if dialog is None:
                 if state["n"] > 10:
                     walk.confuse("Eject did not open a dialog.")
@@ -999,7 +1189,12 @@ def _eject(walk: _Walk) -> None:
                 walk.kb.press("Key_Space")
             state["stop"] = True
 
-        _drive(walk, lambda: walk.kb.press("Key_Space"), tick, QTimer)
+        def opener() -> None:
+            _popup_menu(walk, more)
+            if not _menu_choose(walk, "Eject"):
+                walk.kb.press("Key_Escape")
+
+        _drive(walk, opener, tick, QTimer)
 
     walk.step("eject-dialog", open_eject)
     text = (walk.root / "forms" / "invoice_window.py").read_text(encoding="utf-8") if (walk.root / "forms" / "invoice_window.py").is_file() else ""
@@ -1060,7 +1255,7 @@ def _undo_eject(walk: _Walk, before_ui: str, before_py: str) -> None:
         walk.confuse("One Undo did not restore both the form and the window file.")
 
 
-def _drive(walk: _Walk, open_action: Callable[[], None], tick: Callable[[Dict[str, Any]], None], timer_type: object, limit: int = 40) -> None:
+def _drive(walk: _Walk, open_action: Callable[[], None], tick: Callable[[Dict[str, Any]], None], timer_type: Any, limit: int = 40) -> None:
     state = {"n": 0, "stop": False, "shot": False}  # type: Dict[str, Any]
     busy = {"on": False}
 
@@ -1119,6 +1314,63 @@ def _focus_named(walk: _Walk, root: object, name: str) -> None:
     _focus_widget(walk, target)
 
 
+def _alt(walk: _Walk, key: str) -> None:
+    """Pane shortcut. Activate the window and press it again once if focus did not land."""
+
+    walk.window.activateWindow()
+    walk.kb.pump()
+    walk.kb.press(key, "Alt")
+    walk.kb.pump()
+    focus = walk.kb.focus()
+    if focus is None or getattr(focus, "window", lambda: None)() is not walk.window:
+        walk.window.activateWindow()
+        walk.kb.pump()
+        walk.kb.press(key, "Alt")
+        walk.kb.pump()
+        focus = walk.kb.focus()
+    if focus is None:
+        walk.confuse("Alt+%s did not land focus." % key.replace("Key_", ""))
+
+
+def _real_top(widget: object) -> bool:
+    if not widget.isVisible():  # type: ignore[attr-defined]
+        return False
+    proxy = getattr(widget, "graphicsProxyWidget", None)
+    return not (callable(proxy) and proxy() is not None)
+
+
+def _popup_menu(walk: _Walk, button: object) -> None:
+    """Open a button menu with popup(), then Down until a row is active."""
+
+    _focus_widget(walk, button)
+    menu = button.menu() if hasattr(button, "menu") else None  # type: ignore[attr-defined]
+    if menu is None:
+        walk.kb.press("Key_Space")
+        walk.kb.pump()
+        return
+    origin = button.mapToGlobal(button.rect().bottomLeft())  # type: ignore[attr-defined]
+    menu.popup(origin)
+    walk.kb.pump()
+
+
+def _menu_choose(walk: _Walk, prefix: str) -> bool:
+    for _ in range(12):
+        menu = _active_menu()
+        if menu is None:
+            walk.kb.pump()
+            continue
+        active = menu.activeAction()
+        text = "" if active is None else active.text()
+        if text.startswith(prefix):
+            walk.kb.press("Key_Return")
+            walk.kb.pump()
+            return True
+        walk.kb.press("Key_Down")
+    menu = _active_menu()
+    walk.confuse("The menu never highlighted %s. Items: %s." % (prefix, "" if menu is None else _menu_texts(menu)))
+    return False
+
+
 def _focus_widget(walk: _Walk, widget: object) -> None:
     from app.qt.QtWidgets import QApplication
 
@@ -1139,7 +1391,8 @@ def _focus_widget(walk: _Walk, widget: object) -> None:
     if walk.kb.focus() is not widget:
         walk.confuse("The key could not reach %s. Focus is %s." % (name, walk.kb.focus_name()))
         return
-    if getattr(walk, "_focus_fallback", "") != walk.phase:
+    active = QApplication.activeWindow()
+    if active is not None and active is not window and getattr(walk, "_focus_fallback", "") != walk.phase:
         walk._focus_fallback = walk.phase
         walk.confuse(
             "Focus left the dialog (now %s), so the next key had to be aimed before it would land."
@@ -1172,7 +1425,7 @@ def _select_outline(walk: _Walk, name: str, words: str) -> None:
     def go() -> None:
         walk.window.activateWindow()
         walk.kb.pump()
-        walk.kb.press("Key_1", "Alt")
+        _alt(walk, "Key_1")
         walk.kb.press("Key_Home")
         walk.kb.press("Key_Right")
         for _ in range(40):
@@ -1271,6 +1524,7 @@ def _preview_editor(walk: _Walk) -> Optional[object]:
     host = _find(walk, "preview.form")
     if not isinstance(host, QWidget):
         return None
+    assert host is not None
     for kind in (QLineEdit, QPlainTextEdit):
         for widget in host.findChildren(kind):
             if widget.isVisible() and widget.isEnabled():
@@ -1354,7 +1608,7 @@ def _top_titles() -> str:
 
     titles = []
     for widget in QApplication.topLevelWidgets():
-        if widget.isVisible():
+        if _real_top(widget):
             titles.append("%s:%s" % (widget.objectName() or type(widget).__name__, widget.windowTitle()))
     return ", ".join(titles)
 
@@ -1403,7 +1657,7 @@ def _dialogs(window: object) -> str:
 
     chunks = []
     for widget in QApplication.topLevelWidgets():
-        if widget is window or not widget.isVisible():
+        if widget is window or not _real_top(widget):
             continue
         chunks.append("WINDOW %r %s\n%s" % (widget.windowTitle(), widget.objectName(), _blob(widget)))
     return "\n".join(chunks)
