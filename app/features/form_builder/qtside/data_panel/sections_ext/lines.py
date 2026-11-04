@@ -15,7 +15,8 @@ from app.features.form_builder.qtside.data_panel.lines_sheet import (
 )
 from app.features.form_builder.qtside.data_panel.model import record_source
 from app.features.form_builder.qtside.data_panel.sections_ext import PanelSection
-from app.qt.QtWidgets import QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
+from app.features.form_builder.qtside.data_panel.sections_ext.wrap import WrappedLabel
+from app.qt.QtWidgets import QPushButton, QSizePolicy, QVBoxLayout, QWidget
 
 
 def _create(host: Any) -> QWidget:
@@ -23,23 +24,22 @@ def _create(host: Any) -> QWidget:
     body.setObjectName("formBuilder.data.lines")
     layout = QVBoxLayout(body)
     layout.setContentsMargins(0, 0, 0, 0)
-    row = QHBoxLayout()
-    layout.addLayout(row)
-    sentence = QLabel(body)
+    layout.setSpacing(4)
+    sentence = WrappedLabel("", body)
     sentence.setObjectName("formBuilder.data.linesText")
-    sentence.setWordWrap(True)
-    row.addWidget(sentence, 1)
+    layout.addWidget(sentence)
     edit = QPushButton("Edit…", body)
     edit.setObjectName("formBuilder.data.linesEdit")
+    edit.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Fixed)
     edit.clicked.connect(lambda: _edit(host))
-    row.addWidget(edit)
+    layout.addWidget(edit)
     add = QPushButton("Add lines…", body)
     add.setObjectName("formBuilder.data.linesAdd")
+    add.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Fixed)
     add.clicked.connect(lambda: _add(host))
-    row.addWidget(add)
-    hint = QLabel(body)
+    layout.addWidget(add)
+    hint = WrappedLabel("", body)
     hint.setObjectName("formBuilder.data.linesTotal")
-    hint.setWordWrap(True)
     layout.addWidget(hint)
 
     def refresh() -> None:

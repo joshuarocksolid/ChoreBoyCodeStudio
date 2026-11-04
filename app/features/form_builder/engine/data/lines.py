@@ -15,6 +15,7 @@ from app.features.form_builder.engine.logic.formula.compile import compile_formu
 from app.features.form_builder.engine.logic.formula.env import FormulaEnv, SlotKind
 from app.features.form_builder.engine.logic.formula.nodes import Bin
 from app.features.form_builder.engine.logic.formula.types import (
+    ANY,
     DATE,
     DATETIME,
     MONEY,
@@ -136,6 +137,7 @@ def line_plan_source() -> str:
 
 
 _KIND_TYPE = {
+    "any": ANY,
     "whole": WHOLE,
     "int": WHOLE,
     "money": MONEY,

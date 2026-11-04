@@ -3150,7 +3150,7 @@ A password the policy needs is asked once per editor session: "Password for cler
 4. **Buttons:** [Bind fields by name] [Add record toolbar].
 5. **Footer:** "Columns read 2 Nov 14:02 [Refresh]".
 
-At 184 px the type words wrap under the column name. The column name never elides.
+At 184 px, 236 px, and the default 232 px left pane, the column name is on its own line and elides with a tooltip of the full name. The type and notes are on the next line. The bound field is on the third line, or elided at the right.
 
 **UX-DATA-004** `M8.2` `[S T]` Dragging a column onto the canvas inserts a labelled field of the suggested class (LOGIC §5.3 table) and kind. Its object name is the column name, and it is bound, all in one undo step. A column that points to another table inserts a lookup combo (§13.5.5). Enter and Shift+Enter do the same from the keyboard (F15). Dropping a column onto an existing compatible field binds it instead, and the drop hint reads "Bind to invoice_date". An incompatible field shows the not-allowed drop with "A date column can't be shown in a check box."
 

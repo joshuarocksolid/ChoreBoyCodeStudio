@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from app.qt.QtWidgets import QHBoxLayout, QLabel, QMenu, QPushButton, QWidget
+from app.features.form_builder.qtside.data_panel.sections_ext.wrap import WrappedLabel
+from app.qt.QtWidgets import QHBoxLayout, QMenu, QPushButton, QSizePolicy, QVBoxLayout, QWidget
 
 from app.features.form_builder.qtside.data_panel.host import session_of
 from app.features.form_builder.qtside.data_panel.model import connection_title, record_source
@@ -14,16 +15,20 @@ from app.features.form_builder.qtside.data_panel.sections_ext import PanelSectio
 def _create(host: Any) -> QWidget:
     body = QWidget(host)
     body.setObjectName("formBuilder.data.sourceLine")
-    layout = QHBoxLayout(body)
+    layout = QVBoxLayout(body)
     layout.setContentsMargins(0, 0, 0, 0)
-    sentence = QLabel(body)
+    layout.setSpacing(4)
+    sentence = WrappedLabel("", body)
     sentence.setObjectName("formBuilder.data.sourceText")
-    sentence.setWordWrap(True)
-    layout.addWidget(sentence, 1)
+    layout.addWidget(sentence)
+    buttons = QHBoxLayout()
+    buttons.setContentsMargins(0, 0, 0, 0)
+    layout.addLayout(buttons)
     change = QPushButton("Change\u2026", body)
     change.setObjectName("formBuilder.data.change")
     change.clicked.connect(lambda: _change(host))
-    layout.addWidget(change)
+    change.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Fixed)
+    buttons.addWidget(change)
     more = QPushButton("\u22ef", body)
     more.setObjectName("formBuilder.data.more")
     more.setAccessibleName("More data actions")
@@ -34,7 +39,9 @@ def _create(host: Any) -> QWidget:
     menu.addAction("Eject to code\u2026", lambda: _menu(host, "eject"))
     menu.addAction("Disconnect\u2026", lambda: _menu(host, "disconnect"))
     more.setMenu(menu)
-    layout.addWidget(more)
+    more.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Fixed)
+    buttons.addWidget(more)
+    buttons.addStretch(1)
 
     def refresh() -> None:
         session = session_of(host)

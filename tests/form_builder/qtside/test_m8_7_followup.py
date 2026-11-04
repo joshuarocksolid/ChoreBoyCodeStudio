@@ -363,26 +363,53 @@ def test_connection_rows_carry_the_title(tmp_path: Path, qapp: QApplication) -> 
 def test_column_words_sit_under_the_name_in_a_narrow_pane(qapp: QApplication) -> None:
     host = QWidget()
     row = _Row(host, host, Column("integer", "INTEGER", True))
-    host.resize(400, 120)
+    long_row = _Row(host, host, Column("invoice_number_extra_long_column_name", "TEXT", True))
+    layout = QVBoxLayout(host)
+    layout.addWidget(row)
+    layout.addWidget(long_row)
+    host.resize(400, 240)
     host.show()
-    for width in (184, 236):
+    for width in (184, 232, 236):
+        host.resize(width, 240)
         row.setFixedWidth(width)
+        long_row.setFixedWidth(width)
         row.resize(width, 72)
+        long_row.resize(width, 72)
         qapp.processEvents()
         name = row.findChild(QLabel, "formBuilder.data.columnName")
         words = row.findChild(QLabel, "formBuilder.data.columnWords")
-        assert name is not None and words is not None
+        bound = row.findChild(QLabel, "formBuilder.data.bound")
+        assert name is not None and words is not None and bound is not None
         assert name.text() == "integer"
         assert words.text() == "whole number"
         assert words.geometry().top() >= name.geometry().bottom() - 1
+        assert bound.geometry().top() >= words.geometry().bottom() - 1
         assert not name.geometry().intersects(words.geometry())
-    row.setFixedWidth(400)
-    row.resize(400, 24)
+        assert not words.geometry().intersects(bound.geometry())
+        long_name = long_row.findChild(QLabel, "formBuilder.data.columnName")
+        assert long_name is not None
+        assert long_name.text() != "invoice_number_extra_long_column_name"
+        assert long_name.text().endswith("\u2026")
+        assert long_name.toolTip() == "invoice_number_extra_long_column_name"
+    host.close()
+
+
+def test_data_actions_are_as_wide_as_their_text_at_184(qapp: QApplication) -> None:
+    from app.features.form_builder.qtside.data_panel.sections_ext.actions import _create as actions
+
+    host = QWidget()
+    body = actions(host)
+    layout = QVBoxLayout(host)
+    layout.addWidget(body)
+    host.resize(184, 160)
+    host.show()
     qapp.processEvents()
-    name = row.findChild(QLabel, "formBuilder.data.columnName")
-    words = row.findChild(QLabel, "formBuilder.data.columnWords")
-    assert name is not None and words is not None
-    assert not name.geometry().intersects(words.geometry())
+    buttons = body.findChildren(QPushButton)
+    assert [button.text() for button in buttons] == ["Bind fields by name", "Add record toolbar"]
+    assert buttons[1].geometry().top() >= buttons[0].geometry().bottom() - 1
+    for button in buttons:
+        assert button.width() >= button.sizeHint().width()
+        assert button.geometry().right() <= body.width()
     host.close()
 
 

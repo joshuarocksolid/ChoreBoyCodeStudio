@@ -187,6 +187,9 @@ def _table(schema: object, name: Optional[str]):
 
 def _formulas(doc: object, connections: object, schema: object) -> Iterable[FormDiagnostic]:
     del connections
+    source = _record(doc)
+    if schema is None and source is not None:
+        schema = schema_for(doc, source.connection)
     found = []
     for node, rows in _grids(doc):
         attrs = _lookup_attrs(schema, rows)
@@ -194,13 +197,13 @@ def _formulas(doc: object, connections: object, schema: object) -> Iterable[Form
         pending = []
         for column in rows.columns:
             if isinstance(column, DataColumn):
-                kind = column.kind or "text"
+                kind = _formula_kind(schema, rows, column)
                 pairs.append((column.column, kind))
                 if column.default:
                     pending.append((column.default, kind))
             elif isinstance(column, CalcColumn):
-                kind = "money" if column.kind == "money" else "text"
-                pairs.append((column.name, kind))
+                kind = column.kind or "any"
+                pairs.append((column.name, kind if kind != "any" else "number"))
                 pending.append((column.formula, kind))
         for text, kind in pending:
             if not text:
@@ -225,6 +228,33 @@ def _formulas(doc: object, connections: object, schema: object) -> Iterable[Form
                     )
                 )
     return found
+
+
+def _formula_kind(schema: object, rows: object, column: DataColumn) -> str:
+    """A stored kind wins. A blank kind is the schema's kind, not text.
+
+    Form from a table leaves the kind blank. ``qty * price`` was then text
+    times text, and the lines grid showed FB102.
+    """
+
+    stored = column.kind or ""
+    if stored:
+        return stored
+    table = _table(schema, getattr(rows, "table", None))
+    spec = _column(table, column.column) if table is not None else None
+    if spec is None:
+        return "text"
+    engine = getattr(schema, "engine", None) or "sqlite"
+    references = getattr(spec, "references", None)
+    ref = getattr(references, "table", "") if references is not None else ""
+    kind = describe(
+        getattr(spec, "type", "") or "",
+        engine=engine if engine in ("sqlite", "postgres") else "sqlite",
+        column_name=getattr(spec, "name", "") or "",
+        references_table=ref or "",
+        nullable=getattr(spec, "nullable", True),
+    )
+    return getattr(kind, "kind", "") or "text"
 
 
 def _column(table: object, name: str):
