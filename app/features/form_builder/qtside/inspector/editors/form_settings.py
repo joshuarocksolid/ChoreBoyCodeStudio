@@ -134,6 +134,7 @@ class SettingRow(QWidget):
         line = QHBoxLayout()
         line.setContentsMargins(0, 0, 0, 0)
         line.setSpacing(6)
+        outer.addLayout(line)
         self._bar = QFrame(self)
         self._bar.setObjectName("formBuilder.rowChanged")
         self._bar.setFixedWidth(2)
@@ -163,7 +164,6 @@ class SettingRow(QWidget):
         self._reset.clicked.connect(self._reset_clicked)
         self._reset.hide()
         line.addWidget(self._reset, 0, Qt.AlignmentFlag.AlignTop)
-        outer.addLayout(line)
         if stacked:
             outer.addWidget(self.slot)
         self._note = QLabel(caption, self)

@@ -1215,6 +1215,109 @@ def test_a_failed_rendered_write_removes_the_blank_form(tmp_path: Path, monkeypa
         window.close()
 
 
+def test_a_failed_plan_reloads_the_tab_from_disk(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from app.features.form_builder.engine.commands.catalog import ReplaceDocument
+    from app.features.form_builder.integration.new_form import NewFormSurface
+    from app.qt.QtWidgets import QApplication, QWidget
+    from app.shell.tab_content_providers import TabSurfaceRequest
+    from app.shell.theme_tokens import tokens_from_palette
+
+    root = tmp_path / "proj"
+    (root / "forms").mkdir(parents=True)
+    (root / "cbcs").mkdir()
+    schema = Schema(
+        "shop",
+        "sqlite",
+        "",
+        "2026-11-03T00:00:00",
+        "sqlite3",
+        (Table("teams", (Column("id", "INTEGER", False), Column("title", "TEXT", True)), key="id"),),
+    )
+    request = TableRequest(
+        "shop",
+        "teams",
+        (ColumnChoice("title", "QLineEdit", "Title"),),
+        "record",
+        "",
+        "team",
+        "yyyy-MM-dd",
+    )
+    text = render_plans(request, schema, str(root))[0][1]
+    planned = plan_forms(request, schema)
+
+    class Log:
+        def __init__(self) -> None:
+            self.commands: list[object] = []
+
+        def execute(self, command: object) -> None:
+            self.commands.append(command)
+
+    class Session:
+        def __init__(self) -> None:
+            self.log = Log()
+
+    class Surface:
+        def __init__(self) -> None:
+            self.session = Session()
+            self.saved: str | None = None
+
+        def mark_saved(self, saved: str) -> None:
+            self.saved = saved
+
+    class Registry:
+        def __init__(self) -> None:
+            self.surface = Surface()
+
+        def surface_for_path(self, path: str) -> Surface:
+            del path
+            return self.surface
+
+    def fail_plan(*_args: object, **_kwargs: object) -> None:
+        raise RuntimeError("plan failed")
+
+    monkeypatch.setattr(
+        "app.features.form_builder.qtside.dialogs.table_apply.apply_plan",
+        fail_plan,
+    )
+    app = QApplication.instance() or QApplication([])
+    window = QWidget()
+
+    class Project:
+        def __init__(self, path: str) -> None:
+            self.project_root = path
+
+    registry = Registry()
+    window._loaded_project = Project(str(root))  # type: ignore[attr-defined]
+    window._tab_content_registry = registry  # type: ignore[attr-defined]
+    surface = NewFormSurface(
+        TabSurfaceRequest(
+            file_path=str(root / "cbcs" / "new-form.cbcs-tab"),
+            initial_text="",
+            parent=window,
+            theme=tokens_from_palette(app.palette(), force_mode="light"),
+            create_source_editor=lambda: None,  # type: ignore[arg-type]
+            open_linked_file=lambda _path: None,
+            project_root=str(root),
+        ),
+        window,
+    )
+    try:
+        result = surface._create_planned("team", text, "record", planned, schema)  # noqa: SLF001
+        assert result.refused is None
+        written = (root / "forms" / "team.ui").read_text(encoding="utf-8")
+        reloaded = [
+            command
+            for command in registry.surface.session.log.commands
+            if isinstance(command, ReplaceDocument)
+        ]
+        assert len(reloaded) == 1
+        assert reloaded[0].reason == "reload"
+        assert reloaded[0].text == written
+        assert registry.surface.saved == written
+    finally:
+        window.close()
+
+
 def _staff_shop(tmp_path: Path, position_sql: str) -> Tuple[Path, Schema]:
     root = tmp_path / "proj"
     (root / "forms").mkdir(parents=True)

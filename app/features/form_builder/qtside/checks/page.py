@@ -289,9 +289,6 @@ class CheckPage(QWidget):
         buttons = QHBoxLayout()
         buttons.setContentsMargins(0, 0, 0, 0)
         buttons.setSpacing(8)
-        buttons.addWidget(self._commit)
-        buttons.addWidget(self._cancel)
-        buttons.addStretch(1)
         for row in (
             self._message_row,
             self._min_row,
@@ -302,6 +299,9 @@ class CheckPage(QWidget):
         ):
             self._column.addWidget(row)
         self._column.addLayout(buttons)
+        buttons.addWidget(self._commit)
+        buttons.addWidget(self._cancel)
+        buttons.addStretch(1)
         self._commit.clicked.connect(self.commit)
         self._cancel.clicked.connect(self.cancel)
         self._message.textChanged.connect(self._message_changed)

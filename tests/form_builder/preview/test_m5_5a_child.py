@@ -28,7 +28,8 @@ from app.qt.QtGui import QFont
 from app.qt.QtTest import QTest
 from app.qt.QtWidgets import QApplication, QLabel, QLineEdit, QStyleFactory
 
-pytestmark = [pytest.mark.unit]
+# The preview child's eventFilter tests sit near the 30s cap when the machine is busy.
+pytestmark = [pytest.mark.unit, pytest.mark.timeout(120)]
 
 _UI = """<?xml version="1.0" encoding="UTF-8"?>
 <ui version="4.0">

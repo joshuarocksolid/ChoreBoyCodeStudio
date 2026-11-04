@@ -128,10 +128,31 @@ def _running(tmp_path: Path, qapp, folder: Path) -> None:
             ("QLineEdit", "searchEdit", "", ""),
             ("QComboBox", "statusCombo", "", ""),
             ("QTableView", "customersView", "", ""),
-            ("QPushButton", "newButton", "", '     <property name="text"><string>New</string></property>\n'),
-            ("QPushButton", "openButton", "", '     <property name="text"><string>Open</string></property>\n'),
         ),
     )
+    button_row = (
+        '   <item>\n'
+        '    <layout class="QHBoxLayout" name="listButtons">\n'
+        '     <item>\n'
+        '      <widget class="QPushButton" name="newButton">\n'
+        '       <property name="text"><string>New</string></property>\n'
+        '      </widget>\n'
+        '     </item>\n'
+        '     <item>\n'
+        '      <widget class="QPushButton" name="openButton">\n'
+        '       <property name="text"><string>Open</string></property>\n'
+        '      </widget>\n'
+        '     </item>\n'
+        '     <item>\n'
+        '      <spacer name="listSpacer">\n'
+        '       <property name="orientation"><enum>Qt::Horizontal</enum></property>\n'
+        '       <property name="sizeHint" stdset="0"><size><width>40</width><height>20</height></size></property>\n'
+        '      </spacer>\n'
+        '     </item>\n'
+        '    </layout>\n'
+        '   </item>\n'
+    )
+    ui = ui.replace("  </layout>\n </widget>", button_row + "  </layout>\n </widget>", 1)
     with record_window(tmp_path, ui, _rows) as (host, _db):
         host.ui.searchEdit.setText("a")
         host.ui._cbcs_list_timer.timeout.emit()

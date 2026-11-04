@@ -42,16 +42,20 @@ _EMAIL = "Enter an email address like name@example.com"
 
 def _shot_text() -> str:
     text = _invoice_text()
-    # The Logic panel's invoice names this field from its buddy. What ran uses
-    # that same name, so the shot form carries the same label.
+    # What ran names the field from this label's buddy. The label is the first
+    # row of the window, above the form, so it does not sit on the checkbox.
     label = (
-        '<item row="6" column="0">'
+        "<item>"
         '<widget class="QLabel" name="discountRateLabel">'
         '<property name="text"><string>Discount rate</string></property>'
         '<property name="buddy"><cstring>discountEdit</cstring></property>'
         "</widget></item>"
     )
-    text = text.replace('<item row="0" column="0">', label + '<item row="0" column="0">', 1)
+    text = text.replace(
+        '<layout class="QVBoxLayout" name="verticalLayout">',
+        '<layout class="QVBoxLayout" name="verticalLayout">' + label,
+        1,
+    )
     text = text.replace(
         '<widget class="QLineEdit" name="emailEdit">',
         '<widget class="QLineEdit" name="emailEdit">%s' % _prop("cbcsErrorLabel", "emailError"),

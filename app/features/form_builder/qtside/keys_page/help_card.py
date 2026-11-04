@@ -102,6 +102,7 @@ class WidgetHelpCard(QFrame):
         column.setSpacing(6)
         head = QHBoxLayout()
         head.setSpacing(8)
+        column.addLayout(head)
         icon = QLabel(self)
         icon.setFixedSize(QSize(16, 16))
         pixmap: QPixmap = paint_glyph(str(summary["glyph"]), glyph_color, 16, float(self.devicePixelRatioF()))
@@ -113,7 +114,6 @@ class WidgetHelpCard(QFrame):
         title.setFont(font)
         head.addWidget(icon)
         head.addWidget(title, 1)
-        column.addLayout(head)
         for text, name in (
             (summary["description"], "description"),
             ("Qt class: %s" % summary["qt_class"], "class"),
@@ -129,6 +129,7 @@ class WidgetHelpCard(QFrame):
             column.addWidget(label)
         links = QHBoxLayout()
         links.setSpacing(6)
+        column.addLayout(links)
         self.keys_link = QPushButton(KEYS_LINK, self)
         self.keys_link.setObjectName("formBuilder.widgetHelp.keys")
         self.keys_link.setAccessibleName(KEYS_LINK)
@@ -141,7 +142,6 @@ class WidgetHelpCard(QFrame):
             links.addWidget(manual)
             self.manual_link = manual
         links.addStretch(1)
-        column.addLayout(links)
 
     def open_beside(self, subject: QRect, bounds: QRect) -> None:
         self.adjustSize()
