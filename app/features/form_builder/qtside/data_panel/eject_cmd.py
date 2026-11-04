@@ -1,8 +1,8 @@
-"""Eject writes the form file and the window file as one unit.
+"""Eject writes the form, the generated module, and the window file as one unit.
 
-Both files land on disk together. Open tabs reload from that text, so an
-editor undo cannot reach back past the eject. Form undo restores both files
-unless either one changed since, on disk or in an open tab.
+The three files land together. Open tabs reload from that text, so an editor
+undo cannot reach back past the eject. Form undo restores every file unless
+one changed since, on disk or in an open tab.
 """
 
 from __future__ import annotations
@@ -10,8 +10,9 @@ from __future__ import annotations
 import os
 import weakref
 from dataclasses import dataclass, replace
-from typing import Any, Optional, Tuple, Union
+from typing import Any, Optional, Sequence, Tuple, Union
 
+from app.features.form_builder.engine.codegen.api import generate_form_module
 from app.features.form_builder.engine.codegen.eject import (
     EjectPlan,
     plan_eject,
@@ -19,19 +20,28 @@ from app.features.form_builder.engine.codegen.eject import (
     window_objections,
 )
 from app.features.form_builder.engine.commands.base import CommandRejected
+from app.features.form_builder.engine.project.written_files import note_written_files
+from app.persistence.file_unit import (
+    bytes_for,
+    commit_files,
+    restore_file,
+    same_bytes,
+    same_text,
+)
 from app.features.form_builder.qtside.data_panel.host import session_of, surface_of
+from app.persistence.atomic_write import atomic_write_text
+
+
+@dataclass(frozen=True)
+class _File:
+    path: str
+    before: Optional[bytes]
+    after: bytes
 
 
 @dataclass(frozen=True)
 class _Memo:
-    path: str
-    ui_path: str
-    filename: str
-    ui_name: str
-    before_py: bytes
-    after_py: bytes
-    before_ui: bytes
-    after_ui: bytes
+    files: Tuple[_File, ...]
 
 
 class EjectBook:
@@ -54,20 +64,18 @@ class EjectBook:
             memo = book.memos.get(tip) if tip is not None else None
             if memo is None:
                 return bool(original_undo())
-            if not _still(surface, memo.path, memo.after_py) or not _still(surface, memo.ui_path, memo.after_ui):
-                _say(surface, _refused(memo.filename))
+            changed = _changed(surface, memo, "after")
+            if changed:
+                _say(surface, _refused(changed))
                 return False
             if not original_undo():
                 return False
-            problem = _swap_pair(
-                memo.ui_path, memo.before_ui, memo.path, memo.before_py, memo.after_ui, memo.after_py
-            )
+            problem = _apply(memo.files, "before")
             if problem:
                 original_redo()
                 _say(surface, problem)
                 return False
-            _reload(surface, memo.ui_path, _text_of(memo.before_ui))
-            _reload(surface, memo.path, _text_of(memo.before_py))
+            _reload_files(surface, memo.files, "before")
             return True
 
         def redo() -> bool:
@@ -75,20 +83,18 @@ class EjectBook:
             memo = book.memos.get(pending) if pending is not None else None
             if memo is None:
                 return bool(original_redo())
-            if not _still(surface, memo.path, memo.before_py) or not _still(surface, memo.ui_path, memo.before_ui):
-                _say(surface, _refused(memo.filename))
+            changed = _changed(surface, memo, "before")
+            if changed:
+                _say(surface, _refused(changed))
                 return False
             if not original_redo():
                 return False
-            problem = _swap_pair(
-                memo.ui_path, memo.after_ui, memo.path, memo.after_py, memo.before_ui, memo.before_py
-            )
+            problem = _apply(memo.files, "after")
             if problem:
                 original_undo()
                 _say(surface, problem)
                 return False
-            _reload(surface, memo.ui_path, _text_of(memo.after_ui))
-            _reload(surface, memo.path, _text_of(memo.after_py))
+            _reload_files(surface, memo.files, "after")
             return True
 
         log.undo = undo  # type: ignore[method-assign]
@@ -111,7 +117,7 @@ def plan_for(host: Any) -> Union[EjectPlan, str]:
     window_path = str(getattr(scope, "window_path", "") or "")
     ui_path = str(getattr(scope, "ui_path", "") or "")
     if surface is not None:
-        dirty = _unsaved(surface, window_path) or _unsaved(surface, ui_path)
+        dirty = _unsaved(surface, window_path)
         if dirty:
             return "Save or discard your changes to %s first." % os.path.basename(dirty)
     source = _window_source(host, window_path)
@@ -142,9 +148,12 @@ def commit_eject(host: Any, plan: EjectPlan) -> str:
     ui_path = str(getattr(scope, "ui_path", "") or "")
     if not path or not ui_path:
         return "This form has no window file."
-    dirty = _unsaved(surface, path) or _unsaved(surface, ui_path)
+    dirty = _unsaved(surface, path)
     if dirty:
         return "Save or discard your changes to %s first." % os.path.basename(dirty)
+    saved = _save_dirty_form(surface, session, ui_path)
+    if saved:
+        return saved
     current = _window_text(surface, path)
     if current is None:
         return "Couldn't read %s." % plan.window_filename
@@ -153,35 +162,30 @@ def commit_eject(host: Any, plan: EjectPlan) -> str:
     except ValueError as exc:
         return str(exc)
     new_py = edit.text
-    before_py = _disk_bytes(path)
-    before_ui = _disk_bytes(ui_path)
     try:
         with session.log.transaction("Eject to code"):
             for command in plan.commands:
                 session.log.execute(command)
     except CommandRejected as exc:
         return str(exc)
-    new_ui = session.text().encode("utf-8")
-    after_py = new_py.encode("utf-8")
-    problem = _swap_pair(ui_path, new_ui, path, after_py, before_ui, before_py)
+    files = _unit(session.document, scope, ui_path, session.text(), path, new_py)
+    if isinstance(files, str):
+        _abandon(session)
+        _say(surface, files)
+        return files
+    problem = commit_files(
+        tuple((item.path, item.after, item.before) for item in files),
+        replace=os.replace,
+    )
     if problem:
-        session.log.undo()
+        _abandon(session)
+        _say(surface, problem)
         return problem
-    _reload(surface, ui_path, session.text())
-    _reload(surface, path, new_py)
+    note_written_files(tuple(item.path for item in files))
+    _reload_files(surface, files, "after")
     entries = session.log.entries()
     if entries:
-        memo = _Memo(
-            path,
-            ui_path,
-            plan.window_filename,
-            os.path.basename(ui_path),
-            before_py if before_py is not None else b"",
-            after_py,
-            before_ui if before_ui is not None else b"",
-            new_ui,
-        )
-        _BOOK.note(entries[-1], memo, surface)
+        _BOOK.note(entries[-1], _Memo(files), surface)
         _BOOK.arm(surface)
     return ""
 
@@ -195,81 +199,115 @@ def _unsaved(surface: Any, path: str) -> str:
     if tab is None:
         return ""
     disk = _disk_text(path)
-    if disk is None or tab != disk:
+    if disk is None or not same_text(tab, disk):
         return path
     return ""
 
 
-def _still(surface: Any, path: str, expected: bytes) -> bool:
-    """True when disk and any open tab still hold the text eject wrote."""
+def _still(surface: Any, path: str, expected: Optional[bytes]) -> bool:
+    """True when disk and any open tab still hold the text this step wrote."""
 
     if not path:
         return True
     found = _disk_bytes(path)
-    if found != expected:
+    if not same_bytes(found, expected):
         return False
     tab = _tab_text(surface, path)
-    if tab is None:
+    if tab is None or expected is None:
         return True
-    return tab.encode("utf-8") == expected
+    return same_text(tab, _text_of(expected))
 
 
-def _swap_pair(
-    ui_path: str,
-    ui_new: bytes,
-    py_path: str,
-    py_new: bytes,
-    ui_old: Optional[bytes],
-    py_old: Optional[bytes],
-) -> str:
-    """Write both files. On any failure, put back what was there and say so."""
+def _save_dirty_form(surface: Any, session: Any, ui_path: str) -> str:
+    """Save the form tab through the normal save path. Empty when it was clean."""
 
-    jobs: Tuple[Tuple[str, bytes, Optional[bytes]], ...] = (
-        (ui_path, ui_new, ui_old),
-        (py_path, py_new, py_old),
-    )
-    temps = []
-    done = []
+    source = getattr(surface, "_source", None)
+    tab_dirty = bool(_unsaved(surface, ui_path))
+    source_dirty = bool(source is not None and source.is_dirty())
+    if not tab_dirty and not source_dirty:
+        return ""
+    if source is not None and source_dirty:
+        text = source.current_text()
+    else:
+        text = _tab_text(surface, ui_path) or session.text()
     try:
-        for path, data, _old in jobs:
-            directory = os.path.dirname(path) or "."
-            os.makedirs(directory, exist_ok=True)
-            temp = path + ".cbcs-tmp"
-            with open(temp, "wb") as handle:
-                handle.write(data)
-                handle.flush()
-                os.fsync(handle.fileno())
-            temps.append(temp)
-        for (path, _data, _old), temp in zip(jobs, temps):
-            os.replace(temp, path)
-            done.append(path)
+        atomic_write_text(ui_path, text)
     except OSError:
-        for path, _data, old in reversed(jobs):
-            if path in done:
-                _put_back(path, old)
-        for temp in temps:
-            if os.path.isfile(temp):
-                try:
-                    os.remove(temp)
-                except OSError:
-                    pass
-        return "Couldn't save %s and %s. Nothing was changed." % (
-            os.path.basename(ui_path),
-            os.path.basename(py_path),
-        )
+        return "Couldn't save %s." % os.path.basename(ui_path)
+    if source is not None:
+        source.mark_saved(text)
+        source.after_save()
+        notice = getattr(source, "_notice", None)
+        if getattr(notice, "error", False):
+            return str(getattr(notice, "text", "") or "Couldn't save %s." % os.path.basename(ui_path))
+    _reload(surface, ui_path, text)
     return ""
 
 
-def _put_back(path: str, old: Optional[bytes]) -> None:
-    try:
-        if old is None:
-            if os.path.isfile(path):
-                os.remove(path)
-            return
-        with open(path, "wb") as handle:
-            handle.write(old)
-    except OSError:
-        pass
+def _unit(
+    document: Any,
+    scope: Any,
+    ui_path: str,
+    ui_text: str,
+    window_path: str,
+    window_text: str,
+) -> Union[Tuple[_File, ...], str]:
+    files = [
+        _File(ui_path, _disk_bytes(ui_path), bytes_for(ui_path, ui_text)),
+        _File(window_path, _disk_bytes(window_path), bytes_for(window_path, window_text)),
+    ]
+    generated = str(getattr(scope, "generated_path", "") or "")
+    if not generated:
+        return tuple(files)
+    result = generate_form_module(document, scope=scope, source_bytes=files[0].after)
+    if not result.text:
+        message = result.diagnostics[0].message if result.diagnostics else "Couldn't write the generated file."
+        return message
+    files.append(_File(generated, _disk_bytes(generated), bytes_for(generated, result.text)))
+    return tuple(files)
+
+
+def _abandon(session: Any) -> None:
+    undo = getattr(session.log, "undo", None)
+    if callable(undo):
+        undo()
+    drop = getattr(session.log, "_drop_redo", None)
+    if callable(drop):
+        drop()
+
+
+def _changed(surface: Any, memo: _Memo, field: str) -> str:
+    for item in memo.files:
+        expected = item.after if field == "after" else item.before
+        if not _still(surface, item.path, expected):
+            return os.path.basename(item.path)
+    return ""
+
+
+def _apply(files: Sequence[_File], field: str) -> str:
+    applied: list[_File] = []
+    for item in files:
+        payload = item.before if field == "before" else item.after
+        sentence = restore_file(item.path, payload, os.replace)
+        if sentence:
+            other = "after" if field == "before" else "before"
+            for earlier in reversed(applied):
+                restore_file(
+                    earlier.path,
+                    earlier.after if other == "after" else earlier.before,
+                    os.replace,
+                )
+            return sentence
+        applied.append(item)
+    return ""
+
+
+def _reload_files(surface: Any, files: Sequence[_File], field: str) -> None:
+    for item in files:
+        payload = item.after if field == "after" else item.before
+        if payload is None:
+            continue
+        _reload(surface, item.path, _text_of(payload).replace("\r\n", "\n").replace("\r", "\n"))
 
 
 def _release_other_form(keeper: Any, path: str) -> None:

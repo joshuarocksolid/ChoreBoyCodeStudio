@@ -16,7 +16,14 @@ import pytest
 pytest.importorskip("app.qt.QtWidgets", exc_type=ImportError)
 
 from app.features.form_builder.engine.codegen.api import generate_form_module
-from app.features.form_builder.engine.codegen.eject import ejected_method, method_line, plan_eject, splice_window, window_edit
+from app.features.form_builder.engine.codegen.eject import (
+    EjectPlan,
+    ejected_method,
+    method_line,
+    plan_eject,
+    splice_window,
+    window_edit,
+)
 from app.features.form_builder.engine.codegen.window_template import render_window_class
 from app.features.form_builder.engine.commands.catalog_ext.events import SetEventSteps
 from app.features.form_builder.engine.data.connections import Connection, ConnectionSet, save_connections
@@ -85,6 +92,7 @@ def test_undo_restores_the_form_and_the_window_file(tmp_path: Path) -> None:
         assert "self.load_lookups()" in edited
         assert " as _conn" not in edited
         assert " as conn:" in edited
+        assert _leading_underscore_locals(edited) == []
         assert "'SELECT \"id\"" in edited
         write = edited.split("def write_fields(", 1)[1].split("\ndef ", 1)[0]
         assert write.count("invoiceNoEdit.setText") == 1
@@ -742,7 +750,8 @@ def test_rewired_buttons_keep_arguments_and_enabled_when(tmp_path: Path) -> None
         _drop_forms(tmp_path / "proj")
 
 
-def test_commit_eject_undo_redo_and_a_changed_window_refuses(tmp_path: Path) -> None:
+def test_commit_eject_undo_redo_and_a_changed_window_refuses(tmp_path: Path, qapp: QApplication) -> None:
+    del qapp
     from app.editors.code_editor_widget import CodeEditorWidget
     from app.features.form_builder.integration.code_bridge import CodeBridge, ShellPort
     from app.features.form_builder.qtside.data_panel.eject_cmd import commit_eject
@@ -896,6 +905,7 @@ def test_validate_then_save_refuses_a_short_value(tmp_path: Path) -> None:
                     for command in plan.commands:
                         session.log.execute(command)
                 host = _host_ejected(root, scope, session.text(), plan, module, lambda _text: "Close")
+                assert "if self.validate_fields() is False:" in Path(scope.window_path or "").read_text(encoding="utf-8")
             else:
                 host = _host_bound(root, scope, session.text(), module, lambda _text: "Close")
             host.ui.invoiceNoEdit.setText("X")
@@ -1185,7 +1195,8 @@ def test_a_list_opens_the_selected_record_and_asks_before_leaving(tmp_path: Path
         _drop_forms(root)
 
 
-def test_eject_refuses_a_dirty_window_before_the_dialog(tmp_path: Path) -> None:
+def test_eject_refuses_a_dirty_window_before_the_dialog(tmp_path: Path, qapp: QApplication) -> None:
+    del qapp
     from app.editors.code_editor_widget import CodeEditorWidget
     from app.features.form_builder.integration.code_bridge import CodeBridge, ShellPort
     from app.features.form_builder.qtside.data_panel.eject_cmd import plan_for
@@ -1220,3 +1231,407 @@ def test_eject_refuses_a_dirty_window_before_the_dialog(tmp_path: Path) -> None:
             shell.close()
             shell.deleteLater()
         set_schema_reader(None)
+
+
+def _leading_underscore_locals(source: str) -> List[str]:
+    import keyword
+
+    tree = ast.parse(source)
+    defined = {
+        item.name
+        for item in ast.walk(tree)
+        if isinstance(item, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef))
+    }
+    found: List[str] = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.FunctionDef):
+            continue
+        used = {item.id for item in ast.walk(node) if isinstance(item, ast.Name)}
+        for item in ast.walk(node):
+            if not isinstance(item, ast.Name):
+                continue
+            name = item.id
+            if name in defined or not name.startswith("_") or name.startswith("__") or name.startswith("_cbcs"):
+                continue
+            plain = name[1:]
+            if plain in used or not plain.isidentifier() or keyword.iskeyword(plain):
+                continue
+            if name not in found:
+                found.append(name)
+    return found
+
+
+def _ready(host: Any) -> EjectPlan:
+    from app.features.form_builder.qtside.data_panel.eject_cmd import plan_for
+
+    plan = plan_for(host)
+    assert isinstance(plan, EjectPlan)
+    return plan
+
+
+def _shell_for(root: Path, session: Any, scope: Any, editor: Any = None, path: str = "") -> Any:
+    from app.features.form_builder.integration.code_bridge import CodeBridge, ShellPort
+    from app.qt.QtWidgets import QWidget
+
+    shell = QWidget()
+    shell.session = session
+    shell._workspace_controller = type(
+        "C",
+        (),
+        {
+            "widget_for_path": lambda _self, asked: editor
+            if editor is not None and os.path.abspath(asked) == os.path.abspath(path)
+            else None
+        },
+    )()
+    shell.code_bridge = CodeBridge(str(root), ShellPort(shell))
+    return shell
+
+
+def test_eject_writes_the_generated_module_and_undo_restores_it(tmp_path: Path, qapp: QApplication) -> None:
+    import importlib
+
+    module = None
+    shell = None
+    host = None
+    try:
+        root, scope, ui_text = _project(tmp_path, _scenario_ui(), _prepare, "invoice.ui", _invoice_schema())
+        session = FormSession.open(ui_text, path=scope.ui_path, scope=scope)
+        _arm_save(session)
+        ui_text = session.text()
+        Path(scope.ui_path).write_text(ui_text, encoding="utf-8")
+        document = read_ui(ui_text, allocator=IdAllocator()).document
+        stale = generate_form_module(document, scope=scope, source_bytes=ui_text.encode("utf-8")).text or ""
+        generated = Path(scope.generated_path or "")
+        generated.write_text(stale, encoding="utf-8")
+        Path(scope.window_path or "").write_text(render_window_class(document, scope=scope), encoding="utf-8")
+        (root / "forms" / "__init__.py").write_text("", encoding="utf-8")
+        trio = (Path(scope.ui_path), Path(scope.window_path or ""), generated)
+        before = tuple(path.read_bytes() for path in trio)
+        shell = _shell_for(root, session, scope)
+        from app.features.form_builder.qtside.data_panel.eject_cmd import commit_eject, plan_for
+
+        assert commit_eject(shell, _ready(shell)) == ""
+        fresh = generated.read_text(encoding="utf-8")
+        assert fresh != stale
+        after = tuple(path.read_bytes() for path in trio)
+        sql: List[str] = []
+        _close_leftovers()
+        module = _connections(root, sql)
+        sys.modules["cbcs_connections"] = module
+        if str(root) not in sys.path:
+            sys.path.insert(0, str(root))
+        for name in ("forms", "forms.ui_invoice", "forms.invoice_window"):
+            sys.modules.pop(name, None)
+        window_mod = importlib.import_module("forms.invoice_window")
+        _mark_run(window_mod, module)
+        _install_boxes(window_mod, [], None, lambda _text: "Close", lambda: ("INV-1", True))
+        ui_mod = sys.modules.get("forms.ui_invoice")
+        if ui_mod is not None:
+            _install_boxes(ui_mod, [], None, lambda _text: "Close", lambda: ("INV-1", True))
+        window_cls = next(
+            value for name, value in vars(window_mod).items() if isinstance(value, type) and name.endswith("Window")
+        )
+        ran: List[object] = []
+        original = window_cls.save_record
+
+        def wrapped(self: Any, *args: Any, **kwargs: Any) -> Any:
+            ran.append(self)
+            return original(self, *args, **kwargs)
+
+        window_cls.save_record = wrapped  # type: ignore[method-assign]
+        host = window_cls()
+        opened = [item for item in sql if item.lstrip().upper().startswith("SELECT")]
+        assert opened
+        assert len(opened) == len(set(opened))
+        start = len(sql)
+        host.ui.invoiceNoEdit.setText("CHANGED")
+        host.ui.saveButton.click()
+        qapp.processEvents()
+        writes = [item for item in sql[start:] if item.lstrip().upper().startswith(("UPDATE", "INSERT"))]
+        assert writes
+        assert len(writes) == len(set(writes))
+        assert ran == [host]
+        host.close()
+        assert session.log.undo() is True
+        assert tuple(path.read_bytes() for path in trio) == before
+        assert ejected_method(session.document) is None
+        assert session.log.redo() is True
+        assert tuple(path.read_bytes() for path in trio) == after
+    finally:
+        if host is not None:
+            host.close()
+        if module is not None:
+            _restore_connections(module)
+        if shell is not None:
+            shell.close()
+            shell.deleteLater()
+        set_schema_reader(None)
+        _drop_forms(tmp_path / "proj")
+
+
+def test_a_dirty_form_is_saved_before_eject_and_undo_keeps_the_edit(tmp_path: Path, qapp: QApplication) -> None:
+    del qapp
+    from app.features.form_builder.engine.commands.catalog import SetProperty
+    from app.features.form_builder.engine.ui4.values import StringValue
+    from app.features.form_builder.integration.content_source import FormContentSource
+    from app.features.form_builder.qtside.data_panel.eject_cmd import commit_eject, plan_for
+
+    shell = None
+    try:
+        root, scope, ui_text = _project(tmp_path, _scenario_ui(), _prepare, "invoice.ui", _invoice_schema())
+        session = FormSession.open(ui_text, path=scope.ui_path, scope=scope)
+        _arm_save(session)
+        opened = session.text()
+        Path(scope.ui_path).write_text(opened, encoding="utf-8")
+        Path(scope.window_path or "").write_text(
+            render_window_class(read_ui(opened, allocator=IdAllocator()).document, scope=scope),
+            encoding="utf-8",
+        )
+        source = FormContentSource(session.log, opened, scope=scope)
+        node = next(item for item in session.document.iter_widgets() if item.object_name == "invoiceNoEdit")
+        session.log.execute(SetProperty(node.id, "toolTip", StringValue("kept-edit")))
+        shell = _shell_for(root, session, scope)
+        shell._source = source
+        assert commit_eject(shell, _ready(shell)) == ""
+        assert "kept-edit" in Path(scope.ui_path).read_text(encoding="utf-8")
+        assert ejected_method(session.document) is not None
+        assert session.log.undo() is True
+        assert "kept-edit" in Path(scope.ui_path).read_text(encoding="utf-8")
+        assert ejected_method(session.document) is None
+    finally:
+        if shell is not None:
+            shell.close()
+            shell.deleteLater()
+        set_schema_reader(None)
+
+
+def test_a_failed_eject_write_drops_the_command(tmp_path: Path, qapp: QApplication) -> None:
+    del qapp
+    import errno
+
+    import app.persistence.file_unit as unit
+    import app.features.form_builder.qtside.data_panel.eject_cmd as eject
+
+    shell = None
+    real_replace = os.replace
+    real_temp = unit.tempfile.mkstemp
+    try:
+        root, scope, ui_text = _project(tmp_path, _scenario_ui(), _prepare, "invoice.ui", _invoice_schema())
+        session = FormSession.open(ui_text, path=scope.ui_path, scope=scope)
+        _arm_save(session)
+        Path(scope.ui_path).write_text(session.text(), encoding="utf-8")
+        Path(scope.window_path or "").write_text(
+            render_window_class(read_ui(session.text(), allocator=IdAllocator()).document, scope=scope),
+            encoding="utf-8",
+        )
+        shell = _shell_for(root, session, scope)
+        before = (Path(scope.ui_path).read_bytes(), Path(scope.window_path or "").read_bytes())
+        calls = {"n": 0}
+
+        def bad_replace(src: str, dst: str) -> None:
+            calls["n"] += 1
+            if calls["n"] == 2:
+                raise OSError(errno.EXDEV, "simulated")
+            real_replace(src, dst)
+
+        eject.os.replace = bad_replace
+        plan = eject.plan_for(shell)
+        assert isinstance(plan, EjectPlan)
+        sentence = eject.commit_eject(shell, plan)
+        assert sentence.startswith("Couldn't save")
+        assert "Nothing was changed." in sentence
+        assert Path(scope.ui_path).read_bytes() == before[0]
+        assert Path(scope.window_path or "").read_bytes() == before[1]
+        assert ejected_method(session.document) is None
+        assert session.log.undo_label() == "Save verb"
+        assert not session.log.redo_label()
+        assert shell._eject_notice == sentence
+        names = [path.name for path in Path(scope.ui_path).parent.iterdir() if path.name.endswith(".cbcs-tmp")]
+        assert names == []
+    finally:
+        eject.os.replace = real_replace
+        unit.tempfile.mkstemp = real_temp
+        if shell is not None:
+            shell.close()
+            shell.deleteLater()
+        set_schema_reader(None)
+
+
+def test_the_unit_writer_keeps_the_atomic_write_rules(tmp_path: Path) -> None:
+    import errno
+
+    from app.persistence.file_unit import commit_files, restore_file
+    import app.persistence.file_unit as unit
+
+    target = tmp_path / "real.txt"
+    target.write_bytes(b"old\n")
+    os.chmod(target, 0o640)
+    link = tmp_path / "link.txt"
+    link.symlink_to(target)
+    assert commit_files([(str(link), b"new\n", b"old\n")]) == ""
+    assert target.read_bytes() == b"new\n"
+    assert link.is_symlink()
+    assert target.stat().st_mode & 0o777 == 0o640
+    os.chmod(target, 0o444)
+    refused = commit_files([(str(target), b"nope\n", b"new\n")])
+    assert refused == "Couldn't save real.txt."
+    assert target.read_bytes() == b"new\n"
+    os.chmod(target, 0o644)
+    seen: List[str] = []
+    real = unit.tempfile.mkstemp
+
+    def record(*args: Any, **kwargs: Any) -> Any:
+        handle = real(*args, **kwargs)
+        seen.append(handle[1])
+        return handle
+
+    calls = {"n": 0}
+
+    def fail_second(*args: Any, **kwargs: Any) -> Any:
+        calls["n"] += 1
+        if calls["n"] == 2:
+            raise OSError(errno.ENOSPC, "full")
+        return record(*args, **kwargs)
+
+    other = tmp_path / "other.txt"
+    other.write_bytes(b"a\n")
+    unit.tempfile.mkstemp = fail_second
+    try:
+        sentence = commit_files([(str(target), b"x\n", b"new\n"), (str(other), b"y\n", b"a\n")])
+    finally:
+        unit.tempfile.mkstemp = real
+    assert "Nothing was changed." in sentence
+    assert target.read_bytes() == b"new\n"
+    assert other.read_bytes() == b"a\n"
+    assert seen
+    assert all(not name.endswith(".cbcs-tmp") for name in seen)
+    assert len(set(seen)) == len(seen)
+    os.chmod(tmp_path, 0o555)
+    try:
+        honest = restore_file(str(target), b"old\n")
+    finally:
+        os.chmod(tmp_path, 0o755)
+    assert honest == "Couldn't restore real.txt."
+    assert target.read_bytes() == b"new\n"
+
+
+def test_a_crlf_window_stays_crlf_open_or_closed(tmp_path: Path, qapp: QApplication) -> None:
+    del qapp
+    from app.editors.code_editor_widget import CodeEditorWidget
+    from app.features.form_builder.qtside.data_panel.eject_cmd import commit_eject, plan_for
+
+    editors = []
+    shells = []
+    try:
+        for opened in (True, False):
+            root, scope, ui_text = _project(tmp_path / ("open" if opened else "closed"), _scenario_ui(), _prepare, "invoice.ui", _invoice_schema())
+            session = FormSession.open(ui_text, path=scope.ui_path, scope=scope)
+            _arm_save(session)
+            Path(scope.ui_path).write_text(session.text(), encoding="utf-8")
+            window = render_window_class(read_ui(session.text(), allocator=IdAllocator()).document, scope=scope)
+            crlf = window.replace("\r\n", "\n").replace("\n", "\r\n")
+            path = Path(scope.window_path or "")
+            path.write_bytes(crlf.encode("utf-8"))
+            editor = None
+            if opened:
+                editor = CodeEditorWidget()
+                editor.setPlainText(window.replace("\r\n", "\n"))
+                editors.append(editor)
+            shell = _shell_for(root, session, scope, editor, str(path))
+            shells.append(shell)
+            assert commit_eject(shell, _ready(shell)) == ""
+            raw = path.read_bytes()
+            assert b"\r\n" in raw
+            assert b"\n" not in raw.replace(b"\r\n", b"")
+    finally:
+        for editor in editors:
+            editor.close()
+            editor.deleteLater()
+        for shell in shells:
+            shell.close()
+            shell.deleteLater()
+        set_schema_reader(None)
+
+
+def test_undo_after_a_saved_ui_edit_names_the_ui_file(tmp_path: Path, qapp: QApplication) -> None:
+    del qapp
+    from app.features.form_builder.qtside.data_panel.eject_cmd import commit_eject, plan_for
+
+    shell = None
+    try:
+        root, scope, ui_text = _project(tmp_path, _scenario_ui(), _prepare, "invoice.ui", _invoice_schema())
+        session = FormSession.open(ui_text, path=scope.ui_path, scope=scope)
+        _arm_save(session)
+        Path(scope.ui_path).write_text(session.text(), encoding="utf-8")
+        Path(scope.window_path or "").write_text(
+            render_window_class(read_ui(session.text(), allocator=IdAllocator()).document, scope=scope),
+            encoding="utf-8",
+        )
+        shell = _shell_for(root, session, scope)
+        assert commit_eject(shell, _ready(shell)) == ""
+        Path(scope.ui_path).write_text(Path(scope.ui_path).read_text(encoding="utf-8") + "\n", encoding="utf-8")
+        assert session.log.undo() is False
+        assert shell._eject_notice.startswith("invoice.ui changed")
+    finally:
+        if shell is not None:
+            shell.close()
+            shell.deleteLater()
+        set_schema_reader(None)
+
+
+def test_an_except_alias_keeps_the_name_it_is_bound_to() -> None:
+    from app.features.form_builder.engine.codegen.eject_rewrite import _rename_locals
+
+    source = "def save(self):\n    try:\n        return 1\n    except Exception as _error:\n        return str(_error)\n"
+    edited = _rename_locals(source)
+    assert "except Exception as error:" in edited
+    assert "return str(error)" in edited
+    assert "_error" not in edited
+
+
+def test_a_stop_without_a_message_returns_false() -> None:
+    from types import SimpleNamespace
+
+    from app.features.form_builder.engine.logic.verbs.m7 import _emit_stop
+
+    assert _emit_stop(SimpleNamespace(message="", raw=None), None) == ("return False",)
+    lines = _emit_stop(SimpleNamespace(message="no X", raw=None), None)
+    assert lines[-1] == "return False"
+    assert "no X" in lines[0]
+
+
+def test_an_ejected_try_paints_the_note_on_the_strip(qapp: QApplication) -> None:
+    from app.features.form_builder.engine.ipc.protocol import TryDataPlan, TryStart
+    from app.features.form_builder.qtside.preview.child.behavior import TrySink, make_host_factory
+    from app.qt.QtWidgets import QLabel
+
+    class _Writer:
+        def send(self, *_args: Any, **_kwargs: Any) -> None:
+            return None
+
+    class _Ui:
+        def setupUi(self, _host: Any) -> None:
+            return None
+
+    message = TryStart(
+        request_id="r",
+        view_id="view-eject",
+        module_name="m",
+        module_source="pass\n",
+        window_class_name="W",
+        base_class="QDialog",
+        window_values=(),
+        data=TryDataPlan(),
+        eject_note="PLAIN STRIP",
+    )
+    factory = make_host_factory(TrySink(_Writer(), "view-eject", "pass\n"), message)
+    chrome = factory(_Ui, "class W(object):\n    pass\n")
+    try:
+        label = chrome.findChild(QLabel, "preview.dataStrip.label")
+        assert label is not None
+        assert label.text() == "PLAIN STRIP"
+    finally:
+        chrome.close()
+        chrome.deleteLater()
+        qapp.processEvents()

@@ -108,3 +108,88 @@ def test_a_closed_form_is_rewritten_and_an_untouched_file_is_not(tmp_path: Path,
     assert "save_invoice" in _names(session)
     assert "save_more" not in _names(session)
     assert closed.read_bytes() == before_closed
+
+
+def test_a_rename_of_open_tabs_only_leaves_the_window_file(tmp_path: Path, qapp: QApplication) -> None:
+    del qapp
+    root = tmp_path / "proj"
+    forms = root / "forms"
+    forms.mkdir(parents=True)
+    ui_path = forms / "notes.ui"
+    window_path = forms / "invoice_window.py"
+    ui_path.write_text(_UI, encoding="utf-8")
+    session = FormSession.open(
+        _UI,
+        path=str(ui_path),
+        scope=FormScope(kind="project", ui_path=str(ui_path), project_root=str(root), window_path=str(window_path)),
+    )
+    note = session.document.by_name("noteEdit")[0]
+    with session.log.transaction("Build"):
+        session.log.execute(SetFormSlots((), ("save_invoice()",)))
+        session.log.execute(SetEventSteps("saveButton", "clicked", (call_step("save_invoice"),)))
+        session.log.execute(SetLogic(note, "cbcsValue", "window.save_invoice()"))
+    source = "class InvoiceWindow(object):\n    def save_invoice(self):\n        return None\n"
+    window_path.write_text(source, encoding="utf-8")
+    before = window_path.read_bytes()
+    editor = QPlainTextEdit()
+    editor.setPlainText(source)
+    window = QWidget()
+    window._workspace_controller = type(  # type: ignore[attr-defined]
+        "C",
+        (),
+        {"widget_for_path": lambda _self, path: editor if os.path.abspath(path) == os.path.abspath(window_path) else None},
+    )()
+    window._form_undo_surface = _Surface(session, str(ui_path), str(window_path))  # type: ignore[attr-defined]
+    updated = source.replace("save_invoice", "save_more")
+    plan = _Plan("save_invoice", "save_more", [object()], [_Patch(str(window_path), updated, "invoice_window.py")])
+    follow = MethodRename().apply_paired(window, MethodSeed("save_invoice", str(window_path), source, 0), plan)
+    assert follow.blocked is False
+    assert "save_more" in editor.toPlainText()
+    assert window_path.read_bytes() == before
+    assert session.log.undo() is True
+    assert "save_invoice" in _names(session)
+    assert "save_more" in editor.toPlainText()
+    assert window_path.read_bytes() == before
+
+
+def test_a_closed_tab_rename_writes_the_window_and_undo_restores_it(tmp_path: Path, qapp: QApplication) -> None:
+    del qapp
+    root = tmp_path / "proj"
+    forms = root / "forms"
+    forms.mkdir(parents=True)
+    ui_path = forms / "notes.ui"
+    window_path = forms / "invoice_window.py"
+    ui_path.write_text(_UI, encoding="utf-8")
+    session = FormSession.open(
+        _UI,
+        path=str(ui_path),
+        scope=FormScope(kind="project", ui_path=str(ui_path), project_root=str(root), window_path=str(window_path)),
+    )
+    note = session.document.by_name("noteEdit")[0]
+    with session.log.transaction("Build"):
+        session.log.execute(SetFormSlots((), ("save_invoice()",)))
+        session.log.execute(SetEventSteps("saveButton", "clicked", (call_step("save_invoice"),)))
+        session.log.execute(SetLogic(note, "cbcsValue", "window.save_invoice()"))
+    source = "class InvoiceWindow(object):\n    def save_invoice(self):\n        return None\n"
+    window_path.write_bytes(source.encode("utf-8"))
+    before_window = window_path.read_bytes()
+    closed = forms / "invoice.ui"
+    closed.write_bytes(_CLOSED.replace("Other", "Invoice").encode("utf-8"))
+    before_closed = closed.read_bytes()
+    window = QWidget()
+    window._workspace_controller = type("C", (), {"widget_for_path": lambda _self, _path: None})()  # type: ignore[attr-defined]
+    window._form_undo_surface = _Surface(session, str(ui_path), str(window_path))  # type: ignore[attr-defined]
+    updated = source.replace("save_invoice", "save_more")
+    plan = _Plan("save_invoice", "save_more", [object()], [_Patch(str(window_path), updated, "invoice_window.py")])
+    follow = MethodRename().apply_paired(window, MethodSeed("save_invoice", str(window_path), source, 0), plan)
+    assert follow.blocked is False
+    assert b"save_more" in window_path.read_bytes()
+    assert b"save_more" in closed.read_bytes()
+    assert session.log.undo() is True
+    assert window_path.read_bytes() == before_window
+    assert closed.read_bytes() == before_closed
+    assert session.log.redo() is True
+    assert b"save_more" in window_path.read_bytes()
+    closed.write_bytes(closed.read_bytes() + b"\n")
+    assert session.log.undo() is False
+    assert "invoice.ui" in str(getattr(session.log, "_cbcs_rename_notice", ""))

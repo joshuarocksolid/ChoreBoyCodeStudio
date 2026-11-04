@@ -9,6 +9,7 @@ removes guards this eject can resolve.
 from __future__ import annotations
 
 import ast
+import keyword
 import re
 from typing import Dict, List, Optional, Sequence, Set, Tuple
 
@@ -922,7 +923,63 @@ def _rename_locals(source: str) -> str:
                 span = _span(node, lines)
                 if span is not None:
                     edits.append((span[0], span[1], new))
+    pending: Dict[str, str] = {}
+    defined = {
+        node.name
+        for node in ast.walk(root)
+        if isinstance(node, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef))
+    }
+    for node in ast.walk(root):
+        name = ""
+        if isinstance(node, ast.Name):
+            name = node.id
+        elif isinstance(node, ast.arg):
+            name = node.arg
+        plain = _plain_local(name)
+        if not plain or plain in occupied or name in pending or name in defined:
+            continue
+        pending[name] = plain
+        occupied.add(plain)
+    for old, new in pending.items():
+        for node in ast.walk(root):
+            if isinstance(node, ast.Name) and node.id == old:
+                span = _span(node, lines)
+                if span is not None:
+                    edits.append((span[0], span[1], new))
+            elif isinstance(node, ast.arg) and node.arg == old:
+                span = _span(node, lines)
+                if span is not None:
+                    edits.append((span[0], span[1], new))
+            elif isinstance(node, ast.ExceptHandler) and node.name == old:
+                alias = _except_alias_span(node, lines, old)
+                if alias is not None:
+                    edits.append((alias[0], alias[1], new))
     return _apply(source, edits)
+
+
+def _except_alias_span(node: ast.ExceptHandler, lines: Sequence[str], name: str) -> Optional[Tuple[int, int]]:
+    """The ``as name`` token. The alias is not an ``ast.Name``."""
+
+    if node.lineno < 1 or node.lineno > len(lines):
+        return None
+    line = lines[node.lineno - 1]
+    token = "as %s" % name
+    column = line.find(token)
+    if column < 0:
+        return None
+    start = _offset(lines, node.lineno, column + 3)
+    return start, start + len(name)
+
+
+def _plain_local(name: str) -> str:
+    """The name without one leading underscore, when that name is free to use."""
+
+    if not name.startswith("_") or name.startswith("__") or name.startswith("_cbcs"):
+        return ""
+    plain = name[1:]
+    if not plain.isidentifier() or keyword.iskeyword(plain):
+        return ""
+    return plain
 
 
 def _restyle_strings(source: str) -> str:

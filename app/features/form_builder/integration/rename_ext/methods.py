@@ -9,6 +9,7 @@ from typing import List, Optional, Sequence, Tuple
 from app.features.form_builder.engine.commands.base import CommandRejected
 from app.features.form_builder.engine.project.method_forms import method_rename_commands as _method_rename_commands
 from app.features.form_builder.engine.project.handler_checks import shadow_sentence
+from app.persistence.file_unit import bytes_for, commit_files, restore_file, same_bytes, same_text
 from app.features.form_builder.qtside.outline.methods import window_methods
 
 
@@ -96,7 +97,16 @@ class MethodRename:
             for surface in done:
                 _undo_if(surface, label)
             return RenameFollowThrough(True, plan, "The window file could not be edited.")
-        written = _write_closed(closed)
+        window_item = None
+        before_bytes = None
+        after_bytes = None
+        if closed:
+            patch = _patch_for(plan, seed.window_path)
+            after_text = str(getattr(patch, "updated_content", "") or "") or seed.source
+            after_bytes = bytes_for(seed.window_path, after_text)
+            before_bytes = _window_bytes(seed.window_path)
+            window_item = (seed.window_path, after_bytes, before_bytes)
+        written = _write_closed(closed, window_item)
         if written is None:
             _restore_window(window, seed)
             for surface in done:
@@ -110,9 +120,15 @@ class MethodRename:
         if written and not done:
             _mark_closed_anchor(window, seed.window_path, label)
         for surface in done:
-            _arm_closed(surface, label, written, window, seed.window_path, before_text, after_text)
+            _arm_closed(
+                surface, label, written, window, seed.window_path, before_text, after_text,
+                before_bytes, after_bytes, window_item is not None,
+            )
         if written and not done:
-            _arm_anchor(window, seed.window_path, label, written, before_text, after_text)
+            _arm_anchor(
+                window, seed.window_path, label, written, before_text, after_text,
+                before_bytes, after_bytes, True,
+            )
         return RenameFollowThrough(False, updated_plan, "")
 
     def closed_note(self, window: object, seed: MethodSeed, plan: object) -> str:
@@ -165,8 +181,13 @@ class _ClosedBook:
         path: str = "",
         before: str = "",
         after: str = "",
+        disk_before: Optional[bytes] = None,
+        disk_after: Optional[bytes] = None,
+        wrote_window: bool = False,
     ) -> None:
-        self.memos[id(entry)] = (entry, edits, window, path, before, after)
+        self.memos[id(entry)] = (
+            entry, edits, window, path, before, after, wrote_window, disk_before, disk_after,
+        )
         if getattr(log, "_cbcs_closed_armed", False):
             return
         previous_undo = log.undo
@@ -178,13 +199,17 @@ class _ClosedBook:
             tip = entries[-1] if entries else None
             memo = book.memos.get(id(tip)) if tip is not None else None
             if memo is not None:
-                sentence = _unchanged(memo[1], written=True) or _window_changed(memo, memo[5])
+                sentence = _unchanged(memo[1], written=True) or _window_changed(memo, memo[5]) or _disk_sentence(memo, memo[8])
                 if sentence:
                     log._cbcs_rename_notice = sentence
                     return False
             ok = bool(previous_undo())
             if ok and memo is not None:
-                _write_bytes(memo[1], restore=True)
+                problem = _restore_unit(memo, back=True)
+                if problem:
+                    previous_redo()
+                    log._cbcs_rename_notice = problem
+                    return False
                 _put_window(memo[2], memo[3], memo[4])
             return ok
 
@@ -192,13 +217,17 @@ class _ClosedBook:
             pending = log._redo[-1] if getattr(log, "_redo", None) else None
             memo = book.memos.get(id(pending)) if pending is not None else None
             if memo is not None:
-                sentence = _unchanged(memo[1], written=False) or _window_changed(memo, memo[4])
+                sentence = _unchanged(memo[1], written=False) or _window_changed(memo, memo[4]) or _disk_sentence(memo, memo[7])
                 if sentence:
                     log._cbcs_rename_notice = sentence
                     return False
             ok = bool(previous_redo())
             if ok and memo is not None:
-                _write_bytes(memo[1], restore=False)
+                problem = _restore_unit(memo, back=False)
+                if problem:
+                    previous_undo()
+                    log._cbcs_rename_notice = problem
+                    return False
                 _put_window(memo[2], memo[3], memo[5])
             return ok
 
@@ -257,33 +286,31 @@ def _closed_edits(window: object, old: str, new: str, window_path: str) -> List[
     return found
 
 
-def _write_closed(edits: Sequence[_ClosedEdit]) -> Optional[List[_ClosedEdit]]:
-    from app.features.form_builder.engine.project.fs import OsFileSystem
+def _write_closed(
+    edits: Sequence[_ClosedEdit],
+    window_item: Optional[Tuple[str, bytes, Optional[bytes]]] = None,
+) -> Optional[List[_ClosedEdit]]:
     from app.features.form_builder.engine.project.written_files import note_written_files
 
-    files = OsFileSystem()
-    written: List[_ClosedEdit] = []
-    try:
-        for edit in edits:
-            files.write_text(edit.path, edit.text)
-            payload = files.read_bytes(edit.path)
-            written.append(_ClosedEdit(edit.path, edit.original, edit.text, payload))
-    except OSError:
-        _write_bytes(written, restore=True)
-        return None
-    if written:
-        note_written_files(tuple(edit.path for edit in written))
-    return written
-
-
-def _write_bytes(edits: Sequence[_ClosedEdit], *, restore: bool) -> None:
+    if not edits and window_item is None:
+        return []
+    items: List[Tuple[str, bytes, Optional[bytes]]] = []
+    if window_item is not None:
+        items.append(window_item)
+    payloads: List[bytes] = []
     for edit in edits:
-        payload = edit.original if restore else (edit.written or edit.text.encode("utf-8"))
-        try:
-            with open(edit.path, "wb") as handle:
-                handle.write(payload)
-        except OSError:
-            continue
+        payload = bytes_for(edit.path, edit.text)
+        payloads.append(payload)
+        items.append((edit.path, payload, edit.original))
+    if commit_files(items, replace=os.replace):
+        return None
+    written = [
+        _ClosedEdit(edit.path, edit.original, edit.text, payload)
+        for edit, payload in zip(edits, payloads)
+    ]
+    if items:
+        note_written_files(tuple(item[0] for item in items))
+    return written
 
 
 def _restore_window(window: object, seed: MethodSeed) -> None:
@@ -311,10 +338,16 @@ def _arm_anchor(
     edits: Sequence[_ClosedEdit],
     before: str = "",
     after: str = "",
+    disk_before: Optional[bytes] = None,
+    disk_after: Optional[bytes] = None,
+    wrote_window: bool = False,
 ) -> None:
     surface = _anchor_surface(window, window_path)
     if surface is not None:
-        _arm_closed(surface, label, edits, window, window_path, before, after)
+        _arm_closed(
+            surface, label, edits, window, window_path, before, after,
+            disk_before, disk_after, wrote_window,
+        )
 
 
 def _anchor_surface(window: object, window_path: str) -> object:
@@ -338,7 +371,7 @@ def _unchanged(edits: Sequence[_ClosedEdit], *, written: bool) -> str:
         except OSError:
             names.append(os.path.basename(edit.path))
             continue
-        if current != expect:
+        if not same_bytes(current, expect):
             names.append(os.path.basename(edit.path))
     if not names:
         return ""
@@ -354,9 +387,52 @@ def _window_changed(memo: tuple, expected: str) -> str:
     from app.features.form_builder.integration.code_bridge import ShellPort
 
     current = ShellPort(window).open_text(path)
-    if current is None or current == expected:
+    if current is None or same_text(current, expected):
         return ""
     return "%s changed after the rename, so the rename can't be undone." % os.path.basename(path)
+
+
+def _disk_sentence(memo: tuple, expected: Optional[bytes]) -> str:
+    if len(memo) < 9 or not memo[6]:
+        return ""
+    path = str(memo[3] or "")
+    if not path:
+        return ""
+    if same_bytes(_window_bytes(path), expected):
+        return ""
+    return "%s changed after the rename, so the rename can't be undone." % os.path.basename(path)
+
+
+def _restore_unit(memo: tuple, *, back: bool) -> str:
+    applied: List[_ClosedEdit] = []
+    for edit in memo[1]:
+        payload = edit.original if back else (edit.written or edit.text.encode("utf-8"))
+        sentence = restore_file(edit.path, payload, os.replace)
+        if sentence:
+            _rewind_edits(applied, back=back)
+            return sentence
+        applied.append(edit)
+    if len(memo) >= 9 and memo[6]:
+        payload = memo[7] if back else memo[8]
+        sentence = restore_file(str(memo[3]), payload, os.replace)
+        if sentence:
+            _rewind_edits(applied, back=back)
+            return sentence
+    return ""
+
+
+def _rewind_edits(edits: Sequence[_ClosedEdit], *, back: bool) -> None:
+    for edit in reversed(edits):
+        payload = edit.written if back else edit.original
+        restore_file(edit.path, payload or edit.text.encode("utf-8"), os.replace)
+
+
+def _window_bytes(path: str) -> Optional[bytes]:
+    try:
+        with open(path, "rb") as handle:
+            return handle.read()
+    except OSError:
+        return None
 
 
 def _put_window(window: object, path: str, text: str) -> None:
@@ -381,6 +457,9 @@ def _arm_closed(
     path: str = "",
     before: str = "",
     after: str = "",
+    disk_before: Optional[bytes] = None,
+    disk_after: Optional[bytes] = None,
+    wrote_window: bool = False,
 ) -> None:
     if not edits:
         return
@@ -390,7 +469,10 @@ def _arm_closed(
     entries = log.entries()
     if not entries:
         return
-    _CLOSED.arm(log, entries[-1], edits, window, path, before, after)
+    _CLOSED.arm(
+        log, entries[-1], edits, window, path, before, after,
+        disk_before, disk_after, wrote_window,
+    )
 
 
 def register(window: object) -> None:
