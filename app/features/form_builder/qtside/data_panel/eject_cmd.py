@@ -13,6 +13,7 @@ from dataclasses import dataclass, replace
 from typing import Any, Optional, Sequence, Tuple, Union
 
 from app.features.form_builder.engine.codegen.api import generate_form_module
+from app.features.form_builder.engine.codegen.header import is_hand_edited
 from app.features.form_builder.engine.codegen.eject import (
     EjectPlan,
     plan_eject,
@@ -76,6 +77,7 @@ class EjectBook:
                 _say(surface, problem)
                 return False
             _reload_files(surface, memo.files, "before")
+            _settle(surface)
             return True
 
         def redo() -> bool:
@@ -95,6 +97,7 @@ class EjectBook:
                 _say(surface, problem)
                 return False
             _reload_files(surface, memo.files, "after")
+            _settle(surface)
             return True
 
         log.undo = undo  # type: ignore[method-assign]
@@ -115,11 +118,10 @@ def plan_for(host: Any) -> Union[EjectPlan, str]:
         return "Open the form, then eject it."
     scope = session.scope
     window_path = str(getattr(scope, "window_path", "") or "")
-    ui_path = str(getattr(scope, "ui_path", "") or "")
     if surface is not None:
-        dirty = _unsaved(surface, window_path)
-        if dirty:
-            return "Save or discard your changes to %s first." % os.path.basename(dirty)
+        blocked = _blocked(surface, scope)
+        if blocked:
+            return blocked
     source = _window_source(host, window_path)
     try:
         plan = plan_eject(session.document, scope, source)
@@ -148,9 +150,9 @@ def commit_eject(host: Any, plan: EjectPlan) -> str:
     ui_path = str(getattr(scope, "ui_path", "") or "")
     if not path or not ui_path:
         return "This form has no window file."
-    dirty = _unsaved(surface, path)
-    if dirty:
-        return "Save or discard your changes to %s first." % os.path.basename(dirty)
+    blocked = _blocked(surface, scope)
+    if blocked:
+        return blocked
     saved = _save_dirty_form(surface, session, ui_path)
     if saved:
         return saved
@@ -188,6 +190,49 @@ def commit_eject(host: Any, plan: EjectPlan) -> str:
         _BOOK.note(entries[-1], _Memo(files), surface)
         _BOOK.arm(surface)
     return ""
+
+
+def _blocked(surface: Any, scope: Any) -> str:
+    """A sentence when eject must stop before the dialog. Empty when it may continue."""
+
+    window_path = str(getattr(scope, "window_path", "") or "")
+    generated = str(getattr(scope, "generated_path", "") or "")
+    for path in (window_path, generated):
+        dirty = _unsaved(surface, path)
+        if dirty:
+            return "Save or discard your changes to %s first." % os.path.basename(dirty)
+    return _hand_sentence(generated)
+
+
+def _hand_sentence(path: str) -> str:
+    if not path or not os.path.isfile(path):
+        return ""
+    try:
+        with open(path, encoding="utf-8") as handle:
+            text = handle.read()
+    except OSError:
+        return ""
+    if not is_hand_edited(text):
+        return ""
+    return "%s has edits made by hand. Saving the form will replace them." % os.path.basename(path)
+
+
+def _settle(surface: Any) -> None:
+    """A clean form stays clean after undo when the text still matches the file."""
+
+    source = getattr(surface, "_source", None)
+    session = getattr(surface, "session", None)
+    mark = getattr(source, "mark_saved", None)
+    if source is None or session is None or not callable(mark) or not source.is_dirty():
+        return
+    form_path = getattr(surface, "form_path", None)
+    path = str(form_path() or "") if callable(form_path) else ""
+    if not path:
+        path = str(getattr(getattr(session, "scope", None), "ui_path", "") or "")
+    disk = _disk_text(path)
+    if disk is None or not same_text(session.text(), disk):
+        return
+    mark(disk)
 
 
 def _unsaved(surface: Any, path: str) -> str:
@@ -259,7 +304,7 @@ def _unit(
     generated = str(getattr(scope, "generated_path", "") or "")
     if not generated:
         return tuple(files)
-    result = generate_form_module(document, scope=scope, source_bytes=files[0].after)
+    result = generate_form_module(document, scope=scope, source_bytes=ui_text.encode("utf-8"))
     if not result.text:
         message = result.diagnostics[0].message if result.diagnostics else "Couldn't write the generated file."
         return message

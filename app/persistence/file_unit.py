@@ -53,22 +53,26 @@ def commit_files(
         return ""
     staged: list[tuple[str, str, Optional[bytes]]] = []
     done: list[tuple[str, Optional[bytes]]] = []
+    temps: list[str] = []
     try:
         for path, data, old in items:
             resolved = str(Path(path).expanduser().resolve())
             parent = os.path.dirname(resolved) or "."
             if os.path.lexists(resolved) and not os.access(resolved, os.W_OK):
-                _cleanup(staged)
+                _cleanup_temps(temps)
                 return "Couldn't save %s." % os.path.basename(path)
             os.makedirs(parent, exist_ok=True)
             if not os.access(parent, os.W_OK):
-                _cleanup(staged)
+                _cleanup_temps(temps)
                 return "Couldn't save %s." % os.path.basename(path)
             mode = _mode(resolved)
+            if mode is None:
+                mode = _creation_mode()
             fd, temp = tempfile.mkstemp(prefix=".cbcs-", dir=parent)
+            temps.append(temp)
             try:
                 os.write(fd, data)
-                if mode is not None and hasattr(os, "fchmod"):
+                if hasattr(os, "fchmod"):
                     os.fchmod(fd, mode)
                 os.fsync(fd)
             finally:
@@ -79,7 +83,7 @@ def commit_files(
             done.append((resolved, old))
         _fsync_dir(os.path.dirname(staged[-1][0]) or ".")
     except OSError:
-        _cleanup(staged)
+        _cleanup_temps(temps)
         problems = []
         for resolved, old in reversed(done):
             sentence = restore_file(resolved, old, replace)
@@ -96,20 +100,32 @@ def restore_file(path: str, old: Optional[bytes], replace: Replace = os.replace)
     """Put ``old`` back. A sentence when that write fails. ``None`` removes the file."""
 
     resolved = str(Path(path).expanduser().resolve())
+    temp = ""
     try:
         if old is None:
             if os.path.lexists(resolved):
                 os.remove(resolved)
             return ""
         parent = os.path.dirname(resolved) or "."
+        mode = _mode(resolved)
+        if mode is None:
+            mode = _creation_mode()
         fd, temp = tempfile.mkstemp(prefix=".cbcs-", dir=parent)
         try:
             os.write(fd, old)
+            if hasattr(os, "fchmod"):
+                os.fchmod(fd, mode)
             os.fsync(fd)
         finally:
             os.close(fd)
         replace(temp, resolved)
+        temp = ""
     except OSError:
+        if temp and os.path.isfile(temp):
+            try:
+                os.remove(temp)
+            except OSError:
+                pass
         return "Couldn't restore %s." % os.path.basename(path)
     return ""
 
@@ -136,9 +152,17 @@ def _mode(path: str) -> Optional[int]:
         return None
 
 
-def _cleanup(staged: Sequence[tuple[str, str, Optional[bytes]]]) -> None:
-    for _resolved, temp, _old in staged:
-        if os.path.isfile(temp):
+def _creation_mode() -> int:
+    """The mode ``os.open(..., 0o666)`` would leave on a new file."""
+
+    current = os.umask(0)
+    os.umask(current)
+    return 0o666 & ~current
+
+
+def _cleanup_temps(temps: Sequence[str]) -> None:
+    for temp in temps:
+        if temp and os.path.isfile(temp):
             try:
                 os.remove(temp)
             except OSError:

@@ -1635,3 +1635,144 @@ def test_an_ejected_try_paints_the_note_on_the_strip(qapp: QApplication) -> None
         chrome.close()
         chrome.deleteLater()
         qapp.processEvents()
+
+
+def test_emit_validate_follows_whether_the_form_is_ejected(tmp_path: Path) -> None:
+    from app.features.form_builder.engine.commands.catalog import SetLogic
+    from app.features.form_builder.engine.logic.verbs.m7 import _emit_validate
+
+    ui = """<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>Form</class>
+ <widget class="QWidget" name="Form"/>
+ <resources/>
+ <connections/>
+</ui>
+"""
+    path = tmp_path / "form.ui"
+    path.write_text(ui, encoding="utf-8")
+    session = FormSession.open(ui, path=str(path), scope=FormScope(kind="external", ui_path=str(path)))
+    bound = _emit_validate(None, type("Ctx", (), {"doc": session.document})())
+    assert bound == ("if not self.cbcs_validate():", "    return")
+    session.log.execute(SetLogic(session.document.root.id, "cbcsEjected", "load_record"))
+    ejected = _emit_validate(None, type("Ctx", (), {"doc": session.document})())
+    assert ejected == ("if self._form.validate_fields() is False:", "    return")
+
+
+def _invoice_ready(tmp_path: Path) -> tuple:
+    root, scope, ui_text = _project(tmp_path, _scenario_ui(), _prepare, "invoice.ui", _invoice_schema())
+    session = FormSession.open(ui_text, path=scope.ui_path, scope=scope)
+    _arm_save(session)
+    ui_text = session.text()
+    Path(scope.ui_path).write_text(ui_text, encoding="utf-8")
+    document = read_ui(ui_text, allocator=IdAllocator()).document
+    generated = Path(scope.generated_path or "")
+    generated.write_text(
+        generate_form_module(document, scope=scope, source_bytes=ui_text.encode("utf-8")).text or "",
+        encoding="utf-8",
+    )
+    Path(scope.window_path or "").write_text(render_window_class(document, scope=scope), encoding="utf-8")
+    (root / "forms" / "__init__.py").write_text("", encoding="utf-8")
+    return root, scope, session
+
+
+def test_eject_undo_and_redo_keep_file_modes(tmp_path: Path, qapp: QApplication) -> None:
+    del qapp
+    from app.features.form_builder.qtside.data_panel.eject_cmd import commit_eject
+
+    root, scope, session = _invoice_ready(tmp_path)
+    ui_path = Path(scope.ui_path)
+    window_path = Path(scope.window_path or "")
+    generated = Path(scope.generated_path or "")
+    os.chmod(ui_path, 0o644)
+    os.chmod(window_path, 0o755)
+    os.chmod(generated, 0o664)
+    shell = _shell_for(root, session, scope)
+    assert commit_eject(shell, _ready(shell)) == ""
+    assert session.log.undo() is True
+    assert session.log.redo() is True
+    assert ui_path.stat().st_mode & 0o777 == 0o644
+    assert window_path.stat().st_mode & 0o777 == 0o755
+    assert generated.stat().st_mode & 0o777 == 0o664
+    shell.close()
+    shell.deleteLater()
+
+
+def test_a_crlf_form_hashes_like_a_normal_save_and_undo_leaves_it_clean(
+    tmp_path: Path, qapp: QApplication
+) -> None:
+    del qapp
+    from app.features.form_builder.integration.content_source import FormContentSource
+    from app.features.form_builder.integration.save_pipeline import finish_save
+    from app.features.form_builder.qtside.data_panel.eject_cmd import commit_eject
+    from app.persistence.file_unit import same_text
+
+    root, scope, session = _invoice_ready(tmp_path)
+    ui_path = Path(scope.ui_path)
+    ui_path.write_bytes(ui_path.read_bytes().replace(b"\n", b"\r\n"))
+    source = FormContentSource(session.log, session.text(), scope=scope)
+    source.mark_saved(session.text())
+    shell = _shell_for(root, session, scope)
+    shell._source = source
+    shell.form_path = lambda: scope.ui_path
+    assert commit_eject(shell, _ready(shell)) == ""
+    written = Path(scope.generated_path or "").read_bytes()
+    finish_save(scope, session.document, session.text())
+    assert Path(scope.generated_path or "").read_bytes() == written
+    # Opening the ejected form marks that text saved. Undo sits behind that point.
+    source.mark_saved(session.text())
+    assert session.log.undo() is True
+    assert source.is_dirty() is False
+    disk = ui_path.read_bytes().decode("utf-8")
+    assert same_text(session.text(), disk)
+    assert same_text(source.current_text(), disk)
+    shell.close()
+    shell.deleteLater()
+
+
+def test_eject_refuses_a_hand_edited_generated_file_before_the_dialog(
+    tmp_path: Path, qapp: QApplication
+) -> None:
+    del qapp
+    from app.features.form_builder.qtside.data_panel.eject_cmd import commit_eject, plan_for
+
+    root, scope, session = _invoice_ready(tmp_path)
+    generated = Path(scope.generated_path or "")
+    generated.write_text(generated.read_text(encoding="utf-8") + "\n# MY HAND EDIT\n", encoding="utf-8")
+    before = generated.read_bytes()
+    shell = _shell_for(root, session, scope)
+    sentence = "ui_invoice.py has edits made by hand. Saving the form will replace them."
+    assert plan_for(shell) == sentence
+    assert commit_eject(shell, EjectPlan(
+        window_filename="invoice_window.py",
+        ui_filename="invoice.ui",
+        first_method="",
+        summary=(),
+        class_block="",
+        imports=(),
+        commands=(),
+        method_names=(),
+        helper_names=(),
+    )) == sentence
+    assert generated.read_bytes() == before
+    assert ejected_method(session.document) is None
+    shell.close()
+    shell.deleteLater()
+
+
+def test_eject_refuses_a_dirty_generated_tab(tmp_path: Path, qapp: QApplication) -> None:
+    from app.features.form_builder.qtside.data_panel.eject_cmd import plan_for
+    from app.qt.QtWidgets import QPlainTextEdit
+
+    root, scope, session = _invoice_ready(tmp_path)
+    generated = Path(scope.generated_path or "")
+    editor = QPlainTextEdit()
+    editor.setPlainText(generated.read_text(encoding="utf-8") + "\n# MY UNSAVED HAND EDIT\n")
+    shell = _shell_for(root, session, scope, editor, str(generated))
+    assert plan_for(shell) == "Save or discard your changes to ui_invoice.py first."
+    assert "# MY UNSAVED HAND EDIT" not in generated.read_text(encoding="utf-8")
+    editor.close()
+    editor.deleteLater()
+    shell.close()
+    shell.deleteLater()
+    qapp.processEvents()

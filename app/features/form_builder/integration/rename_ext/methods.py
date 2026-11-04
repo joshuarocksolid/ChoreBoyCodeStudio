@@ -97,6 +97,12 @@ class MethodRename:
             for surface in done:
                 _undo_if(surface, label)
             return RenameFollowThrough(True, plan, "The window file could not be edited.")
+        refused = _refuse_generated(window, closed)
+        if refused:
+            _restore_window(window, seed)
+            for surface in done:
+                _undo_if(surface, label)
+            return RenameFollowThrough(True, plan, refused)
         window_item = None
         before_bytes = None
         after_bytes = None
@@ -106,7 +112,7 @@ class MethodRename:
             after_bytes = bytes_for(seed.window_path, after_text)
             before_bytes = _window_bytes(seed.window_path)
             window_item = (seed.window_path, after_bytes, before_bytes)
-        written = _write_closed(closed, window_item)
+        written, generated = _write_closed(closed, window_item, _project_root(window))
         if written is None:
             _restore_window(window, seed)
             for surface in done:
@@ -122,12 +128,12 @@ class MethodRename:
         for surface in done:
             _arm_closed(
                 surface, label, written, window, seed.window_path, before_text, after_text,
-                before_bytes, after_bytes, window_item is not None,
+                before_bytes, after_bytes, window_item is not None, generated,
             )
         if written and not done:
             _arm_anchor(
                 window, seed.window_path, label, written, before_text, after_text,
-                before_bytes, after_bytes, True,
+                before_bytes, after_bytes, True, generated,
             )
         return RenameFollowThrough(False, updated_plan, "")
 
@@ -184,9 +190,11 @@ class _ClosedBook:
         disk_before: Optional[bytes] = None,
         disk_after: Optional[bytes] = None,
         wrote_window: bool = False,
+        generated: Sequence[Tuple[str, Optional[bytes], bytes]] = (),
     ) -> None:
         self.memos[id(entry)] = (
             entry, edits, window, path, before, after, wrote_window, disk_before, disk_after,
+            tuple(generated),
         )
         if getattr(log, "_cbcs_closed_armed", False):
             return
@@ -199,7 +207,12 @@ class _ClosedBook:
             tip = entries[-1] if entries else None
             memo = book.memos.get(id(tip)) if tip is not None else None
             if memo is not None:
-                sentence = _unchanged(memo[1], written=True) or _window_changed(memo, memo[5]) or _disk_sentence(memo, memo[8])
+                sentence = (
+                    _unchanged(memo[1], written=True)
+                    or _window_changed(memo, memo[5])
+                    or _disk_sentence(memo, memo[8])
+                    or _generated_sentence(memo, written=True)
+                )
                 if sentence:
                     log._cbcs_rename_notice = sentence
                     return False
@@ -217,7 +230,12 @@ class _ClosedBook:
             pending = log._redo[-1] if getattr(log, "_redo", None) else None
             memo = book.memos.get(id(pending)) if pending is not None else None
             if memo is not None:
-                sentence = _unchanged(memo[1], written=False) or _window_changed(memo, memo[4]) or _disk_sentence(memo, memo[7])
+                sentence = (
+                    _unchanged(memo[1], written=False)
+                    or _window_changed(memo, memo[4])
+                    or _disk_sentence(memo, memo[7])
+                    or _generated_sentence(memo, written=False)
+                )
                 if sentence:
                     log._cbcs_rename_notice = sentence
                     return False
@@ -286,14 +304,96 @@ def _closed_edits(window: object, old: str, new: str, window_path: str) -> List[
     return found
 
 
+def _refuse_generated(window: object, edits: Sequence[_ClosedEdit]) -> str:
+    """The save sentence when a closed form's generated file was edited by hand."""
+
+    if not edits:
+        return ""
+    root = _project_root(window)
+    if not root:
+        return ""
+    from app.features.form_builder.engine.codegen.header import is_hand_edited
+    from app.features.form_builder.engine.project.forms import classify_form
+    from app.features.form_builder.integration.code_bridge import ShellPort
+
+    port = ShellPort(window)
+    for edit in edits:
+        scope = classify_form(edit.path, project_root=root)
+        path = str(getattr(scope, "generated_path", "") or "")
+        if not path or not getattr(scope, "generates", False):
+            continue
+        opened = port.open_text(path)
+        disk = _window_bytes(path)
+        disk_text = "" if disk is None else disk.decode("utf-8", "replace")
+        if opened is not None and (disk is None or not same_text(opened, disk_text)):
+            return "Save or discard your changes to %s first." % os.path.basename(path)
+        text = opened if opened is not None else disk_text
+        if text and is_hand_edited(text):
+            return "%s has edits made by hand. Saving the form will replace them." % os.path.basename(path)
+    return ""
+
+
+def _generated_items(
+    edits: Sequence[_ClosedEdit], root: str
+) -> Optional[List[Tuple[str, bytes, Optional[bytes]]]]:
+    """``(path, new, old)`` for each closed form's ``ui_<name>.py``. None when one cannot be written."""
+
+    if not edits or not root:
+        return []
+    from app.features.form_builder.engine.codegen.api import generate_form_module
+    from app.features.form_builder.engine.ids import IdAllocator
+    from app.features.form_builder.engine.project.forms import classify_form
+    from app.features.form_builder.engine.ui4.reader import UiReadError, read_ui
+
+    items: List[Tuple[str, bytes, Optional[bytes]]] = []
+    for edit in edits:
+        scope = classify_form(edit.path, project_root=root)
+        path = str(getattr(scope, "generated_path", "") or "")
+        if not path or not getattr(scope, "generates", False):
+            continue
+        try:
+            document = read_ui(edit.text, allocator=IdAllocator()).document
+        except (UnicodeError, UiReadError):
+            return None
+        result = generate_form_module(document, scope=scope, source_bytes=edit.text.encode("utf-8"))
+        if not result.text:
+            return None
+        items.append((path, bytes_for(path, result.text), _window_bytes(path)))
+    return items
+
+
+def _generated_sentence(memo: tuple, *, written: bool) -> str:
+    items = memo[9] if len(memo) > 9 else ()
+    for path, before, after in items:
+        expect = after if written else before
+        if not same_bytes(_window_bytes(path), expect):
+            return "%s changed after the rename, so the rename can't be undone." % os.path.basename(path)
+    return ""
+
+
+def _restore_generated(memo: tuple, *, back: bool) -> str:
+    items = memo[9] if len(memo) > 9 else ()
+    applied: List[Tuple[str, Optional[bytes], bytes]] = []
+    for path, before, after in items:
+        payload = before if back else after
+        sentence = restore_file(path, payload, os.replace)
+        if sentence:
+            for earlier, earlier_before, earlier_after in reversed(applied):
+                restore_file(earlier, earlier_after if back else earlier_before, os.replace)
+            return sentence
+        applied.append((path, before, after))
+    return ""
+
+
 def _write_closed(
     edits: Sequence[_ClosedEdit],
     window_item: Optional[Tuple[str, bytes, Optional[bytes]]] = None,
-) -> Optional[List[_ClosedEdit]]:
+    root: str = "",
+) -> Tuple[Optional[List[_ClosedEdit]], Tuple[Tuple[str, Optional[bytes], bytes], ...]]:
     from app.features.form_builder.engine.project.written_files import note_written_files
 
     if not edits and window_item is None:
-        return []
+        return [], ()
     items: List[Tuple[str, bytes, Optional[bytes]]] = []
     if window_item is not None:
         items.append(window_item)
@@ -302,15 +402,19 @@ def _write_closed(
         payload = bytes_for(edit.path, edit.text)
         payloads.append(payload)
         items.append((edit.path, payload, edit.original))
+    generated = _generated_items(edits, root)
+    if generated is None:
+        return None, ()
+    items.extend(generated)
     if commit_files(items, replace=os.replace):
-        return None
+        return None, ()
     written = [
         _ClosedEdit(edit.path, edit.original, edit.text, payload)
         for edit, payload in zip(edits, payloads)
     ]
     if items:
         note_written_files(tuple(item[0] for item in items))
-    return written
+    return written, tuple((path, before, after) for path, after, before in generated)
 
 
 def _restore_window(window: object, seed: MethodSeed) -> None:
@@ -341,12 +445,13 @@ def _arm_anchor(
     disk_before: Optional[bytes] = None,
     disk_after: Optional[bytes] = None,
     wrote_window: bool = False,
+    generated: Sequence[Tuple[str, Optional[bytes], bytes]] = (),
 ) -> None:
     surface = _anchor_surface(window, window_path)
     if surface is not None:
         _arm_closed(
             surface, label, edits, window, window_path, before, after,
-            disk_before, disk_after, wrote_window,
+            disk_before, disk_after, wrote_window, generated,
         )
 
 
@@ -418,6 +523,13 @@ def _restore_unit(memo: tuple, *, back: bool) -> str:
         if sentence:
             _rewind_edits(applied, back=back)
             return sentence
+    sentence = _restore_generated(memo, back=back)
+    if sentence:
+        if len(memo) >= 9 and memo[6]:
+            payload = memo[8] if back else memo[7]
+            restore_file(str(memo[3]), payload, os.replace)
+        _rewind_edits(applied, back=back)
+        return sentence
     return ""
 
 
@@ -460,6 +572,7 @@ def _arm_closed(
     disk_before: Optional[bytes] = None,
     disk_after: Optional[bytes] = None,
     wrote_window: bool = False,
+    generated: Sequence[Tuple[str, Optional[bytes], bytes]] = (),
 ) -> None:
     if not edits:
         return
@@ -471,7 +584,7 @@ def _arm_closed(
         return
     _CLOSED.arm(
         log, entries[-1], edits, window, path, before, after,
-        disk_before, disk_after, wrote_window,
+        disk_before, disk_after, wrote_window, generated,
     )
 
 
