@@ -242,6 +242,7 @@ def test_suite_has_the_front_end_cases() -> None:
 
 
 @pytest.mark.parametrize("text,slot,expect", CASES, ids=[row[0][:60] for row in CASES])
+@pytest.mark.logic("L-expression-language")
 def test_analyze_case(text: str, slot: str, expect: str) -> None:
     env = ENV_DATA if "itemsGrid." in text or text.startswith(("sum(", "count(", "avg(")) else ENV
     got = analyze(text, env, SLOTS[slot])
@@ -276,6 +277,7 @@ def test_fb101_sentence() -> None:
     )
 
 
+@pytest.mark.logic("L-excel-habit-fixes")
 def test_excel_messages_and_replacements() -> None:
     checks = (
         ("=qtySpin*2", "Formulas don't start with =", "qtySpin*2"),
@@ -338,6 +340,7 @@ def test_column_outside_aggregate_when_data_is_connected() -> None:
     assert "FB113" not in [problem.code for problem in total.problems]
 
 
+@pytest.mark.logic("L-window-method-calls")
 def test_reads_and_window_calls() -> None:
     got = analyze("qtySpin * window.price_for(customerCombo, nameEdit)", ENV, SLOTS["number"])
     assert got.reads == frozenset({"qtySpin", "customerCombo", "nameEdit"})

@@ -130,6 +130,7 @@ def test_installed_seed_is_copied_once(tmp_path, connections_module) -> None:
         module.close_all()
 
 
+@pytest.mark.logic("L-connections-manager")
 def test_password_policies_ask_machine_and_none(tmp_path, connections_module) -> None:
     root = tmp_path / "app"
     root.mkdir()

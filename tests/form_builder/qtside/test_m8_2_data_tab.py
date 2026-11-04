@@ -104,6 +104,7 @@ def office(tmp_path):
         set_schema_reader(None)
 
 
+@pytest.mark.logic("L-data-panel")
 def test_connect_writes_one_undo_step(qapp, office) -> None:
     del qapp
     session, host = _open(_FORM, office)
@@ -164,6 +165,7 @@ def test_enter_on_a_pointing_column_inserts_a_lookup(qapp, office) -> None:
         session.dispose()
 
 
+@pytest.mark.logic("L-data-panel")
 def test_bind_by_name_is_one_undo_step(qapp, office) -> None:
     del qapp
     session, host = _open(_FORM, office)
@@ -186,6 +188,7 @@ def test_bind_by_name_is_one_undo_step(qapp, office) -> None:
         session.dispose()
 
 
+@pytest.mark.logic("L-data-panel")
 def test_show_sql_text_is_the_statement_text(qapp, office) -> None:
     del qapp
     session, host = _open(_FORM, office)
@@ -212,6 +215,7 @@ def test_show_sql_text_is_the_statement_text(qapp, office) -> None:
         session.dispose()
 
 
+@pytest.mark.logic("L-data-panel")
 def test_record_toolbar_is_one_undo_step_and_keeps_the_shortcuts(qapp, office) -> None:
     del qapp
     session, _host = _open(_VBOX, office)

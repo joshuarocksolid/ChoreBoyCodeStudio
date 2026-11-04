@@ -76,6 +76,7 @@ def test_a_secret_key_is_fb302() -> None:
     assert diagnostic is not None and diagnostic.code == FB302
 
 
+@pytest.mark.logic("L-connections-manager")
 def test_machine_file_is_private_and_rename_moves_the_entry(tmp_path) -> None:
     project = tmp_path / "Shop"
     project.mkdir()

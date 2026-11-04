@@ -167,6 +167,7 @@ def script_k30_condition(kb: Kb) -> None:
     print("K30 walkthrough 1 steps=%d keys=%d %s" % (len(steps), sum(keys), steps))
 
 
+@pytest.mark.logic("L-condition-builder")
 def test_k30_walkthrough_1_condition_builder(tmp_path: Path, qapp: QApplication) -> None:
     window, kb, guard, _path = _session(tmp_path, qapp)
     try:
@@ -227,6 +228,7 @@ def script_k30_value(kb: Kb) -> None:
     print("K30 walkthrough 2 steps=%d keys=%d %s" % (len(steps), sum(keys), steps))
 
 
+@pytest.mark.logic("L-condition-builder")
 def test_k30_walkthrough_2_value_builder(tmp_path: Path, qapp: QApplication) -> None:
     window, kb, guard = _invoice(tmp_path, qapp)
     try:

@@ -122,6 +122,7 @@ def test_find_uses_like_or_ilike_with_one_backslash(dialect: str) -> None:
     assert statement.text.count("\\") == (4 if dialect == "postgres" else 2)
 
 
+@pytest.mark.logic("L-safe-sql")
 def test_a_bad_name_is_not_quoted() -> None:
     assert is_identifier("invoice_no") is True
     assert is_identifier("a b") is False
@@ -134,6 +135,7 @@ def test_a_bad_name_is_not_quoted() -> None:
         select_keys("mysql", "invoices", "id", ())
 
 
+@pytest.mark.logic("L-safe-sql")
 def test_sqlite_statements_change_the_shop_rows(tmp_path) -> None:
     path = tmp_path / "shop.db"
     build(str(path))

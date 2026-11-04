@@ -88,6 +88,7 @@ def _load(text: str, stem: str, tmp_path: Path) -> Any:
     return dialog, ui
 
 
+@pytest.mark.logic("L-formats")
 def test_us_money_percent_and_date_rewrite_on_leave(tmp_path: Path, qapp: Any) -> None:
     del qapp
     dialog, ui = _load(_FORM, "format", tmp_path)

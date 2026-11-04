@@ -235,6 +235,7 @@ def test_read_only_logic_refuses_move_connection() -> None:
     assert caught.value.code == "FB402"
 
 
+@pytest.mark.logic("L-designer-roundtrip-merge")
 def test_read_only_logic_is_written_back_byte_identical_through_layout_edits() -> None:
     log = open_log(_newer_form())
     doc = log.document

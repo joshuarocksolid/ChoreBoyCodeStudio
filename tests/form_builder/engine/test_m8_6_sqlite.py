@@ -20,6 +20,7 @@ pytestmark = pytest.mark.unit
 _NOW = datetime.datetime(2026, 11, 2, 14, 2, 11)
 
 
+@pytest.mark.logic("L-schema-cache")
 def test_refresh_reads_the_shop_and_a_second_read_is_the_same_bytes(tmp_path: Path) -> None:
     database = tmp_path / "my shop" / "shop.db"
     build(str(database))

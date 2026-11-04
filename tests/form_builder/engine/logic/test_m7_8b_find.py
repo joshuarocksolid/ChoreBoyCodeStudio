@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from app.editors.search_service import SearchOptions
 from app.features.form_builder.engine.logic.checks import Required, write_checks
 from app.features.form_builder.engine.logic.events_codec import call_step, write_list
@@ -23,6 +25,7 @@ def _form(class_name: str, body: str) -> str:
     ) % (class_name, class_name, body)
 
 
+@pytest.mark.logic("L-logic-outline-search")
 def test_search_finds_a_rule_a_check_and_a_step_across_two_forms(tmp_path: Path) -> None:
     checks = write_checks((Required("Enter a name"),))
     assert checks is not None
