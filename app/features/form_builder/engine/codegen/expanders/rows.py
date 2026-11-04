@@ -127,6 +127,7 @@ def _contribution(
         _method("_cbcs_delete_row", "", _delete_row_body(view)),
         _method("cbcs_read_lines", "", _read_body(view)),
         _method("_cbcs_grid_column", "_name", _grid_body(view)),
+        _method("_cbcs_commit_line_editor", "", _commit_editor_body(view)),
         _method("_cbcs_line_rows", "", _rows_body(view)),
         _method("_cbcs_line_dict", "_r", _dict_body(view)),
         _method("_cbcs_line_out", "_column, _value", _convert_body(families, nulls, engine, True)),
@@ -477,8 +478,20 @@ def _delete_link_body() -> List[str]:
     ]
 
 
+def _commit_editor_body(view: str) -> List[str]:
+    return [
+        "_view = self.%s" % view,
+        "_index = _view.currentIndex()",
+        "if _index.isValid():",
+        "    _editor = _view.indexWidget(_index)",
+        "    if _editor is not None:",
+        "        _view.commitData(_editor)",
+    ]
+
+
 def _validate_body(view: str) -> List[str]:
     return [
+        "self._cbcs_commit_line_editor()",
         "_model = self.%s.model()" % view,
         "if _model is None:",
         "    return True",
@@ -613,6 +626,7 @@ def _grid_body(view: str) -> List[str]:
 
 def _rows_body(view: str) -> List[str]:
     return [
+        "self._cbcs_commit_line_editor()",
         "_found = []",
         "_model = self.%s.model()" % view,
         "_count = 0 if _model is None else _model.rowCount()",
