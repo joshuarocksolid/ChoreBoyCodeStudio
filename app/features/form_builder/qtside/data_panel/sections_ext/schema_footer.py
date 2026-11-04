@@ -49,16 +49,18 @@ class _Footer(QWidget):
         self._worker_generation = 0
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 8, 0, 0)
+        self._sentence = QLabel(self)
+        self._sentence.setObjectName("formBuilder.data.schemaSentence")
+        self._sentence.setWordWrap(True)
+        self._sentence.setMinimumWidth(0)
+        layout.addWidget(self._sentence)
         row = QHBoxLayout()
         layout.addLayout(row)
         self._row = row
-        self._sentence = QLabel(self)
-        self._sentence.setObjectName("formBuilder.data.schemaSentence")
-        row.addWidget(self._sentence)
-        # UX §13.5.9: "Columns read {date} (may be out of date)" is one line.
         self._stale = QLabel("(may be out of date)", self)
         self._stale.setObjectName("formBuilder.data.stale")
-        row.addWidget(self._stale)
+        self._stale.setWordWrap(True)
+        row.addWidget(self._stale, 0)
         row.addStretch(1)
         self._refresh = QPushButton("Refresh", self)
         self._refresh.setObjectName("formBuilder.data.schemaRefresh")
@@ -182,11 +184,9 @@ class _Footer(QWidget):
         self._stale.hide()
 
     def _set_sentence(self, text: str, wrap: bool) -> None:
-        # Only the can't-reach sentence is long. A wrapped label sizes narrow, which would
-        # break "Columns read 2 Nov 14:02" and push "(may be out of date)" off its line.
-        self._sentence.setWordWrap(wrap)
-        self._row.setStretch(0, 1 if wrap else 0)
-        self._row.setStretch(2, 0 if wrap else 1)
+        # The sentence always wraps to the footer's width. Refresh sits on the
+        # line below, so a 184 px Data tab still shows the whole read time.
+        del wrap
         self._sentence.setText(text)
 
     def _cached(self) -> object:

@@ -1,5 +1,5 @@
 - M7.5: FormulaEditor.setFocus override reveals Formula mode when Builder is up (comment cites key tests); revisit whether product callers should use present(). Status: Deferred (M9). Not an M8 screen.
-- M7.7: closed Enabled-when sentence elides in the default inspector width ("Discount is c… now: no"); outline LEFT_MIN 184 elides the faint object name on nested rows. Decide widths in M7.R. Status: Deferred (M9). The M8 Data tab at 184 px still shows the column names. The timestamp clips (M8R-5, S3).
+- M7.7: closed Enabled-when sentence elides in the default inspector width ("Discount is c… now: no"); outline LEFT_MIN 184 elides the faint object name on nested rows. Decide widths in M7.R. Status: Deferred (M9). The M8 Data tab at 184 px shows the column names, and the footer wraps so the read time stays whole (M8R-5, fixed).
 - M7.7: the walk's `_shot` grabs only MainWindow + active modal because the embedded form root is a parentless WA_DontShowOnScreen top-level (QGraphicsProxyWidget); offscreen reports it visible. Status: Closed. The walk records the window and the modal. The proxy stays offscreen on purpose.
 - Try reload ~1.5 s after an edit; check against UX-M7-003 on the VM. Status: Deferred (lane B).
 - Perf margins: behavior paint ~15 ms vs 16 ms cap on the Mac; re-measure on the ChoreBoy VM. Status: Deferred (lane B). Budget not changed.
@@ -9,10 +9,10 @@
 - M7.7-07: Try mode/What ran not walked on Mac (no /opt/freecad/AppRun); walk it on the ChoreBoy VM. Status: Deferred (lane B).
 
 ## Carried to M8 from the M7.R sign-off (2026-11-01)
-- Commit a rule, Mac: p95 16.2–17.7 ms across runs against 17 ms (p50 ~15 ms). The VM passes at 33 ms against 50 ms. Look for more margin: per-commit paint/repaint, and the State row update. Status: profiled, not fixed. This Mac, one run, p95 26.41 ms. Proposal in m8r_review.md. Budget not changed.
-- Section 12 budgets fail on this Mac under load: outline patch is 4.2 ms against 2 ms, and it fails the same at `3000ecd8`. Inspector select fails intermittently, 29.7 ms against 16 ms. Re-baseline these or fix them; don't silently raise the budget. Status: profiled, not fixed. This run, load about 2 on 16 cores: outline p95 4.25 ms, inspector p95 17.42 ms. Proposal in m8r_review.md. Budgets not changed.
+- Commit a rule, Mac: p95 16.2–17.7 ms across runs against 17 ms (p50 ~15 ms). The VM passes at 33 ms against 50 ms. Status: the M8 regression is fixed. Same harness, this Mac, load about 2 on 16 cores. Before: p50 25.7 / p95 26.4. After: p50 16.5–16.8, best p95 17.2, other runs 17.6–18.6 because one sample in 19 spikes. Today's remeasure of M7.R (`170b34c4`) was p95 18.5. Budget not changed. Data checks and the design-shortcut walk no longer run on a formula commit, and a formula commit repaints State only.
+- Section 12 budgets fail on this Mac under load: outline patch is 4.2 ms against 2 ms, and it fails the same at `3000ecd8`. Inspector select fails intermittently, 29.7 ms against 16 ms. Status: outline fixed, p95 1.75 ms (15 samples, load 1.3). A caption patch looks up buddy text once per revision instead of once per widget. Inspector left. Idle remeasure p50 14.6 / p95 16.6 against 16 ms. Budget not changed.
 - M7R-11: method rename does not touch forms that aren't open. Status: Deferred (M9).
-- The What ran preview shot fixture shows a floating "Discount rate" label under the form, the buddy added for the shot. Lay the fixture out properly. Status: Fixed (this commit). The label is the first row.
+- The What ran preview shot fixture shows a floating "Discount rate" label under the form, the buddy added for the shot. Lay the fixture out properly. Status: Fixed. One form: Discount, Discount rate, Qty, Price, Line total, Email, the check message, Save at the bottom right.
 - The preview "Window values" strip is dark on a light user form in dark theme. Status: Fixed (this commit). Window values use the light runtime palette.
 - The incremental rule graph (`rules._assemble`) is a correctness-sensitive cache. Any new formula-writing path must go through `set_logic`, or the note must be dropped. Status: Closed. This lane adds no formula writer.
 

@@ -102,6 +102,13 @@ _SPACING_FAMILY = frozenset({"spacing", "horizontalSpacing", "verticalSpacing"})
 _LAYOUT_FAMILIES = _MARGIN_FAMILY | _SPACING_FAMILY
 _FRESH: Dict[Tuple[str, bool], QWidget] = {}
 _FRESH_HOST: Optional[QWidget] = None
+_SHORTCUT_NAMES = frozenset({"shortcut", "shortcutcontext"})
+
+
+def _shortcut_changed(changeset: ChangeSet) -> bool:
+    """True when this edit can put a key sequence back on a design-time widget."""
+
+    return any(name.casefold() in _SHORTCUT_NAMES for _owner, _kind, name in changeset.property_dirty)
 
 
 @dataclass(frozen=True)
@@ -249,7 +256,8 @@ class Realizer(_Structure):
             rebuilt_roots=tuple(roots),
             cpu_ms=(time.process_time() - started) * 1000.0,
         )
-        self._silence_shortcuts()
+        if self._created or changeset.replaced or changeset.added or _shortcut_changed(changeset):
+            self._silence_shortcuts()
         self._last_stats = stats
         return stats
 
