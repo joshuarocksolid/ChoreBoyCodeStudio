@@ -50,9 +50,9 @@ choreboy_code_studio_state/
 app/ui/icons/app_icon_*.png
 app/ui/icons/installer_icon_*.png
 
-# Vendored dependencies (see vendor/README.md for setup)
-vendor/*
-!vendor/README.md
+# Vendored dependencies (see vendor/README.md for setup).
+# `vendor` is a per-machine symlink that dev_launch_editor.py creates; never track it.
+/vendor
 
 # pyright, installed by the cloud install script
 node_modules/

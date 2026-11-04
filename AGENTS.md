@@ -207,8 +207,8 @@ npx pyright -p pyrightconfig.tests.json
 
 ### Vendored dependencies
 
-The `vendor/` directory is gitignored. If it exists as a dangling symlink (from
-local dev), remove it first (`rm vendor`).
+`vendor` is an untracked, gitignored symlink that `dev_launch_editor.py`
+creates on each launch. If it exists as a dangling symlink, remove it first (`rm vendor`).
 
 The shipped product has one supported native bundle contract:
 
@@ -281,6 +281,7 @@ pip3 install pytest-timeout --target=/opt/freecad/usr/lib/python3.11/site-packag
 - `libxcb-xinerama0` and related xcb packages must be installed for Qt's xcb platform plugin to work with a display server.
 - **Slow integration tests:** subprocess + debug-session + RunService project/template execution tests are tagged `@pytest.mark.slow` and excluded from `python3 testing/run_test_shard.py fast`. They still run under the `integration` shard pre-PR, with per-test `pytest.mark.timeout(180)` overrides instead of the global 30 s default.
 - **Test subprocess hygiene:** `run_tests.py` sets `CBCS_DISABLE_BACKGROUND_RUNTIME=1`; `tests/conftest.py` reaps leaked `run_plugin_host`/`run_runner` children after every test and at session end.
-- `**vendor/` symlink:** The repo may contain a `vendor` symlink pointing to a local developer's machine. Remove it before populating vendor: `[ -L vendor ] && rm vendor`.
+- **`vendor` symlink:** untracked and gitignored; `./run_dev.sh` (via `dev_launch_editor.py`) points it at the vendor tree matching the AppRun. A stale one can be removed: `[ -L vendor ] && rm vendor`.
+- **`scripts/cloud_setup_screenshot_runtime.sh`** only runs in the cloud image (Linux with `CBCS_RUNTIME_PINS` set); anywhere else it exits without changes unless `CBCS_FORCE_CLOUD_SETUP=1`.
 - Canonical documentation: `docs/PRD.md` (product), `docs/DISCOVERY.md` (runtime), `docs/ARCHITECTURE.md` (design), `docs/TASKS.md` (backlog).
 
