@@ -15,8 +15,8 @@ from typing import Hashable, List, Tuple
 from app.features.form_builder.qtside.canvas.core.overlay import LayerItem, LayerOutput
 from app.features.form_builder.qtside.canvas.layers import CanvasLayer
 from app.features.form_builder.qtside.theme.overlay import CanvasPalette
-from app.qt.QtCore import QPointF, QRectF
-from app.qt.QtGui import QColor, QPainter, QPen
+from app.qt.QtCore import QPointF, QRectF, Qt
+from app.qt.QtGui import QColor, QImage, QPainter, QPen, QPixmap
 
 NAME = "free_grid"
 #: Closer than this on screen, dots are noise.
@@ -75,32 +75,57 @@ def _color(text: str) -> QColor:
     return QColor("#" + text)
 
 
+#: One raster per grid. A spacing edit that does not move this container
+#: paints the pixmap again instead of walking every dot.
+_FRAMES: dict = {}
+
+
 def paint(painter: QPainter, item: LayerItem, palette: CanvasPalette) -> None:
     data = item.data
     if not isinstance(data, tuple) or len(data) != 5 or not palette.backdrop.dot:
         return
-    across, down, left, top, holes = data
     rect = item.rect
     color = _color(palette.overlay.layout_faint)
     color.setAlpha(170)
+    key = (data, rect.x, rect.y, rect.width, rect.height, color.rgba())
+    frame = _FRAMES.get(key)
+    if frame is None:
+        frame = _raster(data, rect, color)
+        if len(_FRAMES) > 8:
+            _FRAMES.clear()
+        _FRAMES[key] = frame
+    painter.drawPixmap(rect.x, rect.y, frame)
+
+
+def _raster(data: tuple, rect: object, color: QColor) -> QPixmap:
+    """The dots for one container, in the item's own rectangle."""
+    across, down, left, top, holes = data
+    width = max(int(rect.width), 1)
+    height = max(int(rect.height), 1)
+    image = QImage(width, height, QImage.Format_ARGB32_Premultiplied)
+    image.fill(Qt.transparent)
+    canvas = QPainter(image)
     pen = QPen(color)
     pen.setWidthF(1.5)
-    painter.save()
+    canvas.setPen(pen)
+    origin_x = float(rect.x)
+    origin_y = float(rect.y)
+    count = 0
+    y = float(top) + down
+    limit_y = origin_y + float(rect.height)
+    limit_x = origin_x + float(rect.width)
     try:
-        painter.setPen(pen)
-        painter.setClipRect(QRectF(rect.x, rect.y, rect.width, rect.height))
-        count = 0
-        y = float(top) + down
-        while y < rect.y + rect.height and count < MAX_DOTS:
+        while y < limit_y and count < MAX_DOTS:
             x = float(left) + across
-            while x < rect.x + rect.width and count < MAX_DOTS:
-                if x >= rect.x and y >= rect.y and not _covered(x, y, holes):
-                    painter.drawPoint(QPointF(x, y))
+            while x < limit_x and count < MAX_DOTS:
+                if x >= origin_x and y >= origin_y and not _covered(x, y, holes):
+                    canvas.drawPoint(QPointF(x - origin_x, y - origin_y))
                     count += 1
                 x += across
             y += down
     finally:
-        painter.restore()
+        canvas.end()
+    return QPixmap.fromImage(image)
 
 
 def _covered(x: float, y: float, holes: Tuple[Hole, ...]) -> bool:

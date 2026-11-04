@@ -156,16 +156,20 @@ _LABELS: weakref.WeakKeyDictionary = weakref.WeakKeyDictionary()
 
 
 def labels(doc: UiDocument) -> Tuple[NodeId, ...]:
-    """Every QLabel with a name, in document order. One walk per document revision."""
+    """Every QLabel with a name, in document order.
+
+    The set follows the tree, not caption text, so a label edit reuses it.
+    """
+    revision = doc.structure_revision
     cached = _LABELS.get(doc)
-    if cached is not None and cached[0] == doc.revision:
+    if cached is not None and cached[0] == revision:
         return cached[1]
     found = tuple(
         node.id
         for node in doc.iter_preorder()
         if isinstance(node, WidgetNode) and node.class_name == "QLabel" and node.object_name
     )
-    _LABELS[doc] = (doc.revision, found)
+    _LABELS[doc] = (revision, found)
     return found
 
 
@@ -174,8 +178,24 @@ def buddy_choices(doc: UiDocument) -> Tuple[Stop, ...]:
     return stops(doc, reading_order(doc))
 
 
+_PAIRS: weakref.WeakKeyDictionary = weakref.WeakKeyDictionary()
+
+
 def form_row_pairs(doc: UiDocument) -> Tuple[Tuple[NodeId, str], ...]:
-    """``(label id, field name)`` for each QFormLayout row of one label and one stop (UX-OVL-008)."""
+    """``(label id, field name)`` for each QFormLayout row of one label and one stop (UX-OVL-008).
+
+    Pairs follow the tree. Caption text is read by the caller, so a label edit reuses them.
+    """
+    revision = doc.structure_revision
+    cached = _PAIRS.get(doc)
+    if cached is not None and cached[0] == revision:
+        return cached[1]
+    found = _form_row_pairs(doc)
+    _PAIRS[doc] = (revision, found)
+    return found
+
+
+def _form_row_pairs(doc: UiDocument) -> Tuple[Tuple[NodeId, str], ...]:
     fields = {stop.name for stop in buddy_choices(doc)}
     pairs: List[Tuple[NodeId, str]] = []
     for node in doc.iter_preorder():

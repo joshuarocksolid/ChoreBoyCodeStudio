@@ -210,6 +210,15 @@ class Realizer(_Structure):
 
         silence_design_shortcuts(root)
 
+    def _silence_fresh(self) -> None:
+        """New widgets only. The rest of the form was silenced when it was built."""
+        from app.features.form_builder.qtside.theme.runtime import silence_design_shortcuts
+
+        for node_id in self._fresh:
+            widget = self.widget_for(node_id)
+            if widget is not None and wrapper_is_valid(widget):
+                silence_design_shortcuts(widget)
+
     def _start_patch(self) -> None:
         self._layout_hints = {}
         self._filled.clear()
@@ -256,8 +265,10 @@ class Realizer(_Structure):
             rebuilt_roots=tuple(roots),
             cpu_ms=(time.process_time() - started) * 1000.0,
         )
-        if self._created or changeset.replaced or changeset.added or _shortcut_changed(changeset):
+        if changeset.replaced or _shortcut_changed(changeset):
             self._silence_shortcuts()
+        elif self._fresh:
+            self._silence_fresh()
         self._last_stats = stats
         return stats
 
