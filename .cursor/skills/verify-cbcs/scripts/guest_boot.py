@@ -1,6 +1,6 @@
 """Guest entry: ensure disposable HOME exists, then start the editor.
 
-Lives in the rsynced checkout. SQLite state must not sit on virtiofs.
+Lives in the pushed checkout. SQLite state must sit on the guest disk, not on `/mnt/cbprobe`.
 """
 
 from __future__ import annotations

@@ -17,14 +17,6 @@ from pathlib import Path
 
 
 REPO_DEFAULT = Path("/Users/local/Projects/ChoreBoyCodeStudio")
-FIXTURE = (
-    REPO_DEFAULT
-    / ".cursor"
-    / "skills"
-    / "cbcs-quality-loop"
-    / "references"
-    / "smoke-fixture"
-)
 DECISIONS = Path.home() / "ChoreBoy" / "artifacts" / "verify-cbcs" / "decisions.tsv"
 HEADER = "id\thypothesis\tchange\tbefore\tafter\tdelta\tgate\tverdict\tnote\tartifacts\n"
 TOKEN = "cbcs-smoke-token"
@@ -168,24 +160,14 @@ def measure(repo: Path) -> dict:
         artifacts,
     )
 
-    # Seed fixture and open project (needed for M3-M6)
-    rec_path = Path(artifacts) / "run.json" if artifacts else None
-    rec = json.loads(rec_path.read_text()) if rec_path and rec_path.is_file() else {}
-    run_id = rec.get("run_id") or ""
-    remote_proj = "/home/joshua/shared-usb/cbcs-verify/{}/project".format(run_id)
-    guest_proj = "/mnt/cbprobe/cbcs-verify/{}/project".format(run_id)
-    if run_id and FIXTURE.is_dir():
-        _run(["ssh", "-o", "BatchMode=yes", "debian", "mkdir -p " + remote_proj])
-        _run(
-            [
-                "rsync",
-                "-az",
-                "-e",
-                "ssh -o BatchMode=yes",
-                str(FIXTURE).rstrip("/") + "/",
-                "debian:" + remote_proj.rstrip("/") + "/",
-            ]
-        )
+    # Seed fixture and open project (needed for M3-M6). control-cbcs picks farm or lab.
+    fixture = repo / ".cursor/skills/cbcs-quality-loop/references/smoke-fixture"
+    guest_proj = ""
+    if fixture.is_dir():
+        seeded = _run([str(control), "seed", sid, str(fixture)], timeout=180)
+        sys.stdout.write(seeded.stdout or "")
+        sys.stderr.write(seeded.stderr or "")
+        guest_proj = _extract((seeded.stdout or "") + "\n" + (seeded.stderr or ""), "GUEST_PROJECT")
     open_rc, open_out, _, open_err = _ctl_exec(
         control,
         sid,
