@@ -228,6 +228,8 @@ def _methods(source, fields, engine, record_word, order, search, check, hooks, a
     }
     if any(field.family in ("date", "time", "datetime") for field in fields) or has_lines:
         bodies["_cbcs_note_unparsed"] = ("_column, _kind, _shown", _note_body())
+    if any(field.nullable and field.io == "time" for field in fields):
+        bodies["_cbcs_time_touched"] = ("widget", _time_touched_body())
     if any(field.io == "decimal" for field in writable):
         bodies["_cbcs_numbers_match"] = ("_left, _right, _places", _numbers_match_body())
     methods = []
@@ -387,7 +389,14 @@ def _read_field(field: _Field) -> List[str]:
     elif field.io == "date":
         return _read_date(field, key)
     elif field.io == "time":
-        return _read_minimum(field, key, "%s.time()" % widget, "%s.minimumTime()" % widget, "%s.time().toPython()" % widget)
+        if not field.nullable:
+            return ["%s = %s.time().toPython()" % (key, widget)]
+        return [
+            "if %s.property(%s):" % (widget, _q("cbcsTimeBlank")),
+            "    %s = None" % key,
+            "else:",
+            "    %s = %s.time().toPython()" % (key, widget),
+        ]
     elif field.io == "datetime":
         return _read_minimum(
             field,
@@ -574,10 +583,20 @@ def _write_date(widget: str, nullable: bool, column: str) -> List[str]:
 
 
 def _write_time(widget: str, nullable: bool, column: str) -> List[str]:
-    blank = "        %s.setTime(%s.minimumTime())" % (widget, widget) if nullable else "        %s.setTime(QTime(0, 0, 0))"
+    if nullable:
+        blank = _blank_time_lines(widget, "        ")
+        failed = _blank_time_lines(widget, "            ")
+        show = _show_time_lines(widget, "            ")
+    else:
+        blank = ["        %s.setTime(QTime(0, 0, 0))" % widget]
+        failed = ["            %s.setTime(QTime(0, 0, 0))" % widget]
+        show = [
+            "            %s.setTime(QTime(_clock.hour, _clock.minute, _clock.second, _clock.microsecond // 1000))"
+            % widget
+        ]
     return [
         "    if _value is None or _value == %s:" % _q(""),
-        blank,
+        *blank,
         "    else:",
         "        try:",
         "            if isinstance(_value, datetime):",
@@ -590,9 +609,45 @@ def _write_time(widget: str, nullable: bool, column: str) -> List[str]:
         "            _note = getattr(self, %s, None)" % _q("_cbcs_note_unparsed"),
         "            if _note is not None:",
         "                _note(%s, %s, _value)" % (_q(column), _q("time")),
-        "    " + blank,
+        *failed,
         "        else:",
-        "            %s.setTime(QTime(_clock.hour, _clock.minute, _clock.second, _clock.microsecond // 1000))" % widget,
+        *show,
+    ]
+
+
+def _blank_time_lines(widget: str, indent: str) -> List[str]:
+    """Blank is a flag plus the special-value text. Midnight clears both.
+
+    QTime cannot go below 00:00:00, so the clock value alone cannot be the blank.
+    """
+
+    return [
+        "%s%s._cbcs_time_arming = True" % (indent, widget),
+        "%s%s.setProperty(%s, True)" % (indent, widget, _q("cbcsTimeBlank")),
+        "%s%s.setSpecialValueText(%s)" % (indent, widget, _q(_NULL_TEXT)),
+        "%s%s.setTime(%s.minimumTime())" % (indent, widget, widget),
+        "%s%s._cbcs_time_arming = False" % (indent, widget),
+    ]
+
+
+def _show_time_lines(widget: str, indent: str) -> List[str]:
+    return [
+        "%s%s._cbcs_time_arming = True" % (indent, widget),
+        "%s%s.setProperty(%s, False)" % (indent, widget, _q("cbcsTimeBlank")),
+        "%s%s.setSpecialValueText(%s)" % (indent, widget, _q("")),
+        "%s%s.setTime(QTime(_clock.hour, _clock.minute, _clock.second, _clock.microsecond // 1000))" % (indent, widget),
+        "%s%s._cbcs_time_arming = False" % (indent, widget),
+    ]
+
+
+def _time_touched_body() -> List[str]:
+    return [
+        "if getattr(widget, %s, False):" % _q("_cbcs_time_arming"),
+        "    return",
+        "if not widget.property(%s):" % _q("cbcsTimeBlank"),
+        "    return",
+        "widget.setProperty(%s, False)" % _q("cbcsTimeBlank"),
+        "widget.setSpecialValueText(%s)" % _q(""),
     ]
 
 
@@ -1122,7 +1177,6 @@ def _below_minimum(widget: str, io: str) -> List[str]:
         return ["%s.setMinimumDate(%s.minimumDate().addDays(-1))" % (widget, widget)]
     if io == "datetime":
         return ["%s.setMinimumDateTime(%s.minimumDateTime().addSecs(-1))" % (widget, widget)]
-    # QTime can't go below 00:00:00, so a nullable time keeps midnight as its blank.
     return []
 
 
@@ -1130,10 +1184,15 @@ def _null_markers(fields: Sequence[_Field]) -> List[str]:
     lines = []
     for field in fields:
         widget = "self.%s" % field.widget
-        if field.nullable and field.io in ("int", "decimal", "date", "time", "datetime"):
+        if field.nullable and field.io in ("int", "decimal", "date", "datetime"):
             # Blank sits one step below the designed minimum, so every real value stays saveable.
             lines.extend(_below_minimum(widget, field.io))
             lines.append("%s.setSpecialValueText(%s)" % (widget, _q(_NULL_TEXT)))
+        if field.nullable and field.io == "time":
+            # Midnight is a real time. The special-value text is only the blank.
+            lines.append(
+                "%s.timeChanged.connect(lambda *_a, _w=%s: self._cbcs_time_touched(_w))" % (widget, widget)
+            )
         if field.nullable and field.io == "bool":
             lines.append("%s.setTristate(True)" % widget)
         if field.error_label:

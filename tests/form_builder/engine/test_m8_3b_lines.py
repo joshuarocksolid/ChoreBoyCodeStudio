@@ -73,9 +73,10 @@ def test_plan_covers_edits_nulls_and_keys() -> None:
     swapped = (same[1], same[0])
     ops = plan_lines(snap, swapped, (), "id", "line_no", ("qty", "note"), True)
     assert [op[0] for op in ops] == ["park", "park", "position", "position"]
-    assert all(isinstance(op[2], int) and op[2] < 0 for op in ops if op[0] == "park")
+    assert [op[2] for op in ops if op[0] == "park"] == [3, 4]
     plain = plan_lines(snap, swapped, (), "id", "line_no", ("qty", "note"), False)
-    assert [op[0] for op in plain] == ["position", "position"]
+    assert [op[0] for op in plain] == ["park", "park", "position", "position"]
+    assert [op[2] for op in plain if op[0] == "park"] == [3, 4]
     removed = plan_lines(snap, (same[1],), ("L1",), "id", "line_no", ("qty", "note"), True)
     assert removed[0] == ("delete", "L1")
     added = plan_lines(snap, same + ({"id": None, "qty": Decimal("3"), "note": ""},), (), "id", "line_no", ("qty", "note"), False)
@@ -565,7 +566,9 @@ def test_a_failed_line_lookup_still_saves_the_lines(tmp_path: Path) -> None:
         told = len(seen)
         assert ui._cbcs_key == 1
         assert ui.linesView.model().rowCount() == 3
-        assert ui.linesView.model().item(0, _index(ui, "product_id")).text() == "(unknown #1)"
+        shown = ui.linesView.model().item(0, _index(ui, "product_id")).text()
+        assert "no such table" in shown
+        assert not shown.startswith("(unknown #")
         assert _value(ui, 0, "product_id") == 1
         ui.cbcs_first()
         assert len(seen) == told

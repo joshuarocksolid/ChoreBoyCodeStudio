@@ -96,14 +96,16 @@ def _cbcs_plan_lines(
             final = index + 1
             if snap[key].get(position_column) != final:
                 movers.append((key, final))
-    if unique_pair and movers:
-        floor = 0
+    # Park above every stored position, whether or not the schema cache recorded
+    # UNIQUE (link, position). A negative park trips CHECK (position > 0).
+    if position_column and movers:
+        ceiling = 0
         for row in snapshot:
             pos = row.get(position_column)
-            if type(pos) is int and pos < floor:
-                floor = pos
+            if type(pos) is int and pos > ceiling:
+                ceiling = pos
         for ordinal, pair in enumerate(movers):
-            ops.append(("park", pair[0], floor - 1 - ordinal))
+            ops.append(("park", pair[0], ceiling + 1 + ordinal))
     for key, final in movers:
         ops.append(("position", key, final))
     for index, row in enumerate(current):
