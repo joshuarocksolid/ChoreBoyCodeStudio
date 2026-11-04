@@ -24,6 +24,10 @@ class CodegenOptions:
     ``--star-imports`` for resource modules; ``rc_prefix``: ``--rc-prefix``;
     ``python_paths``: ``--python-paths``.
     ``postfix``: ``uic --postfix`` appended to the ``Ui_`` class name.
+    ``dependencies_only``: ``uic -d``. The result lists included headers and
+    custom-widget headers, one per line, and does not contain a class.
+    ``-p`` and ``-n`` are C++ include-guard and implicit-include flags. Python
+    output has neither, so they are not options here.
     """
 
     connect_slots_by_name: Optional[bool] = None
@@ -33,6 +37,7 @@ class CodegenOptions:
     rc_prefix: bool = False
     python_paths: Tuple[str, ...] = ()
     postfix: str = ""
+    dependencies_only: bool = False
 
 
 @dataclass(frozen=True)
