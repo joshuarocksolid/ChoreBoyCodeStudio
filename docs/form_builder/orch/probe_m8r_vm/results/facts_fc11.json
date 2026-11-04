@@ -1,0 +1,242 @@
+{
+  "python": "3.11.14",
+  "executable": "/opt/freecad/usr/bin/freecad",
+  "loadavg": null,
+  "loadavg_error": "OSError: Load averages are unobtainable",
+  "apparmor_attr": "PermissionError: [Errno 13] Permission denied: '/proc/self/attr/current'",
+  "rss_kb": 553928,
+  "alias": "native",
+  "runtime": {
+    "python": "3.11.14",
+    "executable": "/opt/freecad/usr/bin/freecad",
+    "qt_api": "PySide6",
+    "pyside": "6.8.3",
+    "pyside_file": "/opt/freecad/usr/lib/python3.11/site-packages/PySide6/__init__.py",
+    "qt": "6.8.3",
+    "freecad": [
+      "1",
+      "1",
+      "1",
+      "20260414 (Git shallow)",
+      "Unknown",
+      "2026/04/14 22:09:59",
+      "(HEAD detached at 0108fd4b4)",
+      "0108fd4b4850cc46e625b60e53cea7a7bbe69f8d"
+    ],
+    "is_qt6": true
+  },
+  "drivers": {
+    "bundled": {
+      "psycopg": {
+        "file": "/opt/freecad/usr/lib/python3.11/site-packages/psycopg/__init__.py",
+        "version": "3.3.4"
+      },
+      "pg8000": {
+        "file": "/opt/freecad/usr/lib/python3.11/site-packages/pg8000/__init__.py",
+        "version": "1.31.5"
+      }
+    },
+    "postgres": {
+      "skipped": "no DSN"
+    }
+  },
+  "machine_file": {
+    "path": "/tmp/m8r_work/machine_file/shop.json",
+    "file_mode": "0o600",
+    "dir_mode": "0o700",
+    "file_is_0600": true,
+    "dir_is_0700": true,
+    "writable": true
+  },
+  "speed_exit": 0,
+  "helper": {
+    "p95_ms": 7.119,
+    "wall_p95_ms": 10.704,
+    "command0": "/opt/freecad/AppRun",
+    "helper_script": "run_schema_helper.py",
+    "evidence": "tables=4",
+    "error": "",
+    "target": "sqlite"
+  },
+  "sqlite_sha256_before_try": "7f898ba06850d2864d5674a1afaec6ce1b595768de7c7d7bb46967b1d8fc2522",
+  "try": {
+    "command0": "/opt/freecad/AppRun",
+    "before": {
+      "shop.db": "7f898ba06850d2864d5674a1afaec6ce1b595768de7c7d7bb46967b1d8fc2522"
+    },
+    "after": {
+      "shop.db": "7f898ba06850d2864d5674a1afaec6ce1b595768de7c7d7bb46967b1d8fc2522"
+    },
+    "md5_unchanged": true,
+    "banner": "",
+    "what_ran": "Ran: SELECT \"id\" FROM \"invoices\" ORDER BY \u2026\nRan: SELECT \"id\", \"name\" FROM \"customers\" \u2026\nRan: SELECT \"id\", \"name\" FROM \"products\" O\u2026\nRan: SELECT \"invoice_no\", \"customer_id\", \"\u2026 (1 value)\nRan: SELECT \"id\", \"product_id\", \"descripti\u2026 (1 value)\nRan: SELECT \"id\" FROM \"invoices\" ORDER BY \u2026\nRan: SELECT \"id\", \"name\" FROM \"customers\" \u2026\nRan: SELECT \"id\", \"name\" FROM \"products\" O\u2026\nRan: SELECT \"invoice_no\", \"customer_id\", \"\u2026 (1 value)\nRan: SELECT \"id\", \"product_id\", \"descripti\u2026 (1 value)\nRan: UPDATE \"invoices\" SET \"notes\" = ? WHE\u2026 (7 values)\nRan: SELECT \"invoice_no\", \"customer_id\", \"\u2026 (1 value)\nRan: SELECT \"id\", \"product_id\", \"descripti\u2026 (1 value)\nRan: SELECT \"id\" FROM \"invoices\" ORDER BY \u2026",
+    "saved": true,
+    "error": "",
+    "exit": -15
+  },
+  "demo": {
+    "rss_before_kb": 692520,
+    "project": "/tmp/m8r_work/sqlite_proj",
+    "list_bytes": 66917,
+    "search_bytes": 66219,
+    "search_rows": 500,
+    "invoice_bytes": 35926,
+    "lookup_name": "customer_id",
+    "lookup_bytes": 35919,
+    "add_bytes": 38061,
+    "saved": true,
+    "save_bytes": 38295,
+    "prepared_statements": null,
+    "driver": "",
+    "rss_after_kb": 714816,
+    "invoice_1_lines": [
+      {
+        "line_no": 1,
+        "product_id": 1,
+        "description": "Line 1",
+        "qty": 1,
+        "price": 1
+      },
+      {
+        "line_no": 2,
+        "product_id": 1,
+        "description": "Line 100001",
+        "qty": 1,
+        "price": 1
+      },
+      {
+        "line_no": 3,
+        "product_id": 1,
+        "description": "Line 200001",
+        "qty": 1,
+        "price": 1
+      },
+      {
+        "line_no": 4,
+        "product_id": 1,
+        "description": "Line 300001",
+        "qty": 1,
+        "price": 1
+      },
+      {
+        "line_no": 5,
+        "product_id": 5000,
+        "description": "Line 400000",
+        "qty": 1,
+        "price": 1
+      },
+      {
+        "line_no": 6,
+        "product_id": 4999,
+        "description": "Line 399999",
+        "qty": 1,
+        "price": 1
+      },
+      {
+        "line_no": 7,
+        "product_id": 4998,
+        "description": "Line 399998",
+        "qty": 1,
+        "price": 1
+      },
+      {
+        "line_no": 8,
+        "product_id": 4997,
+        "description": "Line 399997",
+        "qty": 1,
+        "price": 1
+      },
+      {
+        "line_no": 9,
+        "product_id": 4996,
+        "description": "Line 399996",
+        "qty": 1,
+        "price": 1
+      },
+      {
+        "line_no": 10,
+        "product_id": 4995,
+        "description": "Line 399995",
+        "qty": 1,
+        "price": 1
+      },
+      {
+        "line_no": 11,
+        "product_id": 4994,
+        "description": "Line 399994",
+        "qty": 1,
+        "price": 1
+      },
+      {
+        "line_no": 12,
+        "product_id": 4993,
+        "description": "Line 399993",
+        "qty": 1,
+        "price": 1
+      },
+      {
+        "line_no": 13,
+        "product_id": 4992,
+        "description": "Line 399992",
+        "qty": 1,
+        "price": 1
+      },
+      {
+        "line_no": 14,
+        "product_id": 4991,
+        "description": "Line 399991",
+        "qty": 1,
+        "price": 1
+      },
+      {
+        "line_no": 15,
+        "product_id": 4990,
+        "description": "Line 399990",
+        "qty": 1,
+        "price": 1
+      },
+      {
+        "line_no": 16,
+        "product_id": 4989,
+        "description": "Line 399989",
+        "qty": 1,
+        "price": 1
+      },
+      {
+        "line_no": 17,
+        "product_id": 4988,
+        "description": "Line 399988",
+        "qty": 1,
+        "price": 1
+      },
+      {
+        "line_no": 18,
+        "product_id": 4987,
+        "description": "Line 399987",
+        "qty": 1,
+        "price": 1
+      },
+      {
+        "line_no": 19,
+        "product_id": 4986,
+        "description": "Line 399986",
+        "qty": 1,
+        "price": 1
+      },
+      {
+        "line_no": 20,
+        "product_id": 4985,
+        "description": "Line 399985",
+        "qty": 1,
+        "price": 1
+      },
+      {
+        "line_no": 21,
+        "product_id": 1,
+        "description": null,
+        "qty": 1,
+        "price": 1
+      }
+    ]
+  }
+}
