@@ -45,6 +45,7 @@ def atomic_write_text(
     *,
     encoding: str = "utf-8",
     newline: str | None = None,
+    errors: str = "strict",
 ) -> Path:
     """Write text to ``path`` via temp file, fsync and replace.
 
@@ -67,7 +68,7 @@ def atomic_write_text(
 
     temp_path, fd = _create_temp_file(parent_dir, resolved_path.name)
     try:
-        with os.fdopen(fd, "w", encoding=encoding, newline="") as handle:
+        with os.fdopen(fd, "w", encoding=encoding, errors=errors, newline="") as handle:
             handle.write(text)
             handle.flush()
             if existing_mode is not None and hasattr(os, "fchmod"):

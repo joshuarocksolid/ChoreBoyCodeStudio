@@ -34,6 +34,10 @@ class FormTabProvider:
     def create_surface(self, request: TabSurfaceRequest) -> object:
         if is_qrc(request.file_path):
             return QrcTabProvider().create_surface(request)
+        if _not_utf8(request.initial_text):
+            raise ProviderDeclined(
+                "This form can't be opened in the form builder: the file isn't UTF-8."
+            )
         try:
             scope = form_scope(request.file_path, request.project_root)
             session = FormSession.open(request.initial_text, path=request.file_path, scope=scope)
@@ -56,6 +60,10 @@ class FormTabProvider:
         if stops:
             surface.attach_checks(stops)
         return surface
+
+
+def _not_utf8(text: str) -> bool:
+    return any(0xD800 <= ord(char) <= 0xDFFF for char in text)
 
 
 __all__ = ["FormTabProvider"]

@@ -30,6 +30,12 @@ def _normalize(file_path: str) -> str:
     return normalized_path(file_path)
 
 
+def _has_surrogate(text: str) -> bool:
+    """True when ``text`` holds bytes that were not UTF-8 (``surrogateescape``)."""
+
+    return any(0xD800 <= ord(char) <= 0xDFFF for char in text)
+
+
 class EditorManager:
     """Owns open-tab state and file-backed read/save operations.
 
@@ -159,7 +165,10 @@ class EditorManager:
         tab = self._require_tab(file_path)
         path = Path(tab.file_path)
         text = tab.current_content
-        atomic_write_text(path, text)
+        # A .ui that was not UTF-8 is held with surrogateescape so a save writes
+        # the same bytes back. A strict UTF-8 write would refuse or drop them.
+        errors = "surrogateescape" if _has_surrogate(text) else "strict"
+        atomic_write_text(path, text, errors=errors)
         tab.mark_saved(last_known_mtime=self._read_file_mtime(tab.file_path), saved_text=text)
         source = tab.content_source
         after_save = getattr(source, "after_save", None)
@@ -319,6 +328,8 @@ class EditorManager:
         try:
             return path.read_text(encoding="utf-8")
         except UnicodeDecodeError as exc:
+            if path.suffix.lower() == ".ui":
+                return path.read_text(encoding="utf-8", errors="surrogateescape")
             raise ValueError(f"File is not valid UTF-8 text: {file_path}") from exc
 
     def _read_file_mtime(self, file_path: str) -> float | None:
