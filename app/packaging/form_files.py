@@ -19,6 +19,7 @@ from app.features.form_builder.engine.project.packaging import (
     inspect_forms,
     save_form_now,
 )
+from app.packaging.payload_policy import DEFAULT_PACKAGING_PAYLOAD_POLICY
 from app.features.form_builder.engine.ui4.reader import UiReadError
 
 _FIX_LABEL = "Save the form now"
@@ -38,6 +39,7 @@ def form_packaging_issues(project_root: str) -> list[RuntimeIssue]:
     report = inspect_forms(project_root)
     issues = [_issue_for_file(project_root, item) for item in report.files if item.state != "current"]
     issues.extend(_loader_issues(project_root))
+    issues.extend(_missing_loaded_ui_issues(project_root))
     return [issue for issue in issues if issue is not None]
 
 
@@ -201,6 +203,72 @@ def _loader_issues(project_root: str) -> list[RuntimeIssue]:
             )
         )
     return issues
+
+
+def _missing_loaded_ui_issues(project_root: str) -> list[RuntimeIssue]:
+    """A runtime ``.ui`` load whose file is not in the package is blocking.
+
+    The package copies the project tree. A literal path the app loads has to
+    be one of those files. Removing it from that set fails the package step.
+    """
+    root = Path(project_root).resolve()
+    issues: list[RuntimeIssue] = []
+    seen: set[str] = set()
+    for site in scan_ui_loaders(project_root):
+        relative = _loaded_ui_relative(root, site.ui_literal)
+        if relative is None or relative in seen:
+            continue
+        seen.add(relative)
+        path = root / relative
+        excluded = DEFAULT_PACKAGING_PAYLOAD_POLICY.is_payload_excluded(Path(relative))
+        if path.is_file() and not excluded:
+            continue
+        try:
+            source = relative_posix(site.path, project_root)
+        except ProjectOpError:
+            source = ""
+        summary = "%s is not in the package." % relative
+        issues.append(
+            RuntimeIssue(
+                issue_id="package.form.loaded_ui_missing",
+                workflow="package",
+                severity="blocking",
+                title="The package list is missing a form",
+                summary=summary,
+                why_it_happened=(
+                    "The app loads this .ui file when it runs. "
+                    "A package that leaves the file out cannot open the form."
+                ),
+                next_steps=["Put %s back in the project." % relative],
+                help_topic="packaging_backup",
+                evidence={
+                    "ui_relative": relative,
+                    "source_file": source,
+                    "line_number": site.line,
+                    "report_row": summary,
+                },
+            )
+        )
+    return issues
+
+
+def _loaded_ui_relative(root: Path, literal: str | None) -> str | None:
+    """Project-relative ``.ui`` path a loader names, or None when it is not one."""
+    if not literal:
+        return None
+    text = literal.replace("\\", "/").strip()
+    if not text or text.startswith("/") or text.startswith("..") or "/../" in "/" + text:
+        return None
+    relative = Path(text)
+    if relative.is_absolute() or relative.suffix != ".ui":
+        return None
+    try:
+        resolved = (root / relative).resolve().relative_to(root)
+    except ValueError:
+        return None
+    if resolved.suffix != ".ui":
+        return None
+    return resolved.as_posix()
 
 
 def _file_dict(item: GeneratedFile) -> dict[str, str]:
