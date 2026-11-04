@@ -119,6 +119,7 @@ def test_search_screen_writes_a_list_keyed_to_the_record_form(tmp_path: Path) ->
         set_schema_reader(None)
 
 
+@pytest.mark.logic("L-form-from-table")
 def test_invoice_create_is_one_command_and_opens_clean(tmp_path: Path) -> None:
     root, schema = _shop(tmp_path)
     request = _invoice_request()

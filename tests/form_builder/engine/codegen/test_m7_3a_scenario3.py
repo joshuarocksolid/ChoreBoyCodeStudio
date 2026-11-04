@@ -20,6 +20,7 @@ pytestmark = pytest.mark.unit
 _INVOICE = Path(__file__).resolve().parents[2] / "fixtures" / "m7" / "forms" / "invoice.ui"
 
 
+@pytest.mark.logic("L-required-email-inline-error", "L-checks", "L-shipped-app-errors")
 def test_email_edit_shows_the_first_failing_message(tmp_path: Path, qapp: Any) -> None:
     del qapp
     from PySide6.QtWidgets import QApplication, QDialog

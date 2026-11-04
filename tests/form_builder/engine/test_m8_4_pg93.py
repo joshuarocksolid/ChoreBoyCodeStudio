@@ -28,6 +28,7 @@ _SKIP = "set CBCS_PG93_DSN to run PostgreSQL 9.3 tests"
 
 
 @pytest.mark.parametrize("driver", ["psycopg", "pg8000"])
+@pytest.mark.logic("L-try-mode-data")
 def test_try_session_leaves_postgres_rows_unchanged(tmp_path: Path, driver: str, qapp: Any) -> None:
     raw, fields = _connect(driver)
     _reset(raw)

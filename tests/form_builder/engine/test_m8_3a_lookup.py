@@ -107,6 +107,7 @@ def test_missing_show_is_fb311_and_a_long_table_is_fb312() -> None:
     ]
 
 
+@pytest.mark.logic("L-customer-combo-lookup", "L-lookups")
 def test_scenario_five_fills_the_combo_and_round_trips_the_key(tmp_path: Path) -> None:
     with record_window(tmp_path, _story_ui(), shop_with_three, choose=lambda text: "Close") as (host, db):
         ui = host.ui

@@ -49,6 +49,7 @@ from xml.sax.saxutils import escape
 pytestmark = pytest.mark.unit
 
 
+@pytest.mark.logic("L-eject-to-code")
 def test_ejected_invoice_matches_the_bound_form(tmp_path: Path) -> None:
     bound = _invoice_run(tmp_path / "bound", ejected=False)
     ejected = _invoice_run(tmp_path / "ejected", ejected=True)
