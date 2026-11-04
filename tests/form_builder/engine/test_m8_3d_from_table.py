@@ -20,6 +20,7 @@ from app.features.form_builder.engine.data.schema import Column, Schema, Table, 
 from app.features.form_builder.engine.data.schema_cache import install_schema_reader, set_schema_reader
 from app.features.form_builder.engine.data.schema_sqlite import read_sqlite_file
 from app.features.form_builder.engine.data.source import (
+    CalcColumn,
     DataColumn,
     ListSource,
     RecordSource,
@@ -34,7 +35,13 @@ from app.features.form_builder.engine.ids import IdAllocator
 from app.features.form_builder.engine.logic.codec import Step
 from app.features.form_builder.engine.logic.events_catalog import step_words
 from app.features.form_builder.engine.logic.events_codec import EventStep
-from app.features.form_builder.engine.project.from_table_plan import ColumnChoice, TableRequest, plan_forms
+from app.features.form_builder.engine.project.from_table_plan import (
+    ColumnChoice,
+    TableRequest,
+    choice_for,
+    include_column,
+    plan_forms,
+)
 from app.features.form_builder.engine.session import FormSession
 from app.features.form_builder.engine.ui4.reader import read_ui
 from app.features.form_builder.engine.ui4.writer import write_ui
@@ -168,6 +175,69 @@ def test_invoice_create_is_one_command_and_opens_clean(tmp_path: Path) -> None:
     assert placeholder == "Search invoices"
     data = read_data(_prop(listed.root, "cbcsData")).value
     assert isinstance(data, ListSource) and data.open is not None and data.open.form == "invoice" and data.open.key == "id"
+
+
+def test_created_table_forms_have_no_diagnostics(tmp_path: Path) -> None:
+    """Make both, each Make choice, and a table with no lines start with no diagnostics."""
+
+    from app.features.form_builder.engine.data.publish import publish_session
+
+    root, schema = _shop(tmp_path)
+    cases = (
+        ("invoices", "both", "invoice_lines", "invoice"),
+        ("invoices", "record", "invoice_lines", "invoice"),
+        ("invoices", "list", "", "invoice"),
+        ("products", "both", "", "product"),
+        ("products", "record", "", "product"),
+        ("products", "list", "", "product"),
+    )
+    for table, make, lines, stem in cases:
+        request = _schema_request(schema, table, make, lines, stem)
+        planned = plan_forms(request, schema)
+        assert planned.disabled_reason == ""
+        for plan in planned.forms:
+            session = open_plan(plan, schema, str(root))
+            try:
+                publish_session(session)
+                found = [
+                    (row.code, row.message, row.location.object_name)
+                    for row in session.diagnostics.all()
+                ]
+                assert found == [], (table, make, plan.stem, found)
+            finally:
+                session.dispose()
+
+
+def test_a_line_total_on_a_table_form_is_not_a_type_error(tmp_path: Path) -> None:
+    """qty * price on a form from a table is not FB102. Blank kinds are not text."""
+
+    from app.features.form_builder.engine.data.publish import publish_session
+    from app.features.form_builder.qtside.data_panel.lines_sheet import set_lines
+
+    root, schema = _shop(tmp_path)
+    request = _schema_request(schema, "invoices", "both", "invoice_lines", "invoice")
+    session = open_plan(plan_forms(request, schema).forms[0], schema, str(root))
+    try:
+        node = session.document.by_name("invoice_linesView")[0]
+        rows, error = read_rows(_prop(session.document.node(node), "cbcsRows"))
+        assert error is None and rows is not None
+        set_lines(
+            session,
+            node,
+            Rows(
+                rows.table,
+                rows.link,
+                rows.key,
+                rows.columns + (CalcColumn("line_total", "qty * price", "Line total"),),
+                rows.order,
+                rows.position,
+            ),
+        )
+        publish_session(session)
+        found = [(row.code, row.message, row.location.object_name) for row in session.diagnostics.all()]
+        assert found == []
+    finally:
+        session.dispose()
 
 
 def test_lines_start_checked_only_for_a_real_line_table(tmp_path: Path) -> None:
@@ -392,6 +462,17 @@ def _shop(tmp_path: Path) -> Tuple[Path, Schema]:
     _save_schema(root, schema)
     _save_connection(root)
     return root, schema
+
+
+def _schema_request(schema: Schema, table_name: str, make: str, lines: str, stem: str) -> TableRequest:
+    table = next(item for item in schema.tables if item.name == table_name)
+    engine = schema.engine or "sqlite"
+    columns = tuple(
+        choice_for(column, engine)
+        for column in table.columns
+        if include_column(column, table.key or "", engine)
+    )
+    return TableRequest("shop", table_name, columns, make, lines, stem, "yyyy-MM-dd")
 
 
 def _invoice_request() -> TableRequest:

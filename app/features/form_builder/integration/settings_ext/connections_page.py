@@ -392,6 +392,7 @@ class ConnectionsPage(QWidget):
         if diagnostic is not None:
             return SettingsRefusal(diagnostic.sentence)
         save_project_connections(project_root, value, slug=project_slug(project_root))
+        self._refresh_project()
         return None
 
     def _load(self) -> None:
@@ -415,8 +416,13 @@ class ConnectionsPage(QWidget):
         try:
             self._list.clear()
             for connection in self._items:
-                item = QListWidgetItem()
+                title = connection.title or connection.name
+                item = QListWidgetItem(title)
+                role = getattr(getattr(Qt, "ItemDataRole", Qt), "AccessibleTextRole", None)
+                if role is not None:
+                    item.setData(role, title)
                 row = _Row(connection.title, engine_line(connection), self._list)
+                row.setAccessibleName(title)
                 item.setSizeHint(row.sizeHint())
                 self._list.addItem(item)
                 self._list.setItemWidget(item, row)
@@ -691,6 +697,24 @@ class ConnectionsPage(QWidget):
         if 0 <= self._index < len(self._items):
             self._items[self._index] = replace(self._items[self._index], setup="on_connect")
         self._show_setup("on_connect")
+        self._refresh_project()
+
+    def _refresh_project(self) -> None:
+        owners = []
+        widget: object = self
+        while widget is not None:
+            owners.append(widget)
+            parent = getattr(widget, "parent", None)
+            widget = parent() if callable(parent) else None
+        top = self.window()
+        if top is not None:
+            owners.append(top)
+        for owner in owners:
+            tree = getattr(owner, "_project_tree_ui_workflow", None)
+            refresh = getattr(tree, "refresh_project_tree_from_disk", None)
+            if callable(refresh):
+                refresh()
+                return
 
     def _show_setup(self, setup: Optional[str]) -> None:
         if setup:

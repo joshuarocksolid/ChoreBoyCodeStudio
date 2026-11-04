@@ -39,6 +39,7 @@ from app.qt.QtWidgets import (
     QDialogButtonBox,
     QFormLayout,
     QHBoxLayout,
+    QLabel,
     QLineEdit,
     QPushButton,
     QTableWidget,
@@ -193,6 +194,11 @@ class LinesSheet(QDialog):
         calc_row.addWidget(self._calc_formula)
         calc_row.addWidget(add_calc)
         layout.addLayout(calc_row)
+        self._calc_rows = QWidget(self)
+        self._calc_rows.setObjectName("formBuilder.data.linesCalcList")
+        self._calc_layout = QVBoxLayout(self._calc_rows)
+        self._calc_layout.setContentsMargins(0, 0, 0, 0)
+        layout.addWidget(self._calc_rows)
         self._calcs: List[CalcColumn] = []
         buttons = QDialogButtonBox(self)
         word = "Add lines" if self._existing is None else "Save"
@@ -214,6 +220,7 @@ class LinesSheet(QDialog):
         self._calcs = []
         self._number.addItem("none", "")
         if table is None:
+            self._refresh_calcs()
             return
         parent = self._source.table
         links = [column for column in table.columns if _points(column, parent)]
@@ -222,11 +229,11 @@ class LinesSheet(QDialog):
         for column in table.columns:
             self._order.addItem(column.name, column.name)
             self._number.addItem(column.name, column.name)
-        self._prefer(self._link, self._existing.link if self._existing is not None else (links[0].name if links else ""))
+        _prefer(self._link, self._existing.link if self._existing is not None else (links[0].name if links else ""))
         order = self._existing.order if self._existing is not None else _guess_order(table)
-        self._prefer(self._order, order)
+        _prefer(self._order, order)
         number = self._existing.position if self._existing is not None else order
-        self._prefer(self._number, number)
+        _prefer(self._number, number)
         engine = column_engine(self._session.document, self._source, self._session)
         shown = {}
         if self._existing is not None:
@@ -239,6 +246,7 @@ class LinesSheet(QDialog):
             if column.name == getattr(table, "key", None):
                 continue
             self._add_column_row(column, engine, shown.get(column.name), parent)
+        self._refresh_calcs()
 
     def _add_column_row(self, column: object, engine: str, existing: Optional[DataColumn], parent: str) -> None:
         row = self._columns.rowCount()
@@ -281,6 +289,36 @@ class LinesSheet(QDialog):
         self._calc_name.clear()
         self._calc_header.clear()
         self._calc_formula.clear()
+        self._refresh_calcs()
+
+    def _refresh_calcs(self) -> None:
+        while self._calc_layout.count():
+            item = self._calc_layout.takeAt(0)
+            held = item.widget()
+            if held is not None:
+                held.deleteLater()
+        for index, calc in enumerate(self._calcs):
+            row = QWidget(self._calc_rows)
+            row.setObjectName("formBuilder.data.linesCalcRow")
+            laid = QHBoxLayout(row)
+            laid.setContentsMargins(0, 0, 0, 0)
+            name = QLabel(calc.name, row)
+            name.setObjectName("formBuilder.data.linesCalcName")
+            formula = QLabel(calc.formula, row)
+            formula.setObjectName("formBuilder.data.linesCalcFormula")
+            remove = QPushButton("×", row)
+            remove.setObjectName("formBuilder.data.linesCalcRemove")
+            remove.clicked.connect(lambda _checked=False, at=index: self._remove_calc(at))
+            laid.addWidget(name)
+            laid.addWidget(formula, 1)
+            laid.addWidget(remove)
+            self._calc_layout.addWidget(row)
+
+    def _remove_calc(self, index: int) -> None:
+        if index < 0 or index >= len(self._calcs):
+            return
+        del self._calcs[index]
+        self._refresh_calcs()
 
     def _accept(self) -> None:
         table = self._current_table()
@@ -500,4 +538,24 @@ def summary(document: object) -> str:
         return ""
     name, rows = found[0]
     return _sentence(rows.table, name or _view_name(rows.table))
+
+
+def total_hint(document: object) -> str:
+    """One line telling the person how to sum the lines onto a field."""
+
+    found = lines_on(document)
+    if not found:
+        return ""
+    name, rows = found[0]
+    view = name or _view_name(rows.table)
+    column = ""
+    for spec in rows.columns:
+        if getattr(spec, "formula", ""):
+            column = str(getattr(spec, "name", "") or "")
+    if not column and rows.columns:
+        last = rows.columns[-1]
+        column = str(getattr(last, "name", "") or getattr(last, "column", "") or "")
+    if not view or not column:
+        return ""
+    return "To total the lines, give Total the Value sum(%s.%s)." % (view, column)
 

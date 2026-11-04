@@ -948,11 +948,10 @@ def test_add_connection_keeps_or_selects(tmp_path: Path, qapp: object) -> None:
     )
     try:
         assert dialog.findChild(QComboBox, "formBuilder.fromTable.connection").currentData() == "shop"
-        before = dialog.findChild(QListWidget, "formBuilder.fromTable.tables").item(0).text()
         dialog.findChild(QPushButton, "formBuilder.fromTable.addConnection").click()
         QApplication.processEvents()
-        assert dialog.findChild(QComboBox, "formBuilder.fromTable.connection").currentData() == "shop"
-        assert dialog.findChild(QListWidget, "formBuilder.fromTable.tables").item(0).text() == before
+        assert dialog.findChild(QComboBox, "formBuilder.fromTable.connection").currentData() == "other"
+        assert dialog.findChild(QListWidget, "formBuilder.fromTable.tables").count() >= 1
     finally:
         dialog.close()
 

@@ -72,6 +72,11 @@ def evaluate(emitted: Any, reader: Any, window_values: Optional[Mapping[str, Any
         return eval(compile(emitted.source, "<formula>", "eval"), globs, {"self": proxy})  # noqa: S307
     except _NeedsValue:
         return EvalBlank("needs a window value")
+    except AttributeError as exc:
+        # A grid column is read through a method the design-time stand-in
+        # does not have. The inspector shows "blank", not the exception.
+        logger.debug("formula evaluation failed: %s", exc, exc_info=True)
+        return EvalBlank("blank")
     except Exception as exc:
         logger.debug("formula evaluation failed: %s", exc, exc_info=True)
         return EvalBlank(str(exc))

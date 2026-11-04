@@ -16,7 +16,7 @@ from app.features.form_builder.integration.chrome import chrome_for
 from app.features.form_builder.integration.provider import FormTabProvider
 from app.features.form_builder.qtside.dialogs.from_table import FromTableDialog
 from app.qt.QtCore import QDate
-from app.qt.QtWidgets import QApplication, QPlainTextEdit, QWidget
+from app.qt.QtWidgets import QApplication, QComboBox, QPlainTextEdit, QWidget
 from app.shell.tab_content_providers import TabSurfaceRequest
 from app.shell.theme_tokens import tokens_from_palette
 from tests.form_builder.engine.test_m8_3d_from_table import (
@@ -41,6 +41,36 @@ _MODES = (
 )
 
 _MAKES = ("record", "list", "both")
+
+
+def test_from_table_opens_the_first_saved_connection(tmp_path: Path, qapp) -> None:
+    from app.features.form_builder.engine.data.connections import Connection, ConnectionSet, save_connections
+
+    root, _schema = _shop(tmp_path)
+    save_connections(
+        str(root),
+        ConnectionSet(
+            (
+                Connection("shop", "Shop database", "sqlite", file="data/shop.db"),
+                Connection("archive", "Archive", "sqlite", file="data/shop.db"),
+            )
+        ),
+    )
+    tokens = tokens_from_palette(qapp.palette(), force_mode=constants.UI_THEME_MODE_LIGHT)
+    dialog = FromTableDialog(
+        project_root=str(root),
+        stem="invoice",
+        chrome=chrome_for(tokens),
+        date_format="yyyy-MM-dd",
+        name_reason=lambda: None,
+    )
+    try:
+        combo = dialog.findChild(QComboBox, "formBuilder.fromTable.connection")
+        assert combo is not None
+        assert combo.currentText() == "Shop database"
+        assert combo.currentData() == "shop"
+    finally:
+        dialog.close()
 
 
 def test_from_table_screenshots(tmp_path: Path, qapp) -> None:

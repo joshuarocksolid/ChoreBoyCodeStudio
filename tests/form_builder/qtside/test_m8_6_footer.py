@@ -237,6 +237,37 @@ def _sentence(panel: DataPanel) -> str:
     return "" if label is None else label.text()
 
 
+def test_a_missing_driver_uses_the_driver_sentence(tmp_path: Path) -> None:
+    from app.features.form_builder.engine.data.schema_cache import refresh
+
+    connection = Connection(
+        "shop_pg",
+        "Shop postgres",
+        "postgres",
+        host="127.0.0.1",
+        port=5432,
+        database="cbcs",
+        user="cbcs",
+        password="none",
+    )
+
+    class Runner:
+        def schema(self, root, item, ask):
+            del root, item, ask
+            return {
+                "ok": False,
+                "kind": "no_driver",
+                "message": "Can't open shop_pg. psycopg: No module named 'psycopg'; pg8000: No module named 'pg8000'",
+            }
+
+    set_schema_runner(Runner())
+    try:
+        outcome = refresh(str(tmp_path), connection, lambda _item: "")
+    finally:
+        set_schema_runner(None)
+    assert outcome.reason == "No PostgreSQL driver could be loaded (tried psycopg, pg8000)."
+
+
 def _freeze(monkeypatch) -> None:
     import app.features.form_builder.engine.data.schema_cache as schema_cache
 

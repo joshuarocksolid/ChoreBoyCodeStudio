@@ -33,7 +33,7 @@ from app.features.form_builder.integration.provider import FormTabProvider
 from app.features.form_builder.qtside.dialogs.from_table import FromTableDialog, locale_date_format
 from app.features.form_builder.qtside.start.panel import NewFormPanel
 from app.features.form_builder.qtside.start.wizard import WIZARD_KEY, wizard_document
-from app.qt.qt_compat import exec_qt
+from app.qt.qt_compat import exec_qt, wrapper_is_valid
 from app.shell.tab_content_providers import TabMatchContext, TabSurfaceRequest
 from app.shell.theme_tokens import ShellThemeTokens
 
@@ -154,6 +154,31 @@ def perform_create(
         refresh()
     QTimer.singleShot(0, lambda: _close_start_tab(window, root))
     return result
+
+
+def _reload_open_main(window: object, root: str) -> None:
+    """Show the rewritten ``main.py`` in a tab that is already open.
+
+    The form undo step does not cover this file. The open tab is reloaded
+    from disk so it matches what F5 will run.
+    """
+
+    path = os.path.abspath(os.path.join(root, "main.py"))
+    if not os.path.isfile(path):
+        return
+    manager = getattr(window, "_editor_manager", None)
+    getter = getattr(manager, "get_tab", None)
+    if not callable(getter) or getter(path) is None:
+        return
+    with open(path, encoding="utf-8") as handle:
+        text = handle.read()
+    sync = getattr(window, "_editor_sync_workflow", None)
+    apply = getattr(sync, "apply_disk_content", None)
+    if not callable(apply):
+        return
+    from app.shell.editor_sync_workflow import EditorDiskSyncSource
+
+    apply(path, text, source=EditorDiskSyncSource.EXTERNAL_RELOAD)
 
 
 def open_new_form_tab(window: object, directory: Optional[str] = None) -> Optional[object]:
@@ -406,11 +431,12 @@ class NewFormSurface:
             chrome=chrome_for(self._request.theme),
             date_format=locale_date_format(),
             name_reason=self._panel.name_reason,
-            parent=self._panel,
+            parent=window if isinstance(window, QWidget) else self._panel,
             add_connection=add_connection,
         )
         dialog.create_requested.connect(lambda: self._create_from_dialog(dialog))
         exec_qt(dialog)
+        dialog.deleteLater()
 
     def _create_from_dialog(self, dialog: FromTableDialog) -> None:
         from app.features.form_builder.qtside.dialogs.table_apply import render_plans
@@ -444,14 +470,22 @@ class NewFormSurface:
         for stem, text in ordered:
             result = self._create_planned(stem, text, kinds.get(stem, ""), planned, schema)
             if result.refused:
-                self._panel.show_status(result.refused)
+                report_status(self._panel, self._host(), result.refused)
                 return
             if result.scope is not None and kinds.get(stem) != "list":
                 record_path = result.scope.ui_path
             elif result.scope is not None and not record_path:
                 record_path = result.scope.ui_path
+        # Accept while the dialog still exists. Opening the new form can close
+        # the New form tab, and the dialog was parented there.
+        if dialog.wants_start_screen():
+            from app.features.form_builder.engine.project.start_screen import apply_start_screen
+
+            apply_start_screen(root, dialog)
+            _reload_open_main(self._host(), root)
+        if dialog.isVisible():
+            dialog.accept()
         self._focus_data(record_path)
-        dialog.accept()
         self._reload_recents()
 
     def _create_planned(self, stem: str, text: str, kind: str, planned: object, schema: object) -> CreateResult:
@@ -582,16 +616,38 @@ class NewFormSurface:
 
     def _reload_recents(self) -> None:
         root = self._request.project_root
-        if not root:
-            self._panel.set_recents(())
-            return
         try:
+            if not root:
+                self._panel.set_recents(())
+                return
             self._panel.set_recents(recent_entries(root, OsFileSystem()))
         except ProjectOpError as exc:
-            self._panel.show_status(str(exc))
+            try:
+                self._panel.show_status(str(exc))
+            except RuntimeError:
+                return
+        except RuntimeError:
+            # Create closes the New form tab, and the recent list goes with it.
+            return
 
     def _host(self) -> object:
         return self._window
+
+
+def report_status(panel: object, window: object, text: str) -> None:
+    """Show ``text`` on the New form panel, or on the main window once that panel is gone."""
+
+    if wrapper_is_valid(panel):
+        show = getattr(panel, "show_status", None)
+        if callable(show):
+            try:
+                show(text)
+                return
+            except RuntimeError:
+                pass
+    status = getattr(window, "statusBar", None)
+    if callable(status):
+        status().showMessage(text)
 
 
 def ask_delete_template(parent: QWidget, name: str) -> bool:

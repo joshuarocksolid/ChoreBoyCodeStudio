@@ -1,0 +1,193 @@
+THEME light project /private/var/folders/_v/r_0nlrdd0w35yzl31qq88wl80000gn/T/pytest-of-local/pytest-4473/test_shop_owner_walk0/shop
+STEP 01 open phase=open
+  keys: (no key)
+  focus: shell.activityBar.btn.explorer acc=''
+  status: shell.startupStatusLabel='Startup: Capability data unavailable | Syntax highlighting off' | shell.pythonToolingStatusLabel='Python: tools ready | no project' | shell.projectStatusLabel='Project: Shop' | shell.editorStatusLabel='Editor: no file' | shell.completionModeStatusLabel='Completion: Manual · Ctrl+Space (Global setting)' | shell.runStatusLabel='Run: idle'
+  inspector:
+    (empty)
+  data:
+    (empty)
+  dialogs:
+    (empty)
+STEP 02 new-form phase=create
+  keys: Alt+Key_F -> focus=shell.menuBar sel=() | Key_Down -> focus=shell.menu.file sel=() | Key_Down -> focus=shell.menu.file sel=() | Key_Down -> focus=shell.menu.file sel=() | Key_Return -> focus=formBuilder.newForm.name sel=()
+  focus: formBuilder.newForm.name acc=''
+  status: shell.startupStatusLabel='Startup: Capability data unavailable | Syntax highlighting off' | shell.pythonToolingStatusLabel='Python: tools ready | no project' | shell.projectStatusLabel='Project: Shop' | shell.editorStatusLabel='Editor: no file' | shell.completionModeStatusLabel='Completion: Manual · Ctrl+Space (Global setting)' | shell.runStatusLabel='Run: idle'
+  inspector:
+    (empty)
+  data:
+    (empty)
+  dialogs:
+    (empty)
+STEP 03 name phase=create
+  keys: Control+Key_A -> focus=formBuilder.newForm.name sel=() | type 'invoice' -> focus=formBuilder.newForm.name
+  focus: formBuilder.newForm.name acc=''
+  status: shell.startupStatusLabel='Startup: Capability data unavailable | Syntax highlighting off' | shell.pythonToolingStatusLabel='Python: tools ready | no project' | shell.projectStatusLabel='Project: Shop' | shell.editorStatusLabel='Editor: no file' | shell.completionModeStatusLabel='Completion: Manual · Ctrl+Space (Global setting)' | shell.runStatusLabel='Run: idle'
+  inspector:
+    (empty)
+  data:
+    (empty)
+  dialogs:
+    (empty)
+STEP 04 card-from_table phase=create
+  keys: Key_Tab -> focus=formBuilder.newForm.folder sel=() | Key_Tab -> focus=formBuilder.newForm.card.data_entry sel=() | Key_Tab -> focus=formBuilder.newForm.card.list_detail sel=() | Key_Tab -> focus=formBuilder.newForm.card.table_search sel=() | Key_Tab -> focus=formBuilder.newForm.card.dialog_ok_cancel sel=() | Key_Tab -> focus=formBuilder.newForm.card.dialog_buttons_right sel=() | Key_Tab -> focus=formBuilder.newForm.card.widget sel=() | Key_Tab -> focus=formBuilder.newForm.card.main_window sel=() | Key_Tab -> focus=formBuilder.newForm.card.dialog sel=() | Key_Tab -> focus=formBuilder.newForm.card.wizard sel=() | Key_Tab -> focus=formBuilder.newForm.card.from_table sel=()
+  focus: formBuilder.newForm.card.from_table acc='Build a form from a table'
+  status: shell.startupStatusLabel='Startup: Capability data unavailable | Syntax highlighting off' | shell.pythonToolingStatusLabel='Python: tools ready | no project' | shell.projectStatusLabel='Project: Shop' | shell.editorStatusLabel='Editor: no file' | shell.completionModeStatusLabel='Completion: Manual · Ctrl+Space (Global setting)' | shell.runStatusLabel='Run: idle'
+  inspector:
+    (empty)
+  data:
+    (empty)
+  dialogs:
+    (empty)
+NOTE phase=create tables customers, invoice_lines, invoices, products
+NOTE phase=create start box enabled=True checked=True note=''
+NOTE phase=create create button 'Create invoice form with 5 fields and lines and a list' enabled=True
+STEP 05 make-invoice phase=create
+  keys: Key_Tab -> focus=formBuilder.fromTable.tables sel=() | Key_Home -> focus=formBuilder.fromTable.tables sel=() | Key_Down -> focus=formBuilder.fromTable.tables sel=() | Key_Down -> focus=formBuilder.fromTable.tables sel=() | Key_Tab -> focus=formBuilder.fromTable.mapping sel=() | Key_Tab -> focus=formBuilder.fromTable.make sel=() | Key_Down -> focus=formBuilder.fromTable.make sel=() | Key_Down -> focus=formBuilder.fromTable.make sel=() | Key_Tab -> focus=formBuilder.fromTable.lines sel=() | Key_Tab -> focus=formBuilder.fromTable.linesTable sel=() | Key_Tab -> focus=formBuilder.fromTable.start sel=() | Key_Space -> focus=formBuilder.fromTable.start sel=() | Key_Tab -> focus=formBuilder.fromTable.cancel sel=() | Key_Tab -> focus=formBuilder.fromTable.create sel=() | Key_Space -> focus=formBuilder.canvas sel=()
+  focus: formBuilder.canvas acc='Form canvas'
+  status: shell.startupStatusLabel='Startup: Runtime issues (4/9 checks) | Syntax highlighting off' | shell.pythonToolingStatusLabel='Python: tools ready | no project' | shell.projectStatusLabel='Project: Shop' | shell.editorStatusLabel='Delete line · Push button · column 3 of the horizontal layout' | shell.completionModeStatusLabel='Completion: Manual · Ctrl+Space (Global setting)' | shell.runStatusLabel='Run: idle'
+  inspector:
+    (empty)
+  data:
+    (empty)
+  dialogs:
+    (empty)
+NOTE phase=create wrote invoice.ui and list=True
+NOTE phase=create widgets Invoice, geometry, windowTitle, cbcsLogic, cbcsData, formLayout, recordBar, leftMargin, topMargin, rightMargin, bottomMargin, firstButton, text, sizePolicy, shortcut, cbcsEnabledWhen, cbcsOnClicked, previousButton, text, sizePolicy, shortcut, cbcsEnabledWhen, cbcsOnClicked, positionLabel, text, sizePolicy, cbcsValue, nextButton, text, sizePolicy, shortcut, cbcsEnabledWhen, cbcsOnClicked, lastButton, text, sizePolicy, shortcut, cbcsEnabledWhen, cbcsOnClicked, newButton, text, sizePolicy, shortcut, cbcsOnClicked, saveButton, text, sizePolicy, shortcut, cbcsEnabledWhen, cbcsOnClicked, revertButton, text, sizePolicy, cbcsEnabledWhen, cbcsOnClicked, deleteButton, text, sizePolicy, cbcsEnabledWhen, cbcsOnClicked, findButton, text, sizePolicy, shortcut, cbcsOnClicked, label, text, buddy, invoice_no, sizePolicy, cbcsBind, label_2, text, buddy, customer_id, sizePolicy, cbcsBind, cbcsLookup, label_3, text, buddy, invoice_date, sizePolicy, cbcsBind, label_4, text, buddy, notes, sizePolicy, cbcsBind, label_5, text, buddy, total, sizePolicy, cbcsBind, linesBox, leftMargin, topMargin, rightMargin, bottomMargin, invoice_linesView, minimumHeight, sizePolicy, cbcsRows, lineButtons, leftMargin, topMargin, rightMargin, bottomMargin, lineButtonSpacer, orientation, sizeHint, addLineButton, text, sizePolicy, cbcsOnClicked, deleteLineButton, text, sizePolicy, cbcsOnClicked
+NOTE phase=create data tab on open: 
+STEP 06 opened-record phase=create
+  keys: (no key)
+  focus: formBuilder.structure acc='Form structure'
+  status: shell.startupStatusLabel='Startup: Runtime issues (4/9 checks) | Syntax highlighting off' | shell.pythonToolingStatusLabel='Python: tools ready | no project' | shell.projectStatusLabel='Project: Shop' | shell.editorStatusLabel='Delete line · Push button · column 3 of the horizontal layout' | shell.completionModeStatusLabel='Completion: Manual · Ctrl+Space (Global setting)' | shell.runStatusLabel='Run: idle'
+  inspector:
+    (empty)
+  data:
+    (empty)
+  dialogs:
+    (empty)
+NOTE phase=create theme shot dark record
+STEP 07 select-customer phase=lookup
+  keys: Alt+Key_1 -> focus=formBuilder.structure sel=('deleteLineButton',) | Key_Home -> focus=formBuilder.structure sel=('Invoice',) | Key_Right -> focus=formBuilder.structure sel=('formLayout',) | Key_Down -> focus=formBuilder.structure sel=('recordBar',) | Key_Down -> focus=formBuilder.structure sel=('firstButton',) | Key_Down -> focus=formBuilder.structure sel=('previousButton',) | Key_Down -> focus=formBuilder.structure sel=('positionLabel',) | Key_Down -> focus=formBuilder.structure sel=('nextButton',) | Key_Down -> focus=formBuilder.structure sel=('lastButton',) | Key_Down -> focus=formBuilder.structure sel=('newButton',) | Key_Down -> focus=formBuilder.structure sel=('saveButton',) | Key_Down -> focus=formBuilder.structure sel=('revertButton',) | Key_Down -> focus=formBuilder.structure sel=('deleteButton',) | Key_Down -> focus=formBuilder.structure sel=('findButton',) | Key_Down -> focus=formBuilder.structure sel=('label',) | Key_Down -> focus=formBuilder.structure sel=('invoice_no',) | Key_Down -> focus=formBuilder.structure sel=('label_2',) | Key_Down -> focus=formBuilder.inspectorData.lookupShow sel=('customer_id',)
+  focus: formBuilder.inspectorData.lookupShow acc=''
+  status: shell.startupStatusLabel='Startup: Runtime issues (4/9 checks) | Syntax highlighting off' | shell.pythonToolingStatusLabel='Python: tools ready | no project' | shell.projectStatusLabel='Project: Shop' | shell.editorStatusLabel='Customer · Combo box · row 3 of the form layout' | shell.completionModeStatusLabel='Completion: Manual · Ctrl+Space (Global setting)' | shell.runStatusLabel='Run: idle'
+  inspector:
+    (empty)
+  data:
+    (empty)
+  dialogs:
+    (empty)
+STEP 08 inspector-data phase=lookup
+  keys: Alt+Key_D -> focus=formBuilder.dataBody sel=('customer_id',)
+  focus: formBuilder.dataBody acc=''
+  status: shell.startupStatusLabel='Startup: Runtime issues (4/9 checks) | Syntax highlighting off' | shell.pythonToolingStatusLabel='Python: tools ready | no project' | shell.projectStatusLabel='Project: Shop' | shell.editorStatusLabel='Customer · Combo box · row 3 of the form layout' | shell.completionModeStatusLabel='Completion: Manual · Ctrl+Space (Global setting)' | shell.runStatusLabel='Run: idle'
+  inspector:
+    (empty)
+  data:
+    (empty)
+  dialogs:
+    (empty)
+NOTE phase=lookup Show options ['id', 'name', 'phone', 'city', 'email'] current 'name'
+STEP 09 show-name phase=lookup
+  keys: Key_Tab -> focus=formBuilder.logic.readAsText sel=('customer_id',) | Key_Tab -> focus=formBuilder.logic.filter sel=('customer_id',) | Key_Tab -> focus=formBuilder.logic.chip.rules sel=('customer_id',) | Key_Tab -> focus=formBuilder.logic.chip.checks sel=('customer_id',) | Key_Tab -> focus=formBuilder.logic.chip.events sel=('customer_id',) | Key_Tab -> focus=formBuilder.logic.chip.problems sel=('customer_id',) | Key_Tab -> focus=formBuilder.logic.scroll sel=('customer_id',) | Key_Tab -> focus=formBuilder.runBehavior sel=('customer_id',) | Key_Tab -> focus=formBuilder.data.change sel=('customer_id',) | Key_Tab -> focus=formBuilder.data.more sel=('customer_id',) | Key_Tab -> focus=formBuilder.data.linesEdit sel=('customer_id',) | Key_Tab -> focus=formBuilder.data.bindByName sel=('customer_id',)
+  focus: formBuilder.inspectorData.lookupShow acc=''
+  status: shell.startupStatusLabel='Startup: Runtime issues (4/9 checks) | Syntax highlighting off' | shell.pythonToolingStatusLabel='Python: tools ready | no project' | shell.projectStatusLabel='Project: Shop' | shell.editorStatusLabel='Customer · Combo box · row 3 of the form layout' | shell.completionModeStatusLabel='Completion: Manual · Ctrl+Space (Global setting)' | shell.runStatusLabel='Run: idle'
+  inspector:
+    (empty)
+  data:
+    (empty)
+  dialogs:
+    (empty)
+NOTE phase=lines lines button 'Edit…'
+NOTE phase=lines after calculated column the boxes read ['', '', '']
+STEP 10 line-total phase=lines
+  keys: Control+Shift+Key_D -> focus=formBuilder.dataPanel sel=('customer_id',) | Key_Tab -> focus=formBuilder.runBehavior sel=('customer_id',) | Key_Tab -> focus=formBuilder.data.change sel=('customer_id',) | Key_Tab -> focus=formBuilder.data.more sel=('customer_id',) | Key_Tab -> focus=formBuilder.data.linesEdit sel=('customer_id',) | Key_Tab -> focus=formBuilder.data.linesLink sel=('customer_id',) | Key_Tab -> focus=formBuilder.data.linesOrder sel=('customer_id',) | Key_Tab -> focus=formBuilder.data.linesNumber sel=('customer_id',) | Key_Tab -> focus=formBuilder.data.linesColumns sel=('customer_id',) | Key_Tab -> focus=formBuilder.data.linesColumns sel=('customer_id',) | Key_Tab -> focus=formBuilder.data.linesColumns sel=('customer_id',) | Key_Tab -> focus=formBuilder.data.linesColumns sel=('customer_id',) | Key_Tab -> focus=formBuilder.data.linesColumns sel=('customer_id',) | Key_Tab -> focus=formBuilder.data.linesColumns sel=('customer_id',) | Key_Tab -> focus=formBuilder.data.linesColumns sel=('customer_id',) | Key_Tab -> focus=formBuilder.data.linesColumns sel=('customer_id',) | Key_Tab -> focus=formBuilder.data.linesColumns sel=('customer_id',) | type 'line_total' -> focus=QLineEdit | Key_Tab -> focus=QLineEdit sel=('customer_id',) | type 'Line total' -> focus=QLineEdit | Key_Tab -> focus=QLineEdit sel=('customer_id',) | type 'qty * price' -> focus=QLineEdit | Key_Tab -> focus=formBuilder.data.linesCalc sel=('customer_id',) | Key_Space -> focus=formBuilder.data.linesCalc sel=('customer_id',) | Key_Tab -> focus=formBuilder.data.linesAccept sel=('customer_id',) | Key_Space -> focus=formBuilder.data.linesEdit sel=('customer_id',) | Key_Space -> focus=formBuilder.data.linesEdit sel=('customer_id',)
+  focus: formBuilder.data.linesEdit acc=''
+  status: shell.startupStatusLabel='Startup: Runtime issues (4/9 checks) | Syntax highlighting off' | shell.pythonToolingStatusLabel='Python: tools ready | no project' | shell.projectStatusLabel='Project: Shop' | shell.editorStatusLabel='Customer · Combo box · row 3 of the form layout' | shell.completionModeStatusLabel='Completion: Manual · Ctrl+Space (Global setting)' | shell.runStatusLabel='Run: idle'
+  inspector:
+    (empty)
+  data:
+    (empty)
+  dialogs:
+    (empty)
+NOTE phase=total looking for a total under the lines
+STEP 11 seek-form-total phase=total
+  keys: (no key)
+  focus: formBuilder.data.linesEdit acc=''
+  status: shell.startupStatusLabel='Startup: Runtime issues (4/9 checks) | Syntax highlighting off' | shell.pythonToolingStatusLabel='Python: tools ready | no project' | shell.projectStatusLabel='Project: Shop' | shell.editorStatusLabel='Customer · Combo box · row 3 of the form layout' | shell.completionModeStatusLabel='Completion: Manual · Ctrl+Space (Global setting)' | shell.runStatusLabel='Run: idle'
+  inspector:
+    (empty)
+  data:
+    (empty)
+  dialogs:
+    (empty)
+STEP 12 select-total phase=total
+  keys: Alt+Key_1 -> focus=formBuilder.structure sel=('customer_id',) | Key_Home -> focus=formBuilder.structure sel=('Invoice',) | Key_Right -> focus=formBuilder.structure sel=('formLayout',) | Key_Down -> focus=formBuilder.structure sel=('recordBar',) | Key_Down -> focus=formBuilder.structure sel=('firstButton',) | Key_Down -> focus=formBuilder.structure sel=('previousButton',) | Key_Down -> focus=formBuilder.structure sel=('positionLabel',) | Key_Down -> focus=formBuilder.structure sel=('nextButton',) | Key_Down -> focus=formBuilder.structure sel=('lastButton',) | Key_Down -> focus=formBuilder.structure sel=('newButton',) | Key_Down -> focus=formBuilder.structure sel=('saveButton',) | Key_Down -> focus=formBuilder.structure sel=('revertButton',) | Key_Down -> focus=formBuilder.structure sel=('deleteButton',) | Key_Down -> focus=formBuilder.structure sel=('findButton',) | Key_Down -> focus=formBuilder.structure sel=('label',) | Key_Down -> focus=formBuilder.structure sel=('invoice_no',) | Key_Down -> focus=formBuilder.structure sel=('label_2',) | Key_Down -> focus=formBuilder.structure sel=('customer_id',) | Key_Down -> focus=formBuilder.structure sel=('label_3',) | Key_Down -> focus=formBuilder.structure sel=('invoice_date',) | Key_Down -> focus=formBuilder.structure sel=('label_4',) | Key_Down -> focus=formBuilder.structure sel=('notes',) | Key_Down -> focus=formBuilder.structure sel=('label_5',) | Key_Down -> focus=formBuilder.structure sel=('total',)
+  focus: formBuilder.structure acc='Form structure'
+  status: shell.startupStatusLabel='Startup: Runtime issues (4/9 checks) | Syntax highlighting off' | shell.pythonToolingStatusLabel='Python: tools ready | no project' | shell.projectStatusLabel='Project: Shop' | shell.editorStatusLabel='Total · Double spin box · row 6 of the form layout' | shell.completionModeStatusLabel='Completion: Manual · Ctrl+Space (Global setting)' | shell.runStatusLabel='Run: idle'
+  inspector:
+    (empty)
+  data:
+    (empty)
+  dialogs:
+    (empty)
+STEP 13 value-rule phase=total
+  keys: Alt+Key_B -> focus=formBuilder.events.first sel=('total',) | Shift+Key_Tab -> focus=formBuilder.checks.manual sel=('total',) | Shift+Key_Tab -> focus=formBuilder.checks.add sel=('total',) | Shift+Key_Tab -> focus=formBuilder.state.row.cbcsDefault sel=('total',) | Shift+Key_Tab -> focus=formBuilder.state.row.cbcsValue sel=('total',) | Key_Return -> focus=formBuilder.builder.shape sel=('total',) | Shift+Key_Tab -> focus=formBuilder.formula.switch sel=('total',) | Key_Space -> focus=formBuilder.formula sel=('total',) | type 'sum(invoice_linesView.line_total)' -> focus=formBuilder.formula | Control+Key_Return -> focus=formBuilder.state.row.cbcsValue sel=('total',)
+  focus: formBuilder.state.row.cbcsValue acc='Value  sum(invoice_linesView.line_total)   now: blank'
+  status: shell.startupStatusLabel='Startup: Runtime issues (4/9 checks) | Syntax highlighting off' | shell.pythonToolingStatusLabel='Python: tools ready | no project' | shell.projectStatusLabel='Project: Shop' | shell.editorStatusLabel='Total · Double spin box · row 6 of the form layout' | shell.completionModeStatusLabel='Completion: Manual · Ctrl+Space (Global setting)' | shell.runStatusLabel='Run: idle'
+  inspector:
+    (empty)
+  data:
+    (empty)
+  dialogs:
+    (empty)
+NOTE phase=try db hash before try dde92cf4c1de0f74a1d7e84474093f66bd1536b42c98b8f0b922ae5a53b42214
+NOTE phase=try preview process status ready child 73399 error None stderr ''
+CONFUSION phase=try What ran and the banner are in the preview process, not this window. The child is up and data/shop.db is left for the hash check.
+STEP 14 try-open phase=try
+  keys: Control+Key_S -> focus=formBuilder.state.row.cbcsValue sel=('total',) | Alt+Key_3 -> focus=formBuilder.canvas sel=('total',) | Control+Shift+Key_R -> focus=formBuilder.canvas sel=('total',)
+  focus: formBuilder.canvas acc='Form canvas'
+  status: shell.startupStatusLabel='Startup: Runtime issues (4/9 checks) | Syntax highlighting off' | shell.pythonToolingStatusLabel='Python: tools ready | no project' | shell.projectStatusLabel='Project: Shop' | shell.editorStatusLabel='Total · Double spin box · row 6 of the form layout' | shell.completionModeStatusLabel='Completion: Manual · Ctrl+Space (Global setting)' | shell.runStatusLabel='Run: idle'
+  inspector:
+    (empty)
+  data:
+    (empty)
+  dialogs:
+    (empty)
+NOTE phase=try banner '' strip ''
+CONFUSION phase=try Try has no form surface to press PgDown on.
+STEP 15 try-edit phase=try
+  keys: (no key)
+  focus: formBuilder.canvas acc='Form canvas'
+  status: shell.startupStatusLabel='Startup: Runtime issues (4/9 checks) | Syntax highlighting off' | shell.pythonToolingStatusLabel='Python: tools ready | no project' | shell.projectStatusLabel='Project: Shop' | shell.editorStatusLabel='Total · Double spin box · row 6 of the form layout' | shell.completionModeStatusLabel='Completion: Manual · Ctrl+Space (Global setting)' | shell.runStatusLabel='Run: idle'
+  inspector:
+    (empty)
+  data:
+    (empty)
+  dialogs:
+    (empty)
+NOTE phase=try after save banner '' what-ran 
+CONFUSION phase=try Try did not say the save was rolled back. What ran says ''.
+NOTE phase=try db hash after try dde92cf4c1de0f74a1d7e84474093f66bd1536b42c98b8f0b922ae5a53b42214 unchanged=True
+STEP 16 run phase=run
+  keys: Key_F5 -> focus=formBuilder.canvas sel=('total',)
+  focus: formBuilder.canvas acc='Form canvas'
+  status: shell.pythonToolingStatusLabel='Python: tools ready | no project' | shell.projectStatusLabel='Project: Shop' | shell.editorStatusLabel='Total · Double spin box · row 6 of the form layout' | shell.completionModeStatusLabel='Completion: Manual · Ctrl+Space (Global setting)' | shell.runStatusLabel='Run: running' | message='Saved invoice.ui · Running main.py'
+  inspector:
+    (empty)
+  data:
+    (empty)
+  dialogs:
+    (empty)
+NOTE phase=run status after F5 shell.pythonToolingStatusLabel='Python: tools ready | no project' | shell.projectStatusLabel='Project: Shop' | shell.editorStatusLabel='Total · Double spin box · row 6 of the form layout' | shell.completionModeStatusLabel='Completion: Manual · Ctrl+Space (Global setting)' | shell.runStatusLabel='Run: running' | message='Saved invoice.ui · Running main.py'
+NOTE phase=run top levels shell.mainWindow:ChoreBoy Code Studio v0.4.13
+NOTE phase=run rows before 1 after 1 lines 1 to 1 hash same True
+NOTE phase=run list search shows 'Acme'
+NOTE phase=run line fill qty=True price=True headers=['description', 'line total', 'price', 'product', 'qty']
+NOTE phase=run entry save True
+NOTE phase=run rows landed invoices 2 lines 2
+COUNTS open=1 create=5 lookup=3 lines=1 total=3 try=2 run=1 total=16
+CONFUSIONS 3
+What ran and the banner are in the preview process, not this window. The child is up and data/shop.db is left for the hash check.
+Try has no form surface to press PgDown on.
+Try did not say the save was rolled back. What ran says ''.
+NOTE phase=run run still inside F5; closing stray windows

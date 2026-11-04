@@ -502,7 +502,7 @@ M7.6 and M7.R run the §13.4.10 facts on the ChoreBoy VM, using the M6.R probe m
 | WP | Work | Who | Done when |
 | --- | --- | --- | --- |
 | M8.0s | Seams for M8 (above, and CONTRACTS §19.1's list: close-guard hook, setup-line order, model change signals, settings-page project scope) | G, O-logic | Empty sections register. A form with no data generates byte-identical to M7 |
-| M8.7 | Persona walkthroughs (UX §13.5.10): the shop owner and the Qt developer, keys-only, through Form from a table, lookups, lines, Try and the running app | G, O-UX | Findings fixed or ledgered, with walk shots |
+| M8.7 | Persona walkthroughs (UX §13.5.10): the shop owner and the Qt developer, keys-only, through Form from a table, lookups, lines, Try and the running app. The dialog can set `main.py` to open the new screen when that file is still the template (UX-TABLE-003) | G, O-UX | Findings fixed or ledgered, with walk shots |
 | M8.R | Review of M8: heuristic pass, K31–K34 together, UX-M8-003 speed rows on the Mac and the VM, the invoice demo on the VM against PostgreSQL 9.3, fix lanes. Carries M7.R's notes (`orch/m7r_notes.md`, "Carried to M8") | G, O-UX + O-logic | APPROVE. Ledger: every M8 row done |
 
 ### M9. Hardening and polish

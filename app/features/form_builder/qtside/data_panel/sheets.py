@@ -435,7 +435,7 @@ class BindSheet(QDialog):
             item = self._rows.takeAt(0)
             widget = item.widget()
             if widget is not None:
-                widget.setParent(None)
+                widget.hide()
                 widget.deleteLater()
         self._boxes = []
         for object_name, column in proposals(self._session):
@@ -537,7 +537,7 @@ class HooksDialog(QDialog):
             item = self._body.takeAt(0)
             widget = item.widget()
             if widget is not None:
-                widget.setParent(None)
+                widget.hide()
                 widget.deleteLater()
         source = record_source(self._session.document)
         for field, label, method, _params in HOOK_ROWS:

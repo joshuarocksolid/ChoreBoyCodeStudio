@@ -128,9 +128,12 @@ class FromTableDialog(QDialog):
         self._schema_tokens: Dict[str, Tuple[object, ...]] = {}
         self._preview_widget: Optional[QWidget] = None
         self._preview_view: Optional[QGraphicsView] = None
+        self._main_kind = "missing"
+        self._replaces = ""
         self._build()
         self._apply_chrome()
         self._load_saved_connections()
+        self._read_main_state()
         self._sync_button()
 
     def set_database(self, path: str, connection: str = "") -> None:
@@ -285,7 +288,9 @@ class FromTableDialog(QDialog):
         self._mapping = QTableWidget(0, len(_HEADERS), self)
         self._mapping.setObjectName("formBuilder.fromTable.mapping")
         self._mapping.setHorizontalHeaderLabels(list(_HEADERS))
+        self._mapping.setTabKeyNavigation(False)
         self._mapping.itemChanged.connect(self._on_item_changed)
+        self._mapping.installEventFilter(self)
         self._mapping.viewport().installEventFilter(self)
         self._fitting_columns = False
         body.addWidget(self._mapping, 3)
@@ -297,6 +302,17 @@ class FromTableDialog(QDialog):
         body.addWidget(preview_host, 2)
 
         footer = QHBoxLayout()
+        start_box = QVBoxLayout()
+        self._start = QCheckBox("Open this screen when the app starts", self)
+        self._start.setObjectName("formBuilder.fromTable.start")
+        self._start_user = False
+        self._start.toggled.connect(self._on_start_toggled)
+        self._start_note = QLabel("", self)
+        self._start_note.setObjectName("formBuilder.fromTable.startNote")
+        self._start_note.setWordWrap(True)
+        start_box.addWidget(self._start)
+        start_box.addWidget(self._start_note)
+        footer.addLayout(start_box, 1)
         self._reason = QLabel("", self)
         self._reason.setObjectName("formBuilder.fromTable.reason")
         footer.addWidget(self._reason, 1)
@@ -312,6 +328,7 @@ class FromTableDialog(QDialog):
         self._create.clicked.connect(self.create_requested.emit)
         footer.addWidget(self._create)
         root.addLayout(footer)
+        self._chain_tabs()
         self._fit_columns()
 
     def showEvent(self, event: object) -> None:  # type: ignore[override]
@@ -376,9 +393,12 @@ class FromTableDialog(QDialog):
             for item in loaded.connections:
                 self._connections[item.name] = item
                 self._connection.addItem(item.title or item.name, item.name)
-                if item.name not in known:
+                # `before` is the set from the last load. A name that was not
+                # in that set is the connection just added. The first open
+                # passes no `before`, so the first saved connection stays put.
+                if before is not None and item.name not in known:
                     fresh = item.name
-        target = prefer if prefer in self._connections else fresh
+        target = fresh or (prefer if prefer in self._connections else "")
         if not target and self._connection.count():
             target = str(self._connection.itemData(0) or "")
         index = self._connection.findData(target) if target else -1
@@ -389,6 +409,7 @@ class FromTableDialog(QDialog):
             self._on_connection()
 
     def _on_connection(self) -> None:
+        self._read_main_state()
         name = str(self._connection.currentData() or "")
         connection = self._connections.get(name) if hasattr(self, "_connections") else None
         if connection is None:
@@ -601,6 +622,7 @@ class FromTableDialog(QDialog):
         combo.setCurrentIndex(chosen)
         combo.setToolTip(widget_class)
         combo.blockSignals(False)
+        combo.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         return combo
 
     def _on_shows_as_changed(self, row: int, box: QComboBox) -> None:
@@ -610,7 +632,92 @@ class FromTableDialog(QDialog):
             return
         self._set_shows_as(row, str(chosen))
 
+    def wants_start_screen(self) -> bool:
+        offer = getattr(self, "_start_offer", None)
+        return bool(offer is not None and offer.enabled and self._start.isChecked())
+
+    def start_module(self) -> str:
+        offer = getattr(self, "_start_offer", None)
+        return "" if offer is None else offer.module
+
+    def start_class(self) -> str:
+        offer = getattr(self, "_start_offer", None)
+        return "" if offer is None else offer.class_name
+
+    def start_sentence(self) -> str:
+        return self._start_note.text()
+
+    def _on_start_toggled(self, _checked: bool) -> None:
+        if self._start.isEnabled():
+            self._start_user = True
+
+    def _read_main_state(self) -> None:
+        from app.features.form_builder.engine.project.start_screen import launched_class, main_kind
+
+        template = _template_main_bytes(self._project_root)
+        self._main_kind = main_kind(self._project_root, template)
+        self._replaces = launched_class(template)
+
+    def _sync_start(self) -> None:
+        from app.features.form_builder.engine.project.start_screen import present
+
+        made = present(
+            self._main_kind,
+            self._replaces,
+            self._stem,
+            str(self._make.currentData() or "record"),
+        )
+        self._start_offer = made
+        self._start.blockSignals(True)
+        self._start.setEnabled(made.enabled)
+        self._start.setText(made.label)
+        if made.enabled:
+            if not self._start_user:
+                self._start.setChecked(made.checked)
+            self._start_note.setText("")
+        else:
+            self._start.setChecked(False)
+            self._start_note.setText(made.sentence)
+        self._start.blockSignals(False)
+        self._start_note.setVisible(not made.enabled)
+
+    def _chain_tabs(self) -> None:
+        """Tables, the grid, then Make and the buttons. Tab must leave the grid."""
+
+        order = (
+            self._connection,
+            self._tables,
+            self._mapping,
+            self._make,
+            self._lines,
+            self._lines_table,
+            self._lines_link,
+            self._start,
+            self._cancel,
+            self._create,
+        )
+        for earlier, later in zip(order, order[1:]):
+            QWidget.setTabOrder(earlier, later)
+
+    def _open_shows_as(self, event: object) -> bool:
+        key = enum_value(getattr(event, "key")())
+        mods = enum_value(getattr(event, "modifiers")())
+        alt_down = key == enum_value(Qt.Key_Down) and bool(mods & enum_value(Qt.AltModifier))
+        if key not in (enum_value(Qt.Key_F2), enum_value(Qt.Key_Space)) and not alt_down:
+            return False
+        if self._mapping.currentColumn() != 3:
+            return False
+        box = self._mapping.cellWidget(self._mapping.currentRow(), 3)
+        if not isinstance(box, QComboBox):
+            return False
+        box.setFocus()
+        box.showPopup()
+        return True
+
     def eventFilter(self, watched: object, event: object) -> bool:  # type: ignore[override]
+        if watched is self._mapping and enum_value(getattr(event, "type")()) == enum_value(QEvent.KeyPress):
+            if self._open_shows_as(event):
+                return True
         viewport = self._mapping.viewport()
         if watched is viewport and enum_value(getattr(event, "type")()) == enum_value(QEvent.Resize):
             self._fit_columns()
@@ -674,6 +781,7 @@ class FromTableDialog(QDialog):
             editor.setFixedWidth(max(rect.width(), 1))
 
     def _sync_button(self) -> None:
+        self._sync_start()
         count = self.included_count()
         table = self._tables.currentItem()
         name = table.text() if table is not None else ""
@@ -827,6 +935,11 @@ class FromTableDialog(QDialog):
         # Top-left and fitted to the pane width, so the form reflows like the app would.
         view.setAlignment(Qt.AlignLeft | Qt.AlignTop)
         view.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        view.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        view.viewport().setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        widget.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        for child in widget.findChildren(QWidget):
+            child.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         view.viewport().installEventFilter(self)
         self._preview_view = view
         self._swap_preview(view, widget)
@@ -864,7 +977,9 @@ class FromTableDialog(QDialog):
             item = self._preview.takeAt(0)
             old = item.widget()
             if old is not None:
-                old.setParent(None)
+                # setParent(None) would turn the old preview into a real window
+                # and steal the keyboard from the dialog.
+                old.hide()
                 old.deleteLater()
         self._preview_widget = form
         self._preview.addWidget(shown)
@@ -916,6 +1031,21 @@ class FromTableDialog(QDialog):
                 chrome.border,
             )
         )
+
+
+def _template_main_bytes(project_root: str) -> Optional[bytes]:
+    """``templates/<id>/main.py`` for the project, read from the application root."""
+
+    from app.bootstrap.paths import resolve_app_root
+    from app.features.form_builder.engine.project.start_screen import project_template_id
+
+    template_id = project_template_id(project_root)
+    if not template_id:
+        return None
+    path = resolve_app_root() / "templates" / template_id / "main.py"
+    if not path.is_file():
+        return None
+    return path.read_bytes()
 
 
 def _now() -> str:

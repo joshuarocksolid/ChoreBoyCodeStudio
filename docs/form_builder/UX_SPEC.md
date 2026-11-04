@@ -409,6 +409,8 @@ Clicking a card, or pressing Enter on a focused card, creates the files with the
 
 **UX-TABLE-002** `M8.3d` `[S]` From M8 the source is a named connection, and the created form is bound, as UX F13 (§13.5.1) describes. Until then it lays out unbound fields from a SQLite file.
 
+**UX-TABLE-003** `M8.7` `[S]` The dialog has "Open this screen when the app starts". It is ticked only when the project's `main.py` is missing. When `main.py` is still the template, the box is unticked and its label names the class that file already opens: "Open this screen when the app starts (instead of MainWindow)". Ticking it rewrites `main.py` in the Qt App shape so F5 opens the list screen when Make includes a list, and the record form otherwise. An open `main.py` tab reloads from that write. When `main.py` has the person's own code the box is off and disabled, and the dialog shows the §13.5.9 sentence that names the class and the `forms/…_window.py` file. The form undo step does not restore `main.py`.
+
 ### 4.3 Workbench layout
 
 ```
@@ -3102,7 +3104,7 @@ On screen these words are never used: "query" (except a list screen's own SQL), 
 | F10 | Conflicts | Check by default: an update compares the loaded values (LOGIC §5.5). On a conflict: "Someone else changed this invoice since you opened it." [Reload their version] [Keep mine and save] [Cancel]. "Keep mine and save" is shown only when the source allows overwrite; otherwise it is absent | LOGIC §2.11, plus the honest third choice where the developer allowed it |
 | F11 | Try with data | Owner decision 2. **SQLite**: a scratch copy, made when Try starts and dropped when it closes. **PostgreSQL**: each verb's statements run in one transaction that is rolled back as soon as the verb finishes. The form then shows the values the database returned inside that transaction. A banner across the top of the Try window: "Try: changes to {connection} are rolled back. While a save runs, other people using it may wait up to 2 seconds." (owner decision 2's lock warning) Statement timeout 5 s and lock timeout 2 s (`SET LOCAL`). A per-connection setting **In Try, only show the SQL** turns writes into "Would run" lines. What ran shows every statement with its values. A record created in Try stays new after its save: the form shows it as saved, says "rolled back" in What ran, and leaving it discards it. Try refuses data when the source uses your own connection hook (the `connection` hook, UX-DATA-007 and LOGIC §5.9), and runs that form with data steps as "Would run" only, saying why When a write used a sequence (`nextval`), or the table has triggers, What ran adds the side-effect warning of §13.5.9 | Realistic writes with no lasting change, and locks held for milliseconds |
 | F12 | Schema | SQLite is read in the editor with the standard `sqlite3` in read-only mode (`mode=ro`). PostgreSQL is read by the schema helper, a short-lived AppRun child (CONTRACTS §19.7). The editor process never imports a PostgreSQL driver. The result is cached in `cbcs/schema/{connection}.json`. Every data screen shows "Columns read {date, time}" with [Refresh]. A cache older than 7 days says "(may be out of date)" in `fb.warning` | Offline design, and native libraries stay out of the editor |
-| F13 | Form from table | The Start screen's "Form from a table" (UX-TABLE-002) starts from a connection, not a file: "Connection [Shop database ▾] [Add connection…]". It gains "Make" with three choices: **Record form** (default), **List screen**, and **List screen and record form**. A record form can include its lines when another table points to this one ("Include lines from invoice_lines"). The result is bound, has the record toolbar, and opens with the Data tab showing | One path from a database to a working app |
+| F13 | Form from table | The Start screen's "Form from a table" (UX-TABLE-002) starts from a connection, not a file: "Connection [Shop database ▾] [Add connection…]". It gains "Make" with three choices: **Record form** (default), **List screen**, and **List screen and record form**. A record form can include its lines when another table points to this one ("Include lines from invoice_lines"). "Open this screen when the app starts" (UX-TABLE-003) is ticked only when `main.py` is missing. A stock template leaves it unticked and names the class that file opens. Ticking it rewrites `main.py`, so F5 opens the list screen, or the record form when Make has no list. The result is bound, has the record toolbar, and opens with the Data tab showing | One path from a database to a working app |
 | F14 | Eject | Data tab ⋯ › "Eject to code…" opens a dialog listing what will change: the methods added to the window file, the properties removed, and the steps rewired. [Eject] [Cancel]. It is one undo step in the form and one in the window file. Undo restores both while both files are open in this session | Decision 12 |
 | F15 | Keys | Ctrl+Shift+D: the Data tab with its column list focused. Alt+D in the inspector: the Data tab. In the column list, Enter inserts a new bound field after the canvas selection, and focus stays in the list so the next Enter inserts the next one. Shift+Enter binds the column to the selected field instead. Keys in the running app are the toolbar buttons' own shortcuts (Ctrl+N, Ctrl+S, PgUp, PgDown, Ctrl+Home, Ctrl+End, Ctrl+F) | Builds on UX-KEY-004 with no rebinding. Alt+D is unused in the inspector |
 
@@ -3148,7 +3150,7 @@ A password the policy needs is asked once per editor session: "Password for cler
 4. **Buttons:** [Bind fields by name] [Add record toolbar].
 5. **Footer:** "Columns read 2 Nov 14:02 [Refresh]".
 
-At 184 px the type words wrap under the column name. The column name never elides.
+At 184 px, 236 px, and the default 232 px left pane, the column name is on its own line and elides with a tooltip of the full name. The type and notes are on the next line. The bound field is on the third line, or elided at the right.
 
 **UX-DATA-004** `M8.2` `[S T]` Dragging a column onto the canvas inserts a labelled field of the suggested class (LOGIC §5.3 table) and kind. Its object name is the column name, and it is bound, all in one undo step. A column that points to another table inserts a lookup combo (§13.5.5). Enter and Shift+Enter do the same from the keyboard (F15). Dropping a column onto an existing compatible field binds it instead, and the drop hint reads "Bind to invoice_date". An incompatible field shows the not-allowed drop with "A date column can't be shown in a check box."
 
@@ -3197,7 +3199,7 @@ A lookup over a table with more than 2,000 rows shows "customers has 12,480 rows
 - "Order by [line_no ▾]".
 - "Number lines in [line_no ▾ / none]".
 - A column list: Include, Column, Header, Kind, Default, Lookup, Read-only.
-- "+ Calculated column", which adds a name, a header and a formula.
+- "+ Calculated column", which adds a name, a header and a formula. Each added column stays listed as its name, its formula, and × to remove it.
 
 [Add lines] inserts a `QTableView` named `{table}View`, or binds the selected table view, with Add line and Delete line buttons under it. The buttons carry the steps "Add a line" and "Delete the line" (two new Records verbs). One undo step.
 
@@ -3278,6 +3280,10 @@ Sentences, en_US, following UX-M6-001 and UX-M7-001. `{record}` is the record wo
 | Schema, unreachable | "Using columns read {date}. Can't reach {connection}: {reason}" |
 | Bind, type | "A {type words} column can't be shown in a {class words}." |
 | Bind, missing | "{table} has no column named {column}." |
+| Start, checkbox | "Open this screen when the app starts" |
+| Start, stock template | "Open this screen when the app starts (instead of {class})" |
+| Start, own code | "main.py has your own code, so it stays as it is. To start on this screen, open {class} from {path} in main.py." |
+| Lines, total | "To total the lines, give Total the Value sum({view}.{column})." |
 
 \* only when the source allows overwrite.
 

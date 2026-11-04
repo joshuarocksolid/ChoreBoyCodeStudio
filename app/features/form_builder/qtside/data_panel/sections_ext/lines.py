@@ -6,10 +6,17 @@ from typing import Any
 
 from app.features.form_builder.engine.commands.base import CommandRejected
 from app.features.form_builder.qtside.data_panel.host import narrate, session_of
-from app.features.form_builder.qtside.data_panel.lines_sheet import child_tables, lines_on, open_lines_sheet, summary
+from app.features.form_builder.qtside.data_panel.lines_sheet import (
+    child_tables,
+    lines_on,
+    open_lines_sheet,
+    summary,
+    total_hint,
+)
 from app.features.form_builder.qtside.data_panel.model import record_source
 from app.features.form_builder.qtside.data_panel.sections_ext import PanelSection
-from app.qt.QtWidgets import QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
+from app.features.form_builder.qtside.data_panel.sections_ext.wrap import WrappedLabel
+from app.qt.QtWidgets import QPushButton, QSizePolicy, QVBoxLayout, QWidget
 
 
 def _create(host: Any) -> QWidget:
@@ -17,26 +24,30 @@ def _create(host: Any) -> QWidget:
     body.setObjectName("formBuilder.data.lines")
     layout = QVBoxLayout(body)
     layout.setContentsMargins(0, 0, 0, 0)
-    row = QHBoxLayout()
-    layout.addLayout(row)
-    sentence = QLabel(body)
+    layout.setSpacing(4)
+    sentence = WrappedLabel("", body)
     sentence.setObjectName("formBuilder.data.linesText")
-    sentence.setWordWrap(True)
-    row.addWidget(sentence, 1)
+    layout.addWidget(sentence)
     edit = QPushButton("Edit…", body)
     edit.setObjectName("formBuilder.data.linesEdit")
+    edit.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Fixed)
     edit.clicked.connect(lambda: _edit(host))
-    row.addWidget(edit)
+    layout.addWidget(edit)
     add = QPushButton("Add lines…", body)
     add.setObjectName("formBuilder.data.linesAdd")
+    add.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Fixed)
     add.clicked.connect(lambda: _add(host))
-    row.addWidget(add)
+    layout.addWidget(add)
+    hint = WrappedLabel("", body)
+    hint.setObjectName("formBuilder.data.linesTotal")
+    layout.addWidget(hint)
 
     def refresh() -> None:
         session = session_of(host)
         document = session.document if session is not None else None
         found = lines_on(document) if document is not None else ()
         sentence.setText(summary(document) if document is not None else "")
+        hint.setText(total_hint(document) if document is not None else "")
         edit.setVisible(bool(found))
         add.setVisible(not found)
 

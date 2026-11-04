@@ -238,6 +238,27 @@ class _HookRequest:
     event_words: str = ""
 
 
+_HOOK_CLAUSE = {
+    "after_load": "after %s is shown",
+    "before_save": "before %s is saved",
+    "after_save": "after %s is saved",
+    "before_delete": "before %s is deleted",
+    "after_delete": "after %s is deleted",
+    "new_record": "when a new %s starts",
+    "db_connection": "when %s connects",
+}
+
+
+def hook_event_words(method: str, object_name: str) -> str:
+    """The clause in ``Runs {clause}.`` The undo label is not this sentence."""
+
+    name = (object_name or "").strip() or "the form"
+    pattern = _HOOK_CLAUSE.get(method)
+    if pattern is None:
+        return method
+    return pattern % name
+
+
 def _make_method(surface: object, label: str, command: object, method: str, params: str, session: object) -> object:
     from app.features.form_builder.qtside.pickers import method_actions
 
@@ -246,13 +267,14 @@ def _make_method(surface: object, label: str, command: object, method: str, para
     if not callable(make):
         return "The window-file path is not available, so only the hook name was stored."
     root = session.document.root
+    sender = getattr(root, "object_name", "") or ""
     request = _HookRequest(
         label,
         (command,),
         method,
         params,
-        getattr(root, "object_name", "") or "",
-        label,
+        sender,
+        hook_event_words(method, sender),
     )
     try:
         outcome = make(surface, request)

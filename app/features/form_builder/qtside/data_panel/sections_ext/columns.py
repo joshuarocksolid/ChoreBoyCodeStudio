@@ -19,10 +19,10 @@ from app.features.form_builder.qtside.data_panel.model import (
     record_source,
 )
 from app.features.form_builder.qtside.data_panel.sections_ext import PanelSection
+from app.features.form_builder.qtside.data_panel.sections_ext.wrap import WrappedLabel, show_elided
 from app.qt.QtCore import QByteArray, Qt
 from app.qt.QtGui import QCursor, QDrag
 from app.qt.QtWidgets import (
-    QGridLayout,
     QLabel,
     QSizePolicy,
     QVBoxLayout,
@@ -73,31 +73,26 @@ class _Row(QWidget):
         self.setObjectName("formBuilder.data.columnRow")
         self.setProperty("column", column.name)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
-        self.setFixedHeight(24)
         self._section = section
         self._column = column
         self._press: Optional[object] = None
-        layout = QGridLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setHorizontalSpacing(8)
-        layout.setColumnStretch(0, 1)
-        layout.setColumnMinimumWidth(1, 112)
-        name = QLabel(column.name, self)
-        name.setFixedWidth(112)
-        name.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
-        layout.addWidget(name, 0, 0)
-        self._words = QLabel(self)
-        self._words.setFixedWidth(148)
-        self._words.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
-        layout.addWidget(self._words, 0, 1)
-        self._badges = QLabel(self)
-        self._badges.setProperty("fbFaint", True)
-        self._badges.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Preferred)
-        layout.addWidget(self._badges, 0, 2)
+        self._bound_full = ""
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 2, 0, 2)
+        layout.setSpacing(0)
+        self._name = QLabel(column.name, self)
+        self._name.setObjectName("formBuilder.data.columnName")
+        self._name.setMinimumWidth(0)
+        layout.addWidget(self._name)
+        self._words = WrappedLabel("", self)
+        self._words.setObjectName("formBuilder.data.columnWords")
+        self._words.setProperty("fbFaint", True)
+        layout.addWidget(self._words)
         self._bound = QLabel(self)
         self._bound.setObjectName("formBuilder.data.bound")
+        self._bound.setMinimumWidth(0)
         self._bound.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
-        layout.addWidget(self._bound, 0, 3)
+        layout.addWidget(self._bound)
         self.refresh()
 
     def refresh(self) -> None:
@@ -105,25 +100,38 @@ class _Row(QWidget):
         source = record_source(session.document) if session is not None else None
         engine = column_engine(session.document, source, session, self._section) if source is not None and session is not None else "sqlite"
         kind = column_kind(self._column, engine, lookup=True)
-        self._words.setText(str(getattr(kind, "words", "")))
-        self._badges.setText(_badges(self._section, self._column))
+        notes = str(getattr(kind, "words", ""))
+        badges = _badges(self._section, self._column)
+        self._words.setText(notes if not badges else "%s %s" % (notes, badges))
         field = bound_field(session.document, self._column.name) if session is not None else ""
         if field:
-            self._bound.setText(field)
+            self._bound_full = field
             self._bound.setProperty("fbLink", True)
             self._bound.setProperty("fbFaint", False)
             self._bound.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         else:
-            self._bound.setText("(not bound)")
+            self._bound_full = "(not bound)"
             self._bound.setProperty("fbLink", False)
             self._bound.setProperty("fbFaint", True)
             self._bound.setCursor(QCursor(Qt.CursorShape.ArrowCursor))
         phrase = "bound to %s" % field if field else "not bound"
         self.setAccessibleName("%s, %s, %s" % (self._column.name, getattr(kind, "words", ""), phrase))
+        self._fit(self.width())
+
+    def resizeEvent(self, event: object) -> None:  # noqa: N802
+        super().resizeEvent(event)  # type: ignore[arg-type]
+        self._fit(self.width())
+
+    def _fit(self, width: int) -> None:
+        self._elide(self._name, self._column.name, width)
+        self._elide(self._bound, self._bound_full, width)
+
+    def _elide(self, label: QLabel, full: str, width: int) -> None:
+        show_elided(label, full, width)
 
     def _select(self) -> None:
         session = session_of(self._section)
-        name = self._bound.text()
+        name = self._bound_full
         if session is None or not name or name == "(not bound)":
             return
         ids = session.document.by_name(name)
@@ -194,7 +202,7 @@ class _Columns(QWidget):
             item = self._rows.takeAt(0)
             widget = item.widget()
             if widget is not None:
-                widget.setParent(None)
+                widget.hide()
                 widget.deleteLater()
         session = session_of(self)
         source = record_source(session.document) if session is not None else None
