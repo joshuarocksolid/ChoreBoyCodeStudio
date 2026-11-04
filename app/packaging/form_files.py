@@ -19,8 +19,8 @@ from app.features.form_builder.engine.project.packaging import (
     inspect_forms,
     save_form_now,
 )
-from app.packaging.payload_policy import DEFAULT_PACKAGING_PAYLOAD_POLICY
 from app.features.form_builder.engine.ui4.reader import UiReadError
+from app.packaging.payload_policy import DEFAULT_PACKAGING_PAYLOAD_POLICY
 
 _FIX_LABEL = "Save the form now"
 _PYSIDE2_NEXT = "Open this project in FreeCAD 1.1 or later and save the form."
@@ -215,13 +215,26 @@ def _missing_loaded_ui_issues(project_root: str) -> list[RuntimeIssue]:
     issues: list[RuntimeIssue] = []
     seen: set[str] = set()
     for site in scan_ui_loaders(project_root):
-        relative = _loaded_ui_relative(root, site.ui_literal)
-        if relative is None or relative in seen:
+        # A literal can be relative to the project root (the run folder) or to the script that loads it.
+        script_dir = Path(site.path).resolve().parent
+        candidates = [
+            found
+            for found in (
+                _loaded_ui_relative(root, root, site.ui_literal),
+                _loaded_ui_relative(root, script_dir, site.ui_literal),
+            )
+            if found is not None
+        ]
+        if not candidates:
+            continue
+        relative = candidates[0]
+        if relative in seen:
             continue
         seen.add(relative)
-        path = root / relative
-        excluded = DEFAULT_PACKAGING_PAYLOAD_POLICY.is_payload_excluded(Path(relative))
-        if path.is_file() and not excluded:
+        if any(
+            (root / found).is_file() and not DEFAULT_PACKAGING_PAYLOAD_POLICY.is_payload_excluded(Path(found))
+            for found in candidates
+        ):
             continue
         try:
             source = relative_posix(site.path, project_root)
@@ -252,8 +265,8 @@ def _missing_loaded_ui_issues(project_root: str) -> list[RuntimeIssue]:
     return issues
 
 
-def _loaded_ui_relative(root: Path, literal: str | None) -> str | None:
-    """Project-relative ``.ui`` path a loader names, or None when it is not one."""
+def _loaded_ui_relative(root: Path, base: Path, literal: str | None) -> str | None:
+    """Project-relative ``.ui`` path a loader names from ``base``, or None when it is not one."""
     if not literal:
         return None
     text = literal.replace("\\", "/").strip()
@@ -263,7 +276,7 @@ def _loaded_ui_relative(root: Path, literal: str | None) -> str | None:
     if relative.is_absolute() or relative.suffix != ".ui":
         return None
     try:
-        resolved = (root / relative).resolve().relative_to(root)
+        resolved = (base / relative).resolve().relative_to(root)
     except ValueError:
         return None
     if resolved.suffix != ".ui":

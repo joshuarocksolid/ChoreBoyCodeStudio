@@ -53,3 +53,23 @@ def test_loaded_form_is_in_the_package_and_missing_fails_the_step(tmp_path: Path
     ]
     assert [issue.summary for issue in missing] == ["forms/login.ui is not in the package."]
     assert missing[0].is_blocking
+
+
+def test_a_path_next_to_the_loading_script_is_not_reported_missing(tmp_path: Path) -> None:
+    root = tmp_path / "project"
+    (root / "cbcs").mkdir(parents=True)
+    (root / "cbcs" / "project.json").write_text('{"name":"Login"}\n', encoding="utf-8")
+    create_form(str(root), "login", OsFileSystem(), template="widget")
+    src = root / "src"
+    src.mkdir()
+    (src / "login.ui").write_text((root / "forms" / "login.ui").read_text(encoding="utf-8"), encoding="utf-8")
+    (src / "screens.py").write_text(
+        "def open_form():\n"
+        "    from PySide6.QtUiTools import QUiLoader\n"
+        '    return QUiLoader().load("login.ui")\n',
+        encoding="utf-8",
+    )
+    from app.packaging.form_files import form_packaging_issues
+
+    ids = [issue.issue_id for issue in form_packaging_issues(str(root))]
+    assert "package.form.loaded_ui_missing" not in ids
