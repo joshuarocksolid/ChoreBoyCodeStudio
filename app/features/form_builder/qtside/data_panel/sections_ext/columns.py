@@ -194,7 +194,7 @@ class _Columns(QWidget):
             item = self._rows.takeAt(0)
             widget = item.widget()
             if widget is not None:
-                widget.setParent(None)
+                widget.hide()
                 widget.deleteLater()
         session = session_of(self)
         source = record_source(session.document) if session is not None else None

@@ -376,7 +376,11 @@ class FromTableDialog(QDialog):
             for item in loaded.connections:
                 self._connections[item.name] = item
                 self._connection.addItem(item.title or item.name, item.name)
-                if item.name not in known:
+                # `before` is the set from the last load. A name that appears
+                # after Add connection is the one the person just made. On the
+                # first open every name is new, and the first row is the one
+                # they already have.
+                if before is not None and item.name not in known:
                     fresh = item.name
         target = prefer if prefer in self._connections else fresh
         if not target and self._connection.count():
@@ -831,6 +835,11 @@ class FromTableDialog(QDialog):
         self._preview_view = view
         self._swap_preview(view, widget)
         QTimer.singleShot(0, self._fit_preview)
+        from app.qt.QtWidgets import QApplication
+
+        focus = QApplication.focusWidget()
+        if focus is not None:
+            focus.setFocus()
 
     def _fit_preview(self) -> None:
         view = self._preview_view
@@ -864,7 +873,9 @@ class FromTableDialog(QDialog):
             item = self._preview.takeAt(0)
             old = item.widget()
             if old is not None:
-                old.setParent(None)
+                # setParent(None) would turn the old preview into a real window
+                # and steal the keyboard from the dialog.
+                old.hide()
                 old.deleteLater()
         self._preview_widget = form
         self._preview.addWidget(shown)

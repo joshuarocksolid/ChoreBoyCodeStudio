@@ -406,7 +406,7 @@ class NewFormSurface:
             chrome=chrome_for(self._request.theme),
             date_format=locale_date_format(),
             name_reason=self._panel.name_reason,
-            parent=self._panel,
+            parent=window if isinstance(window, QWidget) else self._panel,
             add_connection=add_connection,
         )
         dialog.create_requested.connect(lambda: self._create_from_dialog(dialog))
@@ -450,8 +450,11 @@ class NewFormSurface:
                 record_path = result.scope.ui_path
             elif result.scope is not None and not record_path:
                 record_path = result.scope.ui_path
+        # Accept while the dialog still exists. Opening the new form can close
+        # the New form tab, and the dialog was parented there.
+        if dialog.isVisible():
+            dialog.accept()
         self._focus_data(record_path)
-        dialog.accept()
         self._reload_recents()
 
     def _create_planned(self, stem: str, text: str, kind: str, planned: object, schema: object) -> CreateResult:
@@ -582,13 +585,19 @@ class NewFormSurface:
 
     def _reload_recents(self) -> None:
         root = self._request.project_root
-        if not root:
-            self._panel.set_recents(())
-            return
         try:
+            if not root:
+                self._panel.set_recents(())
+                return
             self._panel.set_recents(recent_entries(root, OsFileSystem()))
         except ProjectOpError as exc:
-            self._panel.show_status(str(exc))
+            try:
+                self._panel.show_status(str(exc))
+            except RuntimeError:
+                return
+        except RuntimeError:
+            # Create closes the New form tab, and the recent list goes with it.
+            return
 
     def _host(self) -> object:
         return self._window

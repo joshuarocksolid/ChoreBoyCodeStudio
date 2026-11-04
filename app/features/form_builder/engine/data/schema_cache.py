@@ -269,6 +269,8 @@ def _from_reply(
         return RefreshOutcome(False, previous, "cancelled", "", True, True)
     if not reply.get("ok"):
         reason = str(reply.get("message") or "")
+        if kind == "no_driver":
+            reason = failure_sentence(connection, kind, reason)
         return RefreshOutcome(False, previous, kind or "other", reason, True, False)
     schema = _schema_from_payload(reply.get("schema"), connection.name, _stamp(now))
     if schema is None:
