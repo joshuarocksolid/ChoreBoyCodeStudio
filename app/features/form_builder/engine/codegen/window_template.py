@@ -200,9 +200,13 @@ def _method_lines(
     safe_sender = sender.replace('"""', "").replace("\n", "").replace("\r", "")
     safe_words = event_words.replace('"""', "").replace("\n", "").replace("\r", "")
     unit = indent + indent
+    if safe_words.startswith(("before ", "after ", "when ")):
+        documented = '%s"""Runs %s."""' % (unit, safe_words)
+    else:
+        documented = '%s"""Runs when %s is %s."""' % (unit, safe_sender, safe_words)
     body = [
         "%sdef %s(%s):" % (indent, method_name, arguments),
-        '%s"""Runs when %s is %s."""' % (unit, safe_sender, safe_words),
+        documented,
         "%spass" % unit,
     ]
     return [line + ending for line in body]

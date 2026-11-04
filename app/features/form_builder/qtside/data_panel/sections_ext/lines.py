@@ -6,7 +6,13 @@ from typing import Any
 
 from app.features.form_builder.engine.commands.base import CommandRejected
 from app.features.form_builder.qtside.data_panel.host import narrate, session_of
-from app.features.form_builder.qtside.data_panel.lines_sheet import child_tables, lines_on, open_lines_sheet, summary
+from app.features.form_builder.qtside.data_panel.lines_sheet import (
+    child_tables,
+    lines_on,
+    open_lines_sheet,
+    summary,
+    total_hint,
+)
 from app.features.form_builder.qtside.data_panel.model import record_source
 from app.features.form_builder.qtside.data_panel.sections_ext import PanelSection
 from app.qt.QtWidgets import QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
@@ -31,12 +37,17 @@ def _create(host: Any) -> QWidget:
     add.setObjectName("formBuilder.data.linesAdd")
     add.clicked.connect(lambda: _add(host))
     row.addWidget(add)
+    hint = QLabel(body)
+    hint.setObjectName("formBuilder.data.linesTotal")
+    hint.setWordWrap(True)
+    layout.addWidget(hint)
 
     def refresh() -> None:
         session = session_of(host)
         document = session.document if session is not None else None
         found = lines_on(document) if document is not None else ()
         sentence.setText(summary(document) if document is not None else "")
+        hint.setText(total_hint(document) if document is not None else "")
         edit.setVisible(bool(found))
         add.setVisible(not found)
 

@@ -7,9 +7,10 @@ builder's chrome theme.
 from __future__ import annotations
 
 import re
-from typing import Optional, Tuple
+from typing import Iterable, Optional, Tuple, cast
 
-from app.qt.QtGui import QFont, QPalette
+from app.qt.QtCore import Qt
+from app.qt.QtGui import QFont, QKeySequence, QPalette
 from app.qt.QtWidgets import (
     QApplication,
     QFrame,
@@ -103,6 +104,37 @@ def isolate_widget(widget: QWidget) -> None:
     widget.setFont(startup_font())
 
 
+def silence_design_shortcuts(root: QWidget) -> None:
+    """Drop key sequences on a design-time copy of the form.
+
+    A record bar stores Ctrl+S on Save. Inside a graphics proxy that sequence
+    is live and eats the shell's Save, in the form tab and in code tabs. The
+    saved ``.ui`` and the generated window keep the sequences. The running
+    app is a different widget tree.
+    """
+
+    empty = QKeySequence()
+    context = getattr(getattr(Qt, "ShortcutContext", Qt), "WidgetShortcut", None)
+    widgets = [root]
+    finder = getattr(root, "findChildren", None)
+    if callable(finder):
+        widgets.extend(finder(QWidget))
+    for widget in widgets:
+        setter = getattr(widget, "setShortcut", None)
+        if callable(setter):
+            setter(empty)
+        if context is not None:
+            set_context = getattr(widget, "setShortcutContext", None)
+            if callable(set_context):
+                set_context(context)
+        listed = getattr(widget, "actions", None)
+        found = listed() if callable(listed) else ()
+        for action in cast(Iterable[object], found):
+            action.setShortcut(empty)
+            if context is not None:
+                action.setShortcutContext(context)
+
+
 def host_form(root: QWidget) -> QGraphicsView:
     """Embed ``root`` in a proxy so a window style sheet does not cascade into it.
 
@@ -110,6 +142,7 @@ def host_form(root: QWidget) -> QGraphicsView:
     Python wrapper, and that deletes the form.
     """
     isolate_widget(root)
+    silence_design_shortcuts(root)
     view = QGraphicsView()
     scene = QGraphicsScene(view)
     isolate_scene(scene)

@@ -1,21 +1,24 @@
 """Whether Form from a table may rewrite the project's entry point.
 
-The checkbox is on when ``main.py`` is missing or still byte-identical to the
-template the project was made from. A file the person has edited stays put.
-The form command log is one step per form file, so this write sits with the
-forms rather than on that undo stack.
+The checkbox starts ticked only when ``main.py`` is missing. A stock template
+stays unticked and names the class that file already opens. A file the person
+has edited stays put. The form command log is one step per form file, so this
+write is not on that undo stack.
 """
 
 from __future__ import annotations
 
 import json
 import os
+import re
 from dataclasses import dataclass
 from typing import Optional
 
 from app.features.form_builder.engine.project.names import class_name_for_stem
 
 _ENTRY = "main.py"
+_LABEL = "Open this screen when the app starts"
+_WINDOW = re.compile(r"^\s*window\s*=\s*([A-Za-z_][A-Za-z0-9_]*)\s*\(", re.MULTILINE)
 
 
 @dataclass(frozen=True)
@@ -27,6 +30,8 @@ class StartScreen:
     module: str
     class_name: str
     relative_path: str
+    checked: bool = False
+    label: str = _LABEL
 
 
 def screen_for(stem: str, make: str) -> StartScreen:
@@ -44,27 +49,62 @@ def screen_for(stem: str, make: str) -> StartScreen:
     )
 
 
+def main_kind(project_root: str, template_bytes: Optional[bytes] = None) -> str:
+    """``missing``, ``stock``, or ``own``. Read once when the dialog opens."""
+
+    path = os.path.join(project_root, _ENTRY)
+    if not os.path.isfile(path):
+        return "missing"
+    if template_bytes is None:
+        return "own"
+    with open(path, "rb") as handle:
+        return "stock" if handle.read() == template_bytes else "own"
+
+
+def launched_class(template_bytes: Optional[bytes]) -> str:
+    """The class the stock ``main.py`` constructs, such as ``MainWindow``."""
+
+    if not template_bytes:
+        return ""
+    text = template_bytes.decode("utf-8", "replace")
+    found = _WINDOW.search(text)
+    return "" if found is None else found.group(1)
+
+
+def present(kind: str, replaces: str, stem: str, make: str) -> StartScreen:
+    """The checkbox for a kind already read from disk."""
+
+    screen = screen_for(stem, make)
+    if kind == "missing":
+        return StartScreen(
+            True, "", screen.module, screen.class_name, screen.relative_path, True, _LABEL
+        )
+    if kind == "stock":
+        label = _LABEL if not replaces else "%s (instead of %s)" % (_LABEL, replaces)
+        return StartScreen(
+            True, "", screen.module, screen.class_name, screen.relative_path, False, label
+        )
+    sentence = (
+        "main.py has your own code, so it stays as it is. "
+        "To start on this screen, open %s from %s in main.py."
+        % (screen.class_name, screen.relative_path)
+    )
+    return StartScreen(False, sentence, screen.module, screen.class_name, screen.relative_path, False, _LABEL)
+
+
 def offer(
     project_root: str,
     stem: str,
     make: str,
     template_bytes: Optional[bytes] = None,
 ) -> StartScreen:
-    """Enabled and silent when ``main.py`` is still the template. Otherwise the sentence.
+    """The checkbox for the ``main.py`` on disk right now.
 
     ``template_bytes`` is ``templates/<id>/main.py``. The engine does not look
     up the application root. The dialog passes the bytes.
     """
 
-    screen = screen_for(stem, make)
-    if entry_is_stock(project_root, template_bytes):
-        return screen
-    sentence = (
-        "main.py has your own code, so it stays as it is. "
-        "To start on this screen, open %s from %s in main.py."
-        % (screen.class_name, screen.relative_path)
-    )
-    return StartScreen(False, sentence, screen.module, screen.class_name, screen.relative_path)
+    return present(main_kind(project_root, template_bytes), launched_class(template_bytes), stem, make)
 
 
 def entry_is_stock(project_root: str, template_bytes: Optional[bytes] = None) -> bool:

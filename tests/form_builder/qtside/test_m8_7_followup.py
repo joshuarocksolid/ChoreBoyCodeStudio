@@ -29,14 +29,19 @@ from app.features.form_builder.qtside.dialogs.from_table import FromTableDialog
 from app.qt.QtCore import QEvent, Qt
 from app.qt.qt_compat import enum_value, wrapper_is_valid
 from app.qt.QtTest import QTest
+from app.qt.QtGui import QKeySequence
 from app.qt.QtWidgets import (
+    QAction,
     QApplication,
     QCheckBox,
     QComboBox,
+    QGraphicsView,
     QLabel,
     QListWidget,
     QMainWindow,
+    QPlainTextEdit,
     QPushButton,
+    QVBoxLayout,
     QWidget,
 )
 from app.shell.theme_tokens import tokens_from_palette
@@ -116,17 +121,34 @@ def test_tab_reaches_create_and_arrows_move_between_cells(tmp_path: Path, qapp: 
         QTest.keyClick(make, Qt.Key_Tab)
         qapp.processEvents()
         assert qapp.focusWidget() is lines
+        lines_table = dialog.findChild(QComboBox, "formBuilder.fromTable.linesTable")
+        start = dialog.findChild(QCheckBox, "formBuilder.fromTable.start")
+        link = dialog.findChild(QComboBox, "formBuilder.fromTable.linesLink")
+        cancel = dialog.findChild(QPushButton, "formBuilder.fromTable.cancel")
+        assert lines_table is not None and start is not None and cancel is not None
         QTest.keyClick(lines, Qt.Key_Tab)
         qapp.processEvents()
-        link = dialog.findChild(QWidget, "formBuilder.fromTable.linesLink")
-        if qapp.focusWidget() is link:
+        assert qapp.focusWidget() is lines_table
+        QTest.keyClick(lines_table, Qt.Key_Tab)
+        qapp.processEvents()
+        if link is not None and link.isVisible() and qapp.focusWidget() is link:
             QTest.keyClick(link, Qt.Key_Tab)
             qapp.processEvents()
-        cancel = dialog.findChild(QPushButton, "formBuilder.fromTable.cancel")
+        assert qapp.focusWidget() is start
+        QTest.keyClick(start, Qt.Key_Tab)
+        qapp.processEvents()
         assert qapp.focusWidget() is cancel
         QTest.keyClick(cancel, Qt.Key_Tab)
         qapp.processEvents()
         assert qapp.focusWidget() is create
+        preview = dialog.findChild(QWidget, "formBuilder.fromTable.preview")
+        assert preview is not None
+        view = preview.findChild(QGraphicsView)
+        assert view is not None
+        assert enum_value(view.focusPolicy()) == enum_value(Qt.FocusPolicy.NoFocus)
+        box = grid.cellWidget(0, 3)
+        assert isinstance(box, QComboBox)
+        assert enum_value(box.focusPolicy()) == enum_value(Qt.FocusPolicy.NoFocus)
     finally:
         dialog.close()
 
@@ -230,8 +252,10 @@ def test_template_main_opens_the_list_screen(tmp_path: Path, qapp: QApplication)
         box = dialog.findChild(QCheckBox, "formBuilder.fromTable.start")
         assert box is not None
         assert box.isEnabled()
-        assert box.isChecked()
+        assert not box.isChecked()
+        assert box.text() == "Open this screen when the app starts (instead of MainWindow)"
         assert dialog.start_sentence() == ""
+        box.click()
         apply_start_screen(str(root), dialog)
     finally:
         dialog.close()
@@ -360,6 +384,221 @@ def test_column_words_sit_under_the_name_in_a_narrow_pane(qapp: QApplication) ->
     assert name is not None and words is not None
     assert not name.geometry().intersects(words.geometry())
     host.close()
+
+
+_SAVE_FORM = """<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>Form</class>
+ <widget class="QWidget" name="Form">
+  <layout class="QHBoxLayout" name="bar">
+   <item>
+    <widget class="QPushButton" name="saveButton">
+     <property name="text"><string>Save</string></property>
+     <property name="shortcut"><string>Ctrl+S</string></property>
+    </widget>
+   </item>
+   <item>
+    <widget class="QPushButton" name="newButton">
+     <property name="text"><string>New</string></property>
+     <property name="shortcut"><string>Ctrl+N</string></property>
+    </widget>
+   </item>
+   <item>
+    <widget class="QPushButton" name="findButton">
+     <property name="text"><string>Find</string></property>
+     <property name="shortcut"><string>Ctrl+F</string></property>
+    </widget>
+   </item>
+  </layout>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>
+"""
+
+
+def test_canvas_record_bar_does_not_take_ctrl_s(qapp: QApplication) -> None:
+    from app.features.form_builder.qtside.theme.runtime import host_form
+    from tests.form_builder.qtside.support import opened
+
+    hits = []
+    window = QMainWindow()
+    for key, word in (("Ctrl+S", "save"), ("Ctrl+N", "new"), ("Ctrl+F", "find")):
+        action = QAction(word, window)
+        action.setShortcut(QKeySequence(key))
+        action.setShortcutContext(Qt.ShortcutContext.WindowShortcut)
+        action.triggered.connect(lambda _checked=False, word=word: hits.append(word))
+        window.addAction(action)
+    form = QWidget()
+    stolen = []
+    for name, key in (("saveButton", "Ctrl+S"), ("newButton", "Ctrl+N"), ("findButton", "Ctrl+F")):
+        button = QPushButton(name, form)
+        button.setObjectName(name)
+        button.setShortcut(QKeySequence(key))
+        button.clicked.connect(lambda _checked=False, name=name: stolen.append(name))
+    view = host_form(form)
+    holder = QWidget()
+    layout = QVBoxLayout(holder)
+    layout.addWidget(view)
+    editor = QPlainTextEdit(holder)
+    layout.addWidget(editor)
+    window.setCentralWidget(holder)
+    window.show()
+    qapp.processEvents()
+    with opened(_SAVE_FORM) as (session, realizer):
+        root = realizer.root_widget
+        assert root is not None
+        for name in ("saveButton", "newButton", "findButton"):
+            made = root.findChild(QPushButton, name)
+            assert made is not None
+            assert made.shortcut().isEmpty()
+        assert "Ctrl+S" in _SAVE_FORM
+        del session
+    QTest.keyClick(window, Qt.Key_S, Qt.ControlModifier)
+    QTest.keyClick(window, Qt.Key_N, Qt.ControlModifier)
+    QTest.keyClick(window, Qt.Key_F, Qt.ControlModifier)
+    editor.setFocus()
+    qapp.processEvents()
+    QTest.keyClick(editor, Qt.Key_S, Qt.ControlModifier)
+    qapp.processEvents()
+    assert hits == ["save", "new", "find", "save"]
+    assert stolen == []
+    window.close()
+
+
+def test_missing_main_starts_ticked(tmp_path: Path, qapp: QApplication) -> None:
+    del qapp
+    dialog = _dialog(tmp_path)
+    try:
+        box = dialog.findChild(QCheckBox, "formBuilder.fromTable.start")
+        assert box is not None
+        assert box.isEnabled()
+        assert box.isChecked()
+        assert box.text() == "Open this screen when the app starts"
+    finally:
+        dialog.close()
+
+
+def test_calculated_column_stays_listed(tmp_path: Path, qapp: QApplication) -> None:
+    host, session = _lines_host(tmp_path)
+    try:
+        sheet = LinesSheet(host, session, "")
+        sheet.show()
+        _add_line_total(sheet)
+        qapp.processEvents()
+        names = [label.text() for label in sheet.findChildren(QLabel, "formBuilder.data.linesCalcName")]
+        formulas = [label.text() for label in sheet.findChildren(QLabel, "formBuilder.data.linesCalcFormula")]
+        assert names == ["line_total"]
+        assert formulas == ["qty * price"]
+        assert sheet._calc_name.text() == ""
+        remove = sheet.findChild(QPushButton, "formBuilder.data.linesCalcRemove")
+        assert remove is not None
+        remove.click()
+        qapp.sendPostedEvents(None, enum_value(QEvent.DeferredDelete))
+        qapp.processEvents()
+        assert sheet.findChildren(QLabel, "formBuilder.data.linesCalcName") == []
+    finally:
+        session.dispose()
+        set_schema_reader(None)
+
+
+def test_grid_formula_now_is_blank_not_an_exception() -> None:
+    from types import SimpleNamespace
+
+    from app.features.form_builder.engine.logic.formula.evaluate import EvalBlank, evaluate
+
+    class Emitted:
+        source = 'self._cbcs_grid_column("line_total")'
+
+    shown = evaluate(Emitted(), SimpleNamespace(), {})
+    assert isinstance(shown, EvalBlank)
+    assert shown.reason == "blank"
+    assert "SimpleNamespace" not in shown.reason
+
+
+def test_hook_stub_uses_the_hooks_own_words() -> None:
+    from app.features.form_builder.engine.codegen.window_template import _method_lines
+    from app.features.form_builder.qtside.data_panel.edits import hook_event_words
+
+    words = hook_event_words("before_save", "Invoice")
+    text = "".join(_method_lines("    ", "before_save", (), "Invoice", words, "\n"))
+    assert '"""Runs before Invoice is saved."""' in text
+    assert "Create" not in text
+
+
+def test_lines_section_names_the_sum(tmp_path: Path, qapp: QApplication) -> None:
+    del qapp
+    from app.features.form_builder.qtside.data_panel.lines_sheet import add_lines
+    from app.features.form_builder.qtside.data_panel.sections_ext.lines import _create
+
+    host, session = _lines_host(tmp_path)
+    try:
+        view = add_lines(
+            session,
+            Rows(
+                "invoice_lines",
+                "invoice_id",
+                "id",
+                (CalcColumn("line_total", "qty * price", "Line total"),),
+                "line_no",
+                "line_no",
+            ),
+        )
+        body = _create(host)
+        hint = body.findChild(QLabel, "formBuilder.data.linesTotal")
+        assert hint is not None
+        assert hint.text() == "To total the lines, give Total the Value sum(%s.line_total)." % view
+    finally:
+        session.dispose()
+        set_schema_reader(None)
+
+
+def test_create_setup_refreshes_the_project_tree(tmp_path: Path, qapp: QApplication) -> None:
+    del qapp
+    from app.features.form_builder.integration.settings_ext.connections_page import ConnectionsPage
+
+    root, _schema = _shop(tmp_path)
+    calls = []
+
+    class Tree:
+        def refresh_project_tree_from_disk(self) -> None:
+            calls.append("refresh")
+
+    host = QWidget()
+    host._project_tree_ui_workflow = Tree()  # type: ignore[attr-defined]
+    page = ConnectionsPage(host, str(root))
+    page._create_setup()
+    assert calls == ["refresh"]
+    assert (root / "connection_setup.py").is_file()
+    page.close()
+
+
+def test_rewritten_main_reloads_an_open_tab(tmp_path: Path) -> None:
+    from app.features.form_builder.integration.new_form import _reload_open_main
+    from app.shell.editor_sync_workflow import EditorDiskSyncSource
+
+    path = tmp_path / "main.py"
+    path.write_text("window = InvoiceListWindow()\n", encoding="utf-8")
+    seen = []
+
+    class Manager:
+        def get_tab(self, file_path: str) -> object:
+            assert file_path == str(path.resolve()) or file_path.endswith("main.py")
+            return object()
+
+    class Sync:
+        def apply_disk_content(self, file_path: str, text: str, *, source: object) -> bool:
+            seen.append((file_path, text, source))
+            return True
+
+    class Window:
+        _editor_manager = Manager()
+        _editor_sync_workflow = Sync()
+
+    _reload_open_main(Window(), str(tmp_path))
+    assert seen
+    assert seen[0][1] == "window = InvoiceListWindow()\n"
+    assert seen[0][2] is EditorDiskSyncSource.EXTERNAL_RELOAD
 
 
 def _lines_host(tmp_path: Path) -> tuple:

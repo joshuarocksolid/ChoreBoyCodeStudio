@@ -577,11 +577,12 @@ def _line_total(walk: _Walk) -> None:
 
 def _form_total(walk: _Walk) -> None:
     walk.phase = "total"
-    data = _pane_text(walk, "formBuilder.dataPanel")
     walk.step("seek-form-total", lambda: walk.note("looking for a total under the lines"))
-    if "sum" not in data.casefold():
+    hint = _find(walk, "formBuilder.data.linesTotal")
+    hint_text = "" if hint is None or not hasattr(hint, "text") else str(hint.text() or "")
+    if "sum(" not in hint_text:
         walk.confuse(
-            "Nothing on the Data tab offers a total under the lines. The invoice Total field is a stored column, not a sum of the line totals."
+            "The lines section does not say how to total the lines. It says %r." % hint_text
         )
     _select_outline(walk, "total", "Total")
 
@@ -600,11 +601,24 @@ def _form_total(walk: _Walk) -> None:
         else:
             walk.confuse("Behavior never reached the Value row. Focus passed %s." % ", ".join(seen[-8:]))
             return
-        editor = _find(walk, "formBuilder.formula")
-        if editor is None:
-            walk.confuse("Value did not open a formula box.")
+        switched = False
+        for _ in range(8):
+            if walk.kb.focus_name() == "formBuilder.formula.switch":
+                switched = True
+                break
+            walk.kb.press("Key_Tab", "Shift")
+        if not switched:
+            walk.confuse("Value did not show Formula. Focus is %s." % walk.kb.focus_name())
             return
-        _focus_widget(walk, editor)
+        walk.kb.press("Key_Space")
+        walk.kb.pump()
+        for _ in range(6):
+            if walk.kb.focus_name() == "formBuilder.formula":
+                break
+            walk.kb.press("Key_Tab")
+        if walk.kb.focus_name() != "formBuilder.formula":
+            walk.confuse("Formula did not take focus. Focus is %s." % walk.kb.focus_name())
+            return
         walk.kb.type("sum(invoice_linesView.line_total)")
         walk.kb.press("Key_Return", "Control")
 
@@ -692,6 +706,7 @@ def _run_app(walk: _Walk) -> None:
     database = walk.root / "data" / "shop.db"
     before = _hash(database)
     rows_before = _invoice_rows(database)
+    lines_before = _line_rows(database)
 
     def go() -> None:
         from app.qt.QtCore import QTimer
@@ -711,14 +726,17 @@ def _run_app(walk: _Walk) -> None:
     walk.note("top levels %s" % _top_titles())
     after = _hash(database)
     rows_after = _invoice_rows(database)
-    walk.note("rows before %s after %s hash same %s" % (rows_before, rows_after, before == after))
-    if rows_after == rows_before:
+    lines_after = _line_rows(database)
+    walk.note("rows before %s after %s lines %s to %s hash same %s" % (rows_before, rows_after, lines_before, lines_after, before == after))
+    if rows_after == rows_before or lines_after == lines_before:
         _save_through_entry(walk)
         rows_after = _invoice_rows(database)
-    if rows_after == rows_before:
+        lines_after = _line_rows(database)
+    walk.note("rows landed invoices %s lines %s" % (rows_after, lines_after))
+    if rows_after <= rows_before or lines_after <= lines_before:
         walk.confuse(
-            "Run did not put a new invoice row in data/shop.db. Status: %s"
-            % _status(walk.window)[:180]
+            "Run did not put a new invoice and its line in data/shop.db. Invoices %s to %s, lines %s to %s. Status: %s"
+            % (rows_before, rows_after, lines_before, lines_after, _status(walk.window)[:180])
         )
 
 
@@ -754,8 +772,6 @@ def _ensure_generated(walk: _Walk, stem: str) -> bool:
 
 def _save_through_entry(walk: _Walk) -> None:
     """Import the entry the way F5 does and save one invoice from the list screen."""
-
-    from decimal import Decimal
 
     from app.qt.QtWidgets import QApplication, QDialog
 
@@ -820,10 +836,7 @@ def _save_through_entry(walk: _Walk) -> None:
         add = getattr(ui, "_cbcs_add_row", None)
         if callable(add):
             add()
-            line = getattr(ui, "_cbcs_set_line", None)
-            if callable(line):
-                line(0, "qty", 1)
-                line(0, "price", Decimal("1.50"))
+            walk.note("line fill %s" % _fill_line(ui))
         saved = bool(ui.cbcs_save())
         walk.note("entry save %s" % saved)
         record.close()
@@ -951,27 +964,30 @@ def _edit_before_save(walk: _Walk, path: Path) -> None:
         if editor.textCursor().block().text().strip() != "pass":
             walk.confuse("before_save does not end in a pass line the developer can replace. Saw %r." % editor.textCursor().block().text())
             return
-        walk.kb.press("Key_Home")
-        walk.kb.press("Key_End", "Shift")
-        walk.kb.type("total = self.ui.total.value()")
-        walk.kb.press("Key_Return")
-        walk.kb.type("if total == 0:")
-        walk.kb.press("Key_Return")
-        walk.kb.type("    from PySide6.QtWidgets import QMessageBox")
-        walk.kb.press("Key_Return")
-        walk.kb.type("    QMessageBox.warning(self, \"Invoice\", \"The total is 0.\")")
-        walk.kb.press("Key_Return")
-        walk.kb.type("    return False")
-        walk.kb.press("Key_Return")
-        walk.kb.type("return True")
+        line = editor.textCursor().block().text()
+        indent = line[: len(line) - len(line.lstrip(" "))]
+
+        def put(body: str) -> None:
+            walk.kb.press("Key_Return")
+            walk.kb.press("Key_Home", "Shift")
+            walk.kb.type(body)
+
+        walk.kb.press("Key_End")
+        walk.kb.press("Key_Home", "Shift")
+        walk.kb.type(indent + "total = self.ui.total.value()")
+        put(indent + "if total == 0:")
+        put(indent + "    from PySide.QtWidgets import QMessageBox")
+        put(indent + "    QMessageBox.warning(self, \"Invoice\", \"The total is 0.\")")
+        put(indent + "    return False")
+        put(indent + "return True")
         walk.kb.press("Key_S", "Control")
 
     walk.step("type-hook", jump)
     text = path.read_text(encoding="utf-8")
     if "The total is 0." not in text:
         walk.confuse("The window file does not contain the refusal message.")
-    else:
-        walk.note("hook stored")
+        return
+    _refuse_zero_total(walk, path)
 
 
 def _show_sql(walk: _Walk) -> None:
@@ -1041,6 +1057,9 @@ def _setup_function(walk: _Walk) -> None:
     def open_settings() -> None:
         from app.qt.QtWidgets import QApplication, QMenu
 
+        timer = getattr(walk, "_drive_timer", None)
+        if timer is not None:
+            timer.stop()
         walk.kb.press("Key_F", "Alt")
         menu = QApplication.activePopupWidget()
         if isinstance(menu, QMenu):
@@ -1049,8 +1068,12 @@ def _setup_function(walk: _Walk) -> None:
                 if active is not None and active.text() == "Settings...":
                     break
                 walk.kb.press("Key_Down")
+            if timer is not None:
+                timer.start()
             walk.kb.press("Key_Return")
         else:
+            if timer is not None:
+                timer.start()
             walk.confuse("Alt+F did not open File, so Settings could not be reached.")
 
     def tick(state: Dict[str, Any]) -> None:
@@ -1106,6 +1129,8 @@ def _setup_function(walk: _Walk) -> None:
 
 def _type_search_path(walk: _Walk, path: Path) -> None:
     def edit() -> None:
+        walk.kb.press("Key_S", "Control")
+        walk.kb.pump(4)
         _back(walk, path.name)
         editor = _code_editor(walk)
         if editor is None:
@@ -1151,6 +1176,8 @@ def _eject(walk: _Walk) -> None:
     from app.qt.QtWidgets import QPushButton
 
     walk.phase = "eject"
+    walk.kb.press("Key_S", "Control")
+    walk.kb.pump(4)
     _back(walk, "invoice.ui")
     before_ui = _hash(walk.root / "forms" / "invoice.ui")
     before_py = _hash(walk.root / "forms" / "invoice_window.py")
@@ -1215,8 +1242,9 @@ def _edit_leave(walk: _Walk) -> None:
             walk.confuse("The ejected window file is not in an editor, so confirm_leave could not be changed.")
             return
         _focus_widget(walk, editor)
+        walk.kb.press("Key_Home", "Control")
         found = False
-        for _ in range(80):
+        for _ in range(400):
             if "Save changes to this" in editor.textCursor().block().text():
                 found = True
                 break
@@ -1239,6 +1267,9 @@ def _edit_leave(walk: _Walk) -> None:
 
 def _undo_eject(walk: _Walk, before_ui: str, before_py: str) -> None:
     def undo() -> None:
+        walk.kb.press("Key_F5")
+        walk.kb.pump(8)
+        walk.note("run after the leave edit: %s" % _status(walk.window)[:200])
         _back(walk, "invoice.ui")
         walk.kb.press("Key_Z", "Control")
         walk.kb.pump(8)
@@ -1281,6 +1312,7 @@ def _drive(walk: _Walk, open_action: Callable[[], None], tick: Callable[[Dict[st
     timer = timer_type(walk.window)
     timer.setInterval(200)
     timer.timeout.connect(on_timeout)
+    walk._drive_timer = timer
     timer.start()
     open_action()
     timer.stop()
@@ -1590,6 +1622,98 @@ def _hash(path: Path) -> str:
     if not path.is_file():
         return ""
     return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _fill_line(ui: object) -> str:
+    """Write qty and price through the grid model's line role."""
+
+    from decimal import Decimal
+
+    from app.qt.QtCore import Qt
+
+    view = getattr(ui, "invoice_linesView", None)
+    role = getattr(ui, "_cbcs_line_role", None)
+    if view is None or role is None:
+        return "the grid has no line role"
+    model = view.model()
+    if model is None or model.rowCount() < 1:
+        return "the grid has no row"
+    columns = {}
+    for index in range(model.columnCount()):
+        header = model.headerData(index, Qt.Orientation.Horizontal)
+        columns[str(header or "").casefold()] = index
+
+    def put(name: str, value: object) -> bool:
+        column = columns.get(name)
+        if column is None:
+            return False
+        return bool(model.setData(model.index(0, column), value, role))
+
+    qty = put("qty", 1)
+    price = put("price", Decimal("1.50"))
+    return "qty=%s price=%s headers=%s" % (qty, price, sorted(columns))
+
+
+def _line_rows(path: Path) -> int:
+    if not path.is_file():
+        return -1
+    connection = sqlite3.connect(str(path))
+    try:
+        row = connection.execute("SELECT COUNT(*) FROM invoice_lines").fetchone()
+    except sqlite3.Error:
+        return -1
+    finally:
+        connection.close()
+    return int(row[0]) if row else -1
+
+
+def _refuse_zero_total(walk: _Walk, path: Path) -> None:
+    import ast
+
+    from app.qt.QtCore import QTimer
+    from app.qt.QtWidgets import QApplication, QMessageBox
+
+    text = path.read_text(encoding="utf-8")
+    try:
+        ast.parse(text)
+    except SyntaxError as exc:
+        start = text.find("def before_save")
+        walk.confuse("before_save does not parse: %s\n%s" % (exc, text[start:start + 500]))
+        return
+    ext = Path(sys.executable).resolve().parents[1] / "Ext"
+    if ext.is_dir() and str(ext) not in sys.path:
+        sys.path.insert(0, str(ext))
+    project = str(path.resolve().parents[1])
+    if project not in sys.path:
+        sys.path.insert(0, project)
+    _ensure_generated(walk, "invoice")
+    module = _load_walk_module(path, "invoice_window_zero")
+    window = getattr(module, "InvoiceWindow", None)
+    if window is None:
+        walk.confuse("invoice_window.py has no InvoiceWindow.")
+        return
+
+    instance = window()
+    spin = getattr(instance.ui, "total", None)
+    if spin is not None and hasattr(spin, "setValue"):
+        spin.setValue(0)
+
+    def dismiss() -> None:
+        for widget in QApplication.topLevelWidgets():
+            if isinstance(widget, QMessageBox):
+                widget.close()
+
+    QTimer.singleShot(0, dismiss)
+    try:
+        refused = instance.before_save() is False
+    except Exception as exc:
+        walk.confuse("Saving with total 0 did not refuse. It raised %s." % exc)
+        return
+    walk.qapp.processEvents()
+    if not refused:
+        walk.confuse("Saving with total 0 was not refused.")
+    else:
+        walk.note("hook stored and a total of 0 is refused")
 
 
 def _invoice_rows(path: Path) -> int:

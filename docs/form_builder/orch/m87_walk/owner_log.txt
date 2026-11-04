@@ -1,4 +1,4 @@
-THEME light project /private/var/folders/_v/r_0nlrdd0w35yzl31qq88wl80000gn/T/pytest-of-local/pytest-4417/test_shop_owner_walk0/shop
+THEME light project /private/var/folders/_v/r_0nlrdd0w35yzl31qq88wl80000gn/T/pytest-of-local/pytest-4446/test_shop_owner_walk0/shop
 STEP 01 open phase=open
   keys: (no key)
   focus: shell.activityBar.btn.explorer acc=''
@@ -43,7 +43,7 @@ NOTE phase=create tables customers, invoice_lines, invoices, products
 NOTE phase=create start box enabled=True checked=True note=''
 NOTE phase=create create button 'Create invoice form with 5 fields and lines and a list' enabled=True
 STEP 05 make-invoice phase=create
-  keys: Key_Tab -> focus=formBuilder.fromTable.tables sel=() | Key_Home -> focus=formBuilder.fromTable.tables sel=() | Key_Down -> focus=formBuilder.fromTable.tables sel=() | Key_Down -> focus=formBuilder.fromTable.tables sel=() | Key_Tab -> focus=formBuilder.fromTable.mapping sel=() | Key_Tab -> focus=formBuilder.fromTable.make sel=() | Key_Down -> focus=formBuilder.fromTable.make sel=() | Key_Down -> focus=formBuilder.fromTable.make sel=() | Key_Tab -> focus=formBuilder.fromTable.lines sel=() | Key_Tab -> focus=formBuilder.fromTable.cancel sel=() | Key_Tab -> focus=formBuilder.fromTable.create sel=() | Key_Space -> focus=formBuilder.canvas sel=()
+  keys: Key_Tab -> focus=formBuilder.fromTable.tables sel=() | Key_Home -> focus=formBuilder.fromTable.tables sel=() | Key_Down -> focus=formBuilder.fromTable.tables sel=() | Key_Down -> focus=formBuilder.fromTable.tables sel=() | Key_Tab -> focus=formBuilder.fromTable.mapping sel=() | Key_Tab -> focus=formBuilder.fromTable.make sel=() | Key_Down -> focus=formBuilder.fromTable.make sel=() | Key_Down -> focus=formBuilder.fromTable.make sel=() | Key_Tab -> focus=formBuilder.fromTable.lines sel=() | Key_Tab -> focus=formBuilder.fromTable.linesTable sel=() | Key_Tab -> focus=formBuilder.fromTable.start sel=() | Key_Space -> focus=formBuilder.fromTable.start sel=() | Key_Tab -> focus=formBuilder.fromTable.cancel sel=() | Key_Tab -> focus=formBuilder.fromTable.create sel=() | Key_Space -> focus=formBuilder.canvas sel=()
   focus: formBuilder.canvas acc='Form canvas'
   status: shell.startupStatusLabel='Startup: Runtime issues (4/9 checks) | Syntax highlighting off' | shell.pythonToolingStatusLabel='Python: tools ready | no project' | shell.projectStatusLabel='Project: Shop' | shell.editorStatusLabel='Delete line · Push button · column 3 of the horizontal layout' | shell.completionModeStatusLabel='Completion: Manual · Ctrl+Space (Global setting)' | shell.runStatusLabel='Run: idle'
   inspector:
@@ -109,7 +109,6 @@ STEP 10 line-total phase=lines
     (empty)
   dialogs:
     (empty)
-CONFUSION phase=lines The invoice form does not store a Line total of qty * price.
 NOTE phase=total looking for a total under the lines
 STEP 11 seek-form-total phase=total
   keys: (no key)
@@ -121,7 +120,6 @@ STEP 11 seek-form-total phase=total
     (empty)
   dialogs:
     (empty)
-CONFUSION phase=total Nothing on the Data tab offers a total under the lines. The invoice Total field is a stored column, not a sum of the line totals.
 STEP 12 select-total phase=total
   keys: Alt+Key_1 -> focus=formBuilder.structure sel=('customer_id',) | Key_Home -> focus=formBuilder.structure sel=('Invoice',) | Key_Right -> focus=formBuilder.structure sel=('formLayout',) | Key_Down -> focus=formBuilder.canvas sel=('recordBar',) | Key_Down -> focus=formBuilder.canvas sel=('invoice_no',) | Key_Down -> focus=formBuilder.canvas sel=('customer_id',) | Key_Down -> focus=formBuilder.canvas sel=('invoice_date',) | Key_Down -> focus=formBuilder.canvas sel=('notes',) | Key_Down -> focus=formBuilder.canvas sel=('total',)
   focus: formBuilder.canvas acc='Form canvas'
@@ -133,8 +131,8 @@ STEP 12 select-total phase=total
   dialogs:
     (empty)
 STEP 13 value-rule phase=total
-  keys: Alt+Key_B -> focus=formBuilder.events.first sel=('total',) | Shift+Key_Tab -> focus=formBuilder.checks.manual sel=('total',) | Shift+Key_Tab -> focus=formBuilder.checks.add sel=('total',) | Shift+Key_Tab -> focus=formBuilder.state.row.cbcsDefault sel=('total',) | Shift+Key_Tab -> focus=formBuilder.state.row.cbcsValue sel=('total',) | Key_Return -> focus=formBuilder.builder.shape sel=('total',) | Key_Tab -> focus=QLineEdit sel=('total',) | Key_Tab -> focus=formBuilder.state.row.cbcsValue sel=('total',) | Key_Tab -> focus=formBuilder.state.row.cbcsDefault sel=('total',) | Key_Tab -> focus=formBuilder.checks.add sel=('total',) | Key_Tab -> focus=formBuilder.checks.manual sel=('total',) | Key_Tab -> focus=formBuilder.events.first sel=('total',) | Key_Tab -> focus=shell.activityBar.btn.explorer sel=('total',) | Key_Tab -> focus=shell.activityBar.btn.search sel=('total',) | Key_Tab -> focus=shell.activityBar.btn.test_explorer sel=('total',) | Key_Tab -> focus=shell.projectTree sel=('total',) | Key_Tab -> focus=MiddleClickTabBar sel=('total',) | Key_Tab -> focus=qt_tabwidget_tabbar sel=('total',) | type 'sum(invoice_linesView.line_total)' -> focus=formBuilder.formula | Control+Key_Return -> focus=formBuilder.formula sel=('total',)
-  focus: formBuilder.formula acc=''
+  keys: Alt+Key_B -> focus=formBuilder.events.first sel=('total',) | Shift+Key_Tab -> focus=formBuilder.checks.manual sel=('total',) | Shift+Key_Tab -> focus=formBuilder.checks.add sel=('total',) | Shift+Key_Tab -> focus=formBuilder.state.row.cbcsDefault sel=('total',) | Shift+Key_Tab -> focus=formBuilder.state.row.cbcsValue sel=('total',) | Key_Return -> focus=formBuilder.builder.shape sel=('total',) | Shift+Key_Tab -> focus=formBuilder.formula.switch sel=('total',) | Key_Space -> focus=formBuilder.formula sel=('total',) | type 'sum(invoice_linesView.line_total)' -> focus=formBuilder.formula | Control+Key_Return -> focus=formBuilder.state.row.cbcsValue sel=('total',)
+  focus: formBuilder.state.row.cbcsValue acc='Value  sum(invoice_linesView.line_total)   now: blank'
   status: shell.startupStatusLabel='Startup: Runtime issues (4/9 checks) | Syntax highlighting off' | shell.diagnosticsStatusLabel='1 error' | shell.pythonToolingStatusLabel='Python: tools ready | no project' | shell.projectStatusLabel='Project: Shop' | shell.editorStatusLabel='Total · Double spin box · row 6 of the form layout' | shell.completionModeStatusLabel='Completion: Manual · Ctrl+Space (Global setting)' | shell.runStatusLabel='Run: idle'
   inspector:
     (empty)
@@ -142,12 +140,11 @@ STEP 13 value-rule phase=total
     (empty)
   dialogs:
     (empty)
-CONFUSION phase=total The invoice total did not store sum(invoice_linesView.line_total).
 NOTE phase=try db hash before try dde92cf4c1de0f74a1d7e84474093f66bd1536b42c98b8f0b922ae5a53b42214
-NOTE phase=try preview process status ready child 83673 error None stderr ''
+NOTE phase=try preview process status ready child 31077 error None stderr ''
 CONFUSION phase=try What ran and the banner are in the preview process, not this window. The child is up and data/shop.db is left for the hash check.
 STEP 14 try-open phase=try
-  keys: Control+Key_S -> focus=formBuilder.formula sel=('total',) | Alt+Key_3 -> focus=formBuilder.canvas sel=('total',) | Control+Shift+Key_R -> focus=formBuilder.canvas sel=('total',)
+  keys: Control+Key_S -> focus=formBuilder.state.row.cbcsValue sel=('total',) | Alt+Key_3 -> focus=formBuilder.canvas sel=('total',) | Control+Shift+Key_R -> focus=formBuilder.canvas sel=('total',)
   focus: formBuilder.canvas acc='Form canvas'
   status: shell.startupStatusLabel='Startup: Runtime issues (4/9 checks) | Syntax highlighting off' | shell.diagnosticsStatusLabel='1 error' | shell.pythonToolingStatusLabel='Python: tools ready | no project' | shell.projectStatusLabel='Project: Shop' | shell.editorStatusLabel='Total · Double spin box · row 6 of the form layout' | shell.completionModeStatusLabel='Completion: Manual · Ctrl+Space (Global setting)' | shell.runStatusLabel='Run: idle'
   inspector:
@@ -183,17 +180,14 @@ STEP 16 run phase=run
     (empty)
 NOTE phase=run status after F5 shell.diagnosticsStatusLabel='1 error' | shell.pythonToolingStatusLabel='Python: tools ready | no project' | shell.projectStatusLabel='Project: Shop' | shell.editorStatusLabel='Total · Double spin box · row 6 of the form layout' | shell.completionModeStatusLabel='Completion: Manual · Ctrl+Space (Global setting)' | shell.runStatusLabel='Run: running' | message='Saved invoice.ui · Running main.py'
 NOTE phase=run top levels shell.mainWindow:ChoreBoy Code Studio v0.4.13
-NOTE phase=run rows before 1 after 1 hash same True
+NOTE phase=run rows before 1 after 1 lines 1 to 1 hash same True
 NOTE phase=run list search shows 'Acme'
-NOTE phase=run entry save False
-NOTE phase=run run still inside F5; closing stray windows
-CONFUSION phase=run Run did not put a new invoice row in data/shop.db. Status: shell.diagnosticsStatusLabel='1 error' | shell.pythonToolingStatusLabel='Python: tools ready | no project' | shell.projectStatusLabel='Project: Shop' | shell.editorStatusLabel='Tot
+NOTE phase=run line fill qty=True price=True headers=['description', 'line total', 'price', 'product', 'qty']
+NOTE phase=run entry save True
+NOTE phase=run rows landed invoices 2 lines 2
 COUNTS open=1 create=5 lookup=3 lines=1 total=3 try=2 run=1 total=16
-CONFUSIONS 7
-The invoice form does not store a Line total of qty * price.
-Nothing on the Data tab offers a total under the lines. The invoice Total field is a stored column, not a sum of the line totals.
-The invoice total did not store sum(invoice_linesView.line_total).
+CONFUSIONS 3
 What ran and the banner are in the preview process, not this window. The child is up and data/shop.db is left for the hash check.
 Try has no form surface to press PgDown on.
 Try did not say the save was rolled back. What ran says ''.
-Run did not put a new invoice row in data/shop.db. Status: shell.diagnosticsStatusLabel='1 error' | shell.pythonToolingStatusLabel='Python: tools ready | no project' | shell.projectStatusLabel='Project: Shop' | shell.editorStatusLabel='Tot
+NOTE phase=run run still inside F5; closing stray windows

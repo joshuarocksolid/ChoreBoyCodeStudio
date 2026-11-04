@@ -128,9 +128,12 @@ class FromTableDialog(QDialog):
         self._schema_tokens: Dict[str, Tuple[object, ...]] = {}
         self._preview_widget: Optional[QWidget] = None
         self._preview_view: Optional[QGraphicsView] = None
+        self._main_kind = "missing"
+        self._replaces = ""
         self._build()
         self._apply_chrome()
         self._load_saved_connections()
+        self._read_main_state()
         self._sync_button()
 
     def set_database(self, path: str, connection: str = "") -> None:
@@ -406,6 +409,7 @@ class FromTableDialog(QDialog):
             self._on_connection()
 
     def _on_connection(self) -> None:
+        self._read_main_state()
         name = str(self._connection.currentData() or "")
         connection = self._connections.get(name) if hasattr(self, "_connections") else None
         if connection is None:
@@ -618,6 +622,7 @@ class FromTableDialog(QDialog):
         combo.setCurrentIndex(chosen)
         combo.setToolTip(widget_class)
         combo.blockSignals(False)
+        combo.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         return combo
 
     def _on_shows_as_changed(self, row: int, box: QComboBox) -> None:
@@ -646,21 +651,29 @@ class FromTableDialog(QDialog):
         if self._start.isEnabled():
             self._start_user = True
 
-    def _sync_start(self) -> None:
-        from app.features.form_builder.engine.project.start_screen import offer
+    def _read_main_state(self) -> None:
+        from app.features.form_builder.engine.project.start_screen import launched_class, main_kind
 
-        made = offer(
-            self._project_root,
+        template = _template_main_bytes(self._project_root)
+        self._main_kind = main_kind(self._project_root, template)
+        self._replaces = launched_class(template)
+
+    def _sync_start(self) -> None:
+        from app.features.form_builder.engine.project.start_screen import present
+
+        made = present(
+            self._main_kind,
+            self._replaces,
             self._stem,
             str(self._make.currentData() or "record"),
-            template_bytes=_template_main_bytes(self._project_root),
         )
         self._start_offer = made
         self._start.blockSignals(True)
         self._start.setEnabled(made.enabled)
+        self._start.setText(made.label)
         if made.enabled:
             if not self._start_user:
-                self._start.setChecked(True)
+                self._start.setChecked(made.checked)
             self._start_note.setText("")
         else:
             self._start.setChecked(False)
@@ -677,7 +690,9 @@ class FromTableDialog(QDialog):
             self._mapping,
             self._make,
             self._lines,
+            self._lines_table,
             self._lines_link,
+            self._start,
             self._cancel,
             self._create,
         )
@@ -920,6 +935,11 @@ class FromTableDialog(QDialog):
         # Top-left and fitted to the pane width, so the form reflows like the app would.
         view.setAlignment(Qt.AlignLeft | Qt.AlignTop)
         view.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        view.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        view.viewport().setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        widget.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        for child in widget.findChildren(QWidget):
+            child.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         view.viewport().installEventFilter(self)
         self._preview_view = view
         self._swap_preview(view, widget)

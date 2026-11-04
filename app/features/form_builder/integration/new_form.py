@@ -156,6 +156,31 @@ def perform_create(
     return result
 
 
+def _reload_open_main(window: object, root: str) -> None:
+    """Show the rewritten ``main.py`` in a tab that is already open.
+
+    The form undo step does not cover this file. The open tab is reloaded
+    from disk so it matches what F5 will run.
+    """
+
+    path = os.path.abspath(os.path.join(root, "main.py"))
+    if not os.path.isfile(path):
+        return
+    manager = getattr(window, "_editor_manager", None)
+    getter = getattr(manager, "get_tab", None)
+    if not callable(getter) or getter(path) is None:
+        return
+    with open(path, encoding="utf-8") as handle:
+        text = handle.read()
+    sync = getattr(window, "_editor_sync_workflow", None)
+    apply = getattr(sync, "apply_disk_content", None)
+    if not callable(apply):
+        return
+    from app.shell.editor_sync_workflow import EditorDiskSyncSource
+
+    apply(path, text, source=EditorDiskSyncSource.EXTERNAL_RELOAD)
+
+
 def open_new_form_tab(window: object, directory: Optional[str] = None) -> Optional[object]:
     project = getattr(window, "_loaded_project", None)
     if project is None:
@@ -457,6 +482,7 @@ class NewFormSurface:
             from app.features.form_builder.engine.project.start_screen import apply_start_screen
 
             apply_start_screen(root, dialog)
+            _reload_open_main(self._host(), root)
         if dialog.isVisible():
             dialog.accept()
         self._focus_data(record_path)

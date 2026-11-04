@@ -192,7 +192,16 @@ class Realizer(_Structure):
         self._reapply_authored_look(root_node, widget)
         self._index_buddies()
         self._reapply_document_geometry()
+        self._silence_shortcuts()
         return widget
+
+    def _silence_shortcuts(self) -> None:
+        root = self._root
+        if root is None or not wrapper_is_valid(root):
+            return
+        from app.features.form_builder.qtside.theme.runtime import silence_design_shortcuts
+
+        silence_design_shortcuts(root)
 
     def _start_patch(self) -> None:
         self._layout_hints = {}
@@ -240,6 +249,7 @@ class Realizer(_Structure):
             rebuilt_roots=tuple(roots),
             cpu_ms=(time.process_time() - started) * 1000.0,
         )
+        self._silence_shortcuts()
         self._last_stats = stats
         return stats
 
