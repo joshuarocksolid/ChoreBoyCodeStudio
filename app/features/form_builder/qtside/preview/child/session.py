@@ -660,6 +660,7 @@ class ChildSession:
             return
         self._closed = True
         self._exit_code = code
+        self._app.removeEventFilter(self._user_close)
         if hard:
             os._exit(code)
         self._app.quit()
