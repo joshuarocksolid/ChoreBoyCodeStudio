@@ -11,11 +11,21 @@ import types
 
 
 def install():
-    if "PySide6" in sys.modules and not isinstance(sys.modules["PySide6"], types.ModuleType):
-        return "present"
+    """Return ``native`` when this process has real PySide6.
+
+    The 1.0 image has no PySide6, so the alias is built from PySide2. A real
+    PySide6 import must win before that alias is installed.
+    """
+
     existing = sys.modules.get("PySide6")
     if existing is not None and getattr(existing, "__file__", None):
-        return "present"
+        return "native" if "PySide2" not in str(existing.__file__) else "present"
+    try:
+        import PySide6
+    except ImportError:
+        PySide6 = None
+    if PySide6 is not None and getattr(PySide6, "__file__", None):
+        return "native"
     import PySide2.QtCore
     import PySide2.QtGui
     import PySide2.QtWidgets

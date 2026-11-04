@@ -25,7 +25,7 @@ touch "$HERE/payload/tests/__init__.py" \
   "$HERE/payload/tests/form_builder/fixtures/m8/__init__.py"
 cp "$HERE/run_probe.py" "$HERE/payload/run_probe.py"
 cp "$HERE/run_on_vm.sh" "$HERE/payload/run_on_vm.sh"
-cp "$HERE/pyside6_alias.py" "$HERE/payload/pyside6_alias.py"
+cp "$HERE/qt_alias.py" "$HERE/payload/qt_alias.py"
 cp "$HERE/child_entry.py" "$HERE/payload/run_form_preview.py"
 if [ -d "$VENDOR/pg8000" ] && [ -d "$VENDOR/scramp" ]; then
   cp -R "$VENDOR/pg8000" "$VENDOR/scramp" "$VENDOR/asn1crypto" "$HERE/payload/"

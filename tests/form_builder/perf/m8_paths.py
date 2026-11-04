@@ -876,7 +876,7 @@ def responsive_during_refresh(project_root: str, *, pause_s: float = 0.0) -> Dic
         workbench.close()
 
 
-def measure_helper(root: Path, connection: Any, password: str) -> Dict[str, Any]:
+def measure_helper(root: Path, connection: Any, password: str, minimum: int = 30) -> Dict[str, Any]:
     from app.features.form_builder.engine.data.schema_cache import install_schema_services, refresh
     from app.features.form_builder.qtside.schema_runner import register_schema_runner
 
@@ -892,7 +892,7 @@ def measure_helper(root: Path, connection: Any, password: str) -> Dict[str, Any]
             raise RuntimeError("%s %s" % (getattr(outcome, "kind", ""), getattr(outcome, "reason", "")))
         schema = getattr(outcome, "schema", None)
         tables = 0 if schema is None else len(getattr(schema, "tables", ()) or ())
-        if tables < 30:
+        if tables < minimum:
             raise RuntimeError("helper read %s tables" % tables)
         return "tables=%d" % tables
 

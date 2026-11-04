@@ -22,10 +22,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 RESULTS = HERE / "results"
 WORK = Path(os.environ.get("CBCS_M8R_WORK", "/tmp/m8r_work"))
-DSN = os.environ.get(
-    "CBCS_M8R_DSN",
-    "host=77.77.77.1 port=5432 user=postgres dbname=shop",
-)
+DSN = os.environ.get("CBCS_M8R_DSN", "").strip()
 
 
 def _loadavg():
@@ -69,7 +66,7 @@ def _bundled_drivers():
         "for name in ('psycopg', 'pg8000'):\n"
         "    try:\n"
         "        module = __import__(name)\n"
-        "        out[name] = getattr(module, '__file__', 'imported')\n"
+        "        out[name] = {'file': getattr(module, '__file__', ''), 'version': str(getattr(module, '__version__', ''))}\n"
         "    except Exception as exc:\n"
         "        out[name] = '%s: %s' % (type(exc).__name__, exc)\n"
         "print(repr(out))\n"
@@ -169,6 +166,9 @@ def _md5(fields):
 
 def _driver_facts(fields):
     facts = {"bundled": _bundled_drivers()}
+    if not fields.get("host"):
+        facts["postgres"] = {"skipped": "no DSN"}
+        return facts
     sys.path.insert(0, str(HERE))
     facts["on_probe_path"] = {"psycopg": _import_status("psycopg"), "pg8000": _import_status("pg8000")}
     notes = {}
@@ -234,6 +234,80 @@ def _machine_file():
     }
 
 
+def _project_root(fields):
+    if fields.get("host") and (WORK / "pg_proj" / "forms" / "ui_invoice.py").is_file():
+        return WORK / "pg_proj"
+    return WORK / "sqlite_proj"
+
+
+def _sha256(path):
+    import hashlib
+
+    digest = hashlib.sha256()
+    with open(path, "rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _runtime():
+    info = {"python": sys.version.split()[0], "executable": sys.executable}
+    try:
+        import PySide6
+        from PySide6.QtCore import qVersion
+
+        info["qt_api"] = "PySide6"
+        info["pyside"] = str(getattr(PySide6, "__version__", ""))
+        info["pyside_file"] = str(getattr(PySide6, "__file__", ""))
+        info["qt"] = str(qVersion())
+    except Exception as exc:
+        info["qt_api"] = "unavailable"
+        info["pyside_error"] = "%s: %s" % (type(exc).__name__, exc)
+    try:
+        import FreeCAD
+
+        info["freecad"] = list(FreeCAD.Version())
+    except Exception as exc:
+        info["freecad_error"] = "%s: %s" % (type(exc).__name__, exc)
+    try:
+        from app.qt import qt_compat
+
+        info["is_qt6"] = bool(qt_compat.IS_QT6)
+    except Exception as exc:
+        info["is_qt6_error"] = "%s: %s" % (type(exc).__name__, exc)
+    return info
+
+
+def _reveal_last_line(ui):
+    from app.qt.QtWidgets import QApplication
+
+    view = ui.invoice_linesView
+    model = view.model()
+    if model is not None and model.rowCount():
+        index = model.index(model.rowCount() - 1, 1)
+        view.scrollTo(index)
+        view.setCurrentIndex(index)
+    app = QApplication.instance()
+    if app is not None:
+        app.processEvents()
+
+
+def _show_customer_lookup(widget):
+    from app.qt.QtWidgets import QApplication, QComboBox
+
+    combo = widget.findChild(QComboBox, "customer_id")
+    if combo is None:
+        found = widget.findChildren(QComboBox)
+        combo = found[0] if found else None
+    if combo is None or not hasattr(combo, "showPopup"):
+        return ""
+    combo.showPopup()
+    app = QApplication.instance()
+    if app is not None:
+        app.processEvents()
+    return str(combo.objectName())
+
+
 def _grab(widget, name):
     from app.qt.QtWidgets import QApplication
 
@@ -256,10 +330,11 @@ def _grab(widget, name):
 def _demo(fields):
     from tests.form_builder.perf.m8_paths import LAST_DRIVER, _Host
 
-    root = WORK / "pg_proj"
-    notes = {"rss_before_kb": _rss_kb()}
-    listing = _Host(root, "customer_list", "")
-    invoice = _Host(root, "invoice", "")
+    root = _project_root(fields)
+    password = fields.get("password") or ""
+    notes = {"rss_before_kb": _rss_kb(), "project": str(root)}
+    listing = _Host(root, "customer_list", password)
+    invoice = _Host(root, "invoice", password)
     try:
         listing.open()
         notes["list_bytes"] = _grab(listing.widget, "01_list.png")
@@ -274,23 +349,33 @@ def _demo(fields):
         invoice.open()
         invoice.ui.cbcs_open(1)
         notes["invoice_bytes"] = _grab(invoice.widget, "03_invoice.png")
+        notes["lookup_name"] = _show_customer_lookup(invoice.widget)
         notes["lookup_bytes"] = _grab(invoice.widget, "04_lookup.png")
+        from app.qt.QtWidgets import QComboBox
+
+        combo = invoice.widget.findChild(QComboBox, notes.get("lookup_name") or "customer_id")
+        if combo is not None and hasattr(combo, "hidePopup"):
+            combo.hidePopup()
         invoice.ui._cbcs_add_row()
         model = invoice.ui.invoice_linesView.model()
         row = model.rowCount() - 1
         role = invoice.ui._cbcs_line_role
         model.item(row, 0).setData(1, role)
-        model.item(row, 1).setText("probe line")
+        description = model.item(row, 1)
+        description.setText("probe line")
+        description.setData("probe line", 0)
         model.item(row, 2).setData(1, role)
         model.item(row, 3).setData(1, role)
+        _reveal_last_line(invoice.ui)
         notes["add_bytes"] = _grab(invoice.widget, "05_add_line.png")
         notes["saved"] = bool(invoice.ui.cbcs_save())
+        _reveal_last_line(invoice.ui)
         notes["save_bytes"] = _grab(invoice.widget, "06_saved.png")
         module = sys.modules.get("cbcs_connections")
         open_map = getattr(module, "_OPEN", {})
         raw = open_map.get("shop")
         prepared = None
-        if raw is not None:
+        if raw is not None and fields.get("host"):
             cursor = raw.cursor()
             cursor.execute("SELECT count(*) FROM pg_prepared_statements")
             prepared = cursor.fetchone()[0]
@@ -299,11 +384,24 @@ def _demo(fields):
     finally:
         invoice.close()
     notes["rss_after_kb"] = _rss_kb()
-    landed = _sql(
-        fields,
-        "SELECT line_no, product_id, description, qty, price::text "
-        "FROM invoice_lines WHERE invoice_id = 1 ORDER BY line_no",
-    )
+    if fields.get("host"):
+        landed = _sql(
+            fields,
+            "SELECT line_no, product_id, description, qty, price::text "
+            "FROM invoice_lines WHERE invoice_id = 1 ORDER BY line_no",
+        )
+    else:
+        import sqlite3
+
+        database = root / "data" / "shop.db"
+        connection = sqlite3.connect(str(database))
+        try:
+            landed = connection.execute(
+                "SELECT line_no, product_id, description, qty, price "
+                "FROM invoice_lines WHERE invoice_id = 1 ORDER BY line_no"
+            ).fetchall()
+        finally:
+            connection.close()
     notes["invoice_1_lines"] = [
         {"line_no": item[0], "product_id": item[1], "description": item[2], "qty": item[3], "price": item[4]}
         for item in landed
@@ -325,20 +423,33 @@ def _try_walk(fields):
     )
     from app.features.form_builder.qtside.preview.launch import preview_command
 
-    before = _md5(fields)
-    root = WORK / "pg_proj"
+    root = _project_root(fields)
+    database = root / "data" / "shop.db"
+    if fields.get("host"):
+        before = _md5(fields)
+        spec = TryConnectionSpec(
+            name="shop",
+            mode="rollback",
+            title="Shop",
+            engine="postgres",
+            host=fields.get("host") or "77.77.77.1",
+            port=int(fields.get("port") or "5432"),
+            database=fields.get("dbname") or "shop",
+            user=fields.get("user") or "postgres",
+            password_policy="none",
+        )
+    else:
+        before = {"shop.db": _sha256(database)}
+        spec = TryConnectionSpec(
+            name="shop",
+            mode="scratch",
+            title="Shop",
+            engine="sqlite",
+            sqlite_path=str(database),
+            file=str(database),
+            password_policy="none",
+        )
     source = (root / "forms" / "ui_invoice.py").read_text(encoding="utf-8")
-    spec = TryConnectionSpec(
-        name="shop",
-        mode="rollback",
-        title="Shop",
-        engine="postgres",
-        host=fields.get("host") or "77.77.77.1",
-        port=int(fields.get("port") or "5432"),
-        database=fields.get("dbname") or "shop",
-        user=fields.get("user") or "postgres",
-        password_policy="none",
-    )
     message = TryStart(
         request_id="m8r-try",
         view_id="invoice",
@@ -410,7 +521,10 @@ def _try_walk(fields):
         source = Path("/tmp/m8r_try_results") / name
         if source.is_file():
             (RESULTS / name).write_bytes(source.read_bytes())
-    after = _md5(fields)
+    if fields.get("host"):
+        after = _md5(fields)
+    else:
+        after = {"shop.db": _sha256(database)}
     walk = {}
     path = RESULTS / "try_walk.json"
     if path.is_file():
@@ -437,10 +551,12 @@ def _try_walk(fields):
 
 
 def main():
-    import app.qt.qt_compat
-    import pyside6_alias
+    if str(HERE) not in sys.path:
+        sys.path.insert(0, str(HERE))
+    import qt_alias
 
-    pyside6_alias.install()
+    alias_result = qt_alias.install()
+    import app.qt.qt_compat
     from tests.form_builder.perf import m8_paths
 
     if Path("/tmp/m8r_only_try").is_file():
@@ -459,12 +575,15 @@ def main():
         "loadavg_error": load_error,
         "apparmor_attr": _attr(),
         "rss_kb": _rss_kb(),
+        "alias": alias_result,
+        "runtime": _runtime(),
     }
     fields = m8_paths.parse_dsn(DSN)
     try:
         facts["drivers"] = _driver_facts(fields)
         facts["machine_file"] = _machine_file()
-        _ensure_shop(fields)
+        if fields.get("host"):
+            _ensure_shop(fields)
         code = m8_paths.main(["--machine", "vm", "--dsn", DSN, "--work", str(WORK), "--results", str(RESULTS)])
         facts["speed_exit"] = code
         if code != 0:
@@ -484,7 +603,31 @@ def main():
                 "evidence": helper.get("evidence"),
                 "error": helper.get("error"),
             }
-        facts["md5_before_try"] = _md5(fields)
+            if not helper.get("p95_ms"):
+                recorded = m8_paths.measure_helper(
+                    WORK / "sqlite_proj",
+                    m8_paths._sqlite_connection(),
+                    "",
+                    minimum=4,
+                )
+                row = recorded.get("schema_helper_30") or {}
+                facts["helper"] = {
+                    "p95_ms": row.get("p95_ms"),
+                    "wall_p95_ms": row.get("wall_p95_ms"),
+                    "command0": row.get("command0"),
+                    "helper_script": row.get("helper_script"),
+                    "evidence": row.get("evidence"),
+                    "error": row.get("error"),
+                    "target": "sqlite",
+                }
+                summary.setdefault("recorded", {})["schema_helper_30"] = row
+                summary["runtime"] = facts["runtime"]
+                summary_path.write_text(json.dumps(summary, indent=2, default=str), encoding="utf-8")
+        if fields.get("host"):
+            facts["md5_before_try"] = _md5(fields)
+        else:
+            database = WORK / "sqlite_proj" / "data" / "shop.db"
+            facts["sqlite_sha256_before_try"] = _sha256(database)
         facts["try"] = _try_walk(fields)
         facts["demo"] = _demo(fields)
     except Exception:

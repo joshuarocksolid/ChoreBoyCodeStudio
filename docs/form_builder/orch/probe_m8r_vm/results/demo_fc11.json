@@ -1,0 +1,165 @@
+{
+  "rss_before_kb": 692520,
+  "project": "/tmp/m8r_work/sqlite_proj",
+  "list_bytes": 66917,
+  "search_bytes": 66219,
+  "search_rows": 500,
+  "invoice_bytes": 35926,
+  "lookup_name": "customer_id",
+  "lookup_bytes": 35919,
+  "add_bytes": 38061,
+  "saved": true,
+  "save_bytes": 38295,
+  "prepared_statements": null,
+  "driver": "",
+  "rss_after_kb": 714816,
+  "invoice_1_lines": [
+    {
+      "line_no": 1,
+      "product_id": 1,
+      "description": "Line 1",
+      "qty": 1,
+      "price": 1
+    },
+    {
+      "line_no": 2,
+      "product_id": 1,
+      "description": "Line 100001",
+      "qty": 1,
+      "price": 1
+    },
+    {
+      "line_no": 3,
+      "product_id": 1,
+      "description": "Line 200001",
+      "qty": 1,
+      "price": 1
+    },
+    {
+      "line_no": 4,
+      "product_id": 1,
+      "description": "Line 300001",
+      "qty": 1,
+      "price": 1
+    },
+    {
+      "line_no": 5,
+      "product_id": 5000,
+      "description": "Line 400000",
+      "qty": 1,
+      "price": 1
+    },
+    {
+      "line_no": 6,
+      "product_id": 4999,
+      "description": "Line 399999",
+      "qty": 1,
+      "price": 1
+    },
+    {
+      "line_no": 7,
+      "product_id": 4998,
+      "description": "Line 399998",
+      "qty": 1,
+      "price": 1
+    },
+    {
+      "line_no": 8,
+      "product_id": 4997,
+      "description": "Line 399997",
+      "qty": 1,
+      "price": 1
+    },
+    {
+      "line_no": 9,
+      "product_id": 4996,
+      "description": "Line 399996",
+      "qty": 1,
+      "price": 1
+    },
+    {
+      "line_no": 10,
+      "product_id": 4995,
+      "description": "Line 399995",
+      "qty": 1,
+      "price": 1
+    },
+    {
+      "line_no": 11,
+      "product_id": 4994,
+      "description": "Line 399994",
+      "qty": 1,
+      "price": 1
+    },
+    {
+      "line_no": 12,
+      "product_id": 4993,
+      "description": "Line 399993",
+      "qty": 1,
+      "price": 1
+    },
+    {
+      "line_no": 13,
+      "product_id": 4992,
+      "description": "Line 399992",
+      "qty": 1,
+      "price": 1
+    },
+    {
+      "line_no": 14,
+      "product_id": 4991,
+      "description": "Line 399991",
+      "qty": 1,
+      "price": 1
+    },
+    {
+      "line_no": 15,
+      "product_id": 4990,
+      "description": "Line 399990",
+      "qty": 1,
+      "price": 1
+    },
+    {
+      "line_no": 16,
+      "product_id": 4989,
+      "description": "Line 399989",
+      "qty": 1,
+      "price": 1
+    },
+    {
+      "line_no": 17,
+      "product_id": 4988,
+      "description": "Line 399988",
+      "qty": 1,
+      "price": 1
+    },
+    {
+      "line_no": 18,
+      "product_id": 4987,
+      "description": "Line 399987",
+      "qty": 1,
+      "price": 1
+    },
+    {
+      "line_no": 19,
+      "product_id": 4986,
+      "description": "Line 399986",
+      "qty": 1,
+      "price": 1
+    },
+    {
+      "line_no": 20,
+      "product_id": 4985,
+      "description": "Line 399985",
+      "qty": 1,
+      "price": 1
+    },
+    {
+      "line_no": 21,
+      "product_id": 1,
+      "description": null,
+      "qty": 1,
+      "price": 1
+    }
+  ]
+}

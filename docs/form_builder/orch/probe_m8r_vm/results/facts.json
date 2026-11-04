@@ -43,23 +43,6 @@
     "invoices": "4b8aa0899216900e49aaa92f3b653b7c",
     "invoice_lines": "ff01f18d7f652abf696a8ce42cad43cf"
   },
-  "try": {
-    "command0": "/opt/freecad/AppRun",
-    "before": {
-      "invoices": "4b8aa0899216900e49aaa92f3b653b7c",
-      "invoice_lines": "ff01f18d7f652abf696a8ce42cad43cf"
-    },
-    "after": {
-      "invoices": "4b8aa0899216900e49aaa92f3b653b7c",
-      "invoice_lines": "ff01f18d7f652abf696a8ce42cad43cf"
-    },
-    "md5_unchanged": true,
-    "banner": "",
-    "what_ran": "",
-    "saved": null,
-    "error": "",
-    "exit": 1
-  },
   "demo": {
     "rss_before_kb": 211432,
     "list_bytes": 70224,
@@ -222,5 +205,23 @@
         "price": "1"
       }
     ]
-  }
+  },
+  "try_first_attempt": {
+    "command0": "/opt/freecad/AppRun",
+    "before": {
+      "invoices": "4b8aa0899216900e49aaa92f3b653b7c",
+      "invoice_lines": "ff01f18d7f652abf696a8ce42cad43cf"
+    },
+    "after": {
+      "invoices": "4b8aa0899216900e49aaa92f3b653b7c",
+      "invoice_lines": "ff01f18d7f652abf696a8ce42cad43cf"
+    },
+    "md5_unchanged": true,
+    "banner": "",
+    "what_ran": "",
+    "saved": null,
+    "error": "",
+    "exit": 1
+  },
+  "try": "see facts_try.json. The first attempt did not save."
 }

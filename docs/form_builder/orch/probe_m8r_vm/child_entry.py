@@ -12,10 +12,13 @@ import sys
 import traceback
 
 sys.dont_write_bytecode = True
+_HERE = os.path.dirname(os.path.abspath(__file__))
+if _HERE not in sys.path:
+    sys.path.insert(0, _HERE)
 
-import pyside6_alias  # noqa: E402
+import qt_alias  # noqa: E402
 
-pyside6_alias.install()
+qt_alias.install()
 os.environ["CBCS_QT_API"] = "pyside6"
 
 from app.features.form_builder.qtside.preview.child.stdio import isolate_stdio  # noqa: E402
