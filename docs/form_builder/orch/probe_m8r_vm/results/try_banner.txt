@@ -1,0 +1,1 @@
+Try: changes to Shop are rolled back. While a save runs, other people using it may wait up to 2 seconds.

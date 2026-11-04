@@ -1,0 +1,226 @@
+{
+  "python": "3.9.2",
+  "executable": "/opt/freecad/usr/bin/FreeCAD",
+  "loadavg": null,
+  "loadavg_error": "OSError: Load averages are unobtainable",
+  "apparmor_attr": "PermissionError: [Errno 13] Permission denied: '/proc/self/attr/current'",
+  "rss_kb": 89944,
+  "drivers": {
+    "bundled": {
+      "psycopg": "ModuleNotFoundError: No module named 'psycopg'",
+      "pg8000": "ModuleNotFoundError: No module named 'pg8000'"
+    },
+    "on_probe_path": {
+      "psycopg": "ModuleNotFoundError: No module named 'psycopg'",
+      "pg8000": "/mnt/cbprobe/incoming/m8r/payload/pg8000/__init__.py"
+    },
+    "postgres": {
+      "client_encoding": "UTF8",
+      "returning_id": 1,
+      "driver": "",
+      "hba_file": "/home/PG_data/pg_hba.conf",
+      "wrong_password": "accepted"
+    }
+  },
+  "machine_file": {
+    "path": "/tmp/m8r_work/machine_file/shop.json",
+    "file_mode": "0o600",
+    "dir_mode": "0o700",
+    "file_is_0600": true,
+    "dir_is_0700": true,
+    "writable": true
+  },
+  "speed_exit": 0,
+  "helper": {
+    "p95_ms": 9.267,
+    "wall_p95_ms": 603.298,
+    "command0": "/opt/freecad/AppRun",
+    "helper_script": "run_schema_helper.py",
+    "evidence": "tables=30",
+    "error": ""
+  },
+  "md5_before_try": {
+    "invoices": "4b8aa0899216900e49aaa92f3b653b7c",
+    "invoice_lines": "ff01f18d7f652abf696a8ce42cad43cf"
+  },
+  "try": {
+    "command0": "/opt/freecad/AppRun",
+    "before": {
+      "invoices": "4b8aa0899216900e49aaa92f3b653b7c",
+      "invoice_lines": "ff01f18d7f652abf696a8ce42cad43cf"
+    },
+    "after": {
+      "invoices": "4b8aa0899216900e49aaa92f3b653b7c",
+      "invoice_lines": "ff01f18d7f652abf696a8ce42cad43cf"
+    },
+    "md5_unchanged": true,
+    "banner": "",
+    "what_ran": "",
+    "saved": null,
+    "error": "",
+    "exit": 1
+  },
+  "demo": {
+    "rss_before_kb": 211432,
+    "list_bytes": 70224,
+    "search_bytes": 69753,
+    "search_rows": 500,
+    "invoice_bytes": 38610,
+    "lookup_bytes": 38610,
+    "add_bytes": 40676,
+    "saved": true,
+    "save_bytes": 40593,
+    "prepared_statements": 0,
+    "driver": "pg8000",
+    "rss_after_kb": 231476,
+    "invoice_1_lines": [
+      {
+        "line_no": 1,
+        "product_id": 1,
+        "description": "Line 1",
+        "qty": 1,
+        "price": "1"
+      },
+      {
+        "line_no": 2,
+        "product_id": 1,
+        "description": "Line 100001",
+        "qty": 1,
+        "price": "1"
+      },
+      {
+        "line_no": 3,
+        "product_id": 1,
+        "description": "Line 200001",
+        "qty": 1,
+        "price": "1"
+      },
+      {
+        "line_no": 4,
+        "product_id": 1,
+        "description": "Line 300001",
+        "qty": 1,
+        "price": "1"
+      },
+      {
+        "line_no": 5,
+        "product_id": 5000,
+        "description": "Line 400000",
+        "qty": 1,
+        "price": "1"
+      },
+      {
+        "line_no": 6,
+        "product_id": 4999,
+        "description": "Line 399999",
+        "qty": 1,
+        "price": "1"
+      },
+      {
+        "line_no": 7,
+        "product_id": 4998,
+        "description": "Line 399998",
+        "qty": 1,
+        "price": "1"
+      },
+      {
+        "line_no": 8,
+        "product_id": 4997,
+        "description": "Line 399997",
+        "qty": 1,
+        "price": "1"
+      },
+      {
+        "line_no": 9,
+        "product_id": 4996,
+        "description": "Line 399996",
+        "qty": 1,
+        "price": "1"
+      },
+      {
+        "line_no": 10,
+        "product_id": 4995,
+        "description": "Line 399995",
+        "qty": 1,
+        "price": "1"
+      },
+      {
+        "line_no": 11,
+        "product_id": 4994,
+        "description": "Line 399994",
+        "qty": 1,
+        "price": "1"
+      },
+      {
+        "line_no": 12,
+        "product_id": 4993,
+        "description": "Line 399993",
+        "qty": 1,
+        "price": "1"
+      },
+      {
+        "line_no": 13,
+        "product_id": 4992,
+        "description": "Line 399992",
+        "qty": 1,
+        "price": "1"
+      },
+      {
+        "line_no": 14,
+        "product_id": 4991,
+        "description": "Line 399991",
+        "qty": 1,
+        "price": "1"
+      },
+      {
+        "line_no": 15,
+        "product_id": 4990,
+        "description": "Line 399990",
+        "qty": 1,
+        "price": "1"
+      },
+      {
+        "line_no": 16,
+        "product_id": 4989,
+        "description": "Line 399989",
+        "qty": 1,
+        "price": "1"
+      },
+      {
+        "line_no": 17,
+        "product_id": 4988,
+        "description": "Line 399988",
+        "qty": 1,
+        "price": "1"
+      },
+      {
+        "line_no": 18,
+        "product_id": 4987,
+        "description": "Line 399987",
+        "qty": 1,
+        "price": "1"
+      },
+      {
+        "line_no": 19,
+        "product_id": 4986,
+        "description": "Line 399986",
+        "qty": 1,
+        "price": "1"
+      },
+      {
+        "line_no": 20,
+        "product_id": 4985,
+        "description": "Line 399985",
+        "qty": 1,
+        "price": "1"
+      },
+      {
+        "line_no": 21,
+        "product_id": 1,
+        "description": null,
+        "qty": 1,
+        "price": "1"
+      }
+    ]
+  }
+}
