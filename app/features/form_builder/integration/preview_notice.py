@@ -211,6 +211,19 @@ def build_try_start(
         form_methods=tuple(sorted(methods.items())),
         window_methods=specs,
         display_names=display_names,
+        eject_note=_eject_note(document, scope),
+    )
+
+
+def _eject_note(document: Any, scope: Any) -> str:
+    from app.features.form_builder.engine.codegen.eject import ejected_method
+
+    if ejected_method(document) is None:
+        return ""
+    filename = os.path.basename(str(getattr(scope, "window_path", "") or "the window file"))
+    return (
+        "This form's data code is in %s, so Try shows the layout and lists the calls instead of running them."
+        % filename
     )
 
 

@@ -45,7 +45,13 @@ def env_for(doc: UiDocument, window_facts: Optional[WindowFacts], catalog: QtCla
         digest = _data_digest(doc)
         if digest:
             key = "%s\0%s" % (key, digest)
+    if _ejected(doc):
+        key = "%s\0ejected" % key
     return doc.structure_memo(key, lambda: _build(doc, window_facts, table))
+
+
+def _ejected(doc: UiDocument) -> bool:
+    return bool(_text(doc.root, "cbcsEjected"))  # type: ignore[arg-type]
 
 
 def _build(doc: UiDocument, window_facts: Optional[WindowFacts], catalog: QtClassTable) -> FormulaEnv:
@@ -77,6 +83,7 @@ def _build(doc: UiDocument, window_facts: Optional[WindowFacts], catalog: QtClas
         returns={},
         class_name=class_name,
         window_file="window.py",
+        ejected=_ejected(doc),
     )
 
 
@@ -238,7 +245,8 @@ def _data_facts(doc: UiDocument, widgets: Dict[str, WidgetFacts]) -> Optional[Da
     read = read_data(_text(doc.root, "cbcsData"))  # type: ignore[arg-type]
     source = read.value
     if source is None:
-        return None
+        # Eject removed the source. form.isNew and the other form facts still apply.
+        return DataFacts() if _ejected(doc) else None
     record: Dict[str, FType] = {}
     table_name = getattr(source, "table", "") or ""
     connection = getattr(source, "connection", "") or ""

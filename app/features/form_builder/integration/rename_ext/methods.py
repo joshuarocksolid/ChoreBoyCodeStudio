@@ -2,26 +2,14 @@
 
 from __future__ import annotations
 
-import io
 import os
-import tokenize
 from dataclasses import dataclass, is_dataclass, replace
 from typing import List, Optional, Sequence, Tuple
 
 from app.features.form_builder.engine.commands.base import CommandRejected
-from app.features.form_builder.engine.commands.catalog import SetFormSlots, SetLogic
-from app.features.form_builder.engine.commands.catalog_ext.events import SetEventSteps
-from app.features.form_builder.engine.logic.codec import parse_json, write_json
-from app.features.form_builder.engine.logic.compat import signature_text, split_signature
-from app.features.form_builder.engine.logic.events import read_events
-from app.features.form_builder.engine.logic.events_codec import EventStep
-from app.features.form_builder.engine.logic.refs import map_json_formulas
-from app.features.form_builder.engine.logic.storage import FORMULA_KEYS
+from app.features.form_builder.engine.project.method_forms import method_rename_commands as _method_rename_commands
 from app.features.form_builder.engine.project.handler_checks import shadow_sentence
-from app.features.form_builder.engine.ui4.document import UiDocument
-from app.features.form_builder.engine.ui4.nodes import WidgetNode
-from app.features.form_builder.engine.ui4.schema import SlotsDecl
-from app.features.form_builder.engine.ui4.values import CStringValue, StringValue
+from app.persistence.file_unit import bytes_for, commit_files, restore_file, same_bytes, same_text
 from app.features.form_builder.qtside.outline.methods import window_methods
 
 
@@ -77,7 +65,6 @@ class MethodRename:
         sentence = self.refusal(window, old, new, seed.window_path)
         if sentence:
             return RenameFollowThrough(True, plan, sentence)
-        # A closed form on disk is left alone. Saving it would write a file the person has not opened.
         label = "Rename %s to %s" % (old, new)
         done: List[object] = []
         for surface in _surfaces(window):
@@ -99,171 +86,510 @@ class MethodRename:
                     _undo_if(earlier, label)
                 return RenameFollowThrough(True, plan, "The form could not be renamed.")
             done.append(surface)
+        try:
+            closed = _closed_edits(window, old, new, seed.window_path)
+        except CommandRejected:
+            for surface in done:
+                _undo_if(surface, label)
+            return RenameFollowThrough(True, plan, "A form that isn't open could not be renamed.")
         status, updated_plan = _edit_window_file(window, seed.window_path, plan)
         if status == "fail":
             for surface in done:
                 _undo_if(surface, label)
             return RenameFollowThrough(True, plan, "The window file could not be edited.")
+        refused = _refuse_generated(window, closed)
+        if refused:
+            _restore_window(window, seed)
+            for surface in done:
+                _undo_if(surface, label)
+            return RenameFollowThrough(True, plan, refused)
+        window_item = None
+        before_bytes = None
+        after_bytes = None
+        if closed:
+            patch = _patch_for(plan, seed.window_path)
+            after_text = str(getattr(patch, "updated_content", "") or "") or seed.source
+            after_bytes = bytes_for(seed.window_path, after_text)
+            before_bytes = _window_bytes(seed.window_path)
+            window_item = (seed.window_path, after_bytes, before_bytes)
+        written, generated = _write_closed(closed, window_item, _project_root(window))
+        if written is None:
+            _restore_window(window, seed)
+            for surface in done:
+                _undo_if(surface, label)
+            return RenameFollowThrough(True, plan, "A form that isn't open could not be renamed.")
+        before_text = seed.source
+        after_text = ""
+        patch = _patch_for(plan, seed.window_path)
+        if patch is not None:
+            after_text = str(getattr(patch, "updated_content", "") or "")
+        if written and not done:
+            _mark_closed_anchor(window, seed.window_path, label)
+        for surface in done:
+            _arm_closed(
+                surface, label, written, window, seed.window_path, before_text, after_text,
+                before_bytes, after_bytes, window_item is not None, generated,
+            )
+        if written and not done:
+            _arm_anchor(
+                window, seed.window_path, label, written, before_text, after_text,
+                before_bytes, after_bytes, True, generated,
+            )
         return RenameFollowThrough(False, updated_plan, "")
+
+    def closed_note(self, window: object, seed: MethodSeed, plan: object) -> str:
+        """The preview sentence for closed forms this rename will change."""
+
+        new = str(getattr(plan, "new_symbol", "") or "")
+        try:
+            edits = _closed_edits(window, seed.old_name, new, seed.window_path)
+        except CommandRejected:
+            return ""
+        names = [os.path.basename(edit.path) for edit in edits]
+        if not names:
+            return ""
+        return "Also changes %s (closed)" % ", ".join(names)
+
+
+def _project_root(window: object) -> str:
+    for surface in _surfaces(window):
+        request = getattr(surface, "_request", None)
+        root = str(getattr(request, "project_root", "") or "")
+        if root:
+            return root
+        scope = getattr(getattr(surface, "session", None), "scope", None)
+        root = str(getattr(scope, "project_root", "") or "")
+        if root:
+            return root
+    loaded = getattr(window, "loaded_project", None)
+    project = loaded() if callable(loaded) else None
+    return str(getattr(project, "project_root", "") or "")
+
+
+@dataclass(frozen=True)
+class _ClosedEdit:
+    path: str
+    original: bytes
+    text: str
+    written: bytes = b""
+
+
+class _ClosedBook:
+    def __init__(self) -> None:
+        self.memos: dict = {}
+
+    def arm(
+        self,
+        log: object,
+        entry: object,
+        edits: Sequence[_ClosedEdit],
+        window: object = None,
+        path: str = "",
+        before: str = "",
+        after: str = "",
+        disk_before: Optional[bytes] = None,
+        disk_after: Optional[bytes] = None,
+        wrote_window: bool = False,
+        generated: Sequence[Tuple[str, Optional[bytes], bytes]] = (),
+    ) -> None:
+        self.memos[id(entry)] = (
+            entry, edits, window, path, before, after, wrote_window, disk_before, disk_after,
+            tuple(generated),
+        )
+        if getattr(log, "_cbcs_closed_armed", False):
+            return
+        previous_undo = log.undo
+        previous_redo = log.redo
+        book = self
+
+        def undo() -> bool:
+            entries = log.entries()
+            tip = entries[-1] if entries else None
+            memo = book.memos.get(id(tip)) if tip is not None else None
+            if memo is not None:
+                sentence = (
+                    _unchanged(memo[1], written=True)
+                    or _window_changed(memo, memo[5])
+                    or _disk_sentence(memo, memo[8])
+                    or _generated_sentence(memo, written=True)
+                )
+                if sentence:
+                    log._cbcs_rename_notice = sentence
+                    return False
+            ok = bool(previous_undo())
+            if ok and memo is not None:
+                problem = _restore_unit(memo, back=True)
+                if problem:
+                    previous_redo()
+                    log._cbcs_rename_notice = problem
+                    return False
+                _put_window(memo[2], memo[3], memo[4])
+            return ok
+
+        def redo() -> bool:
+            pending = log._redo[-1] if getattr(log, "_redo", None) else None
+            memo = book.memos.get(id(pending)) if pending is not None else None
+            if memo is not None:
+                sentence = (
+                    _unchanged(memo[1], written=False)
+                    or _window_changed(memo, memo[4])
+                    or _disk_sentence(memo, memo[7])
+                    or _generated_sentence(memo, written=False)
+                )
+                if sentence:
+                    log._cbcs_rename_notice = sentence
+                    return False
+            ok = bool(previous_redo())
+            if ok and memo is not None:
+                problem = _restore_unit(memo, back=False)
+                if problem:
+                    previous_undo()
+                    log._cbcs_rename_notice = problem
+                    return False
+                _put_window(memo[2], memo[3], memo[5])
+            return ok
+
+        log.undo = undo  # type: ignore[method-assign]
+        log.redo = redo  # type: ignore[method-assign]
+        log._cbcs_closed_armed = True
+
+
+_CLOSED = _ClosedBook()
+
+
+def _closed_edits(window: object, old: str, new: str, window_path: str) -> List[_ClosedEdit]:
+    """Closed forms whose window file is ``window_path``. Nothing is written."""
+
+    if not old or not new or old == new or not window_path:
+        return []
+    root = _project_root(window)
+    if not root:
+        return []
+    from app.features.form_builder.engine.ids import IdAllocator
+    from app.features.form_builder.engine.project.forms import classify_form
+    from app.features.form_builder.engine.project.fs import OsFileSystem
+    from app.features.form_builder.engine.project.method_forms import rename_method_in_document
+    from app.features.form_builder.engine.project.save import project_ui_files
+    from app.features.form_builder.engine.ui4.reader import UiReadError, read_ui
+    from app.features.form_builder.engine.ui4.writer import write_ui
+
+    opened = set()
+    for surface in _surfaces(window):
+        form = getattr(surface, "form_path", None)
+        path = str(form() or "") if callable(form) else ""
+        if path:
+            opened.add(os.path.abspath(path))
+    wanted = os.path.abspath(window_path)
+    files = OsFileSystem()
+    found: List[_ClosedEdit] = []
+    for path in project_ui_files(root):
+        absolute = os.path.abspath(path)
+        if absolute in opened:
+            continue
+        scope = classify_form(absolute, project_root=root)
+        if not _same(str(getattr(scope, "window_path", "") or ""), wanted):
+            continue
+        try:
+            current = files.read_bytes(absolute)
+            document = read_ui(current.decode("utf-8"), allocator=IdAllocator()).document
+        except (OSError, UnicodeError, UiReadError):
+            continue
+        edited = rename_method_in_document(document, old, new)
+        if edited is None:
+            continue
+        text = write_ui(edited).text
+        if text.encode("utf-8") == current:
+            continue
+        found.append(_ClosedEdit(absolute, current, text))
+    return found
+
+
+def _refuse_generated(window: object, edits: Sequence[_ClosedEdit]) -> str:
+    """The save sentence when a closed form's generated file was edited by hand."""
+
+    if not edits:
+        return ""
+    root = _project_root(window)
+    if not root:
+        return ""
+    from app.features.form_builder.engine.codegen.header import is_hand_edited
+    from app.features.form_builder.engine.project.forms import classify_form
+    from app.features.form_builder.integration.code_bridge import ShellPort
+
+    port = ShellPort(window)
+    for edit in edits:
+        scope = classify_form(edit.path, project_root=root)
+        path = str(getattr(scope, "generated_path", "") or "")
+        if not path or not getattr(scope, "generates", False):
+            continue
+        opened = port.open_text(path)
+        disk = _window_bytes(path)
+        disk_text = "" if disk is None else disk.decode("utf-8", "replace")
+        if opened is not None and (disk is None or not same_text(opened, disk_text)):
+            return "Save or discard your changes to %s first." % os.path.basename(path)
+        text = opened if opened is not None else disk_text
+        if text and is_hand_edited(text):
+            return "%s has edits made by hand. Saving the form will replace them." % os.path.basename(path)
+    return ""
+
+
+def _generated_items(
+    edits: Sequence[_ClosedEdit], root: str
+) -> Optional[List[Tuple[str, bytes, Optional[bytes]]]]:
+    """``(path, new, old)`` for each closed form's ``ui_<name>.py``. None when one cannot be written."""
+
+    if not edits or not root:
+        return []
+    from app.features.form_builder.engine.codegen.api import generate_form_module
+    from app.features.form_builder.engine.ids import IdAllocator
+    from app.features.form_builder.engine.project.forms import classify_form
+    from app.features.form_builder.engine.ui4.reader import UiReadError, read_ui
+
+    items: List[Tuple[str, bytes, Optional[bytes]]] = []
+    for edit in edits:
+        scope = classify_form(edit.path, project_root=root)
+        path = str(getattr(scope, "generated_path", "") or "")
+        if not path or not getattr(scope, "generates", False):
+            continue
+        try:
+            document = read_ui(edit.text, allocator=IdAllocator()).document
+        except (UnicodeError, UiReadError):
+            return None
+        result = generate_form_module(document, scope=scope, source_bytes=edit.text.encode("utf-8"))
+        if not result.text:
+            return None
+        items.append((path, bytes_for(path, result.text), _window_bytes(path)))
+    return items
+
+
+def _generated_sentence(memo: tuple, *, written: bool) -> str:
+    items = memo[9] if len(memo) > 9 else ()
+    for path, before, after in items:
+        expect = after if written else before
+        if not same_bytes(_window_bytes(path), expect):
+            return "%s changed after the rename, so the rename can't be undone." % os.path.basename(path)
+    return ""
+
+
+def _restore_generated(memo: tuple, *, back: bool) -> str:
+    items = memo[9] if len(memo) > 9 else ()
+    applied: List[Tuple[str, Optional[bytes], bytes]] = []
+    for path, before, after in items:
+        payload = before if back else after
+        sentence = restore_file(path, payload, os.replace)
+        if sentence:
+            for earlier, earlier_before, earlier_after in reversed(applied):
+                restore_file(earlier, earlier_after if back else earlier_before, os.replace)
+            return sentence
+        applied.append((path, before, after))
+    return ""
+
+
+def _write_closed(
+    edits: Sequence[_ClosedEdit],
+    window_item: Optional[Tuple[str, bytes, Optional[bytes]]] = None,
+    root: str = "",
+) -> Tuple[Optional[List[_ClosedEdit]], Tuple[Tuple[str, Optional[bytes], bytes], ...]]:
+    from app.features.form_builder.engine.project.written_files import note_written_files
+
+    if not edits and window_item is None:
+        return [], ()
+    items: List[Tuple[str, bytes, Optional[bytes]]] = []
+    if window_item is not None:
+        items.append(window_item)
+    payloads: List[bytes] = []
+    for edit in edits:
+        payload = bytes_for(edit.path, edit.text)
+        payloads.append(payload)
+        items.append((edit.path, payload, edit.original))
+    generated = _generated_items(edits, root)
+    if generated is None:
+        return None, ()
+    items.extend(generated)
+    if commit_files(items, replace=os.replace):
+        return None, ()
+    written = [
+        _ClosedEdit(edit.path, edit.original, edit.text, payload)
+        for edit, payload in zip(edits, payloads)
+    ]
+    if items:
+        note_written_files(tuple(item[0] for item in items))
+    return written, tuple((path, before, after) for path, after, before in generated)
+
+
+def _restore_window(window: object, seed: MethodSeed) -> None:
+    from app.features.form_builder.integration.code_bridge import ShellPort
+
+    port = ShellPort(window)
+    current = port.open_text(seed.window_path)
+    if current is None or current == seed.source:
+        return
+    port.replace_range(seed.window_path, 0, len(current), seed.source)
+
+
+def _mark_closed_anchor(window: object, window_path: str, label: str) -> None:
+    surface = _anchor_surface(window, window_path)
+    log = getattr(getattr(surface, "session", None), "log", None) if surface is not None else None
+    mark = getattr(log, "mark", None)
+    if log is not None and callable(mark) and log.undo_label() != label:
+        mark(label)
+
+
+def _arm_anchor(
+    window: object,
+    window_path: str,
+    label: str,
+    edits: Sequence[_ClosedEdit],
+    before: str = "",
+    after: str = "",
+    disk_before: Optional[bytes] = None,
+    disk_after: Optional[bytes] = None,
+    wrote_window: bool = False,
+    generated: Sequence[Tuple[str, Optional[bytes], bytes]] = (),
+) -> None:
+    surface = _anchor_surface(window, window_path)
+    if surface is not None:
+        _arm_closed(
+            surface, label, edits, window, window_path, before, after,
+            disk_before, disk_after, wrote_window, generated,
+        )
+
+
+def _anchor_surface(window: object, window_path: str) -> object:
+    for surface in _surfaces(window):
+        if _same(_window_path(surface), window_path):
+            return surface
+    return None
+
+
+def _unchanged(edits: Sequence[_ClosedEdit], *, written: bool) -> str:
+    """A sentence when a closed file is no longer the bytes this rename left."""
+
+    names = []
+    for edit in edits:
+        expect = edit.written if written and edit.written else edit.original
+        if written and not edit.written:
+            expect = edit.text.encode("utf-8")
+        try:
+            with open(edit.path, "rb") as handle:
+                current = handle.read()
+        except OSError:
+            names.append(os.path.basename(edit.path))
+            continue
+        if not same_bytes(current, expect):
+            names.append(os.path.basename(edit.path))
+    if not names:
+        return ""
+    if len(names) == 1:
+        return "%s changed after the rename, so the rename can't be undone." % names[0]
+    return "%s changed after the rename, so the rename can't be undone." % " and ".join(names)
+
+
+def _window_changed(memo: tuple, expected: str) -> str:
+    window, path = memo[2], memo[3]
+    if window is None or not path or expected == "":
+        return ""
+    from app.features.form_builder.integration.code_bridge import ShellPort
+
+    current = ShellPort(window).open_text(path)
+    if current is None or same_text(current, expected):
+        return ""
+    return "%s changed after the rename, so the rename can't be undone." % os.path.basename(path)
+
+
+def _disk_sentence(memo: tuple, expected: Optional[bytes]) -> str:
+    if len(memo) < 9 or not memo[6]:
+        return ""
+    path = str(memo[3] or "")
+    if not path:
+        return ""
+    if same_bytes(_window_bytes(path), expected):
+        return ""
+    return "%s changed after the rename, so the rename can't be undone." % os.path.basename(path)
+
+
+def _restore_unit(memo: tuple, *, back: bool) -> str:
+    applied: List[_ClosedEdit] = []
+    for edit in memo[1]:
+        payload = edit.original if back else (edit.written or edit.text.encode("utf-8"))
+        sentence = restore_file(edit.path, payload, os.replace)
+        if sentence:
+            _rewind_edits(applied, back=back)
+            return sentence
+        applied.append(edit)
+    if len(memo) >= 9 and memo[6]:
+        payload = memo[7] if back else memo[8]
+        sentence = restore_file(str(memo[3]), payload, os.replace)
+        if sentence:
+            _rewind_edits(applied, back=back)
+            return sentence
+    sentence = _restore_generated(memo, back=back)
+    if sentence:
+        if len(memo) >= 9 and memo[6]:
+            payload = memo[8] if back else memo[7]
+            restore_file(str(memo[3]), payload, os.replace)
+        _rewind_edits(applied, back=back)
+        return sentence
+    return ""
+
+
+def _rewind_edits(edits: Sequence[_ClosedEdit], *, back: bool) -> None:
+    for edit in reversed(edits):
+        payload = edit.written if back else edit.original
+        restore_file(edit.path, payload or edit.text.encode("utf-8"), os.replace)
+
+
+def _window_bytes(path: str) -> Optional[bytes]:
+    try:
+        with open(path, "rb") as handle:
+            return handle.read()
+    except OSError:
+        return None
+
+
+def _put_window(window: object, path: str, text: str) -> None:
+    if window is None or not path or text == "":
+        return
+    from app.features.form_builder.integration.code_bridge import ShellPort
+
+    port = ShellPort(window)
+    reload = getattr(port, "reload_saved", None)
+    if callable(reload) and reload(path, text):
+        return
+    widget = port._widget(path)
+    if widget is not None and hasattr(widget, "setPlainText"):
+        widget.setPlainText(text)
+
+
+def _arm_closed(
+    surface: object,
+    label: str,
+    edits: Sequence[_ClosedEdit],
+    window: object = None,
+    path: str = "",
+    before: str = "",
+    after: str = "",
+    disk_before: Optional[bytes] = None,
+    disk_after: Optional[bytes] = None,
+    wrote_window: bool = False,
+    generated: Sequence[Tuple[str, Optional[bytes], bytes]] = (),
+) -> None:
+    if not edits:
+        return
+    log = getattr(getattr(surface, "session", None), "log", None)
+    if log is None or log.undo_label() != label:
+        return
+    entries = log.entries()
+    if not entries:
+        return
+    _CLOSED.arm(
+        log, entries[-1], edits, window, path, before, after,
+        disk_before, disk_after, wrote_window, generated,
+    )
 
 
 def register(window: object) -> None:
     window._form_builder_method_rename = MethodRename()  # type: ignore[attr-defined]
-
-
-def _method_rename_commands(doc: UiDocument, old: str, new: str) -> Tuple[object, ...]:
-    """One form's commands. Private to this module. The transaction label is applied by the caller."""
-    commands: List[object] = []
-    for node in doc.iter_preorder():
-        if not isinstance(node, WidgetNode):
-            continue
-        for key in FORMULA_KEYS:
-            text = _stored(node, key)
-            if not text:
-                continue
-            updated = _window_call(text, old, new)
-            if updated != text:
-                commands.append(SetLogic(node.id, key, updated))
-        validate = _stored(node, "cbcsValidate")
-        if validate:
-            updated_json = _rewrite_json(validate, old, new)
-            if updated_json != validate:
-                commands.append(SetLogic(node.id, "cbcsValidate", updated_json))
-    for state in read_events(doc):
-        steps = tuple(_rename_step(step, old, new) for step in state.steps)
-        if steps != state.steps:
-            commands.append(SetEventSteps(state.sender, state.signal_name, steps))
-    declared = doc.ui.field("form_slots")
-    if isinstance(declared, SlotsDecl):
-        slots: List[str] = []
-        changed = False
-        for signature in declared.slots:
-            name, params = split_signature(signature)
-            if name == old:
-                signature = signature_text(new, params)
-                changed = True
-            slots.append(signature)
-        if changed:
-            commands.append(SetFormSlots(tuple(declared.signals), tuple(slots)))
-    return tuple(commands)
-
-
-def _rename_step(step: EventStep, old: str, new: str) -> EventStep:
-    method = step.method
-    slot = step.slot
-    when = step.when
-    raw = step.raw
-    changed = False
-    if step.verb == "call" and method == old:
-        method = new
-        changed = True
-    if slot:
-        name, params = split_signature(slot)
-        if name == old:
-            slot = signature_text(new, params)
-            changed = True
-    if isinstance(when, str):
-        updated = _window_call(when, old, new)
-        if updated != when:
-            when = updated
-            changed = True
-    if raw is not None:
-        renamed = _rename_raw(raw, old, new)
-        if renamed is not raw:
-            raw = renamed
-            changed = True
-    if not changed:
-        return step
-    return replace(step, method=method, slot=slot, when=when, raw=raw)
-
-
-def _rename_raw(raw: object, old: str, new: str) -> object:
-    fields = getattr(raw, "fields", None)
-    when = getattr(raw, "when", None)
-    if not isinstance(fields, tuple):
-        return raw
-    updated_fields = []
-    changed = False
-    for key, value in fields:
-        if key == "method" and value == old:
-            value = new
-            changed = True
-        elif isinstance(value, str) and key in ("when", "formula"):
-            rewritten = _window_call(value, old, new)
-            if rewritten != value:
-                value = rewritten
-                changed = True
-        updated_fields.append((key, value))
-    new_when = _window_call(when, old, new) if isinstance(when, str) else when
-    if new_when != when:
-        changed = True
-    if not changed:
-        return raw
-    if is_dataclass(raw):
-        try:
-            return replace(raw, fields=tuple(updated_fields), when=new_when)  # type: ignore[type-var]
-        except TypeError:
-            return raw
-    return raw
-
-
-def _window_call(text: str, old: str, new: str) -> str:
-    """Replace ``window.old`` name tokens. ``rename_formula`` skips a name after a dot."""
-    if not text or not old or old == new or "window" not in text:
-        return text
-    try:
-        tokens = list(tokenize.generate_tokens(io.StringIO(text).readline))
-    except (tokenize.TokenError, SyntaxError, IndentationError):
-        return text
-    older = None
-    previous = None
-    chosen = []
-    for token in tokens:
-        if (
-            token.type == tokenize.NAME
-            and token.string == old
-            and previous is not None
-            and previous.type == tokenize.OP
-            and previous.string == "."
-            and older is not None
-            and older.type == tokenize.NAME
-            and older.string == "window"
-        ):
-            chosen.append(token)
-        older = previous
-        previous = token
-    if not chosen:
-        return text
-    starts: List[int] = []
-    offset = 0
-    for line in text.split("\n"):
-        starts.append(offset)
-        offset += len(line) + 1
-    pieces: List[Tuple[int, int]] = []
-    for token in chosen:
-        row, column = token.start
-        end_row, end_column = token.end
-        if row != end_row or row - 1 >= len(starts):
-            return text
-        begin = starts[row - 1] + column
-        end = starts[row - 1] + end_column
-        if text[begin:end] != token.string:
-            return text
-        pieces.append((begin, end))
-    result = text
-    for begin, end in sorted(pieces, reverse=True):
-        result = result[:begin] + new + result[end:]
-    return result
-
-
-def _rewrite_json(text: str, old: str, new: str) -> str:
-    parsed = parse_json(text)
-    if parsed.error is not None or parsed.value is None:
-        return text
-    mapped = map_json_formulas(parsed.value, lambda formula: _window_call(formula, old, new))
-    if mapped == parsed.value:
-        return text
-    return write_json(mapped)
 
 
 def _edit_window_file(window: object, path: str, plan: object) -> Tuple[str, object]:
@@ -408,15 +734,6 @@ def _cursor(source: str, method: str) -> int:
         return 0
     return found.end() - len(method)
 
-
-def _stored(node: object, key: str) -> Optional[str]:
-    try:
-        value = node.value(key)  # type: ignore[attr-defined]
-    except Exception:
-        return None
-    if isinstance(value, (StringValue, CStringValue)):
-        return value.text
-    return None
 
 
 def _same(left: str, right: str) -> bool:

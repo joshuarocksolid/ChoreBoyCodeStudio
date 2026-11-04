@@ -90,7 +90,15 @@ class DataPanel(QWidget):
         qss += "QLabel#formBuilder\\.data\\.stale { color: %s; background: transparent; }" % (
             tokens.diag_warning_color,  # type: ignore[attr-defined]
         )
+        qss += (
+            "QLabel#formBuilder\\.data\\.ejectedText { color: %s; }"
+            "QLabel#formBuilder\\.data\\.ejectedText a { color: %s; }"
+        ) % (
+            tokens.text_primary,  # type: ignore[attr-defined]
+            tokens.accent,  # type: ignore[attr-defined]
+        )
         self.setStyleSheet(qss)
+        self.reload()
 
     def _arm(self) -> None:
         if self._sub is not None:

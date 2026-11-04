@@ -22,6 +22,14 @@ _FORM_READS = {
     "isDirty": "_cbcs_form_is_dirty",
     "isFiltered": "_cbcs_form_is_filtered",
 }
+# After Eject the same facts live on the window. Non-ejected output stays on self.
+_EJECTED_FORM = {
+    "position": "_form_position",
+    "count": "_form_count",
+    "isNew": "_form_is_new",
+    "isDirty": "is_dirty",
+    "isFiltered": "_form_is_filtered",
+}
 _RECORD_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*\Z")
 
 _NEVER_BLANK_FUNCS = {
@@ -363,11 +371,14 @@ def _emit_attr(node: Any, self_name: str, env: Any = None) -> _Piece:
     base = node.base
     if isinstance(getattr(base, "name", None), str) and base.name in _row_columns(env):
         column = base.name
-        return _Piece(
-            "self._cbcs_line_also(%s, _row.get(%s), %s)" % (repr(column), repr(column), repr(node.name)),
-            PREC_ATOM,
-            True,
-        )
+        if getattr(env, "ejected", False):
+            call = (
+                '(%s._form._line_also(%s, _row.get(%s), %s) if hasattr(%s._form, "_line_also") else "")'
+                % (self_name, repr(column), repr(column), repr(node.name), self_name)
+            )
+        else:
+            call = "self._cbcs_line_also(%s, _row.get(%s), %s)" % (repr(column), repr(column), repr(node.name))
+        return _Piece(call, PREC_ATOM, True)
     if isinstance(base, str):
         widget = base
     elif hasattr(base, "name"):
@@ -383,15 +394,37 @@ def _emit_attr(node: Any, self_name: str, env: Any = None) -> _Piece:
         method = _FORM_READS.get(name)
         if method is None:
             raise ValueError("unknown form attribute %s" % name)
+        if getattr(env, "ejected", False):
+            method = _EJECTED_FORM.get(name, method)
+            default = "0" if method in ("_form_position", "_form_count") else "False"
+            return _Piece(
+                "(%s._form.%s() if hasattr(%s._form, %s) else %s)"
+                % (self_name, method, self_name, repr(method), default),
+                PREC_ATOM,
+                False,
+            )
         return _Piece("%s.%s()" % (self_name, method), PREC_ATOM, False)
     if widget == "record":
         if sub is not None:
             raise ValueError("attribute subscript is not a formula read")
         if not _RECORD_NAME.match(name):
             raise ValueError("record column is not a name")
+        if getattr(env, "ejected", False):
+            return _Piece(
+                '(getattr(%s._form, "_record", {}) or {}).get("%s")' % (self_name, name),
+                PREC_ATOM,
+                True,
+            )
         return _Piece('%s._cbcs_record.get("%s")' % (self_name, name), PREC_ATOM, True)
     columns = _grid_columns(env, widget)
     if columns is not None and name in columns and name.isidentifier():
+        if getattr(env, "ejected", False):
+            return _Piece(
+                '(%s._form._grid_column("%s") if hasattr(%s._form, "_grid_column") else "")'
+                % (self_name, name, self_name),
+                PREC_ATOM,
+                True,
+            )
         return _Piece('%s._cbcs_grid_column("%s")' % (self_name, name), PREC_ATOM, True)
     target = "%s.%s" % (self_name, widget)
     table = {
@@ -416,6 +449,13 @@ def _emit_attr(node: Any, self_name: str, env: Any = None) -> _Piece:
         raise ValueError("unknown attribute %s" % (column if name == "also" else name))
     from app.features.form_builder.engine.codegen.literals import py_string
 
+    if getattr(env, "ejected", False):
+        return _Piece(
+            '(%s._form._also(%s, %s) if hasattr(%s._form, "_also") else "")'
+            % (self_name, py_string(widget), py_string(str(column)), self_name),
+            PREC_ATOM,
+            True,
+        )
     return _Piece(
         "%s._cbcs_also(%s, %s)" % (self_name, py_string(widget), py_string(str(column))),
         PREC_ATOM,

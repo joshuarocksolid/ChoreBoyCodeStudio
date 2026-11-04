@@ -125,3 +125,105 @@ def test_provider_declined_keeps_its_own_reason(qapp: object) -> None:
     assert _notice_text(tabs) == "Not a form."
     assert registry.surface_for_path("/tmp/project/invoice.ui") is None
     assert logged == []
+
+
+def test_opening_a_tab_releases_an_orphaned_surface(qapp: object) -> None:
+    tabs = QTabWidget()
+    registry = TabContentProviderRegistry()
+    released: list[object] = []
+
+    class _Orphan:
+        def release(self) -> None:
+            released.append(self)
+
+        def widget(self) -> QWidget:
+            return QWidget()
+
+    orphan = _Orphan()
+    registry.bind("/tmp/project/invoice.ui", orphan, "form")  # type: ignore[arg-type]
+
+    class _Next:
+        def __init__(self) -> None:
+            self._widget = QWidget()
+
+        def release(self) -> None:
+            return None
+
+        def widget(self) -> QWidget:
+            return self._widget
+
+        def source_editor(self) -> None:
+            return None
+
+        def content_source(self) -> None:
+            return None
+
+        def focus_primary(self) -> None:
+            return None
+
+    class _Provider:
+        provider_id = "form"
+        priority = 0
+
+        def matches(self, file_path: str, context: TabMatchContext) -> bool:
+            del file_path, context
+            return True
+
+        def create_surface(self, request: object) -> _Next:
+            del request
+            return _Next()
+
+    registry.register(_Provider())  # type: ignore[arg-type]
+    window = type("Window", (), {})()
+    window._editor_tabs_widget = tabs  # type: ignore[attr-defined]
+    window._tab_content_registry = registry  # type: ignore[attr-defined]
+    window._loaded_project = None  # type: ignore[attr-defined]
+    window._logger = type("Logger", (), {"exception": staticmethod(lambda *_a, **_k: None), "info": staticmethod(lambda *_a, **_k: None)})()  # type: ignore[attr-defined]
+    window._shell_theme_workflow = type("Theme", (), {"resolve_theme_tokens": staticmethod(lambda: None)})()  # type: ignore[attr-defined]
+    window._editor_tab_workflow = type(  # type: ignore[attr-defined]
+        "Tabs",
+        (),
+        {
+            "refresh_tab_presentation": staticmethod(lambda _path: None),
+            "handle_editor_tab_changed": staticmethod(lambda _index: None),
+            "update_editor_status_for_path": staticmethod(lambda _path: None),
+            "apply_detected_indentation_for_widget": staticmethod(lambda *_args: None),
+        },
+    )()
+    window._external_file_change_workflow = object()  # type: ignore[attr-defined]
+    window._editor_tabs_coordinator = EditorTabsCoordinator(window)  # type: ignore[attr-defined]
+    window._refresh_save_action_states = lambda: None  # type: ignore[attr-defined]
+    tab = EditorTabState(
+        file_path="/tmp/project/invoice.ui",
+        display_name="invoice.ui",
+        original_content="<ui/>\n",
+        current_content="<ui/>\n",
+        is_preview=False,
+    )
+    factory = EditorTabFactory(window)
+
+    class _Editor(QWidget):
+        def toPlainText(self) -> str:  # noqa: N802
+            return "<ui/>\n"
+
+    def _fake_editor(
+        opened_result: OpenedTabResult,
+        *,
+        parent: QWidget,
+        theme_tokens: object,
+    ) -> QWidget:
+        del opened_result, theme_tokens
+        editor = _Editor(parent)
+        editor.setObjectName("shell.editorTabs.textEditor")
+        return editor
+
+    factory._build_bound_source_editor = _fake_editor  # type: ignore[method-assign]
+    opened = factory._materialize_opened_editor_tab(
+        OpenedTabResult(tab=tab, was_already_open=False),
+        started_at=None,
+        restore_draft=False,
+    )
+    assert opened is True
+    assert released == [orphan]
+    assert registry.surface_for_path("/tmp/project/invoice.ui") is not orphan
+    del qapp

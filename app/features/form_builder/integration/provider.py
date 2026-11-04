@@ -48,10 +48,14 @@ class FormTabProvider:
             scope=session.scope,
             diagnostics=session.diagnostics,
         )
+        stops = []
         if request.project_root:
-            attach_picture_checks(session, request.project_root)
-            attach_picture_drops(session, request.project_root)
-        return FormSurface(request, session, source)
+            stops.append(attach_picture_checks(session, request.project_root))
+            stops.append(attach_picture_drops(session, request.project_root))
+        surface = FormSurface(request, session, source)
+        if stops:
+            surface.attach_checks(stops)
+        return surface
 
 
 __all__ = ["FormTabProvider"]

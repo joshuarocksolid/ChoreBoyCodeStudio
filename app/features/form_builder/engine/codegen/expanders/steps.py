@@ -65,8 +65,17 @@ class StepsExpander:
                 handler = "_cbcs_%s_%s" % (owner, signal_name)
                 if not compat.is_name(handler):
                     continue
-                selector = _selector(doc, classes, node, signal_name, parsed)
-                connects.append("%s.%s%s.connect(self.%s)" % (expression, signal_name, selector, handler))
+                # Form events are not Qt signals. The record methods call the handler.
+                form_event = owner == root and signal_name in (
+                    "recordLoaded",
+                    "newRecord",
+                    "beforeSave",
+                    "afterSave",
+                    "beforeDelete",
+                )
+                if not form_event:
+                    selector = _selector(doc, classes, node, signal_name, parsed)
+                    connects.append("%s.%s%s.connect(self.%s)" % (expression, signal_name, selector, handler))
                 source_ref = one_line("%s: When %s" % (owner, signal_name))
                 methods.append(
                     Method(

@@ -373,6 +373,18 @@ class record_window:
         return host, db
 
     def __exit__(self, *_exc: object) -> None:
+        host = self.host
+        if host is not None:
+            timer = getattr(getattr(host, "ui", None), "_cbcs_list_timer", None)
+            if timer is not None:
+                timer.stop()
+            host.hide()
+            host.deleteLater()
+            from app.qt import QtWidgets
+
+            app = getattr(QtWidgets, "QApplication").instance()
+            if app is not None:
+                app.processEvents()
         if self._restore is not None:
             self._restore()
 
@@ -441,6 +453,16 @@ def _install_boxes(
             seen.append(text)
             if during is not None:
                 during()
+            return RealBox.StandardButton.Ok
+
+        @staticmethod
+        def information(_parent: object, _title: str, text: str) -> object:  # type: ignore[override]
+            seen.append(text)
+            return RealBox.StandardButton.Ok
+
+        @staticmethod
+        def critical(_parent: object, _title: str, text: str) -> object:  # type: ignore[override]
+            seen.append(text)
             return RealBox.StandardButton.Ok
 
         def exec(self) -> int:  # type: ignore[override]  # noqa: A003 - Qt spells it exec

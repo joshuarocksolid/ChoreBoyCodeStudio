@@ -408,6 +408,11 @@ def _words_close(step: Any, w: str, *, is_form: bool = False, target_chain: Any 
 
 def _emit_validate(step: Any, ctx: Any) -> Tuple[str, ...]:
     del step
+    from app.features.form_builder.engine.codegen.eject import ejected_method
+
+    document = getattr(ctx, "doc", None)
+    if document is not None and ejected_method(document) is not None:
+        return ("if self._form.validate_fields() is False:", "    return")
     return ("if not self.cbcs_validate():", "    return")
 
 
@@ -514,9 +519,9 @@ def _emit_ask(step: Any, ctx: Any) -> Tuple[str, ...]:
 def _emit_stop(step: Any, ctx: Any) -> Tuple[str, ...]:
     message = _text(step, "message")
     if not message:
-        return ("return",)
+        return ("return False",)
     _need_box(ctx)
-    return (_message_call("info", _quote(message)), "return")
+    return (_message_call("info", _quote(message)), "return False")
 
 
 def _emit_page(step: Any, ctx: Any) -> Tuple[str, ...]:
