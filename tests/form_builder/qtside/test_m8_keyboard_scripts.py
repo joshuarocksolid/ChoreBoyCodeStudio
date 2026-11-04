@@ -654,21 +654,28 @@ def script_k34(kb: Kb) -> None:
             kb.pump()
     result = getattr(response, "result", None)
     texts = result.get("texts", {}) if isinstance(result, dict) else {}
-    banner = ""
-    ran = ""
-    if shell is not None:
-        banner_label = shell.findChild(QLabel, "preview.banner")
-        strip_label = shell.findChild(QLabel, "preview.dataStrip.label")
-        banner = "" if banner_label is None else str(banner_label.text() or "")
-        if not banner and strip_label is not None:
-            banner = str(strip_label.text() or "")
-        ran_widget = shell.findChild(QWidget, "preview.whatRan")
-        if ran_widget is not None:
-            ran = " ".join(part for part in _blob_lines(ran_widget) if part)
-    if not banner:
-        banner = str(texts.get("preview.banner") or texts.get("preview.dataStrip.label") or "")
-    if not ran:
-        ran = " ".join(logs)
+
+    def read() -> tuple:
+        banner = ""
+        ran = ""
+        if shell is not None:
+            banner_label = shell.findChild(QLabel, "preview.banner")
+            strip_label = shell.findChild(QLabel, "preview.dataStrip.label")
+            banner = "" if banner_label is None else str(banner_label.text() or "")
+            if not banner and strip_label is not None:
+                banner = str(strip_label.text() or "")
+            ran_widget = shell.findChild(QWidget, "preview.whatRan")
+            if ran_widget is not None:
+                ran = " ".join(part for part in _blob_lines(ran_widget) if part)
+        if not banner:
+            banner = str(texts.get("preview.banner") or texts.get("preview.dataStrip.label") or "")
+        if not ran:
+            ran = " ".join(logs)
+        return banner, ran
+
+    # Try's statements reach What ran after the save; a loaded machine needs more than a few pumps.
+    _pump_until(kb.qapp, lambda: all(part.strip() for part in read()), 30.0)
+    banner, ran = read()
     kb.check(bool(banner.strip()), "K34 read the banner (%r)" % banner)
     kb.check(bool(ran.strip()), "K34 read What ran (%r)" % ran[:240])
 
