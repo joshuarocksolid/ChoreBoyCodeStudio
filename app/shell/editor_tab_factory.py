@@ -262,6 +262,11 @@ class EditorTabFactory:
                 if content_source is not None:
                     self._attach_content_source(opened_result.tab, content_source)
                 registry.bind(tab_file_path, surface, provider.provider_id)
+
+                def _flush_draft(path: str = tab_file_path) -> None:
+                    window._local_history_workflow.flush_pending_autosaves((path,))
+
+                surface.flush_draft = _flush_draft  # type: ignore[attr-defined]
                 tab_content = surface.widget()
 
         page = self.build_tab_page(tab_content, opened_result.tab.buffer_id)

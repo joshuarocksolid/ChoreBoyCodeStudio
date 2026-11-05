@@ -260,6 +260,8 @@ def _note_property(
         doc._note_face(owner_id, name)
     value = None if entry is None else entry.value
     structural = name in _STRUCTURE_PROPERTIES or isinstance(value, (ResourcePixmap, IconSetValue))
+    if name == "focusPolicy":
+        doc._note_focus()
     doc._bump(structure=structural)
 
 

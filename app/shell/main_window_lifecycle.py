@@ -38,6 +38,7 @@ class MainWindowLifecycle:
             event.ignore()
             return
         window._is_shutting_down = True
+        window._local_history_workflow.flush_pending_autosaves()
         from app.bootstrap.paths import clear_resolved_cache
 
         clear_resolved_cache()

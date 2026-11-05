@@ -10,7 +10,7 @@ tar -C "$SRC" \
   --exclude '__pycache__' \
   --exclude '*.pyc' \
   --exclude 'tests' \
-  -cf - app run_editor.py \
+  -cf - app run_editor.py run_form_preview.py \
   | tar -C "$HERE/payload" -xf -
 mkdir -p "$HERE/payload/tests/form_builder" \
   "$HERE/payload/tests/support" \

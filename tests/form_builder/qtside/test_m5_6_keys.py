@@ -278,6 +278,8 @@ def test_the_buddy_row_is_a_drop_down_of_the_form_fields_with_type_to_filter(tmp
         kb.pump()
         combo = kb.surface.findChild(QComboBox, "formBuilder.buddyPicker")
         assert combo is not None
+        combo.setFocus()
+        kb.pump()
         assert [combo.itemText(i) for i in range(combo.count())] == [
             "None",
             "nameEdit · Line edit",

@@ -437,7 +437,14 @@ class LiveGeometrySource:
 
         A leaf keeps the rect here. A container whose rect moved goes back on
         the queue so its descendants are walked once, not once per sibling.
+        A long form whose rows only slid by one gap is updated from three
+        measured rows. Anything else is measured item by item.
         """
+        shifted = self._shift_form_rows(
+            layout, root, previous, located, replacements, changed, seen
+        )
+        if shifted is not None:
+            return shifted
         count = 0
         for item in layout.items:
             content = item.content
@@ -463,6 +470,114 @@ class LiveGeometrySource:
                 replacements.append((index, GeoEntry(old.node, old.kind, rect, old.container, visible, old.z)))
                 changed.append(content.id)
         return count
+
+    def _shift_form_rows(
+        self,
+        layout: LayoutNode,
+        root: QWidget,
+        previous: Sequence[GeoEntry],
+        located: Mapping[Tuple[NodeId, str], int],
+        replacements: List[Tuple[int, GeoEntry]],
+        changed: List[NodeId],
+        seen: Dict[NodeId, bool],
+    ) -> Optional[int]:
+        """Apply one vertical step to every row when three sampled rows agree.
+
+        Spacing slides each row by ``row * step`` and leaves width and height
+        alone. A label that grew taller does not fit that line, so this returns
+        None and the caller measures every item. None also means a container
+        moved: its children are not a rigid shift.
+        """
+        if layout.class_name != "QFormLayout" or len(layout.items) < 8:
+            return None
+        pending = []
+        by_row: Dict[int, List[int]] = {}
+        for item in layout.items:
+            content = item.content
+            if content is None or content.id in seen:
+                continue
+            kind = "widget" if isinstance(content, WidgetNode) else "layout" if isinstance(content, LayoutNode) else "spacer"
+            index = located.get((content.id, kind))
+            if index is None:
+                return None
+            row = 0 if item.row is None else int(item.row)
+            column = 0 if item.column is None else int(item.column)
+            slot = len(pending)
+            pending.append((content, index, previous[index], row, column))
+            by_row.setdefault(row, []).append(slot)
+        ordered = sorted(by_row)
+        if len(ordered) < 8:
+            return None
+        sample_rows = (ordered[0], ordered[len(ordered) // 2], ordered[-1])
+        samples = [pending[by_row[row][0]] for row in sample_rows]
+        field = next((entry for entry in pending if entry[4] >= 1), None)
+        if field is not None and field not in samples:
+            samples.append(field)
+        measured_by_id: Dict[NodeId, Tuple[Rect, bool]] = {}
+        for content, _index, _old, _row, _column in samples:
+            measured = self._measure(content, root)
+            if measured is None:
+                return None
+            measured_by_id[content.id] = measured
+        first_row = ordered[0]
+        last_content, _last_index, last_old, last_row, _last_column = samples[2]
+        last_rect, last_visible = measured_by_id[last_content.id]
+        span = last_row - first_row
+        if span <= 0 or last_visible != last_old.visible:
+            return None
+        if last_rect.height != last_old.rect.height or last_rect.width != last_old.rect.width:
+            return None
+        dy = last_rect.y - last_old.rect.y
+        if dy % span != 0:
+            return None
+        step = dy // span
+        dx = 0
+        dw = 0
+        if field is not None:
+            field_rect, field_visible = measured_by_id[field[0].id]
+            if field_visible != field[2].visible or field_rect.height != field[2].rect.height:
+                return None
+            dx = field_rect.x - field[2].rect.x
+            dw = field_rect.width - field[2].rect.width
+        planned: List[Tuple[int, GeoEntry, NodeId]] = []
+        quiet: List[NodeId] = []
+        for content, index, old, row, column in samples:
+            rect, visible = measured_by_id[content.id]
+            shift_x = dx if column >= 1 else 0
+            shift_w = dw if column >= 1 else 0
+            expected = Rect(
+                old.rect.x + shift_x,
+                old.rect.y + (row - first_row) * step,
+                old.rect.width + shift_w,
+                old.rect.height,
+            )
+            if rect != expected or visible != old.visible:
+                return None
+        for content, index, old, row, column in pending:
+            shift_x = dx if column >= 1 else 0
+            shift_w = dw if column >= 1 else 0
+            rect = Rect(
+                old.rect.x + shift_x,
+                old.rect.y + (row - first_row) * step,
+                old.rect.width + shift_w,
+                old.rect.height,
+            )
+            container = isinstance(content, LayoutNode) or (
+                isinstance(content, WidgetNode) and bool(content.child_widgets or content.layout is not None)
+            )
+            if container and rect != old.rect:
+                return None
+            if rect == old.rect:
+                quiet.append(content.id)
+                continue
+            planned.append((index, GeoEntry(old.node, old.kind, rect, old.container, old.visible, old.z), content.id))
+        for node_id in quiet:
+            seen[node_id] = True
+        for index, entry, node_id in planned:
+            seen[node_id] = True
+            replacements.append((index, entry))
+            changed.append(node_id)
+        return len(measured_by_id)
 
     def _remeasure_layouts(
         self,

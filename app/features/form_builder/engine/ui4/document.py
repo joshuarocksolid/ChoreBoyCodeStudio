@@ -97,6 +97,8 @@ class UiDocument:
         # (``mutate._set_property``). Caption-facing properties use ``face_revision``.
         self._structure_revision = revision
         self._face_revision = 0
+        # ``focusPolicy`` changes who Tab visits and does not bump ``structure_revision``.
+        self._focus_revision = 0
         # (face_revision, node id, property name), newest last. A caption edit
         # patches the formula snapshot from the tail instead of walking the form.
         self._face_edits: List[Tuple[int, NodeId, str]] = []
@@ -133,6 +135,14 @@ class UiDocument:
     @property
     def revision(self) -> int:
         return self._revision
+
+    @property
+    def focus_revision(self) -> int:
+        """Bumps when ``focusPolicy`` changes. Reading order watches this and the tree."""
+        return self._focus_revision
+
+    def _note_focus(self) -> None:
+        self._focus_revision += 1
 
     @property
     def structure_revision(self) -> int:

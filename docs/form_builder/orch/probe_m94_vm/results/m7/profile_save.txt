@@ -1,0 +1,92 @@
+hottest iter_preorder in /home/default/cbprobe_jobs/m94-f2-20261105T011148Z-db3964/payload/payload/app/features/form_builder/engine/ui4/document.py
+         4404432 function calls (4355960 primitive calls) in 2.511 seconds
+
+   Ordered by: cumulative time
+   List reduced from 663 to 45 due to restriction <45>
+
+   ncalls  tottime  percall  cumtime  percall filename:lineno(function)
+        8    0.000    0.000    2.564    0.321 /home/default/cbprobe_jobs/m94-f2-20261105T011148Z-db3964/payload/payload/tests/form_builder/perf/m7_paths.py:609(save)
+        8    0.000    0.000    2.342    0.293 /home/default/cbprobe_jobs/m94-f2-20261105T011148Z-db3964/payload/payload/app/features/form_builder/integration/save_pipeline.py:42(finish_save)
+        8    0.001    0.000    1.661    0.208 /home/default/cbprobe_jobs/m94-f2-20261105T011148Z-db3964/payload/payload/app/features/form_builder/engine/project/save.py:68(write_generated)
+        8    0.024    0.003    1.590    0.199 /home/default/cbprobe_jobs/m94-f2-20261105T011148Z-db3964/payload/payload/app/features/form_builder/engine/codegen/api.py:88(generate_form_module)
+        8    0.000    0.000    1.332    0.167 /home/default/cbprobe_jobs/m94-f2-20261105T011148Z-db3964/payload/payload/app/features/form_builder/engine/codegen/emit.py:207(emit_module)
+        8    0.000    0.000    1.332    0.166 /home/default/cbprobe_jobs/m94-f2-20261105T011148Z-db3964/payload/payload/app/features/form_builder/engine/codegen/emit.py:287(build)
+        8    0.002    0.000    0.680    0.085 /home/default/cbprobe_jobs/m94-f2-20261105T011148Z-db3964/payload/payload/app/features/form_builder/integration/save_pipeline.py:100(_parses)
+        8    0.000    0.000    0.678    0.085 /home/default/cbprobe_jobs/m94-f2-20261105T011148Z-db3964/payload/payload/app/features/form_builder/engine/ui4/reader.py:536(read_ui)
+   2400/8    0.025    0.000    0.637    0.080 /home/default/cbprobe_jobs/m94-f2-20261105T011148Z-db3964/payload/payload/app/features/form_builder/engine/codegen/emit.py:682(emit_widget)
+   2368/8    0.005    0.000    0.632    0.079 /home/default/cbprobe_jobs/m94-f2-20261105T011148Z-db3964/payload/payload/app/features/form_builder/engine/codegen/emit.py:760(_emit_children)
+     40/8    0.002    0.000    0.626    0.078 /home/default/cbprobe_jobs/m94-f2-20261105T011148Z-db3964/payload/payload/app/features/form_builder/engine/codegen/emit.py:893(emit_layout)
+  2320/16    0.008    0.000    0.625    0.039 /home/default/cbprobe_jobs/m94-f2-20261105T011148Z-db3964/payload/payload/app/features/form_builder/engine/codegen/emit.py:922(_emit_layout_item)
+        8    0.001    0.000    0.502    0.063 /home/default/cbprobe_jobs/m94-f2-20261105T011148Z-db3964/payload/payload/app/features/form_builder/engine/codegen/emit.py:1785(_expand)
+        8    0.000    0.000    0.323    0.040 /home/default/cbprobe_jobs/m94-f2-20261105T011148Z-db3964/payload/payload/app/features/form_builder/engine/ui4/reader.py:855(_lower_ui)
+       32    0.000    0.000    0.323    0.010 /home/default/cbprobe_jobs/m94-f2-20261105T011148Z-db3964/payload/payload/app/features/form_builder/engine/ui4/reader.py:899(_place_ui_child)
+        8    0.000    0.000    0.322    0.040 /home/default/cbprobe_jobs/m94-f2-20261105T011148Z-db3964/payload/payload/app/features/form_builder/engine/ui4/reader.py:1007(_lower_widget)
+   4864/8    0.005    0.000    0.322    0.040 /home/default/cbprobe_jobs/m94-f2-20261105T011148Z-db3964/payload/payload/app/features/form_builder/engine/ui4/reader.py:1011(_lower_box)
+   216/72    0.000    0.000    0.320    0.004 /home/default/cbprobe_jobs/m94-f2-20261105T011148Z-db3964/payload/payload/app/features/form_builder/engine/ui4/reader.py:1178(_place_box_child)
+     40/8    0.003    0.000    0.316    0.039 /home/default/cbprobe_jobs/m94-f2-20261105T011148Z-db3964/payload/payload/app/features/form_builder/engine/ui4/reader.py:1101(_lower_item_layout)
+     40/8    0.001    0.000    0.316    0.039 /home/default/cbprobe_jobs/m94-f2-20261105T011148Z-db3964/payload/payload/app/features/form_builder/engine/ui4/reader.py:1118(<listcomp>)
+  2320/16    0.012    0.000    0.316    0.020 /home/default/cbprobe_jobs/m94-f2-20261105T011148Z-db3964/payload/payload/app/features/form_builder/engine/ui4/reader.py:1123(_lower_single_content_item)
+     2432    0.008    0.000    0.306    0.000 /home/default/cbprobe_jobs/m94-f2-20261105T011148Z-db3964/payload/payload/app/features/form_builder/engine/codegen/emit.py:1205(_emit_members)
+     6968    0.024    0.000    0.296    0.000 /home/default/cbprobe_jobs/m94-f2-20261105T011148Z-db3964/payload/payload/app/features/form_builder/engine/codegen/emit.py:1316(_emit_one_property)
+     2400    0.025    0.000    0.259    0.000 /home/default/cbprobe_jobs/m94-f2-20261105T011148Z-db3964/payload/payload/app/features/form_builder/engine/ui4/reader.py:1069(_lower_property_widget)
+      856    0.001    0.000    0.238    0.000 /opt/freecad/usr/lib/python3.11/ast.py:33(parse)
+      856    0.237    0.000    0.237    0.000 {built-in method builtins.compile}
+        8    0.001    0.000    0.219    0.027 /home/default/cbprobe_jobs/m94-f2-20261105T011148Z-db3964/payload/payload/app/features/form_builder/integration/save_pipeline.py:95(pipeline_bytes)
+        8    0.000    0.000    0.219    0.027 /home/default/cbprobe_jobs/m94-f2-20261105T011148Z-db3964/payload/payload/app/features/form_builder/engine/ui4/writer.py:109(write_ui)
+   4872/8    0.017    0.000    0.218    0.027 /home/default/cbprobe_jobs/m94-f2-20261105T011148Z-db3964/payload/payload/app/features/form_builder/engine/ui4/writer.py:193(node)
+    240/8    0.001    0.000    0.218    0.027 /home/default/cbprobe_jobs/m94-f2-20261105T011148Z-db3964/payload/payload/app/features/form_builder/engine/ui4/writer.py:243(_node_plain)
+  280/136    0.000    0.000    0.217    0.002 /home/default/cbprobe_jobs/m94-f2-20261105T011148Z-db3964/payload/payload/app/features/form_builder/engine/ui4/writer.py:653(_group)
+  280/136    0.002    0.000    0.216    0.002 /home/default/cbprobe_jobs/m94-f2-20261105T011148Z-db3964/payload/payload/app/features/form_builder/engine/ui4/writer.py:308(_group_plain)
+     88/8    0.001    0.000    0.215    0.027 /home/default/cbprobe_jobs/m94-f2-20261105T011148Z-db3964/payload/payload/app/features/form_builder/engine/ui4/writer.py:268(_widget_plain)
+     6984    0.033    0.000    0.212    0.000 /home/default/cbprobe_jobs/m94-f2-20261105T011148Z-db3964/payload/payload/app/features/form_builder/engine/ui4/reader.py:1327(_parse_property)
+        8    0.000    0.000    0.201    0.025 /home/default/cbprobe_jobs/m94-f2-20261105T011148Z-db3964/payload/payload/app/features/form_builder/engine/ui4/reader.py:694(_parse_tree)
+        8    0.048    0.006    0.201    0.025 {method 'Parse' of 'pyexpat.xmlparser' objects}
+        8    0.022    0.003    0.183    0.023 /home/default/cbprobe_jobs/m94-f2-20261105T011148Z-db3964/payload/payload/app/features/form_builder/engine/codegen/expanders/checks.py:116(contribute)
+     6504    0.024    0.000    0.163    0.000 /home/default/cbprobe_jobs/m94-f2-20261105T011148Z-db3964/payload/payload/app/features/form_builder/engine/codegen/emit.py:1380(_apply)
+    15864    0.042    0.000    0.159    0.000 /home/default/cbprobe_jobs/m94-f2-20261105T011148Z-db3964/payload/payload/app/features/form_builder/engine/codegen/emit.py:601(_note)
+        8    0.001    0.000    0.152    0.019 /home/default/cbprobe_jobs/m94-f2-20261105T011148Z-db3964/payload/payload/app/features/form_builder/engine/codegen/expanders/rules.py:30(contribute)
+    58560    0.089    0.000    0.124    0.000 /home/default/cbprobe_jobs/m94-f2-20261105T011148Z-db3964/payload/payload/app/features/form_builder/engine/ui4/document.py:296(iter_preorder)
+    12096    0.009    0.000    0.117    0.000 /home/default/cbprobe_jobs/m94-f2-20261105T011148Z-db3964/payload/payload/app/features/form_builder/engine/codegen/emit.py:585(add)
+      800    0.002    0.000    0.117    0.000 /home/default/cbprobe_jobs/m94-f2-20261105T011148Z-db3964/payload/payload/app/features/form_builder/engine/codegen/expanders/rules.py:37(<genexpr>)
+      800    0.007    0.000    0.116    0.000 /home/default/cbprobe_jobs/m94-f2-20261105T011148Z-db3964/payload/payload/app/features/form_builder/engine/codegen/expanders/defaults.py:66(prepare)
+        8    0.004    0.000    0.115    0.014 /home/default/cbprobe_jobs/m94-f2-20261105T011148Z-db3964/payload/payload/app/features/form_builder/engine/codegen/emit.py:391(_check_names)
+
+
+         4404432 function calls (4355960 primitive calls) in 2.511 seconds
+
+   Ordered by: internal time
+   List reduced from 663 to 30 due to restriction <30>
+
+   ncalls  tottime  percall  cumtime  percall filename:lineno(function)
+      856    0.237    0.000    0.237    0.000 {built-in method builtins.compile}
+    58560    0.089    0.000    0.124    0.000 /home/default/cbprobe_jobs/m94-f2-20261105T011148Z-db3964/payload/payload/app/features/form_builder/engine/ui4/document.py:296(iter_preorder)
+    12936    0.087    0.000    0.113    0.000 /home/default/cbprobe_jobs/m94-f2-20261105T011148Z-db3964/payload/payload/app/features/form_builder/engine/codegen/literals.py:12(py_string)
+   603480    0.065    0.000    0.065    0.000 {built-in method builtins.isinstance}
+    90440    0.062    0.000    0.089    0.000 /home/default/cbprobe_jobs/m94-f2-20261105T011148Z-db3964/payload/payload/app/features/form_builder/engine/ui4/nodes.py:81(field)
+   306696    0.052    0.000    0.076    0.000 {method 'get' of 'dict' objects}
+        8    0.048    0.006    0.201    0.025 {method 'Parse' of 'pyexpat.xmlparser' objects}
+    20928    0.047    0.000    0.094    0.000 /home/default/cbprobe_jobs/m94-f2-20261105T011148Z-db3964/payload/payload/app/features/form_builder/engine/ui4/reader.py:742(end)
+    15864    0.042    0.000    0.159    0.000 /home/default/cbprobe_jobs/m94-f2-20261105T011148Z-db3964/payload/payload/app/features/form_builder/engine/codegen/emit.py:601(_note)
+    58624    0.041    0.000    0.060    0.000 /home/default/cbprobe_jobs/m94-f2-20261105T011148Z-db3964/payload/payload/app/features/form_builder/engine/codegen/qtmap.py:373(class_module)
+     4872    0.040    0.000    0.094    0.000 /home/default/cbprobe_jobs/m94-f2-20261105T011148Z-db3964/payload/payload/app/features/form_builder/engine/ui4/writer.py:958(_attrs)
+   447048    0.039    0.000    0.039    0.000 {method 'append' of 'list' objects}
+     6984    0.033    0.000    0.212    0.000 /home/default/cbprobe_jobs/m94-f2-20261105T011148Z-db3964/payload/payload/app/features/form_builder/engine/ui4/reader.py:1327(_parse_property)
+        8    0.031    0.004    0.031    0.004 {built-in method posix.fsync}
+    71776    0.029    0.000    0.052    0.000 {built-in method builtins.getattr}
+    44408    0.026    0.000    0.078    0.000 /home/default/cbprobe_jobs/m94-f2-20261105T011148Z-db3964/payload/payload/app/features/form_builder/engine/ui4/nodes.py:157(_text_field)
+    20928    0.026    0.000    0.041    0.000 /home/default/cbprobe_jobs/m94-f2-20261105T011148Z-db3964/payload/payload/app/features/form_builder/engine/ui4/reader.py:724(start)
+    17544    0.025    0.000    0.025    0.000 {method 'sub' of 're.Pattern' objects}
+     2400    0.025    0.000    0.259    0.000 /home/default/cbprobe_jobs/m94-f2-20261105T011148Z-db3964/payload/payload/app/features/form_builder/engine/ui4/reader.py:1069(_lower_property_widget)
+   2400/8    0.025    0.000    0.637    0.080 /home/default/cbprobe_jobs/m94-f2-20261105T011148Z-db3964/payload/payload/app/features/form_builder/engine/codegen/emit.py:682(emit_widget)
+    18104    0.025    0.000    0.025    0.000 {method 'findall' of 're.Pattern' objects}
+        8    0.024    0.003    1.590    0.199 /home/default/cbprobe_jobs/m94-f2-20261105T011148Z-db3964/payload/payload/app/features/form_builder/engine/codegen/api.py:88(generate_form_module)
+     6968    0.024    0.000    0.296    0.000 /home/default/cbprobe_jobs/m94-f2-20261105T011148Z-db3964/payload/payload/app/features/form_builder/engine/codegen/emit.py:1316(_emit_one_property)
+     6504    0.024    0.000    0.163    0.000 /home/default/cbprobe_jobs/m94-f2-20261105T011148Z-db3964/payload/payload/app/features/form_builder/engine/codegen/emit.py:1380(_apply)
+   177472    0.023    0.000    0.023    0.000 /home/default/cbprobe_jobs/m94-f2-20261105T011148Z-db3964/payload/payload/app/features/form_builder/engine/ui4/nodes.py:67(kind)
+        8    0.022    0.003    0.183    0.023 /home/default/cbprobe_jobs/m94-f2-20261105T011148Z-db3964/payload/payload/app/features/form_builder/engine/codegen/expanders/checks.py:116(contribute)
+    20928    0.022    0.000    0.029    0.000 /home/default/cbprobe_jobs/m94-f2-20261105T011148Z-db3964/payload/payload/app/features/form_builder/engine/ui4/reader.py:810(_coalesce)
+    33368    0.022    0.000    0.062    0.000 {built-in method builtins.any}
+   4872/8    0.021    0.000    0.053    0.007 /home/default/cbprobe_jobs/m94-f2-20261105T011148Z-db3964/payload/payload/app/features/form_builder/engine/ui4/reader.py:2322(_to_node)
+       16    0.021    0.001    0.030    0.002 /home/default/cbprobe_jobs/m94-f2-20261105T011148Z-db3964/payload/payload/app/features/form_builder/engine/ui4/reader.py:377(release_xnodes)
+
+

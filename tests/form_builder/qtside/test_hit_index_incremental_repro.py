@@ -475,6 +475,8 @@ def test_long_form_spacing_matches_a_full_rebuild() -> None:
             _assert_matches_full(realizer, index)
             assert index.last_changed is not None
             assert set(index.last_changed) == _moved_nodes(before, index._entries)
+            # 12 rows are 24 leaves. A full measure visits every one. The shift path samples a few.
+            assert index.last_visit_count < 24
         finally:
             subscription.close()
             root.hide()
