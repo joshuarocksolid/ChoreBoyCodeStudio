@@ -1,3 +1,4 @@
+# pyright: reportAttributeAccessIssue=false
 """Dropping a preview keeps a replacement module and waits out a nested loop."""
 
 from __future__ import annotations

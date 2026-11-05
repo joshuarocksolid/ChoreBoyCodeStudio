@@ -1,3 +1,4 @@
+# pyright: reportAttributeAccessIssue=false
 """Damaged .ui files open with the engine's sentence and are not saved shorter."""
 
 from __future__ import annotations
@@ -159,7 +160,9 @@ def test_a_latin1_ui_stays_unchanged_when_the_text_editor_saves(tmp_path: Path, 
     assert shown.encode("utf-8", "surrogateescape") != raw
     editor.insertPlainText("Z")
     manager.update_tab_content(str(path), shown)
-    assert manager.get_tab(str(path)).current_content.encode("utf-8", "surrogateescape") == raw
+    tab = manager.get_tab(str(path))
+    assert tab is not None
+    assert tab.current_content.encode("utf-8", "surrogateescape") == raw
     told: list[str] = []
 
     def _warn(*args: object, **_kwargs: object) -> int:
