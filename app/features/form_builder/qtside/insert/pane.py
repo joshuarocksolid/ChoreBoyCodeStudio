@@ -652,11 +652,29 @@ class InsertPane(QWidget):
         if empty:
             self.empty_text.setText(_EMPTY_TEXT % self._query)
 
+    def section_need(self) -> int:
+        """Header, search, one category, one widget, and the Saved pieces title."""
+
+        from app.features.form_builder.qtside.insert.delegate import HEADER_HEIGHT, ROW_HEIGHT
+
+        title = self._piece_box.title.sizeHint().height()
+        return (
+            self.header.sizeHint().height()
+            + self.filter.sizeHint().height()
+            + HEADER_HEIGHT
+            + ROW_HEIGHT
+            + title
+            + 16
+        )
+
     def _tooltip(self, row: Row) -> str:
         faint = self._chrome.faint if self._chrome is not None else ""
         qt_class = row.qt_class
         span = '<span style="color:%s">%s</span>' % (faint, qt_class) if faint else qt_class
-        return "<b>%s</b><br>%s<br>%s" % (row.title, span, row.description)
+        detail = row.description
+        if row.category and row.category not in detail:
+            detail = ("%s. %s" % (row.category, detail)).strip() if detail else row.category
+        return "<b>%s</b><br>%s<br>%s" % (row.title, span, detail)
 
     # View ----------------------------------------------------------------------------
 

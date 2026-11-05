@@ -197,8 +197,9 @@ class StateBody(QWidget):
         heading = QHBoxLayout(overline)
         heading.setContentsMargins(0, 0, 0, 0)
         heading.setSpacing(0)
-        title = QLabel("STATE", overline)
-        title.setObjectName("formBuilder.state.title")
+        from app.features.form_builder.qtside.inspector.behavior_ext.heading import section_heading
+
+        title = section_heading(overline, "formBuilder.state.title", "STATE")
         heading.addWidget(title)
         heading.addStretch(1)
         self._column = QVBoxLayout(self)

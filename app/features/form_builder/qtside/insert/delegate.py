@@ -20,8 +20,6 @@ HEADER_HEIGHT = 24
 GLYPH_TILE = 20
 GLYPH_ROW = 16
 _RADIUS = 4.0
-_DESCRIPTION_ROOM = 12
-
 
 class EntryDelegate(QStyledItemDelegate):
     """One delegate for the Insert list and the quick-insert list."""
@@ -54,8 +52,15 @@ class EntryDelegate(QStyledItemDelegate):
         width = _viewport_width(option)
         if width <= 0:
             width = self._width
-        if row is None or row.kind in (SECTION, HEADER):
+        if row is None or row.kind == SECTION:
             return QSize(width, HEADER_HEIGHT)
+        if row.kind == HEADER:
+            room = max(width - 22 - 44, 24)
+            font = QFont(option.font)
+            font.setPixelSize(10)
+            font.setBold(True)
+            lines = _wrap_header(row.title.upper(), QFontMetrics(font), room)
+            return QSize(width, max(HEADER_HEIGHT, 14 * len(lines) + 6))
         return QSize(width, ROW_HEIGHT)
 
     def paint(self, painter: QPainter, option: QStyleOptionViewItem, index: object) -> None:  # type: ignore[override]
@@ -145,10 +150,12 @@ class EntryDelegate(QStyledItemDelegate):
         painter.setFont(self._font(option, 10, bold=True))
         painter.setPen(QColor(text))
         label_left = rect.left() + 22
-        room = rect.width() - 22 - 44
-        name = QFontMetrics(painter.font()).elidedText(row.title.upper(), Qt.TextElideMode.ElideRight, max(room, 24))
-        painter.drawText(label_left, rect.top(), max(room, 24), rect.height(),
-                         int(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter), name)
+        room = max(rect.width() - 22 - 44, 24)
+        lines = _wrap_header(row.title.upper(), QFontMetrics(painter.font()), room)
+        line_h = max(rect.height() // max(len(lines), 1), 12)
+        for index, line in enumerate(lines):
+            painter.drawText(label_left, rect.top() + index * line_h, room, line_h,
+                             int(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter), line)
         painter.setPen(QColor(faint))
         painter.setFont(self._font(option, 11))
         painter.drawText(rect.adjusted(0, 0, -10, 0), int(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter), str(row.count))
@@ -190,20 +197,32 @@ class EntryDelegate(QStyledItemDelegate):
         name_width = name_metrics.horizontalAdvance(name)
         painter.drawText(QRect(left, rect.top(), name_width + 2, rect.height()),
                          int(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter), name)
-        caption_metrics = QFontMetrics(caption_font)
-        room = rect.width() - 30 - name_width - 8 - 8
-        if row.description and not row.search and room >= _DESCRIPTION_ROOM * caption_metrics.averageCharWidth():
-            painter.setFont(caption_font)
-            painter.setPen(QColor(faint))
-            description = caption_metrics.elidedText(row.description, Qt.TextElideMode.ElideRight, room)
-            painter.drawText(QRect(left + name_width + 8, rect.top(), room, rect.height()),
-                             int(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter), description)
         if right_text:
             painter.setFont(caption_font)
             painter.setPen(QColor(faint))
+            caption_metrics = QFontMetrics(caption_font)
             right_width = caption_metrics.horizontalAdvance(right_text) + 12
             painter.drawText(QRect(rect.right() - right_width, rect.top(), right_width - 8, rect.height()),
                              int(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter), right_text)
+
+
+def _wrap_header(text: str, metrics: QFontMetrics, room: int) -> List[str]:
+    """Two lines at most. A short header stays one line and is not cut off."""
+
+    if metrics.horizontalAdvance(text) <= room:
+        return [text]
+    words = text.split()
+    if len(words) < 2:
+        return [text]
+    best = 1
+    for index in range(1, len(words)):
+        if metrics.horizontalAdvance(" ".join(words[:index])) <= room:
+            best = index
+    first = " ".join(words[:best])
+    second = " ".join(words[best:])
+    if metrics.horizontalAdvance(second) > room:
+        second = metrics.elidedText(second, Qt.TextElideMode.ElideRight, room)
+    return [first, second]
 
 
 def fitted_label(
@@ -250,10 +269,10 @@ def _row(index: object) -> Optional[Row]:
 
 
 def _right_caption(row: Row) -> str:
-    if row.search:
-        if row.via:
-            return "“%s”" % row.via
-        return "" if row.window else row.category
+    """A synonym match stays. The category and the description live in the tooltip."""
+
+    if row.search and row.via:
+        return "“%s”" % row.via
     return ""
 
 

@@ -22,6 +22,7 @@ from app.qt.QtWidgets import (
     QPushButton,
     QTreeWidget,
     QShortcut,
+    QSizePolicy,
     QStackedWidget,
     QTabWidget,
     QVBoxLayout,
@@ -360,6 +361,7 @@ class FormSurface(QWidget):
         source: FormContentSource,
     ) -> None:
         super().__init__(request.parent)
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self._request = request
         self._session = session
         self._source = source
@@ -631,9 +633,12 @@ class FormSurface(QWidget):
             theme(tokens)
         self._paint_banner()
         self.style_banner()
+        notice = self._source.save_notice
+        full = getattr(self._toolbar, "_save_full", "") or self._toolbar.save_state.text()
+        withheld = full.startswith("Saved") or notice.text.startswith("Saved")
         self._toolbar.set_save(
-            self._toolbar.save_state.text(),
-            error=self._source.save_notice.error and not self._source.is_dirty(),
+            full,
+            error=bool(notice.error) and not self._source.is_dirty() and not withheld,
             tokens=tokens,
         )
         editor = self._editor
@@ -1779,7 +1784,8 @@ class FormSurface(QWidget):
             return
         if notice.error:
             self._saved_timer.stop()
-            self._toolbar.set_save(notice.text, error=True, tokens=self._tokens)
+            withheld = notice.text.startswith("Saved")
+            self._toolbar.set_save(notice.text, error=not withheld, tokens=self._tokens)
             return
         if notice.kind in ("saved", "generated") and notice.text and not self._save_faded:
             self._toolbar.set_save(notice.text, error=False, tokens=self._tokens)

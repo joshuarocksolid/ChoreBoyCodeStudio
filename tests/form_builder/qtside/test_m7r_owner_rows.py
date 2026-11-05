@@ -13,7 +13,7 @@ from app.features.form_builder.engine.logic.uses import PanelRow, Use
 from app.features.form_builder.integration.preview_notice import preview_request
 from app.features.form_builder.qtside.inspector.behavior_ext.events import _Row, _elide_place
 from app.features.form_builder.qtside.logic_panel.panel import LogicPanel, _face
-from app.features.form_builder.qtside.logic_panel.rows import LogicRow, break_opportunities
+from app.features.form_builder.qtside.logic_panel.rows import LogicRow, RowFace, break_opportunities
 from app.features.form_builder.qtside.logic_panel.uses_view import UsesDialog
 from app.features.form_builder.qtside.preview.try_log import (
     TryEvent,
@@ -335,6 +335,45 @@ def _wrapped_lines(text: str, width: int, font: object) -> list:
     layout.endLayout()
     assert len(lines) > 1, lines
     return lines
+
+
+def test_a_code_line_keeps_the_editor_font_family(qapp: QApplication) -> None:
+    face = RowFace(
+        "Save",
+        "· clicked",
+        "save_invoice",
+        True,
+        False,
+        "save_invoice",
+        "EVENTS, saveButton",
+    )
+    row = LogicRow(face, None)
+    row.apply_colors("#111111", "#666666", "#eeeeee", "#ddeeff", "#cc6600", "#ffffff", "DejaVu Sans Mono")
+    assert row.formula().font().family() == "DejaVu Sans Mono"
+    del qapp
+
+
+def test_a_narrow_logic_row_ends_the_aside_with_an_ellipsis(qapp: QApplication) -> None:
+    face = RowFace(
+        "Discount rate",
+        "Enabled when · Discount is checked",
+        "",
+        False,
+        False,
+        "Enabled when · Discount is checked",
+        "STATE, discountEdit",
+    )
+    host = QWidget()
+    host.resize(160, 80)
+    row = LogicRow(face, host)
+    row.setGeometry(0, 0, 150, 36)
+    host.show()
+    qapp.processEvents()
+    aside = row.findChild(QLabel, "formBuilder.logic.rowAside")
+    assert aside is not None
+    assert aside.text().endswith("\u2026")
+    assert len(aside.text()) < len(face.aside)
+    assert aside.toolTip() == face.aside
 
 
 def _wrap_mode() -> object:

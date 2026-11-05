@@ -142,13 +142,15 @@ def default_lines(schema: Schema, parent: str, child: Table) -> bool:
 def button_sentence(table: str, count: int, make: str, lines: bool) -> str:
     """The primary button names the files it will write."""
 
-    word = singular(table) if table else "form"
     unit = "field" if count == 1 else "fields"
     if make == "list":
         unit = "column" if count == 1 else "columns"
         noun = table or "records"
         return "Create %s list with %d %s" % (noun, count, unit)
-    text = "Create %s form with %d %s" % (word, count, unit)
+    if table:
+        text = "Create %s form with %d %s" % (singular(table), count, unit)
+    else:
+        text = "Create form with %d %s" % (count, unit)
     if lines:
         text += " and lines"
     if make == "both":

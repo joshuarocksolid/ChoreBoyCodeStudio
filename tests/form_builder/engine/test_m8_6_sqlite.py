@@ -69,7 +69,7 @@ def test_refresh_reads_the_shop_and_a_second_read_is_the_same_bytes(tmp_path: Pa
     missed = refresh(str(tmp_path), connection, lambda _connection: "", now=_NOW)
     assert missed.ok is False
     assert missed.kept_previous is True
-    assert missed.reason == "Can't open the database."
+    assert missed.reason.endswith("is missing.")
     assert cache.read_bytes() == text.encode("utf-8")
     assert format_read_at("2026-11-02T14:02:11") == "2 Nov 14:02"
 

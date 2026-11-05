@@ -58,8 +58,10 @@ class GeneratedFileBar(QFrame):
         layout.addWidget(self._message, 1)
         self._source_button = QPushButton(self)
         self._source_button.setObjectName("shell.generatedFileBar.openSource")
+        self._source_button.hide()
         self._logic_button = QPushButton(self)
         self._logic_button.setObjectName("shell.generatedFileBar.openLogic")
+        self._logic_button.hide()
         self._edit_button = QPushButton("Edit anyway", self)
         self._edit_button.setObjectName("shell.generatedFileBar.editAnyway")
         for button in (self._source_button, self._logic_button, self._edit_button):

@@ -330,8 +330,9 @@ class ChecksBody(QWidget):
         heading = QHBoxLayout(overline)
         heading.setContentsMargins(0, 0, 0, 0)
         heading.setSpacing(0)
-        title = QLabel("CHECKS", overline)
-        title.setObjectName("formBuilder.checks.title")
+        from app.features.form_builder.qtside.inspector.behavior_ext.heading import section_heading
+
+        title = section_heading(overline, "formBuilder.checks.title", "CHECKS")
         heading.addWidget(title)
         heading.addStretch(1)
         self._rows_host = QWidget(self)
@@ -738,7 +739,7 @@ class ChecksBody(QWidget):
         total = len(order)
         width = _words_width(self) if total else 0
         chrome = self._services.chrome
-        muted = "color: %s; background: transparent;" % chrome.muted
+        muted = "color: %s; background: transparent; border: none;" % chrome.text
         for place, stored in enumerate(order):
             check = self._checks[stored]
             row = self._row_widgets[place]

@@ -95,6 +95,8 @@ class GoToWidgetPicker(QFrame):
         self.note.setObjectName("formBuilder.goToWidgetNote")
         self.note.setProperty("note", True)
         column.addWidget(self.note)
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        self.setAutoFillBackground(True)
         self.setStyleSheet(self._style())
         self.setFixedWidth(_WIDTH)
         self._refill()

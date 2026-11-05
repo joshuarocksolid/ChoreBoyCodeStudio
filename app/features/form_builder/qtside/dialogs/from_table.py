@@ -12,6 +12,7 @@ import sqlite3
 from typing import Callable, Dict, List, Optional, Tuple
 
 from app.qt.QtCore import QBuffer, QEvent, QIODevice, QLocale, QTimer, Qt, Signal
+from app.qt.QtGui import QPalette
 from app.qt.QtUiTools import QUiLoader
 from app.qt.QtWidgets import (
     QCheckBox,
@@ -380,6 +381,8 @@ class FromTableDialog(QDialog):
             "QPushButton#formBuilder\\.fromTable\\.create"
             " { background: %s; color: %s; border: 0; padding: 0 12px;"
             " min-height: 28px; max-height: 28px; }"
+            "QPushButton#formBuilder\\.fromTable\\.create:disabled"
+            " { background: %s; color: %s; }"
             % (
                 chrome.window,
                 chrome.text,
@@ -395,8 +398,15 @@ class FromTableDialog(QDialog):
                 chrome.text,
                 chrome.accent,
                 chrome.on_accent,
+                chrome.panel,
+                chrome.muted,
             )
         )
+        view = self._preview_view
+        form = self._preview_widget
+        if view is not None and form is not None:
+            # The dialog sheet recreates scroll viewports. Fill the preview after that.
+            self._paint_preview(form, view)
 
     def _on_add_connection(self) -> None:
         if self._add_connection is None:
@@ -1012,7 +1022,7 @@ class FromTableDialog(QDialog):
 
 
     def _paint_preview(self, widget: QWidget, view: QGraphicsView) -> None:
-        from app.qt.QtGui import QColor, QPalette
+        from app.qt.QtGui import QColor
 
         chrome = self._chrome
         panel = QColor(chrome.panel)
@@ -1030,11 +1040,23 @@ class FromTableDialog(QDialog):
         widget.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         widget.setStyleSheet(self._preview_sheet())
         view.setStyleSheet("QGraphicsView { background: %s; border: none; }" % chrome.panel)
+        view.setBackgroundBrush(panel)
+        scene = view.scene()
+        if scene is not None:
+            scene.setBackgroundBrush(panel)
+        self._fill_surface(view.viewport(), palette)
         for child in widget.findChildren(QWidget):
             child.setPalette(palette)
-            if child.inherits("QLabel"):
+            if child.inherits("QLabel") or child.inherits("QAbstractScrollArea"):
                 child.setAutoFillBackground(True)
-        view.setBackgroundBrush(panel)
+            if child.inherits("QAbstractScrollArea"):
+                self._fill_surface(child.viewport(), palette)
+
+    def _fill_surface(self, surface: QWidget, palette: QPalette) -> None:
+        surface.setAutoFillBackground(True)
+        surface.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        surface.setPalette(palette)
+        surface.setStyleSheet("background-color: %s;" % self._chrome.panel)
 
     def _preview_sheet(self) -> str:
         chrome = self._chrome

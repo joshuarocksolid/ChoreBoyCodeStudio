@@ -266,6 +266,11 @@ class AlignmentEditor:
     def widget(self) -> QWidget:
         return self._root
 
+    def wants_stacked(self, width: int) -> bool:
+        """A narrow inspector stacks the label over the words so none of them elide."""
+
+        return width < 300
+
     def show(self, value: RowValue) -> None:
         mark(self._root, value)
         # Qt names 1 AlignLeading and 2 AlignTrailing when it turns a value
@@ -288,15 +293,17 @@ class AlignmentEditor:
             button = QToolButton(row)
             button.setText(_SHORT_ALIGN.get(name, name.replace("Align", "")))
             button.setAccessibleName(_align_name(self._host, name, button.text()))
-            button.setToolTip(name)
+            button.setToolTip(button.text())
             button.setCheckable(True)
             button.setProperty("fbSegment", "true")
+            # One column. A squeezed row middle-elides "Center" to "Ce...er".
             button.setSizePolicy(_size_policy("Expanding"), _size_policy("Fixed"))
+            button.setMinimumWidth(button.fontMetrics().horizontalAdvance(button.text()) + 16)
             # clicked, not toggled: the exclusive group also untoggles the old
             # segment, which would commit a half-made value first.
             button.clicked.connect(self._commit)
             group.addButton(button)
-            layout.addWidget(button, index // 2, index % 2)
+            layout.addWidget(button, index, 0)
             self._buttons.append((name, button))
         return row
 

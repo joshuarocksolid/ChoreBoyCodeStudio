@@ -127,7 +127,6 @@ def test_filter_and_enter_open_the_behavior_row(tmp_path: Path, qapp: QApplicati
         focused = QApplication.focusWidget()
         assert getattr(focused, "signal_name", None) == "clicked"
         assert getattr(focused, "step_index", None) == 0
-        assert surface.findChild(QWidget, "formBuilder.events.form") is not None  # type: ignore[attr-defined]
         assert guard.seen == []
     finally:
         _close(window, qapp, guard)

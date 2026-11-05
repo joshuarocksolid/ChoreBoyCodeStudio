@@ -44,6 +44,7 @@ from app.features.form_builder.qtside.inspector import TabId  # noqa: E402
 from app.features.form_builder.qtside.preview.try_log import TryLine  # noqa: E402
 from app.features.form_builder.qtside.preview.what_ran import TryChrome  # noqa: E402
 from app.qt.QtCore import Qt  # noqa: E402
+from app.qt.QtGui import QPixmap  # noqa: E402
 from app.qt.QtWidgets import (  # noqa: E402
     QApplication,
     QCheckBox,
@@ -59,7 +60,7 @@ from app.qt.QtWidgets import (  # noqa: E402
 )
 from app.shell.main_window import MainWindow  # noqa: E402
 from app.shell.theme_tokens import tokens_from_palette  # noqa: E402
-from tests.form_builder.engine.logic.test_m7_8a_uses import invoice_text  # noqa: E402
+from tests.form_builder.engine.logic.test_m7_8a_uses import invoice_text, window_source  # noqa: E402
 from tests.form_builder.engine.test_m8_2_scenario import _xml  # noqa: E402
 from tests.form_builder.engine.test_m8_3d_from_table import _shop  # noqa: E402
 from tests.form_builder.perf.reference import reference_form  # noqa: E402
@@ -72,7 +73,6 @@ from tests.form_builder.qtside.test_m3_keyboard_scripts import (  # noqa: E402
 )
 from tests.form_builder.qtside.test_m7_2b1_shots import (  # noqa: E402
     _apply_inspector_width,
-    _grab,
     _pump,
     _theme,
     _with_pytest_path,
@@ -129,7 +129,7 @@ class _Tour:
                 widget = target()
                 if widget is None or widget.width() < 2 or widget.height() < 2:
                     raise AssertionError("nothing to grab")
-                _grab(widget, self.folder / _file(number, surface, state, mode, self.scale))
+                _grab_on_theme(window, widget, self.folder / _file(number, surface, state, mode, self.scale))
             except Exception as exc:
                 self._miss("%02d %s %s %s: %s" % (number, surface, state, mode, exc))
 
@@ -141,6 +141,98 @@ class _Tour:
         self.misses.append(line)
         with (self.folder / "misses.txt").open("a", encoding="utf-8") as handle:
             handle.write(line + "\n")
+
+
+_POPUP_GRABS = frozenset({"formBuilder.logic.uses", "formBuilder.goToWidget"})
+
+
+def _theme_fill(window: QWidget) -> str:
+    tokens = window._shell_theme_workflow.resolve_theme_tokens()  # type: ignore[attr-defined]
+    return (
+        getattr(tokens, "window_bg", "")
+        or getattr(tokens, "editor_bg", "")
+        or getattr(tokens, "panel_bg", "")
+        or "#FFFFFF"
+    )
+
+
+def _compose_window(widget: QWidget, fill: str) -> QPixmap:
+    """A native popup's own grab is an opaque black store. Its children still paint."""
+
+    from app.qt.QtCore import QPoint
+    from app.qt.QtGui import QColor, QPainter
+
+    pixmap = QPixmap(max(widget.width(), 1), max(widget.height(), 1))
+    pixmap.fill(QColor(fill))
+    painter = QPainter(pixmap)
+    for child in widget.findChildren(QWidget):
+        if child.parentWidget() is not widget or not child.isVisible():
+            continue
+        if child.width() < 1 or child.height() < 1:
+            continue
+        painter.drawPixmap(child.mapTo(widget, QPoint(0, 0)), child.grab())
+    painter.end()
+    return pixmap
+
+
+def _flatten_clear_pixels(path: Path, fill: str) -> None:
+    from app.qt.QtGui import QColor, QImage, QPainter, QPixmap
+
+    image = QImage(str(path))
+    if image.isNull() or not image.hasAlphaChannel():
+        return
+    found = False
+    for y in range(0, image.height(), 13):
+        for x in range(0, image.width(), 13):
+            if image.pixelColor(x, y).alpha() < 250:
+                found = True
+                break
+        if found:
+            break
+    if not found:
+        return
+    base = QPixmap(image.size())
+    base.fill(QColor(fill))
+    painter = QPainter(base)
+    painter.drawImage(0, 0, image)
+    painter.end()
+    if not base.save(str(path)):
+        raise AssertionError("could not write %s" % path.name)
+
+
+def _grab_on_theme(window: QWidget, widget: QWidget, path: Path) -> None:
+    from app.qt.QtCore import QPoint
+    from app.qt.QtGui import QPainter
+
+    fill = _theme_fill(window)
+    if widget.objectName() in _POPUP_GRABS:
+        pixmap = _compose_window(widget, fill)
+    else:
+        pixmap = widget.grab()
+    popover = window.findChild(QWidget, "formBuilder.layoutPopover")
+    if (
+        widget.objectName() == "formBuilder.canvas"
+        and popover is not None
+        and popover is not widget
+        and popover.isVisible()
+        and popover.width() > 2
+    ):
+        from app.qt.QtGui import QColor, QPixmap
+
+        origin = widget.mapToGlobal(QPoint(0, 0))
+        top = popover.mapToGlobal(QPoint(0, 0))
+        shot = popover.grab()
+        base = QPixmap(pixmap.size())
+        base.fill(QColor(fill))
+        painter = QPainter(base)
+        painter.drawPixmap(0, 0, pixmap)
+        painter.drawPixmap(QPoint(top.x() - origin.x(), top.y() - origin.y()), shot)
+        painter.end()
+        pixmap = base
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if not pixmap.save(str(path)):
+        raise AssertionError("could not write %s" % path.name)
+    _flatten_clear_pixels(path, fill)
 
 
 def _boot(tmp: Path, qapp: QApplication) -> tuple:
@@ -376,7 +468,12 @@ def _data_ui() -> str:
 
 
 def _invoice(tour: _Tour, tmp: Path) -> None:
-    _root, window, guard, surface, _path = _form(tour, tmp / "invoice", "invoice.ui", invoice_text())
+    _root, window, guard, surface, path = _form(tour, tmp / "invoice", "invoice.ui", invoice_text())
+    (path.parent / "invoice_window.py").write_text(window_source(), encoding="utf-8")
+    logic = window.findChild(QWidget, "formBuilder.logic")
+    reload = getattr(logic, "reload", None)
+    if callable(reload):
+        reload()
     try:
         tour.paint(window, 8, "form", "invoice", lambda: window, dense=True)
         _select_name(surface, "emailEdit")
@@ -420,10 +517,15 @@ def _invoice(tour: _Tour, tmp: Path) -> None:
 def _overlays(tour: _Tour, window: MainWindow, surface: object) -> None:
     _select_name(surface, "discountEdit")
     try:
-        surface.open_layout_popover(surface.session.document.by_name("discountEdit")[0])  # type: ignore[attr-defined]
-        _pump(tour.qapp)
-        pop = window.findChild(QWidget, "formBuilder.layoutPopover")
-        tour.paint(window, 13, "canvas", "layout-popover", lambda: pop or window)
+        def _popover() -> Optional[QWidget]:
+            surface.open_layout_popover(surface.session.document.by_name("discountEdit")[0])  # type: ignore[attr-defined]
+            _pump(tour.qapp, 2)
+            return _child(window, "formBuilder.canvas")
+
+        tour.paint(window, 13, "canvas", "layout-popover", _popover)
+        menu = window.findChild(QWidget, "formBuilder.layoutPopover")
+        if menu is not None:
+            menu.hide()
     except Exception as exc:
         tour.note(13, "canvas", "layout-popover", str(exc))
     for number, state, kind in (
@@ -515,15 +617,72 @@ def _inspector(tour: _Tour, window: MainWindow, surface: object) -> None:
         tour.note(31, "inspector", "step-picker", "no Then button")
 
 
+def _show_logic_rows(window: QWidget) -> None:
+    """The left splitter's share hides the rows the review is looking at."""
+    panel = window.findChild(QWidget, "formBuilder.logic")
+    split = window.findChild(QWidget, "formBuilder.leftSplitter")
+    if panel is None or split is None:
+        return
+    panel.setMinimumHeight(max(panel.minimumHeight(), 320))
+    index_of = getattr(split, "indexOf", None)
+    sizes_of = getattr(split, "sizes", None)
+    set_sizes = getattr(split, "setSizes", None)
+    if callable(index_of) and callable(sizes_of) and callable(set_sizes):
+        index = index_of(panel)
+        raw_sizes = sizes_of()
+        if not isinstance(index, int) or not isinstance(raw_sizes, list):
+            return
+        sizes = [int(item) for item in raw_sizes]
+        if 0 <= index < len(sizes) and sizes[index] < 320:
+            spare = 320 - sizes[index]
+            sizes[index] = 320
+            donor = 0 if index else 1
+            if donor < len(sizes):
+                sizes[donor] = max(80, sizes[donor] - spare)
+            set_sizes(sizes)
+    scroll = panel.findChild(QWidget, "formBuilder.logic.scroll")
+    ensure = getattr(scroll, "ensureWidgetVisible", None)
+    if callable(ensure):
+        for child in panel.findChildren(QWidget, "formBuilder.logic.formula"):
+            if "save_invoice" in child.text():
+                ensure(child)
+                break
+
+
 def _logic(tour: _Tour, window: MainWindow, surface: object) -> None:
     surface.workbench.focus_section("logic")  # type: ignore[attr-defined]
     _pump(tour.qapp)
-    tour.paint(window, 36, "logic", "filled", lambda: _child(window, "formBuilder.logic"), dense=True)
-    chip = window.findChild(QWidget, "formBuilder.logic.chip.problems")
-    if chip is not None:
-        chip.click()  # type: ignore[attr-defined]
+
+    def _filled() -> QWidget:
+        _show_logic_rows(window)
         _pump(tour.qapp)
-    tour.paint(window, 37, "logic", "problems", lambda: _child(window, "formBuilder.logic"))
+        return _child(window, "formBuilder.logic")
+
+    tour.paint(window, 36, "logic", "filled", _filled, dense=True)
+
+    def _problems_chip() -> QWidget:
+        # Theme runs before the grab and the chip starts checked. A click would clear it.
+        chip = window.findChild(QWidget, "formBuilder.logic.chip.problems")
+        if chip is not None and not chip.isChecked():  # type: ignore[attr-defined]
+            chip.setChecked(True)  # type: ignore[attr-defined]
+        panel = _child(window, "formBuilder.logic")
+        reload = getattr(panel, "reload", None)
+        if callable(reload):
+            reload()
+        _show_logic_rows(window)
+        scroll = panel.findChild(QWidget, "formBuilder.logic.scroll")
+        ensure = getattr(scroll, "ensureWidgetVisible", None)
+        if callable(ensure):
+            rows = [
+                child
+                for child in panel.findChildren(QWidget)
+                if child.objectName().startswith("formBuilder.logic.row.")
+            ]
+            if rows:
+                ensure(rows[-1])
+        return panel
+
+    tour.paint(window, 37, "logic", "problems", _problems_chip)
     try:
         from app.features.form_builder.qtside.logic_panel.read_as_text import show_behavior_text
 
@@ -542,10 +701,12 @@ def _logic(tour: _Tour, window: MainWindow, surface: object) -> None:
     try:
         from app.features.form_builder.qtside.logic_panel.open import show_uses
 
-        show_uses(surface)
-        _pump(tour.qapp)
-        dialog = window.findChild(QWidget, "formBuilder.logic.uses")
-        tour.paint(window, 39, "logic", "uses", lambda: dialog or window)
+        def _uses() -> Optional[QWidget]:
+            show_uses(surface)
+            _pump(tour.qapp, 2)
+            return window.findChild(QWidget, "formBuilder.logic.uses")
+
+        tour.paint(window, 39, "logic", "uses", _uses)
     except Exception as exc:
         tour.note(39, "logic", "uses", str(exc))
     finally:
@@ -622,14 +783,16 @@ def _find(tour: _Tour, window: MainWindow, surface: object) -> None:
     if tour.scale == "200":
         return
     try:
-        surface.go_to_widget()  # type: ignore[attr-defined]
-        _pump(tour.qapp)
-        search = window.findChild(QLineEdit, "formBuilder.goToWidgetSearch")
-        if search is not None:
-            search.setText("zzzz")
-            _pump(tour.qapp)
-        picker = window.findChild(QWidget, "formBuilder.goToWidget")
-        tour.paint(window, 59, "find", "empty", lambda: picker or window)
+        def _go() -> Optional[QWidget]:
+            surface.go_to_widget()  # type: ignore[attr-defined]
+            _pump(tour.qapp, 2)
+            search = window.findChild(QLineEdit, "formBuilder.goToWidgetSearch")
+            if search is not None:
+                search.setText("zzzz")
+                _pump(tour.qapp, 1)
+            return window.findChild(QWidget, "formBuilder.goToWidget")
+
+        tour.paint(window, 59, "find", "empty", _go)
     except Exception as exc:
         tour.note(59, "find", "empty", str(exc))
     finally:
@@ -646,10 +809,12 @@ def _problems(tour: _Tour, window: MainWindow, surface: object) -> None:
     splitter = getattr(window, "_vertical_splitter", None)
     if tabs is not None and panel is not None:
         tabs.setCurrentWidget(panel)
-    if splitter is not None:
-        splitter.setSizes([540, 280])
-    _pump(tour.qapp)
-    tour.paint(window, 53, "problems", "form", lambda: _child(window, "shell.problemsPanel"))
+        if panel is not None:
+            panel.setMinimumHeight(320)
+        if splitter is not None:
+            splitter.setSizes([640, 360])
+        _pump(tour.qapp)
+        tour.paint(window, 53, "problems", "form", lambda: panel if panel is not None else window)
     del surface
 
 
@@ -685,6 +850,15 @@ def _big(tour: _Tour, tmp: Path) -> None:
             scroll.setValue(scroll.maximum() // 2)
         _pump(tour.qapp)
         tour.paint(window, 9, "form", "thousand", lambda: window)
+        window.resize(1366, 768)
+        _pump(tour.qapp)
+        column = window.findChild(QWidget, "formBuilder.leftScroll")
+        sentence = window.findChild(QLabel, "formBuilder.logic.empty")
+        ensure = getattr(column, "ensureWidgetVisible", None)
+        if callable(ensure) and sentence is not None:
+            ensure(sentence)
+            _pump(tour.qapp)
+        tour.paint(window, 62, "window", "short", lambda: window)
     finally:
         _shutdown(window, tour.qapp, guard)
 
@@ -708,8 +882,12 @@ def _missing_connection(tour: _Tour, tmp: Path) -> None:
         py.write_text("## Generated from gone.ui by ChoreBoy Code Studio\n", encoding="utf-8")
         assert window._editor_tab_factory.open_file_in_editor(str(py))  # noqa: SLF001
         _pump(tour.qapp)
-        banner = window.findChild(QWidget, "shell.generatedFileBar")
-        tour.paint(window, 54, "files", "generated-banner", lambda: banner or window)
+        def _banner() -> Optional[QWidget]:
+            bars = window.findChildren(QWidget, "shell.generatedFileBar")
+            visible = [bar for bar in bars if bar.isVisible()]
+            return visible[-1] if visible else None
+
+        tour.paint(window, 54, "files", "generated-banner", _banner)
         damaged = root / "forms" / "broken.ui"
         damaged.write_bytes(b"<?xml version='1.0' \xff\xfe not utf-8")
         window._editor_tab_factory.open_file_in_editor(str(damaged))  # noqa: SLF001
@@ -755,7 +933,9 @@ def _connections(tour: _Tour, tmp: Path) -> None:
         )
         _pump(tour.qapp)
         tour.paint(window, 46, "connections", "test-ok", lambda: page)
-        page._result.setText(_format_probe({"ok": False, "message": "Could not open that database."}))  # noqa: SLF001
+        from app.features.form_builder.engine.data.tester import probe_sqlite
+
+        page._result.setText(probe_sqlite("data/missing.db"))  # noqa: SLF001
         _pump(tour.qapp)
         tour.paint(window, 47, "connections", "test-fail", lambda: page)
         page.hide()
@@ -793,8 +973,14 @@ def _preview(tour: _Tour, tmp: Path) -> None:
     try:
         chrome = TryChrome(window)
         chrome.resize(1100, 640)
+        form = QWidget(chrome)
+        column = QVBoxLayout(form)
+        column.addWidget(QLabel("Customer", form))
+        column.addWidget(QLineEdit(form))
+        column.addStretch(1)
+        chrome.adopt(form)
         chrome.set_try_data(
-            "Data: Shop database. Changes are rolled back.",
+            "Data: Shop database.",
             "Try: changes to Shop database are rolled back. While a save runs, other people using it may wait up to 2 seconds.",
             False,
         )
@@ -911,7 +1097,17 @@ def _narrow_again(tour: _Tour, tmp: Path) -> None:
         _open_groups(surface.workbench.inspector)
         _apply_inspector_width(window, 236)
         _pump(tour.qapp)
-        tour.paint(window, 60, "inspector", "narrow", lambda: _child(window, "formBuilder.inspector"), dense=True)
+        inspector = _child(window, "formBuilder.inspector")
+        if inspector is not None:
+            for button in inspector.findChildren(QToolButton):
+                if button.text() in ("Center", "Justify", "Middle"):
+                    scroll = inspector.findChild(QWidget, "formBuilder.inspectorScroll")
+                    ensure = getattr(scroll, "ensureWidgetVisible", None)
+                    if callable(ensure):
+                        ensure(button)
+                    break
+        _pump(tour.qapp)
+        tour.paint(window, 60, "inspector", "narrow", lambda: inspector, dense=True)
     finally:
         _shutdown(window, tour.qapp, guard)
 
@@ -928,10 +1124,12 @@ def _problems_empty(tour: _Tour, tmp: Path) -> None:
         splitter = getattr(window, "_vertical_splitter", None)
         if tabs is not None and panel is not None:
             tabs.setCurrentWidget(panel)
+        if panel is not None:
+            panel.setMinimumHeight(320)
         if splitter is not None:
-            splitter.setSizes([540, 280])
+            splitter.setSizes([640, 360])
         _pump(tour.qapp)
-        tour.paint(window, 52, "problems", "empty", lambda: _child(window, "shell.problemsPanel"))
+        tour.paint(window, 52, "problems", "empty", lambda: panel if panel is not None else window)
     finally:
         _shutdown(window, tour.qapp, guard)
 

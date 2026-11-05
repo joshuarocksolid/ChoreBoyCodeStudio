@@ -120,6 +120,8 @@ def _check_help_item() -> None:
 
 def _check_status_f4(kb: Kb) -> None:
     kb.surface.workbench.canvas.setFocus()
+    # The sentence names the selected widget. Opening a form does not select one.
+    _walk_to(kb, "nameEdit", limit=12)
     kb.press("Key_F4")
     # M6.1c: F4 is Designer's Edit Signals/Slots, the Connections overlay (UX-M6-006).
     assert "drag to another widget to connect" in kb.surface.editor_status_sentence()

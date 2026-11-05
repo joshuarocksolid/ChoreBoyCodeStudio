@@ -245,8 +245,8 @@ def test_alignment_segments_show_the_value(tmp_path: Path, qapp: QApplication) -
     try:
         _show(surface, qapp, "email")
         row = _row(surface, "alignment")
-        buttons = {button.toolTip(): button for button in row.findChildren(QToolButton) if button.toolTip()}
-        left, right = buttons["AlignLeft"], buttons["AlignRight"]
+        buttons = {button.text(): button for button in row.findChildren(QToolButton) if button.text()}
+        left, right = buttons["Left"], buttons["Right"]
         assert left.isChecked() and not right.isChecked()
         # The checked segment looks different from the unchecked one under the shell style.
         on = left.grab().toImage()
@@ -256,8 +256,8 @@ def test_alignment_segments_show_the_value(tmp_path: Path, qapp: QApplication) -
         surface._workbench.inspector.flush()  # noqa: SLF001
         qapp.processEvents()
         row = _row(surface, "alignment")
-        buttons = {button.toolTip(): button for button in row.findChildren(QToolButton) if button.toolTip()}
-        assert buttons["AlignRight"].isChecked() and not buttons["AlignLeft"].isChecked()
+        buttons = {button.text(): button for button in row.findChildren(QToolButton) if button.text()}
+        assert buttons["Right"].isChecked() and not buttons["Left"].isChecked()
         session = surface._session  # noqa: SLF001
         written = session.document.node(session.document.by_name("email")[0]).prop("alignment")
         assert written is not None and "AlignRight" in str(written)

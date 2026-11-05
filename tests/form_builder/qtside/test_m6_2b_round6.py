@@ -111,7 +111,7 @@ def test_a_not_checked_place_tooltip_is_the_reason_and_the_full_text_when_elided
         assert places
         place = places[0]
         reason = str(place.property("cbcsReason") or "")
-        assert place.text() == "not checked"
+        assert place.text() == "Couldn't read the file"
         assert reason
         assert place.toolTip() == reason
         row = place.parentWidget()
@@ -120,12 +120,12 @@ def test_a_not_checked_place_tooltip_is_the_reason_and_the_full_text_when_elided
         for width in range(48, 240, 8):
             row.setFixedWidth(width)
             row._fit_texts()  # noqa: SLF001
-            if place.text() and place.text() != "not checked":
+            if place.text() and place.text() != "Couldn't read the file":
                 elided = True
                 break
         assert elided, place.text()
-        assert _keeps_prefix(place.text(), "not checked")
-        assert place.toolTip() == "not checked\n" + reason
+        assert _keeps_prefix(place.text(), "Couldn't read the file")
+        assert place.toolTip() == "Couldn't read the file\n" + reason
     finally:
         kb.done(guard)
         _close(window, qapp, guard)

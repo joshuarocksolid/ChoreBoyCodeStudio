@@ -7,6 +7,7 @@ process, read-only, and does not use the seam.
 
 from __future__ import annotations
 
+import os
 import socket
 import sqlite3
 from typing import Callable, Optional
@@ -54,9 +55,18 @@ def failure_sentence(connection: Connection, kind: str, reason: str) -> str:
     return reason or "Can't connect."
 
 
+def missing_database_sentence(path: str) -> str:
+    """One sentence. The path is the reason a missing file could not be opened."""
+
+    shown = path or "that file"
+    return "Could not open that database. %s is missing." % shown
+
+
 def probe_sqlite(path: str) -> str:
     """``✓ Connected · SQLite · {n} tables``, or the first line of the error. A missing file fails."""
 
+    if not path or not os.path.isfile(path):
+        return missing_database_sentence(path)
     try:
         connection = sqlite3.connect("file:" + path + "?mode=ro", uri=True)
         try:

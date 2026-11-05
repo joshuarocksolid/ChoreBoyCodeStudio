@@ -25,6 +25,7 @@ from app.qt.QtWidgets import (
     QListWidgetItem,
     QMenu,
     QPushButton,
+    QScrollArea,
     QSizePolicy,
     QSpinBox,
     QSplitter,
@@ -120,6 +121,7 @@ from app.features.form_builder.integration.layout import (
     LEFT_MIN,
     LayoutPlan,
     RAIL_WIDTH,
+    SHORT_MAX,
     fit_beside,
 )
 from app.features.form_builder.integration.outline_bind import key_gesture, perform
@@ -505,6 +507,8 @@ class FormToolbar(QWidget):
         self.save_state = QLabel(self)
         self.save_state.setObjectName("formBuilder.saveState")
         self.save_state.setAccessibleName("Save state")
+        self.save_state.setMinimumWidth(0)
+        self._save_full = ""
         row.addWidget(self.save_state, 0)
         self._tokens: Optional[ShellThemeTokens] = None
         icon_only = _button_style("ToolButtonIconOnly")
@@ -645,14 +649,41 @@ class FormToolbar(QWidget):
         _assign_tool(self.redo, enabled, tip)
 
     def set_save(self, text: str, *, error: bool, tokens: Optional[ShellThemeTokens]) -> None:
-        if self.save_state.text() != text:
-            self.save_state.setText(text)
+        self._save_full = text
+        shown = self._elide_save(text)
+        if self.save_state.text() != shown:
+            self.save_state.setText(shown)
+        tip = text if shown != text else ""
+        if self.save_state.toolTip() != tip:
+            self.save_state.setToolTip(tip)
         if tokens is None:
             return
-        color = (tokens.diag_error_color or tokens.accent) if error else (tokens.gutter_text or tokens.text_primary)
+        # A saved file that could not write its neighbor is not an error colour.
+        color = (tokens.diag_error_color or tokens.accent) if error else (tokens.gutter_text or tokens.text_muted or tokens.text_primary)
         style = "QLabel#formBuilder\\.saveState { color: %s; background: transparent; border: none; }" % color
         if self.save_state.styleSheet() != style:
             self.save_state.setStyleSheet(style)
+
+    def resizeEvent(self, event: object) -> None:  # noqa: N802
+        super().resizeEvent(event)  # type: ignore[arg-type]
+        full = getattr(self, "_save_full", "")
+        if not full:
+            return
+        shown = self._elide_save(full)
+        if self.save_state.text() != shown:
+            self.save_state.setText(shown)
+        tip = full if shown != full else ""
+        if self.save_state.toolTip() != tip:
+            self.save_state.setToolTip(tip)
+
+    def _elide_save(self, text: str) -> str:
+        if not text:
+            return ""
+        width = self.save_state.width()
+        if width < 48:
+            return text
+        mode = getattr(getattr(Qt, "TextElideMode", Qt), "ElideRight")
+        return self.save_state.fontMetrics().elidedText(text, mode, width)
 
     def apply_theme(self, tokens: ShellThemeTokens) -> None:
         self._tokens = tokens
@@ -833,6 +864,7 @@ class OutlinePane(QWidget):
         self._on_pick = on_pick
         self._on_collapsed = on_collapsed
         self._blocked = False
+        self._quiet_focus = False
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
@@ -1345,6 +1377,13 @@ class OutlinePane(QWidget):
         if kind == "ShortcutOverride" and self._claim_override(watched, event):
             event.accept()
             return True
+        if kind == "FocusIn" and watched is self.tree:
+            session = self._session
+            if session is None or not session.selection.state.ids:
+                # Qt marks the first row when a visible tree gains focus.
+                # Opening a form focuses this tree, and that row is not a choice.
+                self._quiet_focus = True
+                QTimer.singleShot(0, self._drop_unasked_current)
         if kind == "KeyPress":
             confirm = getattr(self, "_confirm", None)
             if (
@@ -1439,7 +1478,31 @@ class OutlinePane(QWidget):
         hovered = self._hover is not None and int(node) == int(self._hover) and bool(self._hover_fill)
         item.setBackground(0, QBrush(QColor(self._hover_fill)) if hovered else QBrush())
 
+    def _drop_unasked_current(self) -> None:
+        self._quiet_focus = False
+        session = self._session
+        if session is not None and session.selection.state.ids:
+            return
+        if self.tree.currentItem() is None:
+            return
+        self._blocked = True
+        self.tree.setCurrentItem(None)
+        self.tree.clearSelection()
+        self._current_item = None
+        self._blocked = False
+
+    def _pointer_down(self) -> bool:
+        if getattr(self, "_press", None) is not None:
+            return True
+        return bool(int(enum_value(QApplication.mouseButtons())))
+
     def _current_changed(self, current: Optional[QTreeWidgetItem], _previous: object) -> None:
+        if self._quiet_focus:
+            # A click is a choice. Qt's focus mark is not.
+            if not self._pointer_down():
+                self._drop_unasked_current()
+                return
+            self._quiet_focus = False
         if self._blocked or current is None:
             return
         raw = current.data(0, getattr(Qt, "UserRole"))
@@ -2614,6 +2677,43 @@ class _Rail(QWidget):
         return button
 
 
+class _LeftColumnScroll(QScrollArea):
+    """Scroll the left sections instead of crushing them."""
+
+    def __init__(self, parent: QWidget) -> None:
+        super().__init__(parent)
+        self.setWidgetResizable(False)
+
+    def sizeHint(self) -> QSize:  # noqa: N802
+        widget = self.widget()
+        if widget is None:
+            return QSize(220, SHORT_MAX)
+        hint = widget.sizeHint()
+        return QSize(max(220, hint.width()), min(SHORT_MAX, max(240, hint.height())))
+
+    def minimumSizeHint(self) -> QSize:  # noqa: N802
+        return QSize(0, 120)
+
+    def resizeEvent(self, event: object) -> None:  # noqa: N802
+        super().resizeEvent(event)  # type: ignore[arg-type]
+        widget = self.widget()
+        if widget is not None:
+            self.fit(widget.minimumHeight())
+
+    def fit(self, needed: int) -> None:
+        """Keep the column at least ``needed`` tall and as wide as the viewport."""
+        widget = self.widget()
+        if widget is None:
+            return
+        width = self.viewport().width()
+        if width < 40:
+            width = max(widget.width(), 200)
+        tall = max(needed, self.viewport().height())
+        widget.setMinimumHeight(needed)
+        if widget.width() != width or widget.height() != tall:
+            widget.resize(width, tall)
+
+
 class FormWorkbench(QWidget):
     """Outline, insert, canvas, and inspector. Drawers reparent the same panes."""
 
@@ -2631,6 +2731,7 @@ class FormWorkbench(QWidget):
         slots: Optional[WorkbenchSlots] = None,
     ) -> None:
         super().__init__(parent)
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.setObjectName("formBuilder.workbench")
         self.session = session
         self._session = session
@@ -2687,7 +2788,17 @@ class FormWorkbench(QWidget):
         self._left_body.setObjectName("formBuilder.leftBody")
         left_layout = QVBoxLayout(self._left_body)
         left_layout.setContentsMargins(0, 0, 0, 0)
-        left_layout.addWidget(self._left_split)
+        self._left_scroll = _LeftColumnScroll(self._left_body)
+        self._left_scroll.setObjectName("formBuilder.leftScroll")
+        self._left_scroll.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self._left_scroll.setAccessibleName("Form sections")
+        self._left_scroll.setFrameShape(getattr(getattr(QFrame, "Shape", QFrame), "NoFrame"))
+        # The shell splitter honors this while the scroller is showing. Tabs mode
+        # hides it, so a short surface can still shrink. A lower floor leaves a
+        # 768px window under the tab breakpoint.
+        self._left_scroll.setMinimumHeight(SHORT_MAX)
+        self._left_scroll.setWidget(self._left_split)
+        left_layout.addWidget(self._left_scroll)
         self._left_tabs = QTabWidget(self._left_body)
         self._left_tabs.setObjectName("formBuilder.leftTabs")
         _name_tabs(self._left_tabs, "Outline and insert")
@@ -3142,12 +3253,29 @@ class FormWorkbench(QWidget):
 
     def _arrange_left(self) -> None:
         """Outline, Insert and the shown sections: split panes, or tabs at short heights."""
+        if getattr(self, "_arranging_left", False):
+            return
+        self._arranging_left = True
+        try:
+            self._arrange_left_now()
+        finally:
+            self._arranging_left = False
+
+    def _raise_floor(self, widget: QWidget, floor: int) -> None:
+        ask = getattr(widget, "section_need", None)
+        if callable(ask):
+            floor = max(floor, int(ask()))
+        if widget.minimumHeight() < floor:
+            widget.setMinimumHeight(floor)
+
+    def _arrange_left_now(self) -> None:
         shown = [(spec, widget) for spec, widget in self._sections if spec.key in self._section_shown]
         for spec, widget in self._sections:
             if spec.key not in self._section_shown:
                 self._park_section(widget)
             self._rail_button(spec.key).setVisible(spec.key in self._section_shown)
         if self._stacked:
+            self._left_scroll.hide()
             if self._left_tabs.count() == 0:
                 self._left_tabs.addTab(self.outline, "Outline")
                 self._left_tabs.addTab(self.insert, "Insert")
@@ -3171,19 +3299,47 @@ class FormWorkbench(QWidget):
             widget.show()
         self.outline.show()
         self.insert.show()
+        self._raise_floor(self.outline, 240)
+        self._raise_floor(self.insert, 168)
+        floors = {"logic": 176, "data": 120}
+        for spec, widget in shown:
+            self._raise_floor(widget, floors.get(spec.key, 96))
         self._left_tabs.hide()
+        self._left_scroll.show()
         self._left_split.show()
-        height = max(self._left_split.height(), 240)
+        mins: List[int] = []
+        for index in range(self._left_split.count()):
+            child = self._left_split.widget(index)
+            if child is not None and not child.isHidden():
+                mins.append(max(child.minimumHeight(), 1))
+        handles = max(0, self._left_split.count() - 1) * self._left_split.handleWidth()
+        needed = sum(mins) + handles
+        self._left_split.setMinimumHeight(needed)
+        self._left_scroll.fit(needed)
+        height = max(self._left_split.height(), needed)
         extra = sum(spec.weight for spec, _widget in shown)
-        if extra:
+        if height > needed and extra:
             rest = 100 - extra
             top = height * rest * 40 // (75 * 100)
             middle = height * rest * 35 // (75 * 100)
             sizes = [top, middle] + [height * spec.weight // 100 for spec, _widget in shown]
+            sizes = [max(size, floor) for size, floor in zip(sizes, mins)]
+            slack = sum(sizes) - (height - handles)
+            for index in range(len(sizes) - 1, -1, -1):
+                if slack <= 0:
+                    break
+                room = sizes[index] - mins[index]
+                take = min(room, slack)
+                sizes[index] -= take
+                slack -= take
+        elif extra:
+            sizes = mins
         else:
             top = height * 55 // 100
-            sizes = [top, max(80, height - top)]
+            sizes = [max(top, mins[0]), max(height - top, mins[1] if len(mins) > 1 else 80)]
         self._left_split.setSizes(sizes)
+        if self._plan is not None:
+            self._size_panes(self._plan)
 
     def _park_section(self, widget: QWidget) -> None:
         index = self._left_tabs.indexOf(widget)
@@ -3495,12 +3651,22 @@ class FormWorkbench(QWidget):
     def _size_panes(self, plan: LayoutPlan) -> None:
         left = self._left_stack
         right = self._right_stack
+        left_width = plan.left_width
+        view = self._left_scroll.viewport().height()
+        # The column scrollbar sits inside the pane. Give that width back so a
+        # scrolling column keeps the same room for outline names.
+        if (
+            plan.left_docked
+            and view > 40
+            and self._left_split.minimumHeight() > view
+        ):
+            left_width += self._left_scroll.verticalScrollBar().sizeHint().width()
         if plan.density == "wide" and plan.left_docked:
             left.setMinimumWidth(LEFT_MIN)
             left.setMaximumWidth(LEFT_MAX)
         else:
-            left.setMinimumWidth(plan.left_width)
-            left.setMaximumWidth(plan.left_width)
+            left.setMinimumWidth(left_width)
+            left.setMaximumWidth(left_width)
         if plan.density == "wide" and plan.inspector_docked:
             right.setMinimumWidth(INSPECTOR_MIN)
             right.setMaximumWidth(INSPECTOR_MAX)
@@ -3508,10 +3674,10 @@ class FormWorkbench(QWidget):
             right.setMinimumWidth(plan.inspector_width)
             right.setMaximumWidth(plan.inspector_width)
         handle = self._splitter.handleWidth()
-        canvas = max(0, self.width() - plan.left_width - plan.inspector_width - handle * 2)
+        canvas = max(0, self.width() - left_width - plan.inspector_width - handle * 2)
         self._applying = True
         try:
-            self._splitter.setSizes([plan.left_width, canvas, plan.inspector_width])
+            self._splitter.setSizes([left_width, canvas, plan.inspector_width])
         finally:
             self._applying = False
 

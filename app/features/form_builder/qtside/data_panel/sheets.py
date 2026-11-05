@@ -308,13 +308,13 @@ class SourceForm(QWidget):
         item = self._tables.currentItem()
         role = int(enum_value(Qt.ItemDataRole.UserRole))
         if item is None or not _item_enabled(item):
-            self._key.setText("Key")
+            self._key.setText("")
             self._notice.setText("")
             self._fill_columns(())
             return
         table = str(item.data(role) or "")
         key = str(item.data(role + 1) or "")
-        self._key.setText(key or "Key")
+        self._key.setText(key)
         if not key:
             self._notice.setText("%s has no single key column. Record forms need one." % table)
         else:
@@ -331,8 +331,7 @@ class SourceForm(QWidget):
         for index, (column, _direction) in enumerate(self._orders):
             column.blockSignals(True)
             column.clear()
-            if index:
-                column.addItem("(none)", "")
+            column.addItem("(none)", "")
             for name in names:
                 column.addItem(name, name)
             if index == 0 and key:

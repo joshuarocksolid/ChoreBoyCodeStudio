@@ -417,7 +417,8 @@ class ConnectionsPage(QWidget):
             self._list.clear()
             for connection in self._items:
                 title = connection.title or connection.name
-                item = QListWidgetItem(title)
+                # The row widget paints the title. Item text would draw it again.
+                item = QListWidgetItem("")
                 role = getattr(getattr(Qt, "ItemDataRole", Qt), "AccessibleTextRole", None)
                 if role is not None:
                     item.setData(role, title)

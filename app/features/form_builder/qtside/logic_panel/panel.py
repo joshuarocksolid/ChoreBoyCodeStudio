@@ -229,7 +229,36 @@ class LogicPanel(QWidget):
         return self._tokens
 
     def minimumSizeHint(self) -> QSize:  # noqa: N802
-        return QSize(0, 80)
+        return QSize(0, self.section_need())
+
+    def section_need(self) -> int:
+        """Chrome plus the empty sentence. A long list keeps a window and scrolls inside."""
+
+        width = max(self.width(), 184)
+        content = 0
+        for index in range(self._body_layout.count()):
+            item = self._body_layout.itemAt(index)
+            widget = item.widget() if item is not None else None
+            if widget is None or not widget.isVisible():
+                continue
+            if widget.hasHeightForWidth():
+                content += widget.heightForWidth(width)
+            else:
+                content += widget.sizeHint().height()
+            content += 2
+        if content > 160:
+            content = 120
+        return (
+            self._read.sizeHint().height()
+            + self._filter.sizeHint().height()
+            + self._pills.heightForWidth(width)
+            + content
+            + 20
+        )
+
+    def resizeEvent(self, event: object) -> None:  # noqa: N802
+        super().resizeEvent(event)  # type: ignore[arg-type]
+        self._ask_arrange()
 
     def apply_theme(self, tokens: object) -> None:
         self._tokens = tokens
@@ -373,6 +402,7 @@ class LogicPanel(QWidget):
         book = self._book
         if book is None:
             self._clear_body()
+            self._ask_arrange()
             return
         query = self._query()
         rows = panel_rows(book, query)
@@ -401,9 +431,11 @@ class LogicPanel(QWidget):
         self._clear_body()
         if not panel_rows(book, PanelQuery()) and not rows:
             self._message(_EMPTY)
+            self._ask_arrange()
             return
         if query.text and not rows:
             self._message("Nothing matches \u201c%s\u201d." % query.text)
+            self._ask_arrange()
             return
         grouped: Dict[str, List[PanelRow]] = {name: [] for name in _ORDER}
         problems: List[PanelRow] = []
@@ -427,6 +459,17 @@ class LogicPanel(QWidget):
         self._body_layout.addStretch(1)
         self._paint_rows()
         self._chain_focus()
+        self._ask_arrange()
+
+    def _ask_arrange(self) -> None:
+        if self.minimumHeight() >= self.section_need():
+            return
+        workbench = self._workbench
+        if getattr(workbench, "_arranging_left", False):
+            return
+        arrange = getattr(workbench, "_arrange_left", None)
+        if callable(arrange):
+            arrange()
 
     def _add_row(self, row: PanelRow, number: int, section: str = "") -> int:
         use = row.use
@@ -529,7 +572,7 @@ def _face(row: PanelRow, display: str, section: str = "", env: object = None) ->
         return RowFace(display, row.words, sentence, False, True, tooltip, accessible)
     if row.section == "EVENTS" or (row.section == "IN YOUR CODE" and use.signal and not row.problem):
         body = row.summary if row.summary.casefold() != row.words.casefold() else ""
-        aside = "· %s" % row.words if row.words else ""
+        aside = "· %s" % row.words.strip() if row.words and row.words.strip() else ""
         return RowFace(display, aside, body, True, False, tooltip, accessible)
     if row.section == "STATE":
         raw = row.summary.strip()

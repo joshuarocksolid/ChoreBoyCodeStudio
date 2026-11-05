@@ -23,7 +23,7 @@ from app.features.form_builder.engine.data.schema import (
     write_schema,
 )
 from app.features.form_builder.engine.data.schema_sqlite import read_sqlite_file
-from app.features.form_builder.engine.data.tester import failure_sentence
+from app.features.form_builder.engine.data.tester import failure_sentence, missing_database_sentence
 
 # The engine role cannot import app.core. These match PROJECT_META_DIRNAME and PROJECT_SCHEMA_DIRNAME.
 _META_DIRNAME = "cbcs"
@@ -242,7 +242,7 @@ def _refresh_sqlite(
 ) -> RefreshOutcome:
     path = _sqlite_path(project_root, connection)
     if not path or not os.path.isfile(path):
-        return RefreshOutcome(False, previous, "other", "Can't open the database.", True, False)
+        return RefreshOutcome(False, previous, "other", missing_database_sentence(path), True, False)
     stamp = _stamp(now)
     try:
         schema = read_sqlite_file(path, connection.name, read_at=stamp)
@@ -306,7 +306,7 @@ def _probe_from_reply(reply: object) -> ProbeOutcome:
 def _probe_sqlite(project_root: str, connection: Connection, sql: str) -> ProbeOutcome:
     path = _sqlite_path(project_root, connection)
     if not path or not os.path.isfile(path):
-        return ProbeOutcome(False, (), "other", "Can't open the database.", False)
+        return ProbeOutcome(False, (), "other", missing_database_sentence(path), False)
     uri = "file:%s?mode=ro" % urllib.parse.quote(path)
     try:
         opened = sqlite3.connect(uri, uri=True)

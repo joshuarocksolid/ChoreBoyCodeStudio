@@ -32,7 +32,7 @@ from app.features.form_builder.qtside.inspector import TabId
 from app.features.form_builder.qtside.inspector.pane import InspectorPane
 from app.qt.QtCore import Qt
 from app.qt.QtTest import QTest
-from app.qt.QtWidgets import QApplication, QLabel, QLineEdit, QMenu, QPushButton, QWidget
+from app.qt.QtWidgets import QApplication, QLabel, QLineEdit, QMenu, QPushButton, QToolButton, QWidget
 from tests.form_builder.qtside.support import form, opened
 
 pytestmark = [pytest.mark.unit, pytest.mark.usefixtures("qapp")]
@@ -240,7 +240,7 @@ def test_each_kind_is_one_undo_step_named_for_the_buddy() -> None:
     with desk() as (session, pane):
         _select(session, pane, "emailEdit")
         section = _child(pane, QWidget, "formBuilder.checks")
-        assert _child(pane, QLabel, "formBuilder.checks.title").text() == "CHECKS"
+        assert _child(pane, QToolButton, "formBuilder.checks.title").text() == "CHECKS"
         for key, fill, expected, native in cases:
             before = len(session.log.entries())
             _add(pane, key, fill)

@@ -188,6 +188,10 @@ class _Footer(QWidget):
         # line below, so a 184 px Data tab still shows the whole read time.
         del wrap
         self._sentence.setText(text)
+        width = self._sentence.width()
+        if width < 80:
+            width = max(self.width(), 184)
+        self._sentence.setMinimumHeight(self._sentence.heightForWidth(width))
 
     def _cached(self) -> object:
         doc = _document(self._host)

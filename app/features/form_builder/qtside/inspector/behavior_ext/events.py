@@ -74,8 +74,9 @@ class EventsBody(QWidget):
         overline = QWidget(self)
         row = QHBoxLayout(overline)
         row.setContentsMargins(0, 0, 0, 0)
-        title = QLabel("EVENTS", overline)
-        title.setObjectName("formBuilder.events.overline")
+        from app.features.form_builder.qtside.inspector.behavior_ext.heading import section_heading
+
+        title = section_heading(overline, "formBuilder.events.overline", "EVENTS")
         row.addWidget(title)
         row.addStretch(1)
         self._when = QPushButton("+ When\u2026", overline)
@@ -1030,7 +1031,7 @@ def _place_link(row: QWidget, body: "EventsBody", method: str) -> QPushButton:
     button.setFlat(True)
     button.setObjectName("formBuilder.events.place")
     button.setProperty("cbcsFull", text)
-    checked = text == "not checked"
+    checked = text == "Couldn't read the file"
     button.setProperty("cbcsReason", reason if checked else "")
     button.setToolTip(reason if checked else text)
     button.setAccessibleName(text)
@@ -1056,9 +1057,9 @@ def _place_state(body: "EventsBody", method: str) -> Tuple[str, str, str]:
     surface = _surface(body)
     read = _window_read(surface, body)
     if surface is None or read is None:
-        return "not checked", "faint", "The window file could not be read."
+        return "Couldn't read the file", "faint", "The window file could not be read."
     if read.status != "ok":
-        return "not checked", "faint", read.reason or "The window file could not be read."
+        return "Couldn't read the file", "faint", read.reason or "The window file could not be read."
     found = read.facts.method(method)
     if found is None:
         return "not in %s" % file_name, "warn", method

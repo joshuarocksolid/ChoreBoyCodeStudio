@@ -886,7 +886,7 @@ def test_no_single_key_and_a_missing_database_disable_create(tmp_path: Path, qap
     try:
         assert unread.findChild(QListWidget, "formBuilder.fromTable.tables").count() == 0
         assert not unread.create_button().isEnabled()
-        assert "Can't open the database." in unread.disabled_reason()
+        assert "is missing" in unread.disabled_reason()
     finally:
         unread.close()
 

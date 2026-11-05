@@ -1070,14 +1070,18 @@ def _requests(
         text = chip_text(document, inputs.selection, inputs.sizing)
         if readout is not None and readout.key[0] == "size" and readout.key[1] == primary:
             text = readout.text
-        role: Role = "layout" if isinstance(document.get(primary), LayoutNode) else "select"
+        node = document.get(primary)
+        role: Role = "layout" if isinstance(node, LayoutNode) else "select"
+        # A layout chip stays in the gutter so it does not cover the margin ticks.
+        # A widget chip may sit on the widget when the gutter seat falls off the page.
+        corners = LABEL_CORNERS if isinstance(node, LayoutNode) else BARE_CORNERS
         _ask(
             faces,
             requests,
             ("chip", primary),
             rects[primary],
             _label_size(text, inputs.measure),
-            LABEL_CORNERS,
+            corners,
             document,
             _Face("chip", primary, role, text, None),
             required=True,

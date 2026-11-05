@@ -65,6 +65,7 @@ class UsesDialog(QDialog):
     def apply_theme(self, tokens: object) -> None:
         self._tokens = tokens
         chrome = paint_roles(tokens)
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self.setAutoFillBackground(True)
         palette = self.palette()
         role = getattr(QPalette, "ColorRole", QPalette)
@@ -141,7 +142,7 @@ def _face(use: Use, display: str, lines: Sequence[str]) -> RowFace:
     if use.kind == "check":
         return RowFace(display, use.summary, "", False, False, use.summary, accessible)
     if use.kind == "step":
-        aside = "· %s" % use.signal if use.signal else ""
+        aside = "· %s" % use.signal.strip() if use.signal and use.signal.strip() else ""
         body = use.summary or use.method
         if body and "\u2192" in body:
             accessible = "%s %s" % (display, body)

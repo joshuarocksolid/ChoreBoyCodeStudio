@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from typing import Callable, Optional
 
 from app.qt.QtCore import QSize, Qt
-from app.qt.QtGui import QBrush, QColor, QFont, QFontDatabase, QFontInfo, QPainter, QPalette, QPen, QTextCharFormat, QTextCursor, QTextDocument, QTextOption
+from app.qt.QtGui import QBrush, QColor, QFont, QPainter, QPalette, QPen, QTextCharFormat, QTextCursor, QTextDocument, QTextOption
 from app.qt.QtWidgets import QHBoxLayout, QLabel, QSizePolicy, QVBoxLayout, QWidget
 from app.qt.qt_compat import enum_value
 
@@ -154,6 +154,36 @@ class WrapLabel(QWidget):
         painter.end()
 
 
+class _ElidedLabel(QLabel):
+    """Draws the full string until the layout gives it a width, then ends it with an ellipsis."""
+
+    def __init__(self, text: str, parent: QWidget) -> None:
+        super().__init__(text, parent)
+        self._full = text
+        self.setMinimumWidth(0)
+        names = getattr(QSizePolicy, "Policy", QSizePolicy)
+        self.setSizePolicy(getattr(names, "Ignored"), getattr(names, "Preferred"))
+
+    def sizeHint(self) -> QSize:  # noqa: N802
+        return QSize(0, super().sizeHint().height())
+
+    def minimumSizeHint(self) -> QSize:  # noqa: N802
+        return QSize(0, super().minimumSizeHint().height())
+
+    def resizeEvent(self, event: object) -> None:  # noqa: N802
+        super().resizeEvent(event)  # type: ignore[arg-type]
+        width = self.width()
+        if width < 8 or not self._full:
+            return
+        mode = getattr(getattr(Qt, "TextElideMode", Qt), "ElideRight")
+        shown = self.fontMetrics().elidedText(self._full, mode, width)
+        if self.text() != shown:
+            self.setText(shown)
+        tip = self._full if shown != self._full else ""
+        if self.toolTip() != tip:
+            self.setToolTip(tip)
+
+
 class LogicRow(QWidget):
     """The whole row takes hover, focus, click and Enter."""
 
@@ -196,14 +226,15 @@ class LogicRow(QWidget):
         self._glyph.setAttribute(_TRANSPARENT, True)
         self._glyph.setVisible(face.warning)
         line.addWidget(self._glyph)
-        self._title = QLabel(face.title, self)
+        self._title = QLabel(face.title.strip(), self)
         self._title.setObjectName("formBuilder.logic.rowTitle")
         self._title.setTextFormat(_PLAIN)
         self._title.setFocusPolicy(_NO_FOCUS)
         self._title.setAttribute(_TRANSPARENT, True)
         self._title.setMinimumWidth(0)
         line.addWidget(self._title, 0)
-        self._aside = QLabel(face.aside, self)
+        self._aside_full = face.aside.strip()
+        self._aside = _ElidedLabel(self._aside_full, self)
         self._aside.setObjectName("formBuilder.logic.rowAside")
         self._aside.setTextFormat(_PLAIN)
         self._aside.setFocusPolicy(_NO_FOCUS)
@@ -259,13 +290,16 @@ class LogicRow(QWidget):
         body_color = faint if not self._face.code and self._face.warning else text
         self._body.set_color(body_color)
         if self._face.code:
-            # Start from the row's font so the code line keeps the body size.
+            # The editor sets this family and leaves the generic alias alone.
+            # Replacing an unlisted "monospace" with the system fixed font
+            # picked a serif on the offscreen fontconfig.
             font = QFont(self.font())
             font.setFamily(self._code_family)
-            font.setStyleHint(QFont.TypeWriter)  # type: ignore[attr-defined]
+            hint = getattr(getattr(QFont, "StyleHint", QFont), "Monospace", None)
+            if hint is None:
+                hint = getattr(QFont, "TypeWriter")
+            font.setStyleHint(hint)  # type: ignore[arg-type]
             font.setFixedPitch(True)
-            if not QFontInfo(font).fixedPitch():
-                font.setFamily(QFontDatabase.systemFont(QFontDatabase.FixedFont).family())
             self._body.setFont(font)
         if self._face.warning and warning:
             ratio = float(getattr(self, "devicePixelRatioF", lambda: 1.0)())
