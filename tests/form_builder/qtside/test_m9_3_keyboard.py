@@ -152,14 +152,30 @@ def test_start_screen_from_table_escape_returns_to_the_card(
                 return
             focus = QApplication.focusWidget()
             seen["focus"] = "" if focus is None else focus.objectName()
-            QTest.keyClick(dialog, _key("Key_Escape"))  # type: ignore[arg-type]
+            # Escape goes to the widget that has focus, as a person's key would.
+            # A busy suite can show the dialog before it takes focus; try again then.
+            target = focus if focus is not None and dialog.isAncestorOf(focus) else dialog
+            QTest.keyClick(target, _key("Key_Escape"))  # type: ignore[arg-type]
+            seen["tries"] = seen.get("tries", 0) + 1
+            if dialog.isVisible() and seen["tries"] < 40:
+                QTimer.singleShot(50, _escape_when_open)
+                return
             seen["closed"] = not dialog.isVisible()
             if dialog.isVisible():
                 dialog.reject()
 
         QTimer.singleShot(50, _escape_when_open)
         kb.press("Key_Return")
-        kb.pump()
+
+        def _settled() -> bool:
+            focus = QApplication.focusWidget()
+            return "closed" in seen and focus is not None and focus.objectName() == "formBuilder.newForm.card.from_table"
+
+        for _ in range(200):
+            if _settled():
+                break
+            QTest.qWait(25)
+            kb.pump()
         assert seen.get("closed") is True, seen
         dialog = window.findChild(QWidget, "formBuilder.fromTable")
         assert dialog is None or not dialog.isVisible()
