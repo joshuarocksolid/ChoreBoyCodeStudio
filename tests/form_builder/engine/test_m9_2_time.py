@@ -91,13 +91,54 @@ def test_delete_on_a_selected_time_clears_a_nullable_field(tmp_path: Path) -> No
         assert stored == (None,)
 
 
-def test_a_bad_stored_time_saves_null(tmp_path: Path) -> None:
-    schema = _table_schema(
-        "clocks",
-        (Column("id", "INTEGER", False), Column("at_time", "time", True)),
-        "id",
-    )
-    ui = _xml(RecordSource("shop", "clocks", "id"), (("QTimeEdit", "timeEdit", "at_time", ""),))
+def _clocks(note: bool = False):
+    columns = [Column("id", "INTEGER", False)]
+    widgets = []
+    if note:
+        columns.append(Column("note", "TEXT", True))
+        widgets.append(("QLineEdit", "noteEdit", "note", ""))
+    columns.append(Column("at_time", "time", True))
+    widgets.append(("QTimeEdit", "timeEdit", "at_time", ""))
+    schema = _table_schema("clocks", tuple(columns), "id")
+    ui = _xml(RecordSource("shop", "clocks", "id"), tuple(widgets))
+    return schema, ui
+
+
+def _stored_time(db: Path):
+    connection = sqlite3.connect(str(db))
+    try:
+        return connection.execute("SELECT at_time FROM clocks").fetchone()
+    finally:
+        connection.close()
+
+
+def test_a_bad_stored_time_opens_blank_and_stays_unsaved(tmp_path: Path) -> None:
+    schema, ui = _clocks(note=True)
+
+    def prepare(root: Path) -> Path:
+        return _sqlite(
+            root,
+            ("CREATE TABLE clocks (id INTEGER PRIMARY KEY, note TEXT, at_time TEXT)",),
+            (("INSERT INTO clocks (id, note, at_time) VALUES (?, ?, ?)", (1, "keep", "nope")),),
+        )
+
+    with record_window(tmp_path, ui, prepare, schema=schema) as (host, db):
+        assert host.ui.timeEdit.property("cbcsTimeBlank") is True
+        assert host.ui._cbcs_is_dirty() is False
+        host.ui.noteEdit.setText(host.ui.noteEdit.text() + "x")
+        assert host.ui.cbcs_save() is True
+    connection = sqlite3.connect(str(db))
+    try:
+        stored = connection.execute("SELECT note, at_time FROM clocks").fetchone()
+    finally:
+        connection.close()
+    assert stored == ("keepx", "nope")
+
+
+def test_clear_on_a_bad_stored_time_saves_null(tmp_path: Path) -> None:
+    from PySide6.QtWidgets import QApplication, QMenu
+
+    schema, ui = _clocks()
 
     def prepare(root: Path) -> Path:
         return _sqlite(
@@ -107,14 +148,39 @@ def test_a_bad_stored_time_saves_null(tmp_path: Path) -> None:
         )
 
     with record_window(tmp_path, ui, prepare, schema=schema) as (host, db):
-        assert host.ui.timeEdit.property("cbcsTimeBlank") is True
-        saved = dict(host.ui._cbcs_saved_fields)
-        saved["at_time"] = "nope"
-        host.ui._cbcs_saved_fields = saved
+        line = host.ui.timeEdit.lineEdit()
+        assert line is not None
+        line.customContextMenuRequested.emit(line.rect().center())
+        app = QApplication.instance()
+        if app is not None:
+            app.processEvents()
+        found = False
+        for widget in QApplication.topLevelWidgets():
+            if not isinstance(widget, QMenu):
+                continue
+            for action in widget.actions():
+                if action.text() == "Clear":
+                    action.trigger()
+                    found = True
+            widget.close()
+        assert found
         assert host.ui.cbcs_save() is True
-        connection = sqlite3.connect(str(db))
-        try:
-            stored = connection.execute("SELECT at_time FROM clocks").fetchone()
-        finally:
-            connection.close()
-        assert stored == (None,)
+        assert _stored_time(db) == (None,)
+
+
+def test_entering_a_time_over_a_bad_stored_time_saves_it(tmp_path: Path) -> None:
+    from PySide6.QtCore import QTime
+
+    schema, ui = _clocks()
+
+    def prepare(root: Path) -> Path:
+        return _sqlite(
+            root,
+            ("CREATE TABLE clocks (id INTEGER PRIMARY KEY, at_time TEXT)",),
+            (("INSERT INTO clocks (id, at_time) VALUES (?, ?)", (1, "nope")),),
+        )
+
+    with record_window(tmp_path, ui, prepare, schema=schema) as (host, db):
+        host.ui.timeEdit.setTime(QTime(9, 15, 0))
+        assert host.ui.cbcs_save() is True
+        assert _stored_time(db) == ("09:15:00",)

@@ -315,6 +315,7 @@ def _setup(view, rows, columns, select_names, stored, unique, select_sql, engine
         "self._cbcs_line_lookup = {}",
         "self._cbcs_line_also_map = {}",
         "self._cbcs_line_snapshot = ()",
+        "self._cbcs_cleared_time = object()",
         "self._cbcs_deleted_line_keys = []",
         "self._cbcs_line_guard = False",
         "self._cbcs_add_shortcut = QShortcut(QKeySequence(%s), self.%s)" % (py_string("Ctrl+Insert"), view),
@@ -667,6 +668,14 @@ def _dict_body(view: str) -> List[str]:
 
 def _convert_body(families, nulls, engine: str, outbound: bool) -> List[str]:
     lines = []
+    if outbound:
+        # The sentinel is not a time. Returning None here is the NULL bind.
+        lines.extend(
+            [
+                "if _value is self._cbcs_cleared_time:",
+                "    return None",
+            ]
+        )
     first = True
     for name, family in families.items():
         word = "if" if first else "elif"
@@ -907,6 +916,7 @@ def _editor_body() -> List[str]:
         "                _w = self._widget",
         "                _w._cbcs_time_arming = True",
         "                _w.setProperty(%s, True)" % py_string("cbcsTimeBlank"),
+        "                _w.setProperty(%s, True)" % py_string("cbcsTimeCleared"),
         "                _w.setSpecialValueText(%s)" % py_string(" "),
         "                _w.setTime(_w.minimumTime())",
         "                _w._cbcs_time_arming = False",
@@ -998,6 +1008,7 @@ def _editor_data_body() -> List[str]:
         "            _clock = _value",
         "        else:",
         "            _clock = time.fromisoformat(str(_value or %s))" % py_string("00:00:00"),
+        # A failed parse is blank on screen. It is not a Clear, so the stored text stays.
         "    except ValueError:",
         "        _note = getattr(self, %s, None)" % py_string("_cbcs_note_unparsed"),
         "        if _note is not None:",
@@ -1076,7 +1087,11 @@ def _commit_body() -> List[str]:
         "    else:",
         "        _value = None if _nullable else _index.data(self._cbcs_line_role)",
         "elif _kind == %s:" % py_string("time"),
-        "    if _nullable and _editor.property(%s):" % py_string("cbcsTimeBlank"),
+        # Clear of a blank parsed from a bad value stores a sentinel. Clear of a real time stores None.
+        "    _previous = _index.data(self._cbcs_line_role)",
+        "    if _nullable and _editor.property(%s) and _previous is None:" % py_string("cbcsTimeCleared"),
+        "        _value = self._cbcs_cleared_time",
+        "    elif _nullable and _editor.property(%s):" % py_string("cbcsTimeBlank"),
         "        _value = None",
         "    else:",
         "        _value = _editor.time().toPython()",
@@ -1439,7 +1454,7 @@ def _formulas(columns: Sequence[_Col], attrs: Optional[Mapping[str, Mapping[str,
 
 def _show_body() -> List[str]:
     return [
-        "if _value is None:",
+        "if _value is None or _value is self._cbcs_cleared_time:",
         "    return %s" % py_string(""),
         "_scale = self._cbcs_line_scales[_column]",
         "if _scale < 0:",

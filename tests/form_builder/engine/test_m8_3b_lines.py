@@ -4,11 +4,12 @@ from __future__ import annotations
 
 import sqlite3
 import time
+from contextlib import contextmanager
 from dataclasses import replace
 from datetime import date
 from decimal import Decimal
 from pathlib import Path
-from typing import Any, Callable, List, Optional, Sequence, Tuple
+from typing import Any, Callable, Iterator, List, Optional, Sequence, Tuple
 from xml.sax.saxutils import escape
 
 import pytest
@@ -630,7 +631,8 @@ def test_clear_on_a_line_time_menu_saves_null(tmp_path: Path) -> None:
         assert stored == (None,)
 
 
-def test_a_bad_line_time_saves_null(tmp_path: Path) -> None:
+@contextmanager
+def _bad_line_time(tmp_path: Path) -> Iterator[Tuple[Any, Path]]:
     rows = Rows(
         "xl",
         "invoice_id",
@@ -684,22 +686,62 @@ def test_a_bad_line_time_saves_null(tmp_path: Path) -> None:
             connection.close()
         return path
 
-    with record_window(tmp_path, ui_text, prepare, schema=schema) as (host, db):
+    with record_window(tmp_path, ui_text, prepare, schema=schema) as opened:
+        yield opened
+
+
+def _stored_tm(db: Path) -> Any:
+    connection = sqlite3.connect(str(db))
+    try:
+        return connection.execute("SELECT tm FROM xl").fetchone()
+    finally:
+        connection.close()
+
+
+def test_a_bad_line_time_stays_when_another_column_is_saved(tmp_path: Path) -> None:
+    with _bad_line_time(tmp_path) as (host, db):
         ui = host.ui
-        cell = ui.linesView.model().item(0, _index(ui, "tm"))
-        cell.setData("nope", ui._cbcs_line_role)
-        _edit(ui, 0, "tm")
-        assert _value(ui, 0, "tm") is None
-        loaded = dict(ui._cbcs_line_snapshot[0])
-        loaded["tm"] = "nope"
-        ui._cbcs_line_snapshot = (loaded,)
+        ui.invoiceNoEdit.setText(ui.invoiceNoEdit.text() + "x")
         assert ui.cbcs_save() is True
-        connection = sqlite3.connect(str(db))
-        try:
-            stored = connection.execute("SELECT tm FROM xl").fetchone()
-        finally:
-            connection.close()
-        assert stored == (None,)
+        assert _stored_tm(db) == ("nope",)
+
+
+def test_clear_on_a_bad_line_time_saves_null(tmp_path: Path) -> None:
+    from PySide6.QtWidgets import QApplication, QMenu
+
+    with _bad_line_time(tmp_path) as (host, db):
+        ui = host.ui
+
+        def clear(editor: Any) -> None:
+            line = editor.lineEdit()
+            assert line is not None
+            line.customContextMenuRequested.emit(line.rect().center())
+            app = QApplication.instance()
+            if app is not None:
+                app.processEvents()
+            found = False
+            for widget in QApplication.topLevelWidgets():
+                if not isinstance(widget, QMenu):
+                    continue
+                for action in widget.actions():
+                    if action.text() == "Clear":
+                        action.trigger()
+                        found = True
+                widget.close()
+            assert found
+
+        _edit(ui, 0, "tm", clear)
+        assert ui.cbcs_save() is True
+        assert _stored_tm(db) == (None,)
+
+
+def test_entering_a_line_time_over_a_bad_value_saves_it(tmp_path: Path) -> None:
+    from PySide6.QtCore import QTime
+
+    with _bad_line_time(tmp_path) as (host, db):
+        _edit(host.ui, 0, "tm", lambda editor: editor.setTime(QTime(9, 15, 0)))
+        assert host.ui.cbcs_save() is True
+        assert _stored_tm(db) == ("09:15:00",)
 
 
 def test_a_failed_lookup_does_not_mark_the_other_column(tmp_path: Path) -> None:

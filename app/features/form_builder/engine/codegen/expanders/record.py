@@ -160,6 +160,11 @@ class RecordExpander:
         open_line = _open_line(source.open_at)
         if open_line:
             ordered.append((890, open_line))
+        if _nullable_time(fields):
+            saved_at = next(
+                index for index, item in enumerate(ordered) if item[1] == "self._cbcs_saved_fields = {}"
+            )
+            ordered.insert(saved_at + 1, (10, "self._cbcs_cleared = set()"))
         return Contribution(
             imports=tuple(imports),
             setup_lines=tuple(setup),
@@ -215,7 +220,7 @@ def _methods(source, fields, engine, record_word, order, search, check, hooks, a
         "cbcs_previous": ("", _move_body("previous")),
         "cbcs_next": ("", _move_body("next")),
         "cbcs_last": ("", _move_body("last")),
-        "cbcs_find": ("", _find_body(pieces, connection)),
+        "cbcs_find": ("", _find_body(pieces, connection, fields)),
         "cbcs_show_all": ("", _show_all_body()),
         "_cbcs_form_position": ("", _position_body()),
         "_cbcs_form_count": ("", ["return len(getattr(self, %s, ()) or ())" % _q("_cbcs_keys")]),
@@ -230,7 +235,7 @@ def _methods(source, fields, engine, record_word, order, search, check, hooks, a
         bodies["_cbcs_note_unparsed"] = ("_column, _kind, _shown", _note_body())
     if any(field.nullable and field.io == "time" for field in fields):
         bodies["_cbcs_time_touched"] = ("widget", _time_touched_body())
-        bodies["_cbcs_clear_time"] = ("widget", _clear_time_body())
+        bodies["_cbcs_clear_time"] = ("widget, column", _clear_time_body())
     if any(field.io == "decimal" for field in writable):
         bodies["_cbcs_numbers_match"] = ("_left, _right, _places", _numbers_match_body())
     methods = []
@@ -323,6 +328,7 @@ def _show_body(pieces, connection, fields, hooks, events=None) -> List[str]:
             "self._cbcs_clear_errors()",
             "self.cbcs_write_fields(_raw)",
             "self._cbcs_saved_fields = self.cbcs_read_fields()",
+            *_cleared_reset(fields),
             "self._cbcs_ready = True",
             "self._cbcs_new = False",
             "self._cbcs_key = _key",
@@ -350,6 +356,7 @@ def _new_body(fields, hooks, clear_lines: bool = False, events=None) -> List[str
         "self._cbcs_clear_errors()",
         "self.cbcs_write_fields({})",
         "self._cbcs_saved_fields = self.cbcs_read_fields()",
+        *_cleared_reset(fields),
     ]
     if clear_lines:
         lines.extend(
@@ -653,9 +660,14 @@ def _time_touched_body() -> List[str]:
 
 
 def _clear_time_body() -> List[str]:
-    """Delete, Backspace on a full selection, or the Clear menu item."""
+    """Delete, Backspace on a full selection, or the Clear menu item.
+
+    A stored value that is not a time already reads as None, same as Clear.
+    Remembering the column is what makes that Clear reach the UPDATE.
+    """
 
     return [
+        "self._cbcs_cleared.add(column)",
         "widget._cbcs_time_arming = True",
         "widget.setProperty(%s, True)" % _q("cbcsTimeBlank"),
         "widget.setSpecialValueText(%s)" % _q(_NULL_TEXT),
@@ -669,10 +681,11 @@ def _time_clear_class() -> List[str]:
 
     return [
         "class _CbcsTimeClear(QObject):",
-        "    def __init__(self, ui, widget):",
+        "    def __init__(self, ui, widget, column):",
         "        super().__init__(widget)",
         "        self._ui = ui",
         "        self._widget = widget",
+        "        self._column = column",
         "        widget.installEventFilter(self)",
         "        _line = widget.lineEdit()",
         "        if _line is not None:",
@@ -684,13 +697,13 @@ def _time_clear_class() -> List[str]:
         "        if _line is None:",
         "            return",
         "        _menu = _line.createStandardContextMenu()",
-        "        _menu.addAction(%s, lambda: self._ui._cbcs_clear_time(self._widget))" % _q("Clear"),
+        "        _menu.addAction(%s, lambda: self._ui._cbcs_clear_time(self._widget, self._column))" % _q("Clear"),
         "        _menu.popup(_line.mapToGlobal(_pos))",
         "    def eventFilter(self, _watched, _event):",
         "        if _event.type() == QEvent.Type.KeyPress and _event.key() in (Qt.Key.Key_Delete, Qt.Key.Key_Backspace):",
         "            _line = self._widget.lineEdit()",
         "            if _line is not None and _line.text() and _line.selectedText() == _line.text():",
-        "                self._ui._cbcs_clear_time(self._widget)",
+        "                self._ui._cbcs_clear_time(self._widget, self._column)",
         "                return True",
         "        return False",
     ]
@@ -764,6 +777,14 @@ def _dirty_body(writable: Sequence[_Field]) -> List[str]:
                 [
                     "if not self._cbcs_numbers_match(_fields.get(%s), _saved.get(%s), self.%s.decimals()):"
                     % (_q(field.column), _q(field.column), field.widget),
+                    "    return True",
+                ]
+            )
+        elif field.nullable and field.io == "time":
+            lines.extend(
+                [
+                    "if _fields.get(%s) != _saved.get(%s) or %s in self._cbcs_cleared:"
+                    % (_q(field.column), _q(field.column), _q(field.column)),
                     "    return True",
                 ]
             )
@@ -1240,7 +1261,9 @@ def _null_markers(fields: Sequence[_Field]) -> List[str]:
             lines.append(
                 "%s.timeChanged.connect(lambda *_a, _w=%s: self._cbcs_time_touched(_w))" % (widget, widget)
             )
-            lines.append("self._cbcs_time_clear_%s = _CbcsTimeClear(self, %s)" % (field.widget, widget))
+            lines.append(
+                "self._cbcs_time_clear_%s = _CbcsTimeClear(self, %s, %s)" % (field.widget, widget, _q(field.column))
+            )
         if field.nullable and field.io == "bool":
             lines.append("%s.setTristate(True)" % widget)
         if field.error_label:
@@ -1353,6 +1376,12 @@ def _write_sql_body(pieces, connection, fields, writable, check, hooks, events=N
                 _q(field.column),
                 field.widget,
             )
+        elif field.nullable and field.io == "time":
+            differ = "(_fields.get(%s) != self._cbcs_saved_fields.get(%s) or %s in self._cbcs_cleared)" % (
+                _q(field.column),
+                _q(field.column),
+                _q(field.column),
+            )
         else:
             differ = "_fields.get(%s) != self._cbcs_saved_fields.get(%s)" % (_q(field.column), _q(field.column))
         lines.extend(
@@ -1439,6 +1468,7 @@ def _write_sql_body(pieces, connection, fields, writable, check, hooks, events=N
         "    return False",
         "self._cbcs_clear_errors()",
         "self._cbcs_saved_fields = self.cbcs_read_fields()",
+        *_cleared_reset(fields),
         "self._cbcs_ready = True",
         "self._cbcs_new = False",
         "if _inserted or not self._cbcs_filtered:",
@@ -1528,6 +1558,18 @@ def _verb_new() -> List[str]:
     ]
 
 
+def _nullable_time(fields: Sequence[_Field]) -> bool:
+    return any(field.nullable and field.io == "time" for field in fields)
+
+
+def _cleared_reset(fields: Sequence[_Field], indent: str = "") -> List[str]:
+    """Drop Clear marks when the snapshot is replaced. Forms with no time omit the set."""
+
+    if not _nullable_time(fields):
+        return []
+    return ["%sself._cbcs_cleared = set()" % indent]
+
+
 def _revert_body() -> List[str]:
     return [
         "if self._cbcs_new or self._cbcs_key is None:",
@@ -1560,7 +1602,7 @@ def _move_body(kind: str) -> List[str]:
     return lines
 
 
-def _find_body(pieces, connection) -> List[str]:
+def _find_body(pieces, connection, fields) -> List[str]:
     count = len(pieces["search"])
     params = ", ".join(["_pattern"] * count) if count else ""
     lines = [
@@ -1597,6 +1639,7 @@ def _find_body(pieces, connection) -> List[str]:
             "    self._cbcs_record = {}",
             "    self.cbcs_write_fields({})",
             "    self._cbcs_saved_fields = self.cbcs_read_fields()",
+            *_cleared_reset(fields, "    "),
             "    self._cbcs_ready = True",
         ]
     )
