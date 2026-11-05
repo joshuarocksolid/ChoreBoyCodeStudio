@@ -21,3 +21,9 @@
 | A hand-written `{"check": "unique"}` is parsed and then dropped, with no diagnostic. | `plan` returns a field plan and has no diagnostic channel. A warning would have to be threaded through every caller. Not a one-line fix. |
 | `datetime.fromisoformat` on Python 3.9 rejects a trailing `Z` and some fractional seconds. | The audit asked to record this, not to change the parser. |
 | Renumbering line positions can collide with another clerk's rows. | The save fails cleanly. The audit asked to record that, not to change the lock. |
+| `_cbcs_show` sets the header and key, then loads lines in a second transaction; if that lines query fails, the previous record's lines and line snapshot stay on screen under the new record. | Found by the M9.7 review, outside this lane's findings. Needs the show path to collect lines before applying the header, like the save path now does. |
+| A new form that gets FB510 (missing connection) keeps its `.ui` but has no `ui_*.py` or window file until the connection is fixed. | The withhold choice is intended. Only the FB510 warning tells the author; a clearer first-run message is a polish item for M9.5. |
+
+The M9.7 review also found that openForm in window mode called `_cbcs_confirm_leave` on forms with no record source (AttributeError). Fixed in 169e5957 with a test that runs the generated handler: `tests/form_builder/engine/test_m9_7_steps.py::test_window_mode_asks_before_show`.
+
+Two-cart check on a real ChoreBoy floor: `docs/form_builder/orch/m9_7_floor/RESULT.md` (main repo, untracked evidence).
