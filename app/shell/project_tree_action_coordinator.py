@@ -6,8 +6,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Generic, Optional, Sequence, TypeVar
 
+from app.project.file_operation_models import FileOperationResult
 from app.project.file_operations import copy_path, create_directory, create_file, delete_path, duplicate_path, move_path, rename_path
 from app.project.path_removed import notify_path_removed
+from app.project.path_rename import MoveDone, MoveRefusal, try_move
 from app.shell.breakpoint_store import BreakpointStore
 from app.shell.project_rescan_workflow import RefreshTier
 from app.shell.project_tree_controller import ProjectTreeController, TreeEditorWidget
@@ -100,10 +102,9 @@ class ProjectTreeActionCoordinator(Generic[W]):
             destination = source.with_name(validated_name)
         except ValueError as exc:
             return f"Invalid name: {exc}"
-        result = rename_path(str(source), str(destination))
-        if not result.success:
-            return result.message
-        self.apply_path_move_updates(str(source), str(destination))
+        error = self._relocate_path(str(source), str(destination), rename_path)
+        if error is not None:
+            return error
         self._refresh(RefreshTier.TREE_ENTRIES)
         return None
 
@@ -162,14 +163,12 @@ class ProjectTreeActionCoordinator(Generic[W]):
             destination = dest_dir / source.name
             if clipboard_cut:
                 try:
-                    result = move_path(str(source), str(destination))
+                    error = self._relocate_path(str(source), str(destination), move_path)
                 except OSError as exc:
                     failed.append(f"{source.name}: {exc}")
                     continue
-                if result.success:
-                    self.apply_path_move_updates(str(source), str(destination))
-                else:
-                    failed.append(f"{source.name}: {result.message}")
+                if error is not None:
+                    failed.append(f"{source.name}: {error}")
             else:
                 try:
                     result = copy_path(str(source), str(destination))
@@ -198,13 +197,31 @@ class ProjectTreeActionCoordinator(Generic[W]):
             else:
                 return "Cannot move a folder into itself."
         try:
-            result = move_path(str(source), str(destination))
+            error = self._relocate_path(str(source), str(destination), move_path)
         except OSError as exc:
             return str(exc)
+        if error is not None:
+            return error
+        self._refresh(RefreshTier.TREE_ENTRIES)
+        return None
+
+    def _relocate_path(
+        self,
+        source: str,
+        destination: str,
+        relocate: Callable[[str, str], FileOperationResult],
+    ) -> Optional[str]:
+        outcome = try_move(source, destination)
+        if isinstance(outcome, MoveRefusal):
+            return outcome.sentence
+        if isinstance(outcome, MoveDone):
+            for old, new in outcome.moved:
+                self.apply_path_move_updates(old, new, rewrite_imports=False)
+            return None
+        result = relocate(source, destination)
         if not result.success:
             return result.message
-        self.apply_path_move_updates(str(source), str(destination))
-        self._refresh(RefreshTier.TREE_ENTRIES)
+        self.apply_path_move_updates(source, destination)
         return None
 
     def close_deleted_editor_paths(self, deleted_path: str) -> None:

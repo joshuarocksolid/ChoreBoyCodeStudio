@@ -146,6 +146,9 @@ def install_form_builder(ctx: "ShellCompositionContext") -> None:
     from app.features.form_builder.integration.form_removal import install_form_removal
 
     install_form_removal(window)
+    from app.features.form_builder.integration.form_move import install_form_move
+
+    install_form_move(window)
 
 
 def _refresh_shortcut_maps(window: object) -> None:

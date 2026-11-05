@@ -3,10 +3,14 @@
 from __future__ import annotations
 
 import os
+from contextlib import contextmanager
 from pathlib import Path
+from types import SimpleNamespace
+from typing import Iterator, Tuple
 
 import pytest
 
+from app.editors.editor_manager import EditorManager
 from app.features.form_builder.engine.codegen.api import generate_form_module
 from app.features.form_builder.engine.commands.catalog import SetLogic
 from app.features.form_builder.engine.ids import IdAllocator
@@ -19,6 +23,7 @@ from app.features.form_builder.engine.project.rename import apply, plan_rename
 from app.features.form_builder.engine.project.save import write_generated
 from app.features.form_builder.engine.ui4.reader import read_ui
 from app.features.form_builder.integration.content_source import open_document_log
+from app.shell.project_tree_action_coordinator import ProjectTreeActionCoordinator
 
 pytestmark = pytest.mark.unit
 
@@ -94,6 +99,7 @@ _COMMENTED = """<?xml version="1.0" encoding="UTF-8"?>
 def test_retarget_changes_only_the_open_form_name() -> None:
     updated = retarget_ui_text(_COMMENTED, "x", "y")
     assert updated == _COMMENTED.replace('"form": "x"', '"form": "y"')
+    assert updated is not None
     assert "<!-- keep me -->" in updated
 
 
@@ -127,7 +133,7 @@ def test_deleting_a_form_from_the_tree_names_it_without_rewriting(tmp_path: Path
     from app.features.form_builder.integration.form_removal import install_form_removal
     from app.project.path_removed import set_path_removed_listener
     from app.shell.breakpoint_store import BreakpointStore
-    from app.shell.project_tree_action_coordinator import ProjectTreeActionCoordinator
+    from app.shell.project_tree_controller import ProjectTreeController
 
     root = tmp_path / "proj"
     fs = OsFileSystem()
@@ -147,7 +153,7 @@ def test_deleting_a_form_from_the_tree_names_it_without_rewriting(tmp_path: Path
     )
     install_form_removal(window)
     coordinator = ProjectTreeActionCoordinator(
-        project_tree_controller=SimpleNamespace(close_deleted_editor_paths=lambda *_a, **_k: None),
+        project_tree_controller=ProjectTreeController(),
         open_tab_paths=lambda: [],
         widget_for_path=lambda _path: None,
         tab_index_for_path=lambda _path: -1,
@@ -172,3 +178,199 @@ def test_deleting_a_form_from_the_tree_names_it_without_rewriting(tmp_path: Path
     assert (root / "forms" / "ui_sale.py").read_bytes() == generated
     messages = [row.message for _path, rows in published for row in rows if row.code == "FB120"]
     assert messages == [missing_form_sentence("customer")]
+
+
+@contextmanager
+def _armed_tree(root: Path) -> Iterator[Tuple[ProjectTreeActionCoordinator, EditorManager, list]]:
+    from app.features.form_builder.integration.form_move import install_form_move
+    from app.features.form_builder.integration.form_removal import install_form_removal
+    from app.project.path_removed import set_path_removed_listener
+    from app.project.path_rename import set_path_move_handler
+    from app.shell.breakpoint_store import BreakpointStore
+    from app.shell.project_tree_controller import ProjectTreeController
+
+    published: list = []
+    window = SimpleNamespace(
+        _loaded_project=SimpleNamespace(project_root=str(root)),
+        _problems_controller=SimpleNamespace(
+            apply_lint_diagnostics_result=lambda path, rows: published.append((path, list(rows)))
+        ),
+    )
+    install_form_removal(window)
+    install_form_move(window)
+    manager = EditorManager()
+    coordinator = ProjectTreeActionCoordinator(
+        project_tree_controller=ProjectTreeController(),
+        open_tab_paths=manager.open_paths,
+        widget_for_path=lambda _path: None,
+        tab_index_for_path=lambda _path: -1,
+        remove_tab_at_index=lambda _index: None,
+        release_tab_content=lambda _path: None,
+        rekey_tab_content=lambda _old, _new: None,
+        close_editor_file=manager.close_file,
+        breakpoint_store=BreakpointStore(),
+        refresh_breakpoints_list=lambda: None,
+        remap_editor_paths=manager.remap_paths_for_move,
+        update_tab_path_and_name=lambda _index, _path: None,
+        apply_breakpoints_to_widget=lambda _widget, _bps: None,
+        update_widget_language=lambda _widget, _path: None,
+        maybe_rewrite_imports=lambda _src, _dst: None,
+        refresh_project=lambda _tier: None,
+    )
+    try:
+        yield coordinator, manager, published
+    finally:
+        set_path_move_handler(None)
+        set_path_removed_listener(None)
+
+
+def _open_form_name(path: Path) -> str:
+    document = read_ui(path.read_text(encoding="utf-8"), allocator=IdAllocator()).document
+    entry = document.root.prop("cbcsOnClicked")
+    assert entry is not None
+    stored = getattr(entry.value, "text", None)
+    assert isinstance(stored, str)
+    opened = parse_steps(stored)
+    assert opened.error is None
+    for key, value in opened.steps[0].fields:
+        if key == "form":
+            assert isinstance(value, str)
+            return value
+    raise AssertionError("openForm has no form")
+
+
+def test_renaming_a_form_in_the_tree_moves_its_companions_and_the_open_tab(tmp_path: Path) -> None:
+    from app.editors.editor_manager import normalized_path
+
+    root = tmp_path / "proj"
+    fs = OsFileSystem()
+    assert create_form(str(root), "customer", fs).refused is None
+    assert create_form(str(root), "sale", fs).refused is None
+    forms = root / "forms"
+    sale = forms / "sale.ui"
+    customer = forms / "customer.ui"
+    _arm(sale, "customer")
+    _regenerate(root, "sale", fs)
+    with _armed_tree(root) as (coordinator, manager, _published):
+        manager.open_file_with_content(str(customer), customer.read_text(encoding="utf-8"))
+        assert coordinator.handle_rename(str(customer), "client.ui") is None
+    client = forms / "client.ui"
+    assert not (forms / "ui_customer.py").exists()
+    assert (forms / "ui_client.py").is_file()
+    assert (forms / "client_window.py").is_file()
+    assert not (forms / "customer_window.py").exists()
+    assert _open_form_name(sale) == "client"
+    generated = (forms / "ui_sale.py").read_text(encoding="utf-8")
+    assert "from forms.client_window import ClientWindow" in generated
+    assert manager.open_paths() == [normalized_path(str(client))]
+
+
+def test_cutting_a_form_into_another_folder_moves_companions_and_names_the_form(tmp_path: Path) -> None:
+    root = tmp_path / "proj"
+    fs = OsFileSystem()
+    assert create_form(str(root), "customer", fs).refused is None
+    assert create_form(str(root), "sale", fs).refused is None
+    forms = root / "forms"
+    sale = forms / "sale.ui"
+    _arm(sale, "customer")
+    sale_bytes = sale.read_bytes()
+    generated = (forms / "ui_sale.py").read_bytes()
+    archive = forms / "archive"
+    archive.mkdir()
+    with _armed_tree(root) as (coordinator, _manager, published):
+        failed, _paths, _cut = coordinator.handle_paste(
+            destination_directory=str(archive),
+            clipboard_paths=[str(forms / "customer.ui")],
+            clipboard_cut=True,
+        )
+    assert failed == []
+    assert (archive / "customer.ui").is_file()
+    assert (archive / "ui_customer.py").is_file()
+    assert (archive / "customer_window.py").is_file()
+    assert not (forms / "customer.ui").exists()
+    assert not (forms / "ui_customer.py").exists()
+    assert not (forms / "customer_window.py").exists()
+    assert sale.read_bytes() == sale_bytes
+    assert (forms / "ui_sale.py").read_bytes() == generated
+    messages = [row.message for _path, rows in published for row in rows if row.code == "FB120"]
+    assert messages == [missing_form_sentence("customer")]
+
+
+def test_dropping_a_form_on_a_folder_moves_its_companions(tmp_path: Path) -> None:
+    root = tmp_path / "proj"
+    fs = OsFileSystem()
+    assert create_form(str(root), "customer", fs).refused is None
+    forms = root / "forms"
+    archive = forms / "archive"
+    archive.mkdir()
+    with _armed_tree(root) as (coordinator, _manager, _published):
+        assert coordinator.handle_drop_move(str(forms / "customer.ui"), str(archive)) is None
+    assert (
+        (archive / "ui_customer.py").is_file(),
+        (archive / "customer_window.py").is_file(),
+        (forms / "ui_customer.py").exists(),
+        (forms / "customer_window.py").exists(),
+    ) == (True, True, False, False)
+
+
+def test_renaming_a_plain_file_ignores_the_form_plan(tmp_path: Path) -> None:
+    root = tmp_path / "proj"
+    fs = OsFileSystem()
+    assert create_form(str(root), "customer", fs).refused is None
+    forms = root / "forms"
+    notes = forms / "notes.txt"
+    notes.write_text("hello\n", encoding="utf-8")
+    with _armed_tree(root) as (coordinator, _manager, _published):
+        assert coordinator.handle_rename(str(notes), "readme.txt") is None
+    assert (forms / "readme.txt").read_text(encoding="utf-8") == "hello\n"
+    assert not notes.exists()
+    assert (forms / "customer.ui").is_file()
+    assert (forms / "ui_customer.py").is_file()
+    assert (forms / "customer_window.py").is_file()
+
+
+def test_renaming_a_form_off_ui_is_refused(tmp_path: Path) -> None:
+    root = tmp_path / "proj"
+    fs = OsFileSystem()
+    assert create_form(str(root), "customer", fs).refused is None
+    forms = root / "forms"
+    customer = forms / "customer.ui"
+    before = (
+        customer.read_bytes(),
+        (forms / "ui_customer.py").read_bytes(),
+        (forms / "customer_window.py").read_bytes(),
+    )
+    with _armed_tree(root) as (coordinator, _manager, _published):
+        sentence = coordinator.handle_rename(str(customer), "customer.txt")
+    assert sentence == "A form file has to end with .ui."
+    assert not (forms / "customer.txt").exists()
+    assert (
+        customer.read_bytes(),
+        (forms / "ui_customer.py").read_bytes(),
+        (forms / "customer_window.py").read_bytes(),
+    ) == before
+
+
+def test_renaming_a_form_onto_an_existing_form_is_refused(tmp_path: Path) -> None:
+    root = tmp_path / "proj"
+    fs = OsFileSystem()
+    assert create_form(str(root), "customer", fs).refused is None
+    assert create_form(str(root), "sale", fs).refused is None
+    forms = root / "forms"
+    customer = forms / "customer.ui"
+    sale = forms / "sale.ui"
+    before = (
+        customer.read_bytes(),
+        (forms / "ui_customer.py").read_bytes(),
+        (forms / "customer_window.py").read_bytes(),
+        sale.read_bytes(),
+    )
+    with _armed_tree(root) as (coordinator, _manager, _published):
+        sentence = coordinator.handle_rename(str(customer), "sale.ui")
+    assert sentence == "A file named sale.ui is already in that folder."
+    assert (
+        customer.read_bytes(),
+        (forms / "ui_customer.py").read_bytes(),
+        (forms / "customer_window.py").read_bytes(),
+        sale.read_bytes(),
+    ) == before
