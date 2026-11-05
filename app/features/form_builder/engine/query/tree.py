@@ -303,11 +303,25 @@ def takes_tab_focus(widget: WidgetNode) -> bool:
     return widget.class_name in _FOCUSABLE
 
 
+_READING: WeakKeyDictionary = WeakKeyDictionary()
+
+
 def reading_order(doc: UiDocument) -> Tuple[str, ...]:
-    """Focusable widget names in visual reading order. O(form)."""
+    """Focusable widget names in visual reading order. O(form), then O(1) until the tree or focus policy changes.
+
+    A caption or a buddy does not change this list. ``objectName``, insert, delete,
+    reparent and layout moves bump ``structure_revision``. ``focusPolicy`` bumps
+    ``focus_revision`` and leaves the tree number alone.
+    """
+    key = (doc.structure_revision, doc.focus_revision)
+    cached = _READING.get(doc)
+    if cached is not None and cached[0] == key:
+        return cached[1]
     names: List[str] = []
     _walk_reading(doc, doc.root, names)
-    return tuple(names)
+    found = tuple(names)
+    _READING[doc] = (key, found)
+    return found
 
 
 def effective_tab_order(doc: UiDocument) -> Tuple[str, ...]:

@@ -1,0 +1,92 @@
+hottest iter_preorder in /home/default/cbprobe_jobs/m94-f2-20261105T011148Z-db3964/payload/payload/app/features/form_builder/engine/ui4/document.py
+         338377 function calls (338281 primitive calls) in 0.285 seconds
+
+   Ordered by: cumulative time
+   List reduced from 699 to 45 due to restriction <45>
+
+   ncalls  tottime  percall  cumtime  percall filename:lineno(function)
+        8    0.000    0.000    0.286    0.036 /home/default/cbprobe_jobs/m94-f2-20261105T011148Z-db3964/payload/payload/tests/form_builder/perf/m7_paths.py:577(behavior)
+        8    0.000    0.000    0.279    0.035 /home/default/cbprobe_jobs/m94-f2-20261105T011148Z-db3964/payload/payload/tests/form_builder/perf/m7_paths.py:558(select)
+        8    0.000    0.000    0.261    0.033 /home/default/cbprobe_jobs/m94-f2-20261105T011148Z-db3964/payload/payload/app/features/form_builder/qtside/inspector/pane.py:297(flush)
+        8    0.001    0.000    0.166    0.021 /home/default/cbprobe_jobs/m94-f2-20261105T011148Z-db3964/payload/payload/app/features/form_builder/qtside/inspector/_behavior.py:114(paint)
+       24    0.000    0.000    0.165    0.007 /home/default/cbprobe_jobs/m94-f2-20261105T011148Z-db3964/payload/payload/app/features/form_builder/qtside/inspector/_behavior.py:172(_call)
+        8    0.000    0.000    0.092    0.012 /home/default/cbprobe_jobs/m94-f2-20261105T011148Z-db3964/payload/payload/app/features/form_builder/qtside/inspector/data_page.py:26(paint)
+        8    0.000    0.000    0.092    0.011 /home/default/cbprobe_jobs/m94-f2-20261105T011148Z-db3964/payload/payload/app/features/form_builder/qtside/inspector/data_page.py:118(_refresh_visible)
+        8    0.000    0.000    0.092    0.011 /home/default/cbprobe_jobs/m94-f2-20261105T011148Z-db3964/payload/payload/app/features/form_builder/qtside/inspector/data_ext/binding.py:55(refresh)
+        8    0.000    0.000    0.089    0.011 /home/default/cbprobe_jobs/m94-f2-20261105T011148Z-db3964/payload/payload/app/features/form_builder/engine/data/publish.py:15(publish_session)
+        8    0.000    0.000    0.084    0.011 /home/default/cbprobe_jobs/m94-f2-20261105T011148Z-db3964/payload/payload/app/features/form_builder/engine/data/check.py:88(run_checks)
+        8    0.000    0.000    0.075    0.009 /home/default/cbprobe_jobs/m94-f2-20261105T011148Z-db3964/payload/payload/app/features/form_builder/qtside/inspector/behavior_ext/state.py:246(paint)
+        8    0.000    0.000    0.067    0.008 /home/default/cbprobe_jobs/m94-f2-20261105T011148Z-db3964/payload/payload/app/features/form_builder/qtside/inspector/behavior_ext/checks.py:440(paint)
+        8    0.001    0.000    0.065    0.008 /home/default/cbprobe_jobs/m94-f2-20261105T011148Z-db3964/payload/payload/app/features/form_builder/qtside/inspector/behavior_ext/checks.py:722(_fill_rows)
+        8    0.000    0.000    0.048    0.006 /home/default/cbprobe_jobs/m94-f2-20261105T011148Z-db3964/payload/payload/app/features/form_builder/qtside/inspector/behavior_ext/state.py:483(_fill)
+       40    0.001    0.000    0.046    0.001 /home/default/cbprobe_jobs/m94-f2-20261105T011148Z-db3964/payload/payload/app/features/form_builder/qtside/inspector/behavior_ext/state.py:506(_paint_formula)
+        8    0.005    0.001    0.037    0.005 /home/default/cbprobe_jobs/m94-f2-20261105T011148Z-db3964/payload/payload/app/features/form_builder/engine/data/check.py:101(_records_without_source)
+    19520    0.026    0.000    0.036    0.000 /home/default/cbprobe_jobs/m94-f2-20261105T011148Z-db3964/payload/payload/app/features/form_builder/engine/ui4/document.py:296(iter_preorder)
+      136    0.024    0.000    0.032    0.000 {method 'show' of 'PySide6.QtWidgets.QWidget' objects}
+       24    0.021    0.001    0.031    0.001 /home/default/cbprobe_jobs/m94-f2-20261105T011148Z-db3964/payload/payload/app/features/form_builder/qtside/inspector/behavior_ext/checks.py:128(__init__)
+       16    0.004    0.000    0.030    0.002 /home/default/cbprobe_jobs/m94-f2-20261105T011148Z-db3964/payload/payload/app/features/form_builder/engine/data/checks/lines.py:130(_grids)
+       24    0.000    0.000    0.024    0.001 /home/default/cbprobe_jobs/m94-f2-20261105T011148Z-db3964/payload/payload/app/features/form_builder/integration/handlers_code.py:310(reading)
+       24    0.000    0.000    0.023    0.001 /home/default/cbprobe_jobs/m94-f2-20261105T011148Z-db3964/payload/payload/app/features/form_builder/integration/handlers_code.py:414(_read)
+        8    0.000    0.000    0.023    0.003 /home/default/cbprobe_jobs/m94-f2-20261105T011148Z-db3964/payload/payload/app/features/form_builder/qtside/inspector/behavior_ext/events.py:175(paint)
+     4816    0.003    0.000    0.022    0.000 /home/default/cbprobe_jobs/m94-f2-20261105T011148Z-db3964/payload/payload/app/features/form_builder/engine/ui4/document.py:311(iter_widgets)
+       16    0.001    0.000    0.019    0.001 /home/default/cbprobe_jobs/m94-f2-20261105T011148Z-db3964/payload/payload/app/features/form_builder/engine/data/check.py:153(_nodes)
+        8    0.000    0.000    0.018    0.002 /home/default/cbprobe_jobs/m94-f2-20261105T011148Z-db3964/payload/payload/app/features/form_builder/engine/query/selection.py:60(set)
+        8    0.000    0.000    0.018    0.002 /home/default/cbprobe_jobs/m94-f2-20261105T011148Z-db3964/payload/payload/app/features/form_builder/engine/query/selection.py:149(_commit)
+        8    0.000    0.000    0.018    0.002 /home/default/cbprobe_jobs/m94-f2-20261105T011148Z-db3964/payload/payload/app/features/form_builder/engine/query/selection.py:170(_emit)
+       80    0.000    0.000    0.017    0.000 /home/default/cbprobe_jobs/m94-f2-20261105T011148Z-db3964/payload/payload/app/features/form_builder/qtside/inspector/behavior_ext/state.py:750(_ink)
+        8    0.000    0.000    0.017    0.002 /home/default/cbprobe_jobs/m94-f2-20261105T011148Z-db3964/payload/payload/app/features/form_builder/qtside/inspector/behavior_ext/state.py:380(_show)
+       16    0.000    0.000    0.016    0.001 /home/default/cbprobe_jobs/m94-f2-20261105T011148Z-db3964/payload/payload/app/features/form_builder/qtside/inspector/behavior_ext/events.py:1068(_window_read)
+        8    0.002    0.000    0.016    0.002 /home/default/cbprobe_jobs/m94-f2-20261105T011148Z-db3964/payload/payload/app/features/form_builder/engine/data/check.py:130(_one_lines_grid)
+        8    0.000    0.000    0.015    0.002 /home/default/cbprobe_jobs/m94-f2-20261105T011148Z-db3964/payload/payload/app/features/form_builder/engine/data/checks/lines.py:188(_formulas)
+        8    0.000    0.000    0.015    0.002 /home/default/cbprobe_jobs/m94-f2-20261105T011148Z-db3964/payload/payload/app/features/form_builder/engine/data/checks/lines.py:36(_names)
+        8    0.013    0.002    0.015    0.002 {method 'setParent' of 'PySide6.QtWidgets.QWidget' objects}
+    25896    0.008    0.000    0.015    0.000 {built-in method builtins.getattr}
+       96    0.001    0.000    0.014    0.000 /home/default/cbprobe_jobs/m94-f2-20261105T011148Z-db3964/payload/payload/app/features/form_builder/engine/project/fs.py:87(inside_project)
+     4872    0.003    0.000    0.011    0.000 /home/default/cbprobe_jobs/m94-f2-20261105T011148Z-db3964/payload/payload/app/features/form_builder/engine/data/check.py:173(_node_name)
+     3176    0.003    0.000    0.010    0.000 /home/default/cbprobe_jobs/m94-f2-20261105T011148Z-db3964/payload/payload/tests/form_builder/qtside/test_m3_keyboard_scripts.py:94(eventFilter)
+       40    0.000    0.000    0.010    0.000 /home/default/cbprobe_jobs/m94-f2-20261105T011148Z-db3964/payload/payload/app/features/form_builder/qtside/inspector/behavior_ext/state.py:788(_now_of)
+      120    0.008    0.000    0.010    0.000 {method 'addWidget' of 'PySide6.QtWidgets.QBoxLayout' objects}
+      192    0.000    0.000    0.010    0.000 /home/default/cbprobe_jobs/m94-f2-20261105T011148Z-db3964/payload/payload/app/features/form_builder/engine/project/fs.py:76(_existing_prefix)
+     9744    0.006    0.000    0.010    0.000 /home/default/cbprobe_jobs/m94-f2-20261105T011148Z-db3964/payload/payload/app/features/form_builder/engine/data/check.py:163(_properties)
+        8    0.000    0.000    0.009    0.001 /home/default/cbprobe_jobs/m94-f2-20261105T011148Z-db3964/payload/payload/app/features/form_builder/qtside/inspector/behavior_ext/events.py:1108(_with_by_name)
+        8    0.000    0.000    0.009    0.001 /home/default/cbprobe_jobs/m94-f2-20261105T011148Z-db3964/payload/payload/app/features/form_builder/qtside/inspector/behavior_ext/state.py:825(_window_facts)
+
+
+         338377 function calls (338281 primitive calls) in 0.285 seconds
+
+   Ordered by: internal time
+   List reduced from 699 to 30 due to restriction <30>
+
+   ncalls  tottime  percall  cumtime  percall filename:lineno(function)
+    19520    0.026    0.000    0.036    0.000 /home/default/cbprobe_jobs/m94-f2-20261105T011148Z-db3964/payload/payload/app/features/form_builder/engine/ui4/document.py:296(iter_preorder)
+      136    0.024    0.000    0.032    0.000 {method 'show' of 'PySide6.QtWidgets.QWidget' objects}
+       24    0.021    0.001    0.031    0.001 /home/default/cbprobe_jobs/m94-f2-20261105T011148Z-db3964/payload/payload/app/features/form_builder/qtside/inspector/behavior_ext/checks.py:128(__init__)
+        8    0.013    0.002    0.015    0.002 {method 'setParent' of 'PySide6.QtWidgets.QWidget' objects}
+    25896    0.008    0.000    0.015    0.000 {built-in method builtins.getattr}
+      120    0.008    0.000    0.010    0.000 {method 'addWidget' of 'PySide6.QtWidgets.QBoxLayout' objects}
+       24    0.008    0.000    0.008    0.000 {method 'unpolish' of 'PySide6.QtWidgets.QCommonStyle' objects}
+       24    0.007    0.000    0.008    0.000 {method 'polish' of 'PySide6.QtWidgets.QCommonStyle' objects}
+     9744    0.006    0.000    0.010    0.000 /home/default/cbprobe_jobs/m94-f2-20261105T011148Z-db3964/payload/payload/app/features/form_builder/engine/data/check.py:163(_properties)
+      104    0.006    0.000    0.006    0.000 {method 'findChild' of 'PySide6.QtCore.QObject' objects}
+        8    0.005    0.001    0.037    0.005 /home/default/cbprobe_jobs/m94-f2-20261105T011148Z-db3964/payload/payload/app/features/form_builder/engine/data/check.py:101(_records_without_source)
+    33064    0.005    0.000    0.005    0.000 {method 'get' of 'dict' objects}
+       16    0.004    0.000    0.030    0.002 /home/default/cbprobe_jobs/m94-f2-20261105T011148Z-db3964/payload/payload/app/features/form_builder/engine/data/checks/lines.py:130(_grids)
+    29712    0.004    0.000    0.004    0.000 {method 'extend' of 'list' objects}
+     3504    0.004    0.000    0.008    0.000 {method 'type' of 'PySide6.QtCore.QEvent' objects}
+    33136    0.004    0.000    0.004    0.000 {built-in method builtins.isinstance}
+      136    0.003    0.000    0.004    0.000 {method 'setVisible' of 'PySide6.QtWidgets.QWidget' objects}
+     6968    0.003    0.000    0.005    0.000 /home/default/cbprobe_jobs/m94-f2-20261105T011148Z-db3964/payload/payload/app/features/form_builder/engine/logic/storage.py:78(is_signal_property)
+     4816    0.003    0.000    0.022    0.000 /home/default/cbprobe_jobs/m94-f2-20261105T011148Z-db3964/payload/payload/app/features/form_builder/engine/ui4/document.py:311(iter_widgets)
+     4872    0.003    0.000    0.011    0.000 /home/default/cbprobe_jobs/m94-f2-20261105T011148Z-db3964/payload/payload/app/features/form_builder/engine/data/check.py:173(_node_name)
+       48    0.003    0.000    0.003    0.000 {method 'setStyleSheet' of 'PySide6.QtWidgets.QWidget' objects}
+     3176    0.003    0.000    0.010    0.000 /home/default/cbprobe_jobs/m94-f2-20261105T011148Z-db3964/payload/payload/tests/form_builder/qtside/test_m3_keyboard_scripts.py:94(eventFilter)
+       16    0.003    0.000    0.003    0.000 /home/default/cbprobe_jobs/m94-f2-20261105T011148Z-db3964/payload/payload/app/features/form_builder/engine/logic/read_as_text.py:88(<setcomp>)
+     3520    0.003    0.000    0.004    0.000 /opt/freecad/usr/lib/python3.11/enum.py:688(__call__)
+      936    0.002    0.000    0.002    0.000 {built-in method posix.lstat}
+     3112    0.002    0.000    0.004    0.000 /home/default/cbprobe_jobs/m94-f2-20261105T011148Z-db3964/payload/payload/app/features/form_builder/engine/ui4/nodes.py:81(field)
+        8    0.002    0.000    0.016    0.002 /home/default/cbprobe_jobs/m94-f2-20261105T011148Z-db3964/payload/payload/app/features/form_builder/engine/data/check.py:130(_one_lines_grid)
+      240    0.002    0.000    0.007    0.000 <frozen posixpath>:421(_joinrealpath)
+     1120    0.002    0.000    0.003    0.000 <frozen posixpath>:71(join)
+    14096    0.002    0.000    0.002    0.000 /home/default/cbprobe_jobs/m94-f2-20261105T011148Z-db3964/payload/payload/app/features/form_builder/engine/ui4/nodes.py:67(kind)
+
+

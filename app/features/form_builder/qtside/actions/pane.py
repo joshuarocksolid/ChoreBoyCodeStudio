@@ -320,6 +320,8 @@ class ActionsPane(QWidget):
 
     # --------------------------------------------------------------- rows
     def refresh(self, *_args: object) -> None:
+        if self._session.disposed:
+            return
         doc = self._session.document
         infos = q.list_actions(doc)
         needle = self._filter.text().strip().lower()

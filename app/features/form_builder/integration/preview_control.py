@@ -249,6 +249,9 @@ class PreviewControl:
 
     def preview(self, path: Optional[str] = None) -> None:
         """Open or refresh the Preview window with the current, unsaved form."""
+        flush = getattr(self._surface, "flush_draft", None)
+        if callable(flush):
+            flush()
         target = path if path is not None else str(self._surface.form_path())
         pool = self._notices.pool()
         if self._unsubscribe is None:

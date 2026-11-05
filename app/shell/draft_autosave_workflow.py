@@ -66,7 +66,9 @@ class DraftAutosaveWorkflow:
         self._autosave_timer = autosave_timer or QTimer(parent)
         self._autosave_timer.setSingleShot(True)
         self._autosave_timer.setInterval(500)
-        self._autosave_timer.timeout.connect(self.flush_pending_autosaves)
+        # The timer only arms an idle write. processEvents inside a paste or a
+        # drag must not serialize the form.
+        self._autosave_timer.timeout.connect(self._queue_idle_flush)
 
     def set_editor_manager(self, editor_manager: EditorManager) -> None:
         self._editor_manager = editor_manager
@@ -82,6 +84,12 @@ class DraftAutosaveWorkflow:
         """Record that a sourced tab changed. The flush reads the text later."""
         self._pending_source_paths.add(file_path)
         self._autosave_timer.start()
+
+    def _queue_idle_flush(self) -> None:
+        """Write the draft once the event loop is about to wait, not during the edit."""
+        from app.shell.idle_turn import run_when_idle
+
+        run_when_idle(self.flush_pending_autosaves)
 
     def forget_source(self, file_path: str) -> None:
         """Drop draft tracking for a closed path. Does not unsubscribe."""
@@ -144,10 +152,12 @@ class DraftAutosaveWorkflow:
             if tab_state is None or not tab_state.is_dirty:
                 continue
             project_id, project_root = self._context_for_path(tab_state.file_path)
+            source = tab_state.content_source
+            content = source.current_text() if source is not None else tab_state.current_content
             try:
                 self._autosave_store.save_draft(
                     tab_state.file_path,
-                    tab_state.current_content,
+                    content,
                     project_id=project_id,
                     project_root=project_root,
                     recovery_policy=DRAFT_RECOVERY_POLICY_RESTORE_SILENTLY,

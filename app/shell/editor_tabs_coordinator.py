@@ -128,20 +128,27 @@ class EditorTabsCoordinator:
             return
         data = tab_presentation_data(tab_state)
         tab_bar = target.tabBar()
-        # Data first: the label's width depends on the markers it asks for.
-        tab_bar.setTabData(tab_index, data)
         suffix = " *" if tab_state.is_dirty else ""
-        target.setTabText(tab_index, f"{tab_state.display_name}{suffix}")
-        target.setTabToolTip(
-            tab_index,
-            editor_tab_tooltip(
-                tab_state.file_path,
-                is_dirty=tab_state.is_dirty,
-                is_preview=tab_state.is_preview,
-                is_stale=bool(data["is_stale"]),
-                is_missing=bool(data["is_missing"]),
-            ),
+        text = f"{tab_state.display_name}{suffix}"
+        tip = editor_tab_tooltip(
+            tab_state.file_path,
+            is_dirty=tab_state.is_dirty,
+            is_preview=tab_state.is_preview,
+            is_stale=bool(data["is_stale"]),
+            is_missing=bool(data["is_missing"]),
         )
+        # setTabText and setTabToolTip lay out the tab bar, and that request
+        # walks up to the editor host, even when the string did not change.
+        current = tab_bar.tabData(tab_index)
+        same = isinstance(current, dict) and current == data
+        same = same and target.tabText(tab_index) == text and target.tabToolTip(tab_index) == tip
+        if same:
+            return
+        tab_bar.setTabData(tab_index, data)
+        if target.tabText(tab_index) != text:
+            target.setTabText(tab_index, text)
+        if target.tabToolTip(tab_index) != tip:
+            target.setTabToolTip(tab_index, tip)
         page = target.widget(tab_index)
         if isinstance(page, EditorTabPage):
             page.info_bar.set_state(tab_disk_state(data), tab_state.file_path)

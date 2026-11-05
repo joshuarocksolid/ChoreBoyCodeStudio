@@ -1,14 +1,16 @@
 """Build the formula snapshot from a form and a window reading (CONTRACTS §17.5).
 
 The formula package does not open a document. This module does, once per
-structure revision and window reading, and caches the result on the document.
-A form with data properties also keys the cache on those texts, so a logic
-edit that does not move ``structure_revision`` still rebuilds the snapshot.
+structure revision, caption revision and window reading. A single label text
+edit patches the one widget and the field it captions. Layout spacing moves
+neither revision that this cache reads, so the snapshot is reused.
 """
 
 from __future__ import annotations
 
 import hashlib
+import weakref
+from dataclasses import replace
 from types import MappingProxyType
 from typing import Dict, Optional, Tuple
 
@@ -34,29 +36,231 @@ from app.features.form_builder.engine.ui4.values import (
 
 _NUMBER = (NumberValue, UIntValue, LongLongValue, ULongLongValue, DoubleValue, FloatValue)
 _TEXT = (StringValue, CStringValue)
+# key, env, field name -> the label object name that supplied its caption.
+_ENV: "weakref.WeakKeyDictionary[UiDocument, Tuple[object, FormulaEnv, Dict[str, str]]]" = (
+    weakref.WeakKeyDictionary()
+)
+_LOCAL_FACE = frozenset({"cbcsKind", "decimals", "prefix", "tristate", "specialValueText"})
 
 
 def env_for(doc: UiDocument, window_facts: Optional[WindowFacts], catalog: QtClassTable) -> FormulaEnv:
-    """Widgets, methods, and the class chain. Cached on ``doc.structure_revision``."""
+    """Widgets, methods, and the class chain.
+
+    Cached on the tree (``structure_revision``) and on captions (``face_revision``).
+    One caption edit updates the widgets that show that caption.
+    """
     token = _window_token(window_facts)
     table = catalog if catalog is not None else QtClassTable.shared()
-    key = "m7.2a.formula_env\0%s" % token
-    if _text(doc.root, "cbcsData"):  # type: ignore[arg-type]
-        digest = _data_digest(doc)
-        if digest:
-            key = "%s\0%s" % (key, digest)
-    if _ejected(doc):
-        key = "%s\0ejected" % key
-    return doc.structure_memo(key, lambda: _build(doc, window_facts, table))
+    # Data texts bump ``face_revision``, so the digest does not need its own walk.
+    key = (doc.structure_revision, doc.face_revision, token, _ejected(doc), id(table))
+    held = _ENV.get(doc)
+    if held is not None and held[0] == key:
+        return held[1]
+    patched = None if held is None else _patch_env(doc, held, key)
+    if patched is None and held is not None:
+        patched = _patch_added(doc, held, key)
+    if patched is not None:
+        _ENV[doc] = (key, patched[0], patched[1])
+        return patched[0]
+    env, sources = _build(doc, window_facts, table)
+    _ENV[doc] = (key, env, sources)
+    return env
+
+
+def _patch_env(
+    doc: UiDocument,
+    held: Tuple[object, FormulaEnv, Dict[str, str]],
+    key: Tuple[object, ...],
+) -> Optional[Tuple[FormulaEnv, Dict[str, str]]]:
+    """One caption or one local face property. None when the snapshot must be rebuilt."""
+    old_key = held[0]
+    if not isinstance(old_key, tuple) or len(old_key) < 5 or len(key) < 5:
+        return None
+    if old_key[0] != key[0] or old_key[2:] != key[2:]:
+        return None
+    edits = [
+        edit
+        for edit in doc._face_edits
+        if isinstance(old_key[1], int) and edit[0] > old_key[1]
+    ]
+    if len(edits) != 1:
+        return None
+    _revision, node_id, prop = edits[0]
+    node = doc.get(node_id)
+    if not isinstance(node, WidgetNode) or not node.object_name:
+        return None
+    env, sources = held[1], dict(held[2])
+    if prop == "text":
+        patched = _patch_text(doc, env, sources, node)
+        if patched is None:
+            return None
+        return patched
+    if prop in _LOCAL_FACE:
+        return _patch_widget(doc, env, sources, node), sources
+    return None
+
+
+def _patch_added(
+    doc: UiDocument,
+    held: Tuple[object, FormulaEnv, Dict[str, str]],
+    key: Tuple[object, ...],
+) -> Optional[Tuple[FormulaEnv, Dict[str, str]]]:
+    """Widgets inserted since the cached snapshot. None when the tree was rebuilt."""
+    old_key = held[0]
+    if not isinstance(old_key, tuple) or len(old_key) < 5 or not isinstance(old_key[0], int):
+        return None
+    if old_key[0] == key[0] or old_key[1] != key[1] or old_key[2:] != key[2:]:
+        return None
+    added = doc.added_widgets_since(old_key[0])
+    if not added:
+        return None
+    env, sources = held[1], dict(held[2])
+    widgets = dict(env.widgets)
+    for node_id in added:
+        node = doc.get(node_id)
+        if not isinstance(node, WidgetNode) or not node.object_name:
+            continue
+        name = node.object_name
+        widgets[name] = _facts(doc, node, _caption_of(doc, sources, name, None))
+        _claim_caption(doc, widgets, sources, node, name)
+    return replace(env, widgets=MappingProxyType(widgets)), sources
+
+
+def _claim_caption(
+    doc: UiDocument,
+    widgets: Dict[str, WidgetFacts],
+    sources: Dict[str, str],
+    label: WidgetNode,
+    name: str,
+) -> None:
+    buddy = _text(label, "buddy")
+    raw = _text(label, "text")
+    if not buddy or not raw or sources.get(buddy, "") == name:
+        return
+    if _earlier_name(doc, name, sources.get(buddy, "")) != name:
+        return
+    sources[buddy] = name
+    previous = widgets.get(buddy)
+    if previous is not None and previous.display == raw:
+        return
+    found = doc.by_name(buddy)
+    field = doc.get(found[0]) if found else None
+    if isinstance(field, WidgetNode):
+        widgets[buddy] = _facts(doc, field, raw)
+
+
+def _earlier_name(doc: UiDocument, first: str, second: str) -> str:
+    if not second or second == first:
+        return first
+    try:
+        widgets = doc.iter_widgets()
+    except Exception:
+        return first
+    for node in widgets:
+        if node.object_name == first:
+            return first
+        if node.object_name == second:
+            return second
+    return first
+
+
+def _patch_text(
+    doc: UiDocument,
+    env: FormulaEnv,
+    sources: Dict[str, str],
+    label: WidgetNode,
+) -> Optional[Tuple[FormulaEnv, Dict[str, str]]]:
+    label_name = label.object_name or ""
+    if _caption_source_moved(doc, label, sources):
+        return None
+    widgets = dict(env.widgets)
+    if label_name in widgets:
+        widgets[label_name] = _facts(doc, label, _caption_of(doc, sources, label_name, None))
+    for field, source_name in sources.items():
+        if source_name != label_name:
+            continue
+        fresh = _fresh_caption(doc, label, field)
+        if fresh is None:
+            return None
+        found = doc.by_name(field)
+        node = doc.get(found[0]) if found else None
+        if not isinstance(node, WidgetNode):
+            return None
+        widgets[field] = _facts(doc, node, fresh)
+    return replace(env, widgets=MappingProxyType(widgets)), sources
+
+
+def _caption_source_moved(doc: UiDocument, label: WidgetNode, sources: Dict[str, str]) -> bool:
+    """True when this label starts captioning a field the snapshot does not record."""
+    own = label.object_name or ""
+    buddy = _text(label, "buddy")
+    raw = _text(label, "text")
+    if buddy and raw and sources.get(buddy) != own:
+        return True
+    for label_id, field in form_row_pairs(doc):
+        if label_id != label.id or sources.get(field) == own:
+            continue
+        shown = caption(doc, label.id).strip()
+        if shown and shown != own:
+            return True
+    return False
+
+
+def _fresh_caption(doc: UiDocument, label: WidgetNode, field: str) -> Optional[str]:
+    """The caption ``_buddy_labels`` would store for this field, or None when the source moves."""
+    own = label.object_name or ""
+    raw = _text(label, "text")
+    if _text(label, "buddy") == field and raw:
+        return raw
+    shown = caption(doc, label.id).strip()
+    if shown and shown != own:
+        return shown
+    return None
+
+
+def _patch_widget(
+    doc: UiDocument,
+    env: FormulaEnv,
+    sources: Dict[str, str],
+    node: WidgetNode,
+) -> FormulaEnv:
+    name = node.object_name or ""
+    widgets = dict(env.widgets)
+    if name:
+        widgets[name] = _facts(doc, node, _caption_of(doc, sources, name, None))
+    return replace(env, widgets=MappingProxyType(widgets))
+
+
+def _caption_of(
+    doc: UiDocument,
+    sources: Dict[str, str],
+    widget_name: str,
+    edited: Optional[WidgetNode],
+) -> str:
+    source_name = sources.get(widget_name, "")
+    if not source_name:
+        return ""
+    if edited is not None and source_name == (edited.object_name or ""):
+        return _text(edited, "text")
+    found = doc.by_name(source_name)
+    node = doc.get(found[0]) if found else None
+    if not isinstance(node, WidgetNode):
+        return ""
+    return _text(node, "text")
 
 
 def _ejected(doc: UiDocument) -> bool:
     return bool(_text(doc.root, "cbcsEjected"))  # type: ignore[arg-type]
 
 
-def _build(doc: UiDocument, window_facts: Optional[WindowFacts], catalog: QtClassTable) -> FormulaEnv:
+def _build(
+    doc: UiDocument,
+    window_facts: Optional[WindowFacts],
+    catalog: QtClassTable,
+) -> Tuple[FormulaEnv, Dict[str, str]]:
+    doc._reset_added_widgets()
     widgets: Dict[str, WidgetFacts] = {}
-    buddies = _buddy_labels(doc)
+    buddies, sources = _buddy_labels(doc)
     try:
         found = tuple(doc.iter_widgets())
     except Exception:
@@ -74,7 +278,7 @@ def _build(doc: UiDocument, window_facts: Optional[WindowFacts], catalog: QtClas
             methods[method.name] = method
         for method in window_facts.methods:
             methods[method.name] = method
-    return FormulaEnv(
+    env = FormulaEnv(
         widgets=MappingProxyType(widgets),
         methods=MappingProxyType(methods),
         reserved=reserved_names(),
@@ -85,6 +289,7 @@ def _build(doc: UiDocument, window_facts: Optional[WindowFacts], catalog: QtClas
         window_file="window.py",
         ejected=_ejected(doc),
     )
+    return env, sources
 
 
 def _window_token(window_facts: Optional[WindowFacts]) -> str:
@@ -107,19 +312,24 @@ def _chain_of(catalog: QtClassTable):
     return chain
 
 
-def _buddy_labels(doc: UiDocument) -> Dict[str, str]:
+def _buddy_labels(doc: UiDocument) -> Tuple[Dict[str, str], Dict[str, str]]:
+    """Field name to caption text, and field name to the label's object name."""
     labels: Dict[str, str] = {}
+    sources: Dict[str, str] = {}
     try:
         widgets = tuple(doc.iter_widgets())
     except Exception:
-        return labels
+        return labels, sources
     for node in widgets:
         if (node.class_name or "").rsplit(".", 1)[-1] != "QLabel":
             continue
         buddy = _text(node, "buddy")
         label = _text(node, "text")
+        own = node.object_name or ""
         if buddy and label and buddy not in labels:
             labels[buddy] = label
+            if own:
+                sources[buddy] = own
     for label_id, field in form_row_pairs(doc):
         if field in labels:
             continue
@@ -128,7 +338,9 @@ def _buddy_labels(doc: UiDocument) -> Dict[str, str]:
         text = caption(doc, label_id).strip()
         if text and text != own:
             labels[field] = text
-    return labels
+            if own:
+                sources[field] = own
+    return labels, sources
 
 
 def _facts(doc: UiDocument, node: WidgetNode, buddy_label: str) -> WidgetFacts:

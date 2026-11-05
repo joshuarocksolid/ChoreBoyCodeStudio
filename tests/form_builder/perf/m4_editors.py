@@ -61,9 +61,10 @@ def _flush(app: object) -> None:
     widgets they leave behind slow the next opening, which the editor never sees.
     """
     from app.qt.QtCore import QCoreApplication, QEvent
+    from app.qt.qt_compat import enum_value
 
     app.processEvents()
-    QCoreApplication.sendPostedEvents(None, int(QEvent.Type.DeferredDelete.value))
+    QCoreApplication.sendPostedEvents(None, enum_value(QEvent.Type.DeferredDelete))
 
 
 def _qrc(folder: str, count: int) -> None:

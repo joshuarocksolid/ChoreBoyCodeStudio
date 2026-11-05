@@ -24,6 +24,20 @@ _MAIN = (
 )
 
 
+def test_refresh_after_the_session_is_disposed_leaves_the_rows(qapp, tmp_path: Path) -> None:  # type: ignore[no-untyped-def]
+    host = QWidget()
+    surface = _open(host, _MAIN, tmp_path / "shop.ui")
+    try:
+        pane = surface.workbench.section_widget("actions")
+        assert pane is not None
+        before = pane.row_texts()
+        surface.session.dispose()
+        pane.refresh()
+        assert pane.row_texts() == before
+    finally:
+        host.deleteLater()
+
+
 @pytest.mark.parity("R3-139")
 def test_alt_5_focuses_the_actions_section_and_rows_say_where_actions_are_used(qapp, tmp_path: Path) -> None:  # type: ignore[no-untyped-def]
     host = QWidget()

@@ -37,6 +37,7 @@ class GeneralTaskScheduler:
         # The first worker start is expensive. Pay it when the shell is built,
         # so a later tab switch only queues work on a thread that already exists.
         self._executor.submit(lambda: None)
+        self._closed = False
 
     def run(
         self,
@@ -47,11 +48,6 @@ class GeneralTaskScheduler:
         on_error: ErrorCallback | None = None,
     ) -> None:
         cancellation = threading.Event()
-        with self._lock:
-            previous = self._active_cancellations.get(key)
-            if previous is not None:
-                previous.set()
-            self._active_cancellations[key] = cancellation
 
         def worker() -> None:
             try:
@@ -65,7 +61,14 @@ class GeneralTaskScheduler:
                 lambda result=result: self._handle_success(key, cancellation, result, on_success)
             )
 
-        self._executor.submit(worker)
+        with self._lock:
+            if self._closed:
+                return
+            previous = self._active_cancellations.get(key)
+            if previous is not None:
+                previous.set()
+            self._active_cancellations[key] = cancellation
+            self._executor.submit(worker)
 
     def cancel(self, key: str) -> None:
         with self._lock:
@@ -81,6 +84,8 @@ class GeneralTaskScheduler:
 
     def shutdown(self, *, wait: bool = False) -> None:
         """Cancel outstanding work and stop accepting new tasks."""
+        with self._lock:
+            self._closed = True
         self.cancel_all()
         self._executor.shutdown(wait=wait, cancel_futures=False)
 

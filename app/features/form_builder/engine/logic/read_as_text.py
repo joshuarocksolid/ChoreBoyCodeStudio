@@ -24,7 +24,7 @@ from app.features.form_builder.engine.logic.formula.env import FormulaEnv
 from app.features.form_builder.engine.logic.formula.speak import speak_text
 from app.features.form_builder.engine.logic.formula_env import env_for
 from app.features.form_builder.engine.logic.storage import FORMULA_KEYS
-from app.features.form_builder.engine.query.tab_stops import caption, display_name, form_row_pairs
+from app.features.form_builder.engine.query.tab_stops import buddy_of, caption, display_name, form_row_pairs
 from app.features.form_builder.engine.ui4.defaults import QtClassTable
 from app.features.form_builder.engine.ui4.document import UiDocument
 from app.features.form_builder.engine.ui4.nodes import WidgetNode
@@ -98,10 +98,16 @@ def _preferred(doc: UiDocument) -> Dict[str, Tuple[str, bool]]:
     rule commit (revision moves, structure does not) hits.
     """
     revision = getattr(doc, "structure_revision", None)
-    if isinstance(revision, int):
-        cached = _PREFERRED.get(doc)
-        if cached is not None and cached[0] == revision:
-            return cached[1]
+    face = getattr(doc, "face_revision", None)
+    stamp = (revision, face)
+    cached = _PREFERRED.get(doc) if isinstance(revision, int) and isinstance(face, int) else None
+    if cached is not None and cached[0] == stamp:
+        return cached[1]
+    patched = _patch_preferred(doc, cached, revision, face)
+    if patched is not None:
+        _PREFERRED[doc] = (stamp, patched)
+        return patched
+    doc._reset_added_widgets()
     captions: Dict[str, str] = {}
     for label_id, field in form_row_pairs(doc):
         if field in captions:
@@ -123,9 +129,115 @@ def _preferred(doc: UiDocument) -> Dict[str, Tuple[str, bool]]:
             found[name] = (captions[name], False)
         else:
             found[name] = (_humanize(name), True)
-    if isinstance(revision, int):
-        _PREFERRED[doc] = (revision, found)
+    if isinstance(revision, int) and isinstance(face, int):
+        _PREFERRED[doc] = (stamp, found)
     return found
+
+
+def _patch_preferred(
+    doc: UiDocument,
+    cached: Optional[Tuple[object, Dict[str, Tuple[str, bool]]]],
+    revision: object,
+    face: object,
+) -> Optional[Dict[str, Tuple[str, bool]]]:
+    """One label text edit rewrites the names that show that caption."""
+    if cached is None or not isinstance(revision, int) or not isinstance(face, int):
+        return None
+    old = cached[0]
+    if not isinstance(old, tuple) or len(old) < 2:
+        return None
+    if old[0] != revision:
+        if not isinstance(old[0], int) or old[1] != face:
+            return None
+        added = doc.added_widgets_since(old[0])
+        if not added:
+            return None
+        return _patch_added_spoken(doc, dict(cached[1]), added)
+    edits = [
+        edit
+        for edit in getattr(doc, "_face_edits", ())
+        if isinstance(old[1], int) and edit[0] > old[1]
+    ]
+    if len(edits) != 1 or edits[0][2] != "text":
+        return None
+    node = doc.get(edits[0][1])
+    if not isinstance(node, WidgetNode) or not node.object_name:
+        return None
+    found = dict(cached[1])
+    names = [node.object_name]
+    target = buddy_of(doc, node.id)
+    if target and target not in names:
+        names.append(target)
+    for label_id, field in form_row_pairs(doc):
+        if label_id == node.id and field not in names:
+            names.append(field)
+            break
+    for name in names:
+        _put_spoken(doc, found, name)
+    return found
+
+
+def _patch_added_spoken(
+    doc: UiDocument,
+    found: Dict[str, Tuple[str, bool]],
+    added: Tuple[object, ...],
+) -> Dict[str, Tuple[str, bool]]:
+    """One inserted widget keeps the names already spoken. A new caption wins only when it is first."""
+    for node_id in added:
+        node = doc.get(node_id)  # type: ignore[arg-type]
+        if not isinstance(node, WidgetNode) or not node.object_name:
+            continue
+        name = node.object_name
+        text = caption(doc, node.id)
+        shown = text if text and text != name else ""
+        buddy = buddy_of(doc, node.id)
+        if buddy and shown:
+            current = found.get(buddy)
+            if current is None or current[0] != shown:
+                source = ""
+                for label_id, field in form_row_pairs(doc):
+                    if field == buddy:
+                        label = doc.get(label_id)
+                        source = label.object_name if isinstance(label, WidgetNode) else ""
+                        break
+                if _label_before(doc, name, source):
+                    found[buddy] = (shown, False)
+        if shown:
+            found[name] = (shown, False)
+        else:
+            found[name] = (_humanize(name), True)
+    return found
+
+
+def _label_before(doc: UiDocument, name: str, other: str) -> bool:
+    if not other or other == name:
+        return True
+    for node in doc.iter_preorder():
+        if not isinstance(node, WidgetNode):
+            continue
+        if node.object_name == name:
+            return True
+        if node.object_name == other:
+            return False
+    return True
+
+
+def _put_spoken(doc: UiDocument, found: Dict[str, Tuple[str, bool]], name: str) -> None:
+    shown = display_name(doc, name)
+    if shown and shown != name:
+        found[name] = (shown, False)
+        return
+    for label_id, field in form_row_pairs(doc):
+        if field != name:
+            continue
+        text = caption(doc, label_id)
+        label = doc.get(label_id)
+        own = label.object_name if isinstance(label, WidgetNode) else ""
+        if text and text != own:
+            found[name] = (text, False)
+            return
+        break
+    found[name] = (_humanize(name), True)
 
 
 def _split_name(name: str) -> str:

@@ -93,7 +93,21 @@ class UiDocument:
         self._revision = revision
         self._peak = revision
         # ``revision`` without the bumps of event-only edits. See ``structure_memo``.
+        # A property write that does not move the tree leaves this number alone
+        # (``mutate._set_property``). Caption-facing properties use ``face_revision``.
         self._structure_revision = revision
+        self._face_revision = 0
+        # Buddy links and bind chips read these. A caption edit does not move them.
+        self._buddy_revision = 0
+        self._bind_revision = 0
+        # ``focusPolicy`` changes who Tab visits and does not bump ``structure_revision``.
+        self._focus_revision = 0
+        # (face_revision, node id, property name), newest last. A caption edit
+        # patches the formula snapshot from the tail instead of walking the form.
+        self._face_edits: List[Tuple[int, NodeId, str]] = []
+        # Widgets inserted since the last full snapshot, or None after a remove,
+        # move, or rename. Row shifts leave it alone: a paste can patch.
+        self._added_widgets: Optional[List[Tuple[int, NodeId]]] = []
         self._event_only_depth = 0
         self._structure_memos: Dict[str, Tuple[int, Any]] = {}
         self._nodes: Dict[NodeId, Node] = {}
@@ -126,15 +140,64 @@ class UiDocument:
         return self._revision
 
     @property
-    def structure_revision(self) -> int:
-        """``revision``, except that edits which rewrite only events do not move it.
+    def focus_revision(self) -> int:
+        """Bumps when ``focusPolicy`` changes. Reading order watches this and the tree."""
+        return self._focus_revision
 
-        A step commit changes a ``cbcs*`` property and the connection list. It adds,
-        removes, moves and renames no node, and it touches no picture, action or
-        layout. A walk of the form whose answer reads only those can be kept until
-        this number moves.
+    def _note_focus(self) -> None:
+        self._focus_revision += 1
+
+    @property
+    def structure_revision(self) -> int:
+        """``revision``, except edits that do not move the tree.
+
+        A step commit changes a ``cbcs*`` property and the connection list. A
+        property write such as label text or layout spacing does not add, remove,
+        move or rename a node. A walk whose answer reads only the tree can be
+        kept until this number moves. Captions use ``face_revision``.
         """
         return self._structure_revision
+
+    @property
+    def buddy_revision(self) -> int:
+        """Bumps when a label's ``buddy`` property changes."""
+        return self._buddy_revision
+
+    @property
+    def bind_revision(self) -> int:
+        """Bumps when ``cbcsBind`` or ``cbcsBindMode`` changes."""
+        return self._bind_revision
+
+    @property
+    def face_revision(self) -> int:
+        """Bumps when a caption or formula-facing property changes.
+
+        Label text, buddy, and the data texts the formula snapshot reads.
+        Layout spacing does not move it.
+        """
+        return self._face_revision
+
+    def added_widgets_since(self, structure_revision: int) -> Optional[Tuple[NodeId, ...]]:
+        """Widget ids inserted after ``structure_revision``.
+
+        None means a remove, move, or rename happened and a snapshot must be rebuilt.
+        """
+        added = self._added_widgets
+        if added is None:
+            return None
+        return tuple(node_id for revision, node_id in added if revision > structure_revision)
+
+    def _reset_added_widgets(self) -> None:
+        self._added_widgets = []
+
+    def _note_face(self, node_id: NodeId, name: str) -> None:
+        """A caption or formula-facing property just changed."""
+        self._face_revision += 1
+        if name == "buddy":
+            self._buddy_revision += 1
+        self._face_edits.append((self._face_revision, node_id, name))
+        if len(self._face_edits) > 16:
+            del self._face_edits[:-16]
 
     @contextmanager
     def event_only_edits(self) -> Iterator[None]:
@@ -389,13 +452,18 @@ class UiDocument:
         """Frozen snapshot of the whole document (the ``ui`` spec)."""
         return self.ui.to_spec()
 
-    def _bump(self) -> None:
-        """One primitive op landed. Revision only moves forward."""
+    def _bump(self, structure: bool = True) -> None:
+        """One primitive op landed. Revision only moves forward.
+
+        ``structure`` is false for a property write that leaves the tree, the
+        picture paths and the place titles alone. Event-only edits also leave
+        ``structure_revision`` alone.
+        """
         self._revision += 1
         if self._revision < self._peak:
             raise InvariantError("revision went backwards")
         self._peak = self._revision
-        if not self._event_only_depth:
+        if structure and not self._event_only_depth:
             self._structure_revision += 1
         # A formula write sets this before it bumps, then notes the edit.
         # Every other bump drops the note so the rule graph walks again.
@@ -501,6 +569,8 @@ class UiDocument:
     def _note_logic(self, name: str, delta: int) -> None:
         if is_user_logic_key(name):
             self._logic_count += delta
+        if name in ("cbcsBind", "cbcsBindMode"):
+            self._bind_revision += 1
 
     def _rebuild_custom_index(self) -> None:
         found: Dict[str, NodeId] = {}

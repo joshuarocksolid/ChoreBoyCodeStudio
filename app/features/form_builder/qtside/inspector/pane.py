@@ -47,6 +47,19 @@ from app.qt.QtWidgets import (
 )
 from app.qt.qt_compat import enum_value, wrapper_is_valid
 
+# Layout gaps. The curated page hides geometry for a widget a layout owns,
+# so these do not change a visible row of some other selection.
+_QUIET_LAYOUT = frozenset({
+    "spacing",
+    "horizontalSpacing",
+    "verticalSpacing",
+    "leftMargin",
+    "topMargin",
+    "rightMargin",
+    "bottomMargin",
+    "margin",
+})
+
 class TabId(str, Enum):
 
     PROPERTIES = "properties"
@@ -112,6 +125,8 @@ class InspectorPane(QWidget):
         self._on_show_problems: Optional[Callable[[], None]] = None
         self._link_color = ""
         self._inspected_ids: frozenset = frozenset()
+        self._last_change: Optional[ChangeSet] = None
+        self._pending_changes: list = []
         self._reset_scroll = False
         self.header = Header(self._services, self)
         self.tabs = QTabWidget(self)
@@ -291,6 +306,11 @@ class InspectorPane(QWidget):
         self._pending = False
         self._stale = False
         self._timer.stop()
+        quiet = self._body_quiet()
+        self._pending_changes = []
+        self._last_change = None
+        if quiet:
+            return
         reset_scroll = self._reset_scroll
         self._reset_scroll = False
         session = self._services.session
@@ -423,13 +443,55 @@ class InspectorPane(QWidget):
 
     def _on_log(self, changeset: ChangeSet) -> None:
         self._memo.invalidate(changeset)
+        self._pending_changes.append(changeset)
+        self._last_change = changeset
         if tabstops_only(changeset):
             self.properties.note_tab_order()
             return
         self._paint_header()
         self._schedule()
 
+    def _body_quiet(self) -> bool:
+        """True when the last edit cannot change a visible inspector row.
+
+        Layout spacing moves children, and the curated page hides geometry
+        for a widget a layout owns. A caption shows in the header. Anything
+        else, including the root style sheet, still rebuilds the rows.
+        """
+        if not self._pending_changes or self.properties.builds_all_properties():
+            return False
+        return all(self._change_is_quiet(change) for change in self._pending_changes)
+
+    def _change_is_quiet(self, change: ChangeSet) -> bool:
+        if (
+            change.added
+            or change.removed
+            or change.structure_dirty
+            or change.replaced
+            or change.renamed
+        ):
+            return False
+        dirty = change.property_dirty
+        if not dirty:
+            return False
+        behavior_tab = self._tab_index.get(TabId.BEHAVIOR)
+        on_behavior = behavior_tab is not None and self.tabs.currentIndex() == behavior_tab
+        for owner, _kind, name in dirty:
+            if owner in self._inspected_ids:
+                return False
+            if name in _QUIET_LAYOUT:
+                continue
+            # A caption shows in the header, which already painted. The behavior
+            # page reads it too. Any other property can change a visible row,
+            # including the root style sheet the checks outline watches.
+            if name == "text" and not on_behavior:
+                continue
+            return False
+        return True
+
     def _on_selection(self, _change: SelectionChange) -> None:
+        self._pending_changes = []
+        self._last_change = None
         document = self._services.session.document
         ids = frozenset(inspected_ids(document, self._services.session.selection.state.ids))
         if ids != self._inspected_ids:
@@ -439,6 +501,8 @@ class InspectorPane(QWidget):
         self._schedule()
 
     def _refresh_now(self) -> None:
+        self._pending_changes = []
+        self._last_change = None
         self._pending = True
         self.flush()
 
@@ -449,6 +513,8 @@ class InspectorPane(QWidget):
         if signature == getattr(self, "_diag_signature", None):
             return
         self._diag_signature = signature
+        self._pending_changes = []
+        self._last_change = None
         self._schedule()
 
     def _paint_header(self) -> None:

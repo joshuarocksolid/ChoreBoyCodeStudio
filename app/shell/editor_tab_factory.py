@@ -27,6 +27,17 @@ from app.shell.tab_content_providers import (
 )
 
 
+def flush_open_draft(window: Any, buffer_id: str) -> None:
+    """Flush the autosave for the path this buffer has now.
+
+    Save As replaces the path after the tab opens. The flush has to read it
+    at call time, or it writes the path from when the tab was created.
+    """
+    current = window._editor_tab_workflow.path_for_buffer_id(buffer_id)
+    if current:
+        window._local_history_workflow.flush_pending_autosaves((current,))
+
+
 def _drop_focus_restore() -> None:
     """A failed open must not leave Quick Open's restore flag for the next file."""
     from app.editors.quick_open_dialog import take_focus_restore
@@ -265,6 +276,13 @@ class EditorTabFactory:
                 if content_source is not None:
                     self._attach_content_source(opened_result.tab, content_source)
                 registry.bind(tab_file_path, surface, provider.provider_id)
+
+                buffer_id = opened_result.tab.buffer_id
+
+                def _flush_draft() -> None:
+                    flush_open_draft(window, buffer_id)
+
+                surface.flush_draft = _flush_draft  # type: ignore[attr-defined]
                 tab_content = surface.widget()
 
         page = self.build_tab_page(tab_content, opened_result.tab.buffer_id)

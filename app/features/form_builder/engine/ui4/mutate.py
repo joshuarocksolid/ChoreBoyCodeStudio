@@ -29,10 +29,37 @@ from app.features.form_builder.engine.commands.ops import (
 )
 from app.features.form_builder.engine.ids import DOCUMENT_ID, NodeId
 from app.features.form_builder.engine.ui4.document import UiDocument, _node_from_spec
-from app.features.form_builder.engine.ui4.nodes import Node, placed, with_attributes, with_fields, with_properties, with_slots
+from app.features.form_builder.engine.ui4.nodes import (
+    Node,
+    WidgetNode,
+    placed,
+    with_attributes,
+    with_fields,
+    with_properties,
+    with_slots,
+)
 from app.features.form_builder.engine.ui4.schema import SCHEMA, field_spec, slot_spec
 from app.features.form_builder.engine.ui4.spec import NodeSpec, PropertyEntry
+from app.features.form_builder.engine.ui4.values import IconSetValue, ResourcePixmap
 from app.features.form_builder.engine.ui4.writer import require_xml_text
+
+#: Captions and the texts the formula snapshot reads. Layout spacing is not here.
+_FACE_PROPERTIES = frozenset({
+    "text",
+    "buddy",
+    "cbcsKind",
+    "decimals",
+    "prefix",
+    "tristate",
+    "specialValueText",
+    "cbcsData",
+    "cbcsLookup",
+    "cbcsRows",
+    "cbcsEjected",
+})
+#: Picture paths and the titles an action place is named with. The tree walks
+#: that read those stay keyed on ``structure_revision``.
+_STRUCTURE_PROPERTIES = frozenset({"title", "windowTitle", "pixmap", "icon", "windowIcon"})
 
 _NAME_FIELD = {
     "widget": "object_name",
@@ -107,6 +134,13 @@ def _insert(doc: UiDocument, op: InsertNodeOp) -> Op:
     if _spec_has_custom(op.spec):
         doc._rebuild_custom_index()
     doc._bump()
+    added = doc._added_widgets
+    if added is not None:
+        for item in _walk(doc._nodes[op.spec.id]):
+            if isinstance(item, WidgetNode):
+                added.append((doc.structure_revision, item.id))
+        if len(added) > 32:
+            doc._added_widgets = None
     return RemoveNodeOp(op.spec.id)
 
 
@@ -127,6 +161,7 @@ def _remove(doc: UiDocument, op: RemoveNodeOp) -> Op:
     _retarget_slot(doc, doc._nodes[parent_id], slot, kids)
     if custom:
         doc._rebuild_custom_index()
+    doc._added_widgets = None
     doc._bump()
     return InsertNodeOp(parent=parent_id, slot=slot, index=index, spec=snapshot)
 
@@ -163,6 +198,7 @@ def _move(doc: UiDocument, op: MoveNodeOp) -> Op:
     _resort_shared_names(doc, op.node)
     if node.kind == "customwidget":
         doc._rebuild_custom_index()
+    doc._added_widgets = None
     doc._bump()
     return MoveNodeOp(node=op.node, parent=old_parent, slot=old_slot, index=old_index)
 
@@ -188,7 +224,7 @@ def _set_property(doc: UiDocument, op: SetPropertyOp) -> Op:
         _bubble(doc, updated)
         if op.kind == "property":
             doc._note_logic(op.name, -1)
-        doc._bump()
+        _note_property(doc, owner.id, owner.kind, op.name, old_entry)
         return SetPropertyOp(owner=op.owner, kind=op.kind, name=op.name, entry=old_entry, index=old_index)
     if op.entry.kind != op.kind or op.entry.name != op.name:
         raise OpError("entry identity does not match the op")
@@ -198,7 +234,7 @@ def _set_property(doc: UiDocument, op: SetPropertyOp) -> Op:
         old_entry, _old_index = existing
         updated = _entries_node(owner, op.kind, _replace_entry(current, op.entry))
         _bubble(doc, updated)
-        doc._bump()
+        _note_property(doc, owner.id, owner.kind, op.name, op.entry)
         return SetPropertyOp(owner=op.owner, kind=op.kind, name=op.name, entry=old_entry, index=None)
     if op.index is None or op.index < 0 or op.index > len(current):
         raise OpError("index out of range")
@@ -208,8 +244,25 @@ def _set_property(doc: UiDocument, op: SetPropertyOp) -> Op:
     _bubble(doc, updated)
     if op.kind == "property":
         doc._note_logic(op.name, 1)
-    doc._bump()
+    _note_property(doc, owner.id, owner.kind, op.name, op.entry)
     return SetPropertyOp(owner=op.owner, kind=op.kind, name=op.name, entry=None, index=None)
+
+
+def _note_property(
+    doc: UiDocument,
+    owner_id: NodeId,
+    kind: str,
+    name: str,
+    entry: Optional[PropertyEntry],
+) -> None:
+    """Property writes leave the tree alone, except pictures and place titles."""
+    if kind == "item" or name in _FACE_PROPERTIES:
+        doc._note_face(owner_id, name)
+    value = None if entry is None else entry.value
+    structural = name in _STRUCTURE_PROPERTIES or isinstance(value, (ResourcePixmap, IconSetValue))
+    if name == "focusPolicy":
+        doc._note_focus()
+    doc._bump(structure=structural)
 
 
 def _set_field(doc: UiDocument, op: SetFieldOp) -> Op:
@@ -230,6 +283,7 @@ def _set_field(doc: UiDocument, op: SetFieldOp) -> Op:
         old_name = old if isinstance(old, str) else None
         new_name = op.value if isinstance(op.value, str) else None
         doc._rebind_name(node.id, old_name, new_name)
+        doc._added_widgets = None
     if node.kind == "customwidget" and op.field == "class_name":
         doc._rebuild_custom_index()
     doc._bump()
@@ -305,6 +359,7 @@ def _replace_root(doc: UiDocument, op: ReplaceRootOp) -> Op:
             raise OpError("replacement id %s is already in use" % (int(node_id),))
     previous = doc.to_spec()
     previous_newline = doc.newline
+    doc._added_widgets = None
     doc._replace_tree(UiDocument.from_spec(op.spec).ui)
     if op.newline is not None:
         doc.newline = op.newline

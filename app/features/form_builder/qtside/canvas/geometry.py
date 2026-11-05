@@ -40,6 +40,7 @@ from app.features.form_builder.engine.query.hit_index import (
 from app.features.form_builder.engine.query.tree import grid_shape
 from app.features.form_builder.engine.ui4.document import UiDocument
 from app.features.form_builder.engine.ui4.nodes import LayoutItemNode, LayoutNode, SpacerNode, WidgetNode
+from app.features.form_builder.engine.ui4.values import SizePolicyValue
 from app.features.form_builder.qtside.canvas.core.structure import (
     Free,
     LaidOut,
@@ -51,6 +52,58 @@ from app.features.form_builder.qtside.sizing_live import class_default_policies
 
 # Layouts and spacers sit under any widget that shares their container.
 _LAYOUT_Z = -1
+_STEADY_POLICY = frozenset({"Preferred", "Minimum", "Maximum", "Fixed"})
+
+
+def _redistributes(layout: LayoutNode) -> bool:
+    """True when a sample of three items can miss a sibling that moved.
+
+    A stretch, a spacer, or mixed size policies move items the sample skips.
+    """
+    for name in ("stretch", "rowstretch", "columnstretch"):
+        value = layout.field(name)
+        if isinstance(value, str) and any(part not in ("", "0") for part in value.replace(" ", "").split(",")):
+            return True
+    seen = set()
+    for item in layout.items:
+        content = item.content
+        if content is None:
+            continue
+        if not isinstance(content, WidgetNode):
+            return True
+        entry = content.prop("sizePolicy")
+        value = entry.value if entry is not None else None
+        if isinstance(value, SizePolicyValue):
+            if value.horstretch or value.verstretch:
+                return True
+            if value.hsizetype not in _STEADY_POLICY or value.vsizetype not in _STEADY_POLICY:
+                return True
+            key = (value.hsizetype, value.vsizetype)
+        else:
+            key = ("Preferred", "Preferred")
+        seen.add(key)
+        if len(seen) > 1:
+            return True
+    return False
+
+
+def _fields_share_width(pending: Sequence[Tuple[object, int, GeoEntry, int, int]]) -> bool:
+    """True when every form field can take the sampled field's width change."""
+    seen = set()
+    for content, _index, _old, _row, column in pending:
+        if column < 1 or not isinstance(content, WidgetNode):
+            continue
+        entry = content.prop("sizePolicy")
+        value = entry.value if entry is not None else None
+        if isinstance(value, SizePolicyValue):
+            if value.hsizetype in ("Fixed", "Maximum"):
+                return False
+            seen.add(value.hsizetype)
+        else:
+            seen.add("Preferred")
+        if content.prop("maximumSize") is not None:
+            return False
+    return len(seen) <= 1
 
 
 class LiveGeometrySource:
@@ -314,10 +367,18 @@ class LiveGeometrySource:
             if isinstance(found, LayoutNode) and found.id not in expanded:
                 if found.id in scope.dirty or found.id in expand_ids:
                     expanded.add(found.id)
-                    for item in found.items:
-                        content = item.content
-                        if content is not None:
-                            queue.append(content.id)
+                    # Spacing dirties the layout, so every item is measured.
+                    # A child resize only asks for siblings. Three that did not
+                    # move mean the rest did not either.
+                    if found.id in scope.dirty or not self._siblings_stable(
+                        found, scope.dirty, previous, located, root
+                    ):
+                        refreshed = self._refresh_layout_items(
+                            found, root, previous, located, replacements, changed, seen, queue
+                        )
+                        if refreshed is None:
+                            return None
+                        visits += refreshed
             measured = self._measure(found, root)
             if measured is None:
                 return None
@@ -382,6 +443,198 @@ class LiveGeometrySource:
             visits=visits,
             changed=tuple(dict.fromkeys(changed)),
         )
+
+    def _siblings_stable(
+        self,
+        layout: LayoutNode,
+        dirty: FrozenSet[NodeId],
+        previous: Sequence[GeoEntry],
+        located: Mapping[Tuple[NodeId, str], int],
+        root: QWidget,
+    ) -> bool:
+        """True when a long layout's other items kept their rects.
+
+        The edited widget is left out of the sample. A short layout is measured
+        in full; the skip is for the hundred-row form.
+        """
+        if _redistributes(layout):
+            return False
+        contents = [item.content for item in layout.items if item.content is not None and item.content.id not in dirty]
+        if len(contents) < 8:
+            return False
+        picks = (contents[0], contents[len(contents) // 2], contents[-1])
+        for node in picks:
+            measured = self._measure(node, root)
+            if measured is None:
+                return False
+            kind = "widget" if isinstance(node, WidgetNode) else "layout" if isinstance(node, LayoutNode) else "spacer"
+            index = located.get((node.id, kind))
+            if index is None:
+                return False
+            old = previous[index]
+            rect, visible = measured
+            if old.rect != rect or old.visible != visible:
+                return False
+        return True
+
+    def _refresh_layout_items(
+        self,
+        layout: LayoutNode,
+        root: QWidget,
+        previous: Sequence[GeoEntry],
+        located: Mapping[Tuple[NodeId, str], int],
+        replacements: List[Tuple[int, GeoEntry]],
+        changed: List[NodeId],
+        seen: Dict[NodeId, bool],
+        queue: List[NodeId],
+    ) -> Optional[int]:
+        """Remeasure one layout's items. None means the caller walks the form.
+
+        A leaf keeps the rect here. A container whose rect moved goes back on
+        the queue so its descendants are walked once, not once per sibling.
+        A long form whose rows only slid by one gap is updated from three
+        measured rows. Anything else is measured item by item.
+        """
+        shifted = self._shift_form_rows(
+            layout, root, previous, located, replacements, changed, seen
+        )
+        if shifted is not None:
+            return shifted
+        count = 0
+        for item in layout.items:
+            content = item.content
+            if content is None or content.id in seen:
+                continue
+            measured = self._measure(content, root)
+            if measured is None:
+                return None
+            rect, visible = measured
+            count += 1
+            kind = "widget" if isinstance(content, WidgetNode) else "layout" if isinstance(content, LayoutNode) else "spacer"
+            index = located.get((content.id, kind))
+            if index is None:
+                return None
+            old = previous[index]
+            container = isinstance(content, WidgetNode) and bool(content.child_widgets or content.layout is not None)
+            moved = old.rect != rect or old.visible != visible
+            if moved and (container or isinstance(content, LayoutNode)):
+                queue.append(content.id)
+                continue
+            seen[content.id] = True
+            if moved:
+                replacements.append((index, GeoEntry(old.node, old.kind, rect, old.container, visible, old.z)))
+                changed.append(content.id)
+        return count
+
+    def _shift_form_rows(
+        self,
+        layout: LayoutNode,
+        root: QWidget,
+        previous: Sequence[GeoEntry],
+        located: Mapping[Tuple[NodeId, str], int],
+        replacements: List[Tuple[int, GeoEntry]],
+        changed: List[NodeId],
+        seen: Dict[NodeId, bool],
+    ) -> Optional[int]:
+        """Apply one vertical step to every row when three sampled rows agree.
+
+        Spacing slides each row by ``row * step`` and leaves width and height
+        alone. A label that grew taller does not fit that line, so this returns
+        None and the caller measures every item. None also means a container
+        moved: its children are not a rigid shift.
+        """
+        if layout.class_name != "QFormLayout" or len(layout.items) < 8:
+            return None
+        pending = []
+        by_row: Dict[int, List[int]] = {}
+        for item in layout.items:
+            content = item.content
+            if content is None or content.id in seen:
+                continue
+            kind = "widget" if isinstance(content, WidgetNode) else "layout" if isinstance(content, LayoutNode) else "spacer"
+            index = located.get((content.id, kind))
+            if index is None:
+                return None
+            row = 0 if item.row is None else int(item.row)
+            column = 0 if item.column is None else int(item.column)
+            slot = len(pending)
+            pending.append((content, index, previous[index], row, column))
+            by_row.setdefault(row, []).append(slot)
+        ordered = sorted(by_row)
+        if len(ordered) < 8:
+            return None
+        sample_rows = (ordered[0], ordered[len(ordered) // 2], ordered[-1])
+        samples = [pending[by_row[row][0]] for row in sample_rows]
+        field = next((entry for entry in pending if entry[4] >= 1), None)
+        if field is not None and field not in samples:
+            samples.append(field)
+        measured_by_id: Dict[NodeId, Tuple[Rect, bool]] = {}
+        for content, _index, _old, _row, _column in samples:
+            measured = self._measure(content, root)
+            if measured is None:
+                return None
+            measured_by_id[content.id] = measured
+        first_row = ordered[0]
+        last_content, _last_index, last_old, last_row, _last_column = samples[2]
+        last_rect, last_visible = measured_by_id[last_content.id]
+        span = last_row - first_row
+        if span <= 0 or last_visible != last_old.visible:
+            return None
+        if last_rect.height != last_old.rect.height or last_rect.width != last_old.rect.width:
+            return None
+        dy = last_rect.y - last_old.rect.y
+        if dy % span != 0:
+            return None
+        step = dy // span
+        dx = 0
+        dw = 0
+        if field is not None:
+            field_rect, field_visible = measured_by_id[field[0].id]
+            if field_visible != field[2].visible or field_rect.height != field[2].rect.height:
+                return None
+            dx = field_rect.x - field[2].rect.x
+            dw = field_rect.width - field[2].rect.width
+        if not _fields_share_width(pending):
+            return None
+        planned: List[Tuple[int, GeoEntry, NodeId]] = []
+        quiet: List[NodeId] = []
+        for content, index, old, row, column in samples:
+            rect, visible = measured_by_id[content.id]
+            shift_x = dx if column >= 1 else 0
+            shift_w = dw if column >= 1 else 0
+            expected = Rect(
+                old.rect.x + shift_x,
+                old.rect.y + (row - first_row) * step,
+                old.rect.width + shift_w,
+                old.rect.height,
+            )
+            if rect != expected or visible != old.visible:
+                return None
+        for content, index, old, row, column in pending:
+            shift_x = dx if column >= 1 else 0
+            shift_w = dw if column >= 1 else 0
+            rect = Rect(
+                old.rect.x + shift_x,
+                old.rect.y + (row - first_row) * step,
+                old.rect.width + shift_w,
+                old.rect.height,
+            )
+            container = isinstance(content, LayoutNode) or (
+                isinstance(content, WidgetNode) and bool(content.child_widgets or content.layout is not None)
+            )
+            if container and rect != old.rect:
+                return None
+            if rect == old.rect:
+                quiet.append(content.id)
+                continue
+            planned.append((index, GeoEntry(old.node, old.kind, rect, old.container, old.visible, old.z), content.id))
+        for node_id in quiet:
+            seen[node_id] = True
+        for index, entry, node_id in planned:
+            seen[node_id] = True
+            replacements.append((index, entry))
+            changed.append(node_id)
+        return len(measured_by_id)
 
     def _remeasure_layouts(
         self,

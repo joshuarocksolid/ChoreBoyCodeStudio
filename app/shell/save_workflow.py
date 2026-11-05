@@ -329,6 +329,9 @@ class SaveWorkflow:
         return confirm_tab_close_blockers(self._host.dialog_parent(), registry, file_paths)
 
     def confirm_proceed_with_unsaved_changes(self, action_description: str) -> bool:
+        flush = getattr(self._local_history, "flush_pending_autosaves", None)
+        if callable(flush):
+            flush()
         open_paths = [tab.file_path for tab in self._editor_manager().all_tabs()]
         if not self._confirm_close_blockers(open_paths):
             return False
@@ -605,6 +608,9 @@ class SaveWorkflow:
         defer_history: bool = False,
     ) -> bool:
         host = self._host
+        flush = getattr(self._local_history, "flush_pending_autosaves", None)
+        if callable(flush):
+            flush((file_path,))
         stale_decision = (
             self._decide_stale_save(file_path, prompt=apply_transforms)
             if check_stale_disk
