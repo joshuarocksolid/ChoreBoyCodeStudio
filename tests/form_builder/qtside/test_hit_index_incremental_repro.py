@@ -498,3 +498,100 @@ def test_a_rebuilt_scroll_area_is_watched_again() -> None:
         _late_bar(session, realizer)
         index.ensure_fresh()
         _assert_full(realizer, index)
+
+
+def _hbox_with_spacer() -> str:
+    cells = [
+        '<item><widget class="QLabel" name="pinLeft"><property name="text"><string>P</string></property></widget></item>',
+        '<item><widget class="QLabel" name="label1"><property name="text"><string>A</string></property></widget></item>',
+        '<item><widget class="QPushButton" name="btn2"><property name="text"><string>2</string></property></widget></item>',
+        '<item><widget class="QPushButton" name="btn3"><property name="text"><string>3</string></property></widget></item>',
+        """<item><spacer name="gap">
+     <property name="orientation"><enum>Qt::Horizontal</enum></property>
+     <property name="sizeType"><enum>QSizePolicy::Expanding</enum></property>
+     <property name="sizeHint" stdset="0"><size><width>40</width><height>10</height></size></property>
+    </spacer></item>""",
+    ]
+    for number in range(4, 9):
+        cells.append(
+            '<item><widget class="QPushButton" name="btn%d"><property name="text"><string>%d</string></property></widget></item>'
+            % (number, number)
+        )
+    cells.append(
+        '<item><widget class="QLabel" name="pinRight"><property name="text"><string>R</string></property></widget></item>'
+    )
+    return form(
+        'class="QWidget" name="Form"',
+        """
+  <property name="geometry"><rect><x>0</x><y>0</y><width>900</width><height>80</height></rect></property>
+  <layout class="QHBoxLayout" name="row">
+   %s
+  </layout>
+"""
+        % "\n   ".join(cells),
+    )
+
+
+def _form_with_fixed_field() -> str:
+    rows = []
+    for row in range(8):
+        extra = ""
+        if row == 4:
+            extra = (
+                "<property name=\"sizePolicy\"><sizepolicy hsizetype=\"Fixed\" vsizetype=\"Fixed\">"
+                "<horstretch>0</horstretch><verstretch>0</verstretch></sizepolicy></property>"
+                "<property name=\"maximumSize\"><size><width>40</width><height>16777215</height></size></property>"
+            )
+        rows.append(
+            '<item row="%d" column="0"><widget class="QLabel" name="lab%d">'
+            '<property name="text"><string>L%d</string></property></widget></item>'
+            '<item row="%d" column="1"><widget class="QLineEdit" name="field%d">%s</widget></item>'
+            % (row, row, row, row, row, extra)
+        )
+    return form(
+        'class="QWidget" name="Form"',
+        """
+  <property name="geometry"><rect><x>0</x><y>0</y><width>480</width><height>420</height></rect></property>
+  <layout class="QFormLayout" name="formLayout">
+   <property name="horizontalSpacing"><number>6</number></property>
+   %s
+  </layout>
+"""
+        % "\n   ".join(rows),
+    )
+
+
+def test_widening_a_label_beside_an_expanding_spacer_matches_a_full_rebuild() -> None:
+    with opened(_hbox_with_spacer()) as (session, realizer):
+        root = realizer.root_widget
+        assert root is not None
+        root.resize(900, 80)
+        root.show()
+        QApplication.processEvents()
+        index = HitIndex(LiveGeometrySource(realizer))
+        subscription = session.log.subscribe(HitIndexInvalidator(index).on_changeset, priority=PRIORITY_HIT_INDEX)
+        try:
+            index.ensure_fresh()
+            session.log.execute(SetProperty(_id(session, "label1"), "text", StringValue("A much wider caption")))
+            _assert_matches_full(realizer, index)
+        finally:
+            subscription.close()
+            root.hide()
+
+
+def test_spacing_with_a_fixed_field_matches_a_full_rebuild() -> None:
+    with opened(_form_with_fixed_field()) as (session, realizer):
+        root = realizer.root_widget
+        assert root is not None
+        root.resize(480, 420)
+        root.show()
+        QApplication.processEvents()
+        index = HitIndex(LiveGeometrySource(realizer))
+        subscription = session.log.subscribe(HitIndexInvalidator(index).on_changeset, priority=PRIORITY_HIT_INDEX)
+        try:
+            index.ensure_fresh()
+            session.log.execute(SetProperty(_id(session, "formLayout"), "horizontalSpacing", NumberValue(28)))
+            _assert_matches_full(realizer, index)
+        finally:
+            subscription.close()
+            root.hide()
