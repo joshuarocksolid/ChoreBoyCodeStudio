@@ -5,7 +5,8 @@ from __future__ import annotations
 import os
 from typing import Any, Dict, List, Optional, Tuple
 
-from app.qt.QtCore import QRect, QSize, Qt
+from app.qt.QtCore import QEvent, QRect, QSize, Qt
+from app.qt.qt_compat import enum_value
 from app.qt.QtWidgets import (
     QHBoxLayout,
     QLabel,
@@ -34,6 +35,10 @@ from app.features.form_builder.engine.ui4.defaults import QtClassTable
 from app.features.form_builder.qtside.logic_panel.rows import LogicRow, RowFace, paint_roles
 
 _PLAIN = getattr(getattr(Qt, "TextFormat", Qt), "PlainText")
+_NO_FOCUS = getattr(getattr(Qt, "FocusPolicy", Qt), "NoFocus")
+_KEY_PRESS = getattr(getattr(QEvent, "Type", QEvent), "KeyPress")
+_KEY_DOWN = enum_value(getattr(getattr(Qt, "Key", Qt), "Key_Down"))
+_KEY_UP = enum_value(getattr(getattr(Qt, "Key", Qt), "Key_Up"))
 _EMPTY = "This form has no rules, checks, or events yet. Select a widget and open Behavior to add one."
 _NOTE = "Read from the window file. This list is best-effort and Code Studio does not run the file."
 _CHIPS = (
@@ -190,6 +195,11 @@ class LogicPanel(QWidget):
         self._body_layout.setContentsMargins(0, 0, 0, 0)
         self._body_layout.setSpacing(2)
         self._scroll.setWidget(self._body)
+        self._scroll.setFocusPolicy(_NO_FOCUS)
+        viewport = self._scroll.viewport()
+        if viewport is not None:
+            viewport.setFocusPolicy(_NO_FOCUS)
+        self._filter.installEventFilter(self)
         column.addWidget(self._scroll, 1)
         self._idle = False
         self._row_key: Optional[Tuple[object, ...]] = None
@@ -284,6 +294,42 @@ class LogicPanel(QWidget):
         from app.features.form_builder.qtside.logic_panel.open import open_use
 
         open_use(surface, use)
+
+    def eventFilter(self, watched: QWidget, event: QEvent) -> bool:  # noqa: N802
+        # Down in the filter only moves the text caret. The list treats it as "first row".
+        if int(event.type()) != int(_KEY_PRESS):
+            return False
+        key = enum_value(event.key())  # type: ignore[attr-defined]
+        if watched is self._filter and key == _KEY_DOWN and self._rows:
+            self._focus_row(self._rows[0])
+            return True
+        try:
+            index = self._rows.index(watched)  # type: ignore[arg-type]
+        except ValueError:
+            return False
+        if key == _KEY_DOWN and index + 1 < len(self._rows):
+            self._focus_row(self._rows[index + 1])
+            return True
+        if key == _KEY_UP:
+            if index == 0:
+                self._filter.setFocus()
+            else:
+                self._focus_row(self._rows[index - 1])
+            return True
+        return False
+
+    def _focus_row(self, row: QWidget) -> None:
+        self._scroll.ensureWidgetVisible(row)
+        row.setFocus()
+
+    def _chain_focus(self) -> None:
+        previous: QWidget = self._filter
+        for chip in self._chips.values():
+            QWidget.setTabOrder(previous, chip)
+            previous = chip
+        for row in self._rows:
+            QWidget.setTabOrder(previous, row)
+            previous = row
 
     def reload(self) -> None:
         source, relative = _window_text(_surface_of(self))
@@ -380,6 +426,7 @@ class LogicPanel(QWidget):
                 number = self._add_row(row, number, section="PROBLEMS")
         self._body_layout.addStretch(1)
         self._paint_rows()
+        self._chain_focus()
 
     def _add_row(self, row: PanelRow, number: int, section: str = "") -> int:
         use = row.use
@@ -387,6 +434,7 @@ class LogicPanel(QWidget):
         label = LogicRow(face, self._body, lambda use=use: self.open_row(use))  # type: ignore[misc]
         label.use = use  # type: ignore[attr-defined]
         label.setObjectName("formBuilder.logic.row.%d" % number)
+        label.installEventFilter(self)
         self._body_layout.addWidget(label)
         self._rows.append(label)
         return number + 1
@@ -437,6 +485,8 @@ class LogicPanel(QWidget):
                 chrome.warning,
                 tokens.panel_bg,  # type: ignore[attr-defined]
                 family,
+                str(getattr(tokens, "accent", "") or ""),
+                int(getattr(tokens, "focus_border_width", 2) or 2),
             )
 
     def _clear_body(self) -> None:

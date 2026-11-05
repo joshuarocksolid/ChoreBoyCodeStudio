@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.qt.QtCore import Qt
 from app.qt.QtWidgets import QWidget
 
 from app.features.form_builder.integration.data_checks_bridge import arm
@@ -28,8 +29,19 @@ def _build(workbench: Any) -> DataPanel:
 
 
 def _focus(widget: Any) -> None:
-    if isinstance(widget, QWidget):
-        widget.setFocus()
+    if not isinstance(widget, QWidget):
+        return
+    connect = widget.findChild(QWidget, "formBuilder.data.connect")
+    if connect is not None and connect.isVisible() and connect.isEnabled():
+        connect.setFocus()
+        return
+    no_focus = getattr(getattr(Qt, "FocusPolicy", Qt), "NoFocus")
+    for child in widget.findChildren(QWidget):
+        if child.isVisible() and child.isEnabled() and child.focusPolicy() != no_focus:
+            child.setFocus()
+            return
+    widget.setFocusPolicy(getattr(getattr(Qt, "FocusPolicy", Qt), "StrongFocus"))
+    widget.setFocus()
 
 
 def _arm(workbench: Any) -> None:

@@ -24,6 +24,7 @@ class DataPanel(QWidget):
     def __init__(self, workbench: Any) -> None:
         super().__init__(workbench)
         self.setObjectName("formBuilder.dataPanel")
+        self.setAccessibleName("Data")
         self._workbench = workbench
         self._layout = QVBoxLayout(self)
         self._layout.setContentsMargins(12, 12, 12, 12)

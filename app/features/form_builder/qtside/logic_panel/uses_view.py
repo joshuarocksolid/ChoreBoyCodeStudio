@@ -92,6 +92,8 @@ class UsesDialog(QDialog):
                 chrome.warning,
                 tokens.panel_bg,  # type: ignore[attr-defined]
                 self._family,
+                str(getattr(tokens, "accent", "") or ""),
+                int(getattr(tokens, "focus_border_width", 2) or 2),
             )
 
     def _fill(self) -> None:

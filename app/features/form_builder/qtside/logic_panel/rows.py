@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from typing import Callable, Optional
 
 from app.qt.QtCore import QSize, Qt
-from app.qt.QtGui import QColor, QFont, QFontDatabase, QFontInfo, QPainter, QPalette, QTextCharFormat, QTextCursor, QTextDocument, QTextOption
+from app.qt.QtGui import QBrush, QColor, QFont, QFontDatabase, QFontInfo, QPainter, QPalette, QPen, QTextCharFormat, QTextCursor, QTextDocument, QTextOption
 from app.qt.QtWidgets import QHBoxLayout, QLabel, QSizePolicy, QVBoxLayout, QWidget
 from app.qt.qt_compat import enum_value
 
@@ -176,6 +176,8 @@ class LogicRow(QWidget):
         self._warning = ""
         self._panel_bg = ""
         self._code_family = UI_EDITOR_FONT_FAMILY_DEFAULT
+        self._accent = ""
+        self._focus_width = 2
         self.setFocusPolicy(_FOCUS if takes_focus else _CLICK)
         self.setMinimumWidth(0)
         self.setAccessibleName(face.accessible)
@@ -240,6 +242,8 @@ class LogicRow(QWidget):
         warning: str,
         panel: str,
         code_family: str,
+        accent: str = "",
+        focus_width: int = 2,
     ) -> None:
         self._text = text
         self._faint = faint
@@ -248,6 +252,8 @@ class LogicRow(QWidget):
         self._warning = warning
         self._panel_bg = panel
         self._code_family = code_family or UI_EDITOR_FONT_FAMILY_DEFAULT
+        self._accent = accent
+        self._focus_width = focus_width if focus_width > 0 else 1
         self._title.setStyleSheet("color: %s; background: transparent;" % text)
         self._aside.setStyleSheet("color: %s; background: transparent;" % faint)
         body_color = faint if not self._face.code and self._face.warning else text
@@ -286,11 +292,28 @@ class LogicRow(QWidget):
 
     def focusInEvent(self, event: object) -> None:  # noqa: N802
         self._paint()
+        self.update()
         super().focusInEvent(event)  # type: ignore[arg-type]
 
     def focusOutEvent(self, event: object) -> None:  # noqa: N802
         self._paint()
+        self.update()
         super().focusOutEvent(event)  # type: ignore[arg-type]
+
+    def paintEvent(self, event: object) -> None:  # noqa: N802
+        super().paintEvent(event)  # type: ignore[arg-type]
+        if not self.hasFocus() or not self._accent:
+            return
+        painter = QPainter(self)
+        pen = QPen(QColor(self._accent))
+        width = max(1, int(self._focus_width))
+        pen.setWidth(width)
+        painter.setPen(pen)
+        no_brush = getattr(getattr(Qt, "BrushStyle", Qt), "NoBrush")
+        painter.setBrush(QBrush(no_brush))
+        half = width // 2
+        painter.drawRect(self.rect().adjusted(half, half, -half - 1, -half - 1))
+        painter.end()
 
     def keyPressEvent(self, event: object) -> None:  # noqa: N802
         key = enum_value(event.key())  # type: ignore[attr-defined]
