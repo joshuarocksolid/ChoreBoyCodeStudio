@@ -20,6 +20,7 @@ from app.features.form_builder.qtside.theme.chrome import (  # noqa: E402
 from app.features.form_builder.integration.chrome import chrome_for  # noqa: E402
 from app.features.form_builder.integration.workbench import problems_link_color  # noqa: E402
 from app.features.form_builder.qtside.inspector.pane import _stylesheet  # noqa: E402
+from app.shell.contrast import contrast_ratio  # noqa: E402
 from app.shell.theme_tokens import ShellThemeTokens, tokens_from_palette  # noqa: E402
 
 pytestmark = pytest.mark.unit
@@ -120,6 +121,30 @@ def test_chrome_text_and_accent_clear_the_contrast_targets(qapp) -> None:  # typ
         for name in _NON_TEXT_PAIRS:
             ratio = _contrast(getattr(tokens, name), panel)
             assert ratio >= 3.0, "%s on panel in %s is %.2f" % (name, mode, ratio)
+
+
+def test_focus_selection_disabled_and_error_clear_the_helper(qapp) -> None:  # type: ignore[no-untyped-def]
+    """The shell helper, not a second copy of the formula, checks the four states."""
+    modes = (
+        "light",
+        "dark",
+        constants.UI_THEME_MODE_HIGH_CONTRAST_LIGHT,
+        constants.UI_THEME_MODE_HIGH_CONTRAST_DARK,
+    )
+    for mode in modes:
+        tokens = tokens_from_palette(qapp.palette(), force_mode=mode)
+        built = chrome_for(tokens)
+        text_floor = 7.0 if tokens.is_high_contrast else 4.5
+        pairs = (
+            ("focus ring", tokens.accent, tokens.panel_bg, 3.0),
+            ("selection", tokens.text_primary, tokens.tree_selected_bg, text_floor),
+            ("disabled", built.muted, built.input or built.panel, 4.5),
+            ("error", tokens.diag_error_color, tokens.panel_bg, 4.5),
+            ("warning", tokens.diag_warning_color, tokens.panel_bg, 4.5),
+        )
+        for name, foreground, background, floor in pairs:
+            ratio = contrast_ratio(foreground, background)
+            assert ratio >= floor, "%s in %s is %.2f" % (name, mode, ratio)
 
 
 def test_builder_pairs_include_neutral_gray_and_the_page_title(qapp) -> None:  # type: ignore[no-untyped-def]

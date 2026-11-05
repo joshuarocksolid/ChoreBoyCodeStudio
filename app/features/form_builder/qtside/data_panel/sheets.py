@@ -127,12 +127,15 @@ class SourceForm(QWidget):
         self._filter = QLineEdit(self)
         self._filter.setPlaceholderText("Filter tables")
         self._filter.setObjectName("formBuilder.data.tableFilter")
+        self._filter.setAccessibleName("Filter tables")
         self._tables = QListWidget(self)
         self._tables.setObjectName("formBuilder.data.tables")
+        self._tables.setAccessibleName("Tables")
         self._tables.setFixedHeight(8 * 24)
         self._tables.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self._keep = QCheckBox("Let people keep their version on a conflict", self)
         self._keep.setObjectName("formBuilder.data.allowOverwrite")
+        self._keep.setAccessibleName("Let people keep their version on a conflict")
         self._key = QLabel(self)
         self._key.setObjectName("formBuilder.data.key")
         self._notice = QLabel(self)
@@ -148,8 +151,10 @@ class SourceForm(QWidget):
             order_layout.addLayout(row)
             column = QComboBox(order_box)
             column.setObjectName("formBuilder.data.orderColumn%d" % index)
+            column.setAccessibleName("Order by, choice %d" % (index + 1))
             direction = QComboBox(order_box)
             direction.setObjectName("formBuilder.data.orderDirection%d" % index)
+            direction.setAccessibleName("Order direction, choice %d" % (index + 1))
             for label, value in _DIRECTIONS:
                 direction.addItem(label, value)
             row.addWidget(column, 1)
@@ -174,6 +179,9 @@ class SourceForm(QWidget):
         ):
             if title:
                 label = QLabel(title, self)
+                label.setBuddy(widget)
+                if not (widget.accessibleName() or "").strip():
+                    widget.setAccessibleName(title)
                 layout.addWidget(label)
             layout.addWidget(widget)
         self._connection.currentIndexChanged.connect(self._reload_tables)

@@ -10,7 +10,7 @@ import os
 from typing import Callable, Dict, Optional, Sequence
 
 from app.qt.QtCore import QTimer
-from app.qt.QtWidgets import QInputDialog, QLineEdit, QMessageBox, QWidget
+from app.qt.QtWidgets import QDialog, QInputDialog, QLineEdit, QMessageBox, QWidget
 
 from app.features.form_builder.engine.project.create import CreateResult, create_form
 from app.features.form_builder.engine.project.fs import OsFileSystem, ProjectOpError
@@ -33,7 +33,7 @@ from app.features.form_builder.integration.provider import FormTabProvider
 from app.features.form_builder.qtside.dialogs.from_table import FromTableDialog, locale_date_format
 from app.features.form_builder.qtside.start.panel import NewFormPanel
 from app.features.form_builder.qtside.start.wizard import WIZARD_KEY, wizard_document
-from app.qt.qt_compat import exec_qt, wrapper_is_valid
+from app.qt.qt_compat import enum_value, exec_qt, wrapper_is_valid
 from app.shell.tab_content_providers import TabMatchContext, TabSurfaceRequest
 from app.shell.theme_tokens import ShellThemeTokens
 
@@ -436,7 +436,11 @@ class NewFormSurface:
         )
         dialog.create_requested.connect(lambda: self._create_from_dialog(dialog))
         exec_qt(dialog)
+        accepted = enum_value(getattr(getattr(QDialog, "DialogCode", QDialog), "Accepted"))
+        rejected = enum_value(dialog.result()) != accepted
         dialog.deleteLater()
+        if rejected:
+            self._panel.focus_card_near("from_table")
 
     def _create_from_dialog(self, dialog: FromTableDialog) -> None:
         from app.features.form_builder.qtside.dialogs.table_apply import render_plans

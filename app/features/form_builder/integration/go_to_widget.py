@@ -129,6 +129,7 @@ class GoToWidgetPicker(QFrame):
             count = self.rows.count()
             if count:
                 self.rows.setCurrentRow((self.rows.currentRow() + step) % count)
+                self._announce()
             return True
         if key in _ENTER:
             self._choose()
@@ -147,11 +148,14 @@ class GoToWidgetPicker(QFrame):
             self.rows.addItem(item)
             shown_text = text if len(text) <= 28 else text[:27] + "\u2026"
             detail = ("\u201c%s\u201d  " % shown_text if shown_text else "") + kind
+            plain = "%s, %s" % (name, detail.replace("\u201c", "").replace("\u201d", "").strip())
+            item.setData(enum_value(Qt.ItemDataRole.AccessibleTextRole), plain)
             label = QLabel(
                 "%s&nbsp;&nbsp;<span style=\"color:%s\">%s</span>"
                 % (escape(name), self._chrome.muted, escape(detail)),
                 self.rows,
             )
+            label.setAccessibleName(plain)
             label.setTextFormat(Qt.TextFormat.RichText)
             label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
             label.setStyleSheet("background: transparent; border: none; padding: 4px 8px;")
@@ -159,10 +163,19 @@ class GoToWidgetPicker(QFrame):
             self.rows.setItemWidget(item, label)
         if shown:
             self.rows.setCurrentRow(0)
+        self._announce()
         self.note.setVisible(not shown)
         rows = min(max(len(shown), 1), _ROWS)
         self.rows.setFixedHeight(rows * _ROW + 6)
         self.adjustSize()
+
+    def _announce(self) -> None:
+        item = self.rows.currentItem()
+        if item is None:
+            self.search.setAccessibleDescription("No widget matches")
+            return
+        role = enum_value(Qt.ItemDataRole.AccessibleTextRole)
+        self.search.setAccessibleDescription(str(item.data(role) or ""))
 
     def _choose(self) -> None:
         item = self.rows.currentItem()

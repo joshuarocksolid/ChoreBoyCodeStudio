@@ -240,10 +240,13 @@ class FromTableDialog(QDialog):
         path_row.addWidget(database)
         self._connection = QComboBox(self)
         self._connection.setObjectName("formBuilder.fromTable.connection")
+        self._connection.setAccessibleName("Connection")
+        database.setBuddy(self._connection)
         self._connection.currentIndexChanged.connect(self._on_connection)
         path_row.addWidget(self._connection, 1)
         add = QPushButton("Add connection…", self)
         add.setObjectName("formBuilder.fromTable.addConnection")
+        add.setAccessibleName("Add connection")
         add.clicked.connect(self._on_add_connection)
         path_row.addWidget(add)
         self._path = QLabel("", self)
@@ -257,16 +260,20 @@ class FromTableDialog(QDialog):
         options.addWidget(make_label)
         self._make = QComboBox(self)
         self._make.setObjectName("formBuilder.fromTable.make")
+        self._make.setAccessibleName("Make")
+        make_label.setBuddy(self._make)
         for key, label in _MAKES:
             self._make.addItem(label, key)
         self._make.currentIndexChanged.connect(lambda _index: self._on_make())
         options.addWidget(self._make)
         self._lines = QCheckBox("Include lines from", self)
         self._lines.setObjectName("formBuilder.fromTable.lines")
+        self._lines.setAccessibleName("Include lines from")
         self._lines.toggled.connect(lambda _checked: self._on_lines_toggled())
         options.addWidget(self._lines)
         self._lines_table = QComboBox(self)
         self._lines_table.setObjectName("formBuilder.fromTable.linesTable")
+        self._lines_table.setAccessibleName("Line item table")
         self._lines_table.currentIndexChanged.connect(lambda _index: self._on_lines_table())
         options.addWidget(self._lines_table)
         self._link_label = QLabel("Lines linked by", self)
@@ -274,6 +281,8 @@ class FromTableDialog(QDialog):
         options.addWidget(self._link_label)
         self._lines_link = QComboBox(self)
         self._lines_link.setObjectName("formBuilder.fromTable.linesLink")
+        self._lines_link.setAccessibleName("Lines linked by")
+        self._link_label.setBuddy(self._lines_link)
         self._lines_link.currentIndexChanged.connect(lambda _index: self._sync_button())
         options.addWidget(self._lines_link)
         options.addStretch(1)
@@ -282,11 +291,13 @@ class FromTableDialog(QDialog):
         root.addLayout(body, 1)
         self._tables = QListWidget(self)
         self._tables.setObjectName("formBuilder.fromTable.tables")
+        self._tables.setAccessibleName("Tables")
         self._tables.currentTextChanged.connect(self._on_table)
         body.addWidget(self._tables, 1)
 
         self._mapping = QTableWidget(0, len(_HEADERS), self)
         self._mapping.setObjectName("formBuilder.fromTable.mapping")
+        self._mapping.setAccessibleName("Columns")
         self._mapping.setHorizontalHeaderLabels(list(_HEADERS))
         self._mapping.setTabKeyNavigation(False)
         self._mapping.itemChanged.connect(self._on_item_changed)
@@ -307,6 +318,7 @@ class FromTableDialog(QDialog):
         footer.addLayout(start_box, 1)
         self._start = QCheckBox("Open this screen when the app starts", self)
         self._start.setObjectName("formBuilder.fromTable.start")
+        self._start.setAccessibleName("Open this screen when the app starts")
         self._start_user = False
         self._start.toggled.connect(self._on_start_toggled)
         self._start_note = QLabel("", self)
@@ -320,11 +332,13 @@ class FromTableDialog(QDialog):
         footer.addStretch(1)
         self._cancel = QPushButton("Cancel", self)
         self._cancel.setObjectName("formBuilder.fromTable.cancel")
+        self._cancel.setAccessibleName("Cancel")
         self._cancel.setFixedHeight(24)
         self._cancel.clicked.connect(self.reject)
         footer.addWidget(self._cancel)
         self._create = QPushButton(self)
         self._create.setObjectName("formBuilder.fromTable.create")
+        self._create.setAccessibleName("Create the form")
         self._create.setFixedHeight(28)
         self._create.clicked.connect(self.create_requested.emit)
         footer.addWidget(self._create)
@@ -350,7 +364,14 @@ class FromTableDialog(QDialog):
             "QTableWidget#formBuilder\\.fromTable\\.mapping"
             " { background: %s; color: %s; border: 1px solid %s; }"
             "QDialog#formBuilder\\.fromTable QLineEdit:focus,"
-            "QDialog#formBuilder\\.fromTable QComboBox:focus"
+            "QDialog#formBuilder\\.fromTable QComboBox:focus,"
+            "QListWidget#formBuilder\\.fromTable\\.tables:focus,"
+            "QTableWidget#formBuilder\\.fromTable\\.mapping:focus,"
+            "QPushButton#formBuilder\\.fromTable\\.addConnection:focus,"
+            "QPushButton#formBuilder\\.fromTable\\.cancel:focus,"
+            "QPushButton#formBuilder\\.fromTable\\.create:focus,"
+            "QCheckBox#formBuilder\\.fromTable\\.lines:focus,"
+            "QCheckBox#formBuilder\\.fromTable\\.start:focus"
             " { border: %dpx solid %s; }"
             "QWidget#formBuilder\\.fromTable\\.preview { background: %s; color: %s; }"
             "QPushButton#formBuilder\\.fromTable\\.create"
@@ -791,6 +812,7 @@ class FromTableDialog(QDialog):
         planned = plan_forms(draft, self._schema) if draft is not None and self._schema is not None else None
         sentence = planned.button_text if planned is not None else button_sentence(name, count, make, lines)
         self._create.setText(sentence)
+        self._create.setAccessibleName(sentence)
         reason = self._name_reason()
         if not reason and self._schema is None:
             reason = self._read_reason or _CHOOSE_CONNECTION
@@ -849,6 +871,7 @@ class FromTableDialog(QDialog):
         self._lines_table.blockSignals(False)
         has_child = self._lines_table.count() > 0
         self._lines.setText("Include lines from" if has_child else "Include lines")
+        self._lines.setAccessibleName(self._lines.text())
         self._lines.blockSignals(True)
         if remembered is not None:
             self._lines.setChecked(remembered[0])

@@ -318,7 +318,7 @@ def tokens_from_palette(
         input_bg="#FFFFFF",
         badge_bg="#E9ECEF",
         diag_error_color="#E03131",
-        diag_warning_color="#D97706",
+        diag_warning_color="#9A3412",
         diag_info_color="#3366FF",
         test_passed_color="#1A7F37",
         popup_bg="#FFFFFF",
