@@ -265,9 +265,13 @@ def _op_cases() -> list:
         (
             "and-blank",
             "ok and maybe and radio",
-            "_cbcs_and(_cbcs_and(self.ok.isChecked(), _cbcs_read_check(self.maybe)), self.radio.isChecked())",
+            "_cbcs_bool(self.ok.isChecked()) and _cbcs_bool(_cbcs_read_check(self.maybe)) and _cbcs_bool(self.radio.isChecked())",
         ),
-        ("or-blank", "maybe or ok", "_cbcs_or(_cbcs_read_check(self.maybe), self.ok.isChecked())"),
+        (
+            "or-blank",
+            "maybe or ok",
+            "_cbcs_bool(_cbcs_read_check(self.maybe)) or _cbcs_bool(self.ok.isChecked())",
+        ),
         ("and-true", "True and ok", "True and self.ok.isChecked()"),
         ("or-false", "False or ok", "False or self.ok.isChecked()"),
         ("not-yes", "not ok", "not self.ok.isChecked()"),

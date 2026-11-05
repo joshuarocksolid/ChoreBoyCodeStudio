@@ -71,7 +71,10 @@ def test_rename_follows_an_open_form_step_and_delete_names_it(tmp_path: Path) ->
     assert opened.error is None
     assert ("form", "client") in opened.steps[0].fields
     generated = (root / "forms" / "ui_sale.py").read_text(encoding="utf-8")
-    assert "from forms.client_window import ClientWindow" in generated
+    # customer.ui is a QWidget. Dialog mode reports FB121 instead of calling exec.
+    assert "FB121" in generated
+    assert "from forms.client_window import" not in generated
+    assert "customer_window" not in generated
     assert (root / "forms" / "ui_client.py").is_file()
     assert not (root / "forms" / "ui_customer.py").exists()
     assert (root / "forms" / "__init__.py").is_file()
@@ -261,7 +264,9 @@ def test_renaming_a_form_in_the_tree_moves_its_companions_and_the_open_tab(tmp_p
     assert not (forms / "customer_window.py").exists()
     assert _open_form_name(sale) == "client"
     generated = (forms / "ui_sale.py").read_text(encoding="utf-8")
-    assert "from forms.client_window import ClientWindow" in generated
+    assert "FB121" in generated
+    assert "from forms.client_window import" not in generated
+    assert "customer_window" not in generated
     assert manager.open_paths() == [normalized_path(str(client))]
 
 

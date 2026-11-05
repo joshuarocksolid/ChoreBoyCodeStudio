@@ -27,3 +27,8 @@ declare("FB117", Severity.WARNING, "A one-off step changes a property a rule con
 declare("FB118", Severity.WARNING, "Unknown kind or format")
 declare("FB119", Severity.INFO, "A check has no error label")
 declare("FB120", Severity.ERROR, "That form isn't in this project's forms folder")
+declare(
+    "FB121",
+    Severity.ERROR,
+    "This form is not a dialog, so Open as a dialog cannot run it. Open it as a window, or make the form a dialog.",
+)
