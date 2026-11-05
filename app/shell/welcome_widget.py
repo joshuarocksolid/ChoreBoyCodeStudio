@@ -205,7 +205,7 @@ class WelcomeWidget(QWidget):
         layout.addSpacing(8)
 
         # -- Recent projects header -------------------------------------------
-        recent_label = QLabel("Recent Projects", container)
+        recent_label = QLabel("Recent projects", container)
         recent_label.setObjectName("shell.welcome.recentLabel")
         layout.addWidget(recent_label)
         layout.addSpacing(4)
@@ -224,7 +224,7 @@ class WelcomeWidget(QWidget):
         )
         self._empty_label.setObjectName("shell.welcome.emptyLabel")
         self._empty_label.setAlignment(Qt.AlignCenter)
-        self._empty_label.setWordWrap(True)
+        self._empty_label.setWordWrap(False)
         layout.addWidget(self._empty_label, 1)
 
         outer.addWidget(container, 1, Qt.AlignHCenter)

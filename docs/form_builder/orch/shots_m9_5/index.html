@@ -1,0 +1,975 @@
+<!DOCTYPE html>
+<meta charset="utf-8">
+<title>M9.5 form builder tour</title>
+<style>
+body { font: 14px/1.4 sans-serif; margin: 24px; background: #111; color: #eee; }
+h1 { font-size: 20px; font-weight: 600; }
+h2 { font-size: 15px; margin: 28px 0 8px; }
+.row { display: flex; gap: 12px; align-items: flex-start; flex-wrap: wrap; }
+figure { margin: 0; }
+img { width: 420px; height: auto; background: #000; }
+figcaption { font-size: 12px; color: #bbb; }
+</style>
+<h1>M9.5 form builder tour</h1>
+<p>Each row is one state. Columns are light, dark, and high-contrast dark at 100%. Dense states add light at 200%.</p>
+<h2>01-start-welcome</h2>
+<div class="row">
+<figure>
+<img src="01-start-welcome-light-100.png" alt="01-start-welcome-light-100.png">
+<figcaption>light · 100%</figcaption>
+</figure>
+<figure>
+<img src="01-start-welcome-dark-100.png" alt="01-start-welcome-dark-100.png">
+<figcaption>dark · 100%</figcaption>
+</figure>
+<figure>
+<img src="01-start-welcome-high_contrast_dark-100.png" alt="01-start-welcome-high_contrast_dark-100.png">
+<figcaption>high_contrast_dark · 100%</figcaption>
+</figure>
+</div>
+<h2>02-start-templates</h2>
+<div class="row">
+<figure>
+<img src="02-start-templates-light-100.png" alt="02-start-templates-light-100.png">
+<figcaption>light · 100%</figcaption>
+</figure>
+<figure>
+<img src="02-start-templates-light-200.png" alt="02-start-templates-light-200.png">
+<figcaption>light · 200%</figcaption>
+</figure>
+<figure>
+<img src="02-start-templates-dark-100.png" alt="02-start-templates-dark-100.png">
+<figcaption>dark · 100%</figcaption>
+</figure>
+<figure>
+<img src="02-start-templates-high_contrast_dark-100.png" alt="02-start-templates-high_contrast_dark-100.png">
+<figcaption>high_contrast_dark · 100%</figcaption>
+</figure>
+</div>
+<h2>03-start-your-templates</h2>
+<div class="row">
+<figure>
+<img src="03-start-your-templates-light-100.png" alt="03-start-your-templates-light-100.png">
+<figcaption>light · 100%</figcaption>
+</figure>
+<figure>
+<img src="03-start-your-templates-dark-100.png" alt="03-start-your-templates-dark-100.png">
+<figcaption>dark · 100%</figcaption>
+</figure>
+<figure>
+<img src="03-start-your-templates-high_contrast_dark-100.png" alt="03-start-your-templates-high_contrast_dark-100.png">
+<figcaption>high_contrast_dark · 100%</figcaption>
+</figure>
+</div>
+<h2>04-start-from-table-empty</h2>
+<div class="row">
+<figure>
+<img src="04-start-from-table-empty-light-100.png" alt="04-start-from-table-empty-light-100.png">
+<figcaption>light · 100%</figcaption>
+</figure>
+<figure>
+<img src="04-start-from-table-empty-dark-100.png" alt="04-start-from-table-empty-dark-100.png">
+<figcaption>dark · 100%</figcaption>
+</figure>
+<figure>
+<img src="04-start-from-table-empty-high_contrast_dark-100.png" alt="04-start-from-table-empty-high_contrast_dark-100.png">
+<figcaption>high_contrast_dark · 100%</figcaption>
+</figure>
+</div>
+<h2>05-start-from-table-filled</h2>
+<div class="row">
+<figure>
+<img src="05-start-from-table-filled-light-100.png" alt="05-start-from-table-filled-light-100.png">
+<figcaption>light · 100%</figcaption>
+</figure>
+<figure>
+<img src="05-start-from-table-filled-light-200.png" alt="05-start-from-table-filled-light-200.png">
+<figcaption>light · 200%</figcaption>
+</figure>
+<figure>
+<img src="05-start-from-table-filled-dark-100.png" alt="05-start-from-table-filled-dark-100.png">
+<figcaption>dark · 100%</figcaption>
+</figure>
+<figure>
+<img src="05-start-from-table-filled-high_contrast_dark-100.png" alt="05-start-from-table-filled-high_contrast_dark-100.png">
+<figcaption>high_contrast_dark · 100%</figcaption>
+</figure>
+</div>
+<h2>06-start-from-table-lines</h2>
+<div class="row">
+<figure>
+<img src="06-start-from-table-lines-light-100.png" alt="06-start-from-table-lines-light-100.png">
+<figcaption>light · 100%</figcaption>
+</figure>
+<figure>
+<img src="06-start-from-table-lines-light-200.png" alt="06-start-from-table-lines-light-200.png">
+<figcaption>light · 200%</figcaption>
+</figure>
+<figure>
+<img src="06-start-from-table-lines-dark-100.png" alt="06-start-from-table-lines-dark-100.png">
+<figcaption>dark · 100%</figcaption>
+</figure>
+<figure>
+<img src="06-start-from-table-lines-high_contrast_dark-100.png" alt="06-start-from-table-lines-high_contrast_dark-100.png">
+<figcaption>high_contrast_dark · 100%</figcaption>
+</figure>
+</div>
+<h2>07-form-empty</h2>
+<div class="row">
+<figure>
+<img src="07-form-empty-light-100.png" alt="07-form-empty-light-100.png">
+<figcaption>light · 100%</figcaption>
+</figure>
+<figure>
+<img src="07-form-empty-dark-100.png" alt="07-form-empty-dark-100.png">
+<figcaption>dark · 100%</figcaption>
+</figure>
+<figure>
+<img src="07-form-empty-high_contrast_dark-100.png" alt="07-form-empty-high_contrast_dark-100.png">
+<figcaption>high_contrast_dark · 100%</figcaption>
+</figure>
+</div>
+<h2>08-form-invoice</h2>
+<div class="row">
+<figure>
+<img src="08-form-invoice-light-100.png" alt="08-form-invoice-light-100.png">
+<figcaption>light · 100%</figcaption>
+</figure>
+<figure>
+<img src="08-form-invoice-light-200.png" alt="08-form-invoice-light-200.png">
+<figcaption>light · 200%</figcaption>
+</figure>
+<figure>
+<img src="08-form-invoice-dark-100.png" alt="08-form-invoice-dark-100.png">
+<figcaption>dark · 100%</figcaption>
+</figure>
+<figure>
+<img src="08-form-invoice-high_contrast_dark-100.png" alt="08-form-invoice-high_contrast_dark-100.png">
+<figcaption>high_contrast_dark · 100%</figcaption>
+</figure>
+</div>
+<h2>09-form-thousand</h2>
+<div class="row">
+<figure>
+<img src="09-form-thousand-light-100.png" alt="09-form-thousand-light-100.png">
+<figcaption>light · 100%</figcaption>
+</figure>
+<figure>
+<img src="09-form-thousand-dark-100.png" alt="09-form-thousand-dark-100.png">
+<figcaption>dark · 100%</figcaption>
+</figure>
+<figure>
+<img src="09-form-thousand-high_contrast_dark-100.png" alt="09-form-thousand-high_contrast_dark-100.png">
+<figcaption>high_contrast_dark · 100%</figcaption>
+</figure>
+</div>
+<h2>10-canvas-selection</h2>
+<div class="row">
+<figure>
+<img src="10-canvas-selection-light-100.png" alt="10-canvas-selection-light-100.png">
+<figcaption>light · 100%</figcaption>
+</figure>
+<figure>
+<img src="10-canvas-selection-light-200.png" alt="10-canvas-selection-light-200.png">
+<figcaption>light · 200%</figcaption>
+</figure>
+<figure>
+<img src="10-canvas-selection-dark-100.png" alt="10-canvas-selection-dark-100.png">
+<figcaption>dark · 100%</figcaption>
+</figure>
+<figure>
+<img src="10-canvas-selection-high_contrast_dark-100.png" alt="10-canvas-selection-high_contrast_dark-100.png">
+<figcaption>high_contrast_dark · 100%</figcaption>
+</figure>
+</div>
+<h2>11-canvas-multi-select</h2>
+<div class="row">
+<figure>
+<img src="11-canvas-multi-select-light-100.png" alt="11-canvas-multi-select-light-100.png">
+<figcaption>light · 100%</figcaption>
+</figure>
+<figure>
+<img src="11-canvas-multi-select-dark-100.png" alt="11-canvas-multi-select-dark-100.png">
+<figcaption>dark · 100%</figcaption>
+</figure>
+<figure>
+<img src="11-canvas-multi-select-high_contrast_dark-100.png" alt="11-canvas-multi-select-high_contrast_dark-100.png">
+<figcaption>high_contrast_dark · 100%</figcaption>
+</figure>
+</div>
+<h2>12-canvas-insertion-line</h2>
+<div class="row">
+<figure>
+<img src="12-canvas-insertion-line-light-100.png" alt="12-canvas-insertion-line-light-100.png">
+<figcaption>light · 100%</figcaption>
+</figure>
+<figure>
+<img src="12-canvas-insertion-line-dark-100.png" alt="12-canvas-insertion-line-dark-100.png">
+<figcaption>dark · 100%</figcaption>
+</figure>
+<figure>
+<img src="12-canvas-insertion-line-high_contrast_dark-100.png" alt="12-canvas-insertion-line-high_contrast_dark-100.png">
+<figcaption>high_contrast_dark · 100%</figcaption>
+</figure>
+</div>
+<h2>13-canvas-layout-popover</h2>
+<div class="row">
+<figure>
+<img src="13-canvas-layout-popover-light-100.png" alt="13-canvas-layout-popover-light-100.png">
+<figcaption>light · 100%</figcaption>
+</figure>
+<figure>
+<img src="13-canvas-layout-popover-dark-100.png" alt="13-canvas-layout-popover-dark-100.png">
+<figcaption>dark · 100%</figcaption>
+</figure>
+<figure>
+<img src="13-canvas-layout-popover-high_contrast_dark-100.png" alt="13-canvas-layout-popover-high_contrast_dark-100.png">
+<figcaption>high_contrast_dark · 100%</figcaption>
+</figure>
+</div>
+<h2>14-canvas-buddies</h2>
+<div class="row">
+<figure>
+<img src="14-canvas-buddies-light-100.png" alt="14-canvas-buddies-light-100.png">
+<figcaption>light · 100%</figcaption>
+</figure>
+<figure>
+<img src="14-canvas-buddies-dark-100.png" alt="14-canvas-buddies-dark-100.png">
+<figcaption>dark · 100%</figcaption>
+</figure>
+<figure>
+<img src="14-canvas-buddies-high_contrast_dark-100.png" alt="14-canvas-buddies-high_contrast_dark-100.png">
+<figcaption>high_contrast_dark · 100%</figcaption>
+</figure>
+</div>
+<h2>15-canvas-tab-order</h2>
+<div class="row">
+<figure>
+<img src="15-canvas-tab-order-light-100.png" alt="15-canvas-tab-order-light-100.png">
+<figcaption>light · 100%</figcaption>
+</figure>
+<figure>
+<img src="15-canvas-tab-order-dark-100.png" alt="15-canvas-tab-order-dark-100.png">
+<figcaption>dark · 100%</figcaption>
+</figure>
+<figure>
+<img src="15-canvas-tab-order-high_contrast_dark-100.png" alt="15-canvas-tab-order-high_contrast_dark-100.png">
+<figcaption>high_contrast_dark · 100%</figcaption>
+</figure>
+</div>
+<h2>16-canvas-connections</h2>
+<div class="row">
+<figure>
+<img src="16-canvas-connections-light-100.png" alt="16-canvas-connections-light-100.png">
+<figcaption>light · 100%</figcaption>
+</figure>
+<figure>
+<img src="16-canvas-connections-light-200.png" alt="16-canvas-connections-light-200.png">
+<figcaption>light · 200%</figcaption>
+</figure>
+<figure>
+<img src="16-canvas-connections-dark-100.png" alt="16-canvas-connections-dark-100.png">
+<figcaption>dark · 100%</figcaption>
+</figure>
+<figure>
+<img src="16-canvas-connections-high_contrast_dark-100.png" alt="16-canvas-connections-high_contrast_dark-100.png">
+<figcaption>high_contrast_dark · 100%</figcaption>
+</figure>
+</div>
+<h2>17-canvas-refused-drop</h2>
+<div class="row">
+<figure>
+<img src="17-canvas-refused-drop-light-100.png" alt="17-canvas-refused-drop-light-100.png">
+<figcaption>light · 100%</figcaption>
+</figure>
+<figure>
+<img src="17-canvas-refused-drop-dark-100.png" alt="17-canvas-refused-drop-dark-100.png">
+<figcaption>dark · 100%</figcaption>
+</figure>
+<figure>
+<img src="17-canvas-refused-drop-high_contrast_dark-100.png" alt="17-canvas-refused-drop-high_contrast_dark-100.png">
+<figcaption>high_contrast_dark · 100%</figcaption>
+</figure>
+</div>
+<h2>18-canvas-zoom-75</h2>
+<div class="row">
+<figure>
+<img src="18-canvas-zoom-75-light-100.png" alt="18-canvas-zoom-75-light-100.png">
+<figcaption>light · 100%</figcaption>
+</figure>
+<figure>
+<img src="18-canvas-zoom-75-dark-100.png" alt="18-canvas-zoom-75-dark-100.png">
+<figcaption>dark · 100%</figcaption>
+</figure>
+<figure>
+<img src="18-canvas-zoom-75-high_contrast_dark-100.png" alt="18-canvas-zoom-75-high_contrast_dark-100.png">
+<figcaption>high_contrast_dark · 100%</figcaption>
+</figure>
+</div>
+<h2>19-canvas-zoom-200</h2>
+<div class="row">
+<figure>
+<img src="19-canvas-zoom-200-light-100.png" alt="19-canvas-zoom-200-light-100.png">
+<figcaption>light · 100%</figcaption>
+</figure>
+<figure>
+<img src="19-canvas-zoom-200-light-200.png" alt="19-canvas-zoom-200-light-200.png">
+<figcaption>light · 200%</figcaption>
+</figure>
+<figure>
+<img src="19-canvas-zoom-200-dark-100.png" alt="19-canvas-zoom-200-dark-100.png">
+<figcaption>dark · 100%</figcaption>
+</figure>
+<figure>
+<img src="19-canvas-zoom-200-high_contrast_dark-100.png" alt="19-canvas-zoom-200-high_contrast_dark-100.png">
+<figcaption>high_contrast_dark · 100%</figcaption>
+</figure>
+</div>
+<h2>20-widget-box-open</h2>
+<div class="row">
+<figure>
+<img src="20-widget-box-open-light-100.png" alt="20-widget-box-open-light-100.png">
+<figcaption>light · 100%</figcaption>
+</figure>
+<figure>
+<img src="20-widget-box-open-light-200.png" alt="20-widget-box-open-light-200.png">
+<figcaption>light · 200%</figcaption>
+</figure>
+<figure>
+<img src="20-widget-box-open-dark-100.png" alt="20-widget-box-open-dark-100.png">
+<figcaption>dark · 100%</figcaption>
+</figure>
+<figure>
+<img src="20-widget-box-open-high_contrast_dark-100.png" alt="20-widget-box-open-high_contrast_dark-100.png">
+<figcaption>high_contrast_dark · 100%</figcaption>
+</figure>
+</div>
+<h2>21-widget-box-find-empty</h2>
+<div class="row">
+<figure>
+<img src="21-widget-box-find-empty-light-100.png" alt="21-widget-box-find-empty-light-100.png">
+<figcaption>light · 100%</figcaption>
+</figure>
+<figure>
+<img src="21-widget-box-find-empty-dark-100.png" alt="21-widget-box-find-empty-dark-100.png">
+<figcaption>dark · 100%</figcaption>
+</figure>
+<figure>
+<img src="21-widget-box-find-empty-high_contrast_dark-100.png" alt="21-widget-box-find-empty-high_contrast_dark-100.png">
+<figcaption>high_contrast_dark · 100%</figcaption>
+</figure>
+</div>
+<h2>22-widget-box-quick-insert</h2>
+<div class="row">
+<figure>
+<img src="22-widget-box-quick-insert-light-100.png" alt="22-widget-box-quick-insert-light-100.png">
+<figcaption>light · 100%</figcaption>
+</figure>
+<figure>
+<img src="22-widget-box-quick-insert-dark-100.png" alt="22-widget-box-quick-insert-dark-100.png">
+<figcaption>dark · 100%</figcaption>
+</figure>
+<figure>
+<img src="22-widget-box-quick-insert-high_contrast_dark-100.png" alt="22-widget-box-quick-insert-high_contrast_dark-100.png">
+<figcaption>high_contrast_dark · 100%</figcaption>
+</figure>
+</div>
+<h2>23-outline-tree</h2>
+<div class="row">
+<figure>
+<img src="23-outline-tree-light-100.png" alt="23-outline-tree-light-100.png">
+<figcaption>light · 100%</figcaption>
+</figure>
+<figure>
+<img src="23-outline-tree-light-200.png" alt="23-outline-tree-light-200.png">
+<figcaption>light · 200%</figcaption>
+</figure>
+<figure>
+<img src="23-outline-tree-dark-100.png" alt="23-outline-tree-dark-100.png">
+<figcaption>dark · 100%</figcaption>
+</figure>
+<figure>
+<img src="23-outline-tree-high_contrast_dark-100.png" alt="23-outline-tree-high_contrast_dark-100.png">
+<figcaption>high_contrast_dark · 100%</figcaption>
+</figure>
+</div>
+<h2>24-outline-rename</h2>
+<div class="row">
+<figure>
+<img src="24-outline-rename-light-100.png" alt="24-outline-rename-light-100.png">
+<figcaption>light · 100%</figcaption>
+</figure>
+<figure>
+<img src="24-outline-rename-dark-100.png" alt="24-outline-rename-dark-100.png">
+<figcaption>dark · 100%</figcaption>
+</figure>
+<figure>
+<img src="24-outline-rename-high_contrast_dark-100.png" alt="24-outline-rename-high_contrast_dark-100.png">
+<figcaption>high_contrast_dark · 100%</figcaption>
+</figure>
+</div>
+<h2>25-outline-long-name</h2>
+<div class="row">
+<figure>
+<img src="25-outline-long-name-light-100.png" alt="25-outline-long-name-light-100.png">
+<figcaption>light · 100%</figcaption>
+</figure>
+<figure>
+<img src="25-outline-long-name-light-200.png" alt="25-outline-long-name-light-200.png">
+<figcaption>light · 200%</figcaption>
+</figure>
+<figure>
+<img src="25-outline-long-name-dark-100.png" alt="25-outline-long-name-dark-100.png">
+<figcaption>dark · 100%</figcaption>
+</figure>
+<figure>
+<img src="25-outline-long-name-high_contrast_dark-100.png" alt="25-outline-long-name-high_contrast_dark-100.png">
+<figcaption>high_contrast_dark · 100%</figcaption>
+</figure>
+</div>
+<h2>26-outline-delete-prompt</h2>
+<div class="row">
+<figure>
+<img src="26-outline-delete-prompt-light-100.png" alt="26-outline-delete-prompt-light-100.png">
+<figcaption>light · 100%</figcaption>
+</figure>
+<figure>
+<img src="26-outline-delete-prompt-dark-100.png" alt="26-outline-delete-prompt-dark-100.png">
+<figcaption>dark · 100%</figcaption>
+</figure>
+<figure>
+<img src="26-outline-delete-prompt-high_contrast_dark-100.png" alt="26-outline-delete-prompt-high_contrast_dark-100.png">
+<figcaption>high_contrast_dark · 100%</figcaption>
+</figure>
+</div>
+<h2>27-inspector-properties</h2>
+<div class="row">
+<figure>
+<img src="27-inspector-properties-light-100.png" alt="27-inspector-properties-light-100.png">
+<figcaption>light · 100%</figcaption>
+</figure>
+<figure>
+<img src="27-inspector-properties-light-200.png" alt="27-inspector-properties-light-200.png">
+<figcaption>light · 200%</figcaption>
+</figure>
+<figure>
+<img src="27-inspector-properties-dark-100.png" alt="27-inspector-properties-dark-100.png">
+<figcaption>dark · 100%</figcaption>
+</figure>
+<figure>
+<img src="27-inspector-properties-high_contrast_dark-100.png" alt="27-inspector-properties-high_contrast_dark-100.png">
+<figcaption>high_contrast_dark · 100%</figcaption>
+</figure>
+</div>
+<h2>28-inspector-behavior</h2>
+<div class="row">
+<figure>
+<img src="28-inspector-behavior-light-100.png" alt="28-inspector-behavior-light-100.png">
+<figcaption>light · 100%</figcaption>
+</figure>
+<figure>
+<img src="28-inspector-behavior-light-200.png" alt="28-inspector-behavior-light-200.png">
+<figcaption>light · 200%</figcaption>
+</figure>
+<figure>
+<img src="28-inspector-behavior-dark-100.png" alt="28-inspector-behavior-dark-100.png">
+<figcaption>dark · 100%</figcaption>
+</figure>
+<figure>
+<img src="28-inspector-behavior-high_contrast_dark-100.png" alt="28-inspector-behavior-high_contrast_dark-100.png">
+<figcaption>high_contrast_dark · 100%</figcaption>
+</figure>
+</div>
+<h2>29-inspector-checks</h2>
+<div class="row">
+<figure>
+<img src="29-inspector-checks-light-100.png" alt="29-inspector-checks-light-100.png">
+<figcaption>light · 100%</figcaption>
+</figure>
+<figure>
+<img src="29-inspector-checks-dark-100.png" alt="29-inspector-checks-dark-100.png">
+<figcaption>dark · 100%</figcaption>
+</figure>
+<figure>
+<img src="29-inspector-checks-high_contrast_dark-100.png" alt="29-inspector-checks-high_contrast_dark-100.png">
+<figcaption>high_contrast_dark · 100%</figcaption>
+</figure>
+</div>
+<h2>30-inspector-events</h2>
+<div class="row">
+<figure>
+<img src="30-inspector-events-light-100.png" alt="30-inspector-events-light-100.png">
+<figcaption>light · 100%</figcaption>
+</figure>
+<figure>
+<img src="30-inspector-events-light-200.png" alt="30-inspector-events-light-200.png">
+<figcaption>light · 200%</figcaption>
+</figure>
+<figure>
+<img src="30-inspector-events-dark-100.png" alt="30-inspector-events-dark-100.png">
+<figcaption>dark · 100%</figcaption>
+</figure>
+<figure>
+<img src="30-inspector-events-high_contrast_dark-100.png" alt="30-inspector-events-high_contrast_dark-100.png">
+<figcaption>high_contrast_dark · 100%</figcaption>
+</figure>
+</div>
+<h2>31-inspector-step-picker</h2>
+<div class="row">
+<figure>
+<img src="31-inspector-step-picker-light-100.png" alt="31-inspector-step-picker-light-100.png">
+<figcaption>light · 100%</figcaption>
+</figure>
+<figure>
+<img src="31-inspector-step-picker-dark-100.png" alt="31-inspector-step-picker-dark-100.png">
+<figcaption>dark · 100%</figcaption>
+</figure>
+<figure>
+<img src="31-inspector-step-picker-high_contrast_dark-100.png" alt="31-inspector-step-picker-high_contrast_dark-100.png">
+<figcaption>high_contrast_dark · 100%</figcaption>
+</figure>
+</div>
+<h2>32-inspector-data-unbound</h2>
+<div class="row">
+<figure>
+<img src="32-inspector-data-unbound-light-100.png" alt="32-inspector-data-unbound-light-100.png">
+<figcaption>light · 100%</figcaption>
+</figure>
+<figure>
+<img src="32-inspector-data-unbound-dark-100.png" alt="32-inspector-data-unbound-dark-100.png">
+<figcaption>dark · 100%</figcaption>
+</figure>
+<figure>
+<img src="32-inspector-data-unbound-high_contrast_dark-100.png" alt="32-inspector-data-unbound-high_contrast_dark-100.png">
+<figcaption>high_contrast_dark · 100%</figcaption>
+</figure>
+</div>
+<h2>33-inspector-data-bound</h2>
+<div class="row">
+<figure>
+<img src="33-inspector-data-bound-light-100.png" alt="33-inspector-data-bound-light-100.png">
+<figcaption>light · 100%</figcaption>
+</figure>
+<figure>
+<img src="33-inspector-data-bound-light-200.png" alt="33-inspector-data-bound-light-200.png">
+<figcaption>light · 200%</figcaption>
+</figure>
+<figure>
+<img src="33-inspector-data-bound-dark-100.png" alt="33-inspector-data-bound-dark-100.png">
+<figcaption>dark · 100%</figcaption>
+</figure>
+<figure>
+<img src="33-inspector-data-bound-high_contrast_dark-100.png" alt="33-inspector-data-bound-high_contrast_dark-100.png">
+<figcaption>high_contrast_dark · 100%</figcaption>
+</figure>
+</div>
+<h2>34-inspector-data-lines</h2>
+<div class="row">
+<figure>
+<img src="34-inspector-data-lines-light-100.png" alt="34-inspector-data-lines-light-100.png">
+<figcaption>light · 100%</figcaption>
+</figure>
+<figure>
+<img src="34-inspector-data-lines-light-200.png" alt="34-inspector-data-lines-light-200.png">
+<figcaption>light · 200%</figcaption>
+</figure>
+<figure>
+<img src="34-inspector-data-lines-dark-100.png" alt="34-inspector-data-lines-dark-100.png">
+<figcaption>dark · 100%</figcaption>
+</figure>
+<figure>
+<img src="34-inspector-data-lines-high_contrast_dark-100.png" alt="34-inspector-data-lines-high_contrast_dark-100.png">
+<figcaption>high_contrast_dark · 100%</figcaption>
+</figure>
+</div>
+<h2>35-logic-empty</h2>
+<div class="row">
+<figure>
+<img src="35-logic-empty-light-100.png" alt="35-logic-empty-light-100.png">
+<figcaption>light · 100%</figcaption>
+</figure>
+<figure>
+<img src="35-logic-empty-dark-100.png" alt="35-logic-empty-dark-100.png">
+<figcaption>dark · 100%</figcaption>
+</figure>
+<figure>
+<img src="35-logic-empty-high_contrast_dark-100.png" alt="35-logic-empty-high_contrast_dark-100.png">
+<figcaption>high_contrast_dark · 100%</figcaption>
+</figure>
+</div>
+<h2>36-logic-filled</h2>
+<div class="row">
+<figure>
+<img src="36-logic-filled-light-100.png" alt="36-logic-filled-light-100.png">
+<figcaption>light · 100%</figcaption>
+</figure>
+<figure>
+<img src="36-logic-filled-light-200.png" alt="36-logic-filled-light-200.png">
+<figcaption>light · 200%</figcaption>
+</figure>
+<figure>
+<img src="36-logic-filled-dark-100.png" alt="36-logic-filled-dark-100.png">
+<figcaption>dark · 100%</figcaption>
+</figure>
+<figure>
+<img src="36-logic-filled-high_contrast_dark-100.png" alt="36-logic-filled-high_contrast_dark-100.png">
+<figcaption>high_contrast_dark · 100%</figcaption>
+</figure>
+</div>
+<h2>37-logic-problems</h2>
+<div class="row">
+<figure>
+<img src="37-logic-problems-light-100.png" alt="37-logic-problems-light-100.png">
+<figcaption>light · 100%</figcaption>
+</figure>
+<figure>
+<img src="37-logic-problems-dark-100.png" alt="37-logic-problems-dark-100.png">
+<figcaption>dark · 100%</figcaption>
+</figure>
+<figure>
+<img src="37-logic-problems-high_contrast_dark-100.png" alt="37-logic-problems-high_contrast_dark-100.png">
+<figcaption>high_contrast_dark · 100%</figcaption>
+</figure>
+</div>
+<h2>38-logic-read-as-text</h2>
+<div class="row">
+<figure>
+<img src="38-logic-read-as-text-light-100.png" alt="38-logic-read-as-text-light-100.png">
+<figcaption>light · 100%</figcaption>
+</figure>
+<figure>
+<img src="38-logic-read-as-text-light-200.png" alt="38-logic-read-as-text-light-200.png">
+<figcaption>light · 200%</figcaption>
+</figure>
+<figure>
+<img src="38-logic-read-as-text-dark-100.png" alt="38-logic-read-as-text-dark-100.png">
+<figcaption>dark · 100%</figcaption>
+</figure>
+<figure>
+<img src="38-logic-read-as-text-high_contrast_dark-100.png" alt="38-logic-read-as-text-high_contrast_dark-100.png">
+<figcaption>high_contrast_dark · 100%</figcaption>
+</figure>
+</div>
+<h2>39-logic-uses</h2>
+<div class="row">
+<figure>
+<img src="39-logic-uses-light-100.png" alt="39-logic-uses-light-100.png">
+<figcaption>light · 100%</figcaption>
+</figure>
+<figure>
+<img src="39-logic-uses-dark-100.png" alt="39-logic-uses-dark-100.png">
+<figcaption>dark · 100%</figcaption>
+</figure>
+<figure>
+<img src="39-logic-uses-high_contrast_dark-100.png" alt="39-logic-uses-high_contrast_dark-100.png">
+<figcaption>high_contrast_dark · 100%</figcaption>
+</figure>
+</div>
+<h2>40-data-no-connection</h2>
+<div class="row">
+<figure>
+<img src="40-data-no-connection-light-100.png" alt="40-data-no-connection-light-100.png">
+<figcaption>light · 100%</figcaption>
+</figure>
+<figure>
+<img src="40-data-no-connection-dark-100.png" alt="40-data-no-connection-dark-100.png">
+<figcaption>dark · 100%</figcaption>
+</figure>
+<figure>
+<img src="40-data-no-connection-high_contrast_dark-100.png" alt="40-data-no-connection-high_contrast_dark-100.png">
+<figcaption>high_contrast_dark · 100%</figcaption>
+</figure>
+</div>
+<h2>41-data-connection-list-empty</h2>
+<div class="row">
+<figure>
+<img src="41-data-connection-list-empty-light-100.png" alt="41-data-connection-list-empty-light-100.png">
+<figcaption>light · 100%</figcaption>
+</figure>
+<figure>
+<img src="41-data-connection-list-empty-dark-100.png" alt="41-data-connection-list-empty-dark-100.png">
+<figcaption>dark · 100%</figcaption>
+</figure>
+<figure>
+<img src="41-data-connection-list-empty-high_contrast_dark-100.png" alt="41-data-connection-list-empty-high_contrast_dark-100.png">
+<figcaption>high_contrast_dark · 100%</figcaption>
+</figure>
+</div>
+<h2>43-connections-empty</h2>
+<div class="row">
+<figure>
+<img src="43-connections-empty-light-100.png" alt="43-connections-empty-light-100.png">
+<figcaption>light · 100%</figcaption>
+</figure>
+<figure>
+<img src="43-connections-empty-dark-100.png" alt="43-connections-empty-dark-100.png">
+<figcaption>dark · 100%</figcaption>
+</figure>
+<figure>
+<img src="43-connections-empty-high_contrast_dark-100.png" alt="43-connections-empty-high_contrast_dark-100.png">
+<figcaption>high_contrast_dark · 100%</figcaption>
+</figure>
+</div>
+<h2>44-connections-list</h2>
+<div class="row">
+<figure>
+<img src="44-connections-list-light-100.png" alt="44-connections-list-light-100.png">
+<figcaption>light · 100%</figcaption>
+</figure>
+<figure>
+<img src="44-connections-list-dark-100.png" alt="44-connections-list-dark-100.png">
+<figcaption>dark · 100%</figcaption>
+</figure>
+<figure>
+<img src="44-connections-list-high_contrast_dark-100.png" alt="44-connections-list-high_contrast_dark-100.png">
+<figcaption>high_contrast_dark · 100%</figcaption>
+</figure>
+</div>
+<h2>45-connections-password</h2>
+<div class="row">
+<figure>
+<img src="45-connections-password-light-100.png" alt="45-connections-password-light-100.png">
+<figcaption>light · 100%</figcaption>
+</figure>
+<figure>
+<img src="45-connections-password-dark-100.png" alt="45-connections-password-dark-100.png">
+<figcaption>dark · 100%</figcaption>
+</figure>
+<figure>
+<img src="45-connections-password-high_contrast_dark-100.png" alt="45-connections-password-high_contrast_dark-100.png">
+<figcaption>high_contrast_dark · 100%</figcaption>
+</figure>
+</div>
+<h2>46-connections-test-ok</h2>
+<div class="row">
+<figure>
+<img src="46-connections-test-ok-light-100.png" alt="46-connections-test-ok-light-100.png">
+<figcaption>light · 100%</figcaption>
+</figure>
+<figure>
+<img src="46-connections-test-ok-dark-100.png" alt="46-connections-test-ok-dark-100.png">
+<figcaption>dark · 100%</figcaption>
+</figure>
+<figure>
+<img src="46-connections-test-ok-high_contrast_dark-100.png" alt="46-connections-test-ok-high_contrast_dark-100.png">
+<figcaption>high_contrast_dark · 100%</figcaption>
+</figure>
+</div>
+<h2>47-connections-test-fail</h2>
+<div class="row">
+<figure>
+<img src="47-connections-test-fail-light-100.png" alt="47-connections-test-fail-light-100.png">
+<figcaption>light · 100%</figcaption>
+</figure>
+<figure>
+<img src="47-connections-test-fail-dark-100.png" alt="47-connections-test-fail-dark-100.png">
+<figcaption>dark · 100%</figcaption>
+</figure>
+<figure>
+<img src="47-connections-test-fail-high_contrast_dark-100.png" alt="47-connections-test-fail-high_contrast_dark-100.png">
+<figcaption>high_contrast_dark · 100%</figcaption>
+</figure>
+</div>
+<h2>48-preview-run-behavior</h2>
+<div class="row">
+<figure>
+<img src="48-preview-run-behavior-light-100.png" alt="48-preview-run-behavior-light-100.png">
+<figcaption>light · 100%</figcaption>
+</figure>
+<figure>
+<img src="48-preview-run-behavior-light-200.png" alt="48-preview-run-behavior-light-200.png">
+<figcaption>light · 200%</figcaption>
+</figure>
+<figure>
+<img src="48-preview-run-behavior-dark-100.png" alt="48-preview-run-behavior-dark-100.png">
+<figcaption>dark · 100%</figcaption>
+</figure>
+<figure>
+<img src="48-preview-run-behavior-high_contrast_dark-100.png" alt="48-preview-run-behavior-high_contrast_dark-100.png">
+<figcaption>high_contrast_dark · 100%</figcaption>
+</figure>
+</div>
+<h2>49-preview-conflict</h2>
+<div class="row">
+<figure>
+<img src="49-preview-conflict-light-100.png" alt="49-preview-conflict-light-100.png">
+<figcaption>light · 100%</figcaption>
+</figure>
+<figure>
+<img src="49-preview-conflict-dark-100.png" alt="49-preview-conflict-dark-100.png">
+<figcaption>dark · 100%</figcaption>
+</figure>
+<figure>
+<img src="49-preview-conflict-high_contrast_dark-100.png" alt="49-preview-conflict-high_contrast_dark-100.png">
+<figcaption>high_contrast_dark · 100%</figcaption>
+</figure>
+</div>
+<h2>50-preview-deleted</h2>
+<div class="row">
+<figure>
+<img src="50-preview-deleted-light-100.png" alt="50-preview-deleted-light-100.png">
+<figcaption>light · 100%</figcaption>
+</figure>
+<figure>
+<img src="50-preview-deleted-dark-100.png" alt="50-preview-deleted-dark-100.png">
+<figcaption>dark · 100%</figcaption>
+</figure>
+<figure>
+<img src="50-preview-deleted-high_contrast_dark-100.png" alt="50-preview-deleted-high_contrast_dark-100.png">
+<figcaption>high_contrast_dark · 100%</figcaption>
+</figure>
+</div>
+<h2>51-preview-options</h2>
+<div class="row">
+<figure>
+<img src="51-preview-options-light-100.png" alt="51-preview-options-light-100.png">
+<figcaption>light · 100%</figcaption>
+</figure>
+<figure>
+<img src="51-preview-options-dark-100.png" alt="51-preview-options-dark-100.png">
+<figcaption>dark · 100%</figcaption>
+</figure>
+<figure>
+<img src="51-preview-options-high_contrast_dark-100.png" alt="51-preview-options-high_contrast_dark-100.png">
+<figcaption>high_contrast_dark · 100%</figcaption>
+</figure>
+</div>
+<h2>52-problems-empty</h2>
+<div class="row">
+<figure>
+<img src="52-problems-empty-light-100.png" alt="52-problems-empty-light-100.png">
+<figcaption>light · 100%</figcaption>
+</figure>
+<figure>
+<img src="52-problems-empty-dark-100.png" alt="52-problems-empty-dark-100.png">
+<figcaption>dark · 100%</figcaption>
+</figure>
+<figure>
+<img src="52-problems-empty-high_contrast_dark-100.png" alt="52-problems-empty-high_contrast_dark-100.png">
+<figcaption>high_contrast_dark · 100%</figcaption>
+</figure>
+</div>
+<h2>53-problems-form</h2>
+<div class="row">
+<figure>
+<img src="53-problems-form-light-100.png" alt="53-problems-form-light-100.png">
+<figcaption>light · 100%</figcaption>
+</figure>
+<figure>
+<img src="53-problems-form-dark-100.png" alt="53-problems-form-dark-100.png">
+<figcaption>dark · 100%</figcaption>
+</figure>
+<figure>
+<img src="53-problems-form-high_contrast_dark-100.png" alt="53-problems-form-high_contrast_dark-100.png">
+<figcaption>high_contrast_dark · 100%</figcaption>
+</figure>
+</div>
+<h2>54-files-generated-banner</h2>
+<div class="row">
+<figure>
+<img src="54-files-generated-banner-light-100.png" alt="54-files-generated-banner-light-100.png">
+<figcaption>light · 100%</figcaption>
+</figure>
+<figure>
+<img src="54-files-generated-banner-dark-100.png" alt="54-files-generated-banner-dark-100.png">
+<figcaption>dark · 100%</figcaption>
+</figure>
+<figure>
+<img src="54-files-generated-banner-high_contrast_dark-100.png" alt="54-files-generated-banner-high_contrast_dark-100.png">
+<figcaption>high_contrast_dark · 100%</figcaption>
+</figure>
+</div>
+<h2>55-files-damaged-ui</h2>
+<div class="row">
+<figure>
+<img src="55-files-damaged-ui-light-100.png" alt="55-files-damaged-ui-light-100.png">
+<figcaption>light · 100%</figcaption>
+</figure>
+<figure>
+<img src="55-files-damaged-ui-dark-100.png" alt="55-files-damaged-ui-dark-100.png">
+<figcaption>dark · 100%</figcaption>
+</figure>
+<figure>
+<img src="55-files-damaged-ui-high_contrast_dark-100.png" alt="55-files-damaged-ui-high_contrast_dark-100.png">
+<figcaption>high_contrast_dark · 100%</figcaption>
+</figure>
+</div>
+<h2>56-form-fb510</h2>
+<div class="row">
+<figure>
+<img src="56-form-fb510-light-100.png" alt="56-form-fb510-light-100.png">
+<figcaption>light · 100%</figcaption>
+</figure>
+<figure>
+<img src="56-form-fb510-dark-100.png" alt="56-form-fb510-dark-100.png">
+<figcaption>dark · 100%</figcaption>
+</figure>
+<figure>
+<img src="56-form-fb510-high_contrast_dark-100.png" alt="56-form-fb510-high_contrast_dark-100.png">
+<figcaption>high_contrast_dark · 100%</figcaption>
+</figure>
+</div>
+<h2>58-pictures-none</h2>
+<div class="row">
+<figure>
+<img src="58-pictures-none-light-100.png" alt="58-pictures-none-light-100.png">
+<figcaption>light · 100%</figcaption>
+</figure>
+<figure>
+<img src="58-pictures-none-dark-100.png" alt="58-pictures-none-dark-100.png">
+<figcaption>dark · 100%</figcaption>
+</figure>
+<figure>
+<img src="58-pictures-none-high_contrast_dark-100.png" alt="58-pictures-none-high_contrast_dark-100.png">
+<figcaption>high_contrast_dark · 100%</figcaption>
+</figure>
+</div>
+<h2>59-find-empty</h2>
+<div class="row">
+<figure>
+<img src="59-find-empty-light-100.png" alt="59-find-empty-light-100.png">
+<figcaption>light · 100%</figcaption>
+</figure>
+<figure>
+<img src="59-find-empty-dark-100.png" alt="59-find-empty-dark-100.png">
+<figcaption>dark · 100%</figcaption>
+</figure>
+<figure>
+<img src="59-find-empty-high_contrast_dark-100.png" alt="59-find-empty-high_contrast_dark-100.png">
+<figcaption>high_contrast_dark · 100%</figcaption>
+</figure>
+</div>
+<h2>60-inspector-narrow</h2>
+<div class="row">
+<figure>
+<img src="60-inspector-narrow-light-100.png" alt="60-inspector-narrow-light-100.png">
+<figcaption>light · 100%</figcaption>
+</figure>
+<figure>
+<img src="60-inspector-narrow-light-200.png" alt="60-inspector-narrow-light-200.png">
+<figcaption>light · 200%</figcaption>
+</figure>
+<figure>
+<img src="60-inspector-narrow-dark-100.png" alt="60-inspector-narrow-dark-100.png">
+<figcaption>dark · 100%</figcaption>
+</figure>
+<figure>
+<img src="60-inspector-narrow-high_contrast_dark-100.png" alt="60-inspector-narrow-high_contrast_dark-100.png">
+<figcaption>high_contrast_dark · 100%</figcaption>
+</figure>
+</div>
+<h2>61-outline-rename-refusal</h2>
+<div class="row">
+<figure>
+<img src="61-outline-rename-refusal-light-100.png" alt="61-outline-rename-refusal-light-100.png">
+<figcaption>light · 100%</figcaption>
+</figure>
+<figure>
+<img src="61-outline-rename-refusal-dark-100.png" alt="61-outline-rename-refusal-dark-100.png">
+<figcaption>dark · 100%</figcaption>
+</figure>
+<figure>
+<img src="61-outline-rename-refusal-high_contrast_dark-100.png" alt="61-outline-rename-refusal-high_contrast_dark-100.png">
+<figcaption>high_contrast_dark · 100%</figcaption>
+</figure>
+</div>

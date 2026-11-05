@@ -129,7 +129,7 @@ class Stage:
         return self._proxy
 
     def hold_fit_page(self, held: bool) -> None:
-        """O(1). Fit keeps the page size from before a two-widths resize."""
+        """Two widths keeps the scale. Opening the wide copy does not refit."""
         if held:
             root = self._realizer.root_widget
             if root is not None and self._fit_page is None:
@@ -144,8 +144,8 @@ class Stage:
             return
         if self._settle_root_size(root):
             self._invalidate("root_resize")
-        if not self._page_preview:
-            page = self._fit_page if self._fit_page is not None else Size(root.width(), root.height())
+        if not self._page_preview and self._fit_page is None:
+            page = Size(root.width(), root.height())
             factor = zoom_factor(self._zoom, page, _viewport(self._view))
             if factor != self._factor:
                 self._invalidate("zoom")

@@ -362,7 +362,7 @@ The shell table in `app/shell/shortcut_preferences.py` is authoritative. A form 
 | Shift+F2 | any | Stop (shell). Not used for rename in the form (the spike and LOGIC_DESIGN §2.12 used it) | shell |
 | Ctrl+Shift+F | any | Find in Files (shell), which gains a "Forms" result group (M7.8) | shell |
 
-**UX-KEY-005** `M6.0` `[A]` LOGIC_DESIGN §2.12 keys are adopted with three changes forced by the shell table: Try mode is Ctrl+Shift+R (not Ctrl+R); "search this form's logic" is Ctrl+F in the form tab (not Ctrl+Shift+F); rename is F2 (not Shift+F2). Ctrl+Shift+E, Ctrl+Shift+L, Ctrl+Space, Ctrl+., Ctrl+Enter, F12 and Shift+F12 are adopted unchanged (none collide). Alt+B (focus Behavior tab) is adopted only if no shell menu title uses the mnemonic B; otherwise it becomes Alt+4 then B. *Resolved in v4 (13.3.1 D22):* no shell menu uses B, so Alt+B is adopted; Shift+F12 waits for M7.8; Ctrl+Space and Ctrl+Enter belong to M7's formula editor; Ctrl+. also runs a row's first fix in the Events list.
+**UX-KEY-005** `M6.0` `[A]` LOGIC_DESIGN §2.12 keys are adopted with three changes forced by the shell table: Preview is Ctrl+Shift+R (not Ctrl+R), and Run behavior starts checked so that key is also Try; "search this form's logic" is Ctrl+F in the form tab (not Ctrl+Shift+F); rename is F2 (not Shift+F2). Ctrl+Shift+E, Ctrl+Shift+L, Ctrl+Space, Ctrl+., Ctrl+Enter, F12 and Shift+F12 are adopted unchanged (none collide). Alt+B (focus Behavior tab) is adopted only if no shell menu title uses the mnemonic B; otherwise it becomes Alt+4 then B. *Resolved in v4 (13.3.1 D22):* no shell menu uses B, so Alt+B is adopted; Shift+F12 waits for M7.8; Ctrl+Space and Ctrl+Enter belong to M7's formula editor; Ctrl+. also runs a row's first fix in the Events list.
 
 **UX-KEY-006** `M3.1` `[S]` The canvas's first focus in a session shows a one-time status sentence: "Tab moves between widgets. Alt+4 goes to the inspector, Alt+1 to the outline."
 
@@ -380,7 +380,7 @@ The shell table in `app/shell/shortcut_preferences.py` is authoritative. A form 
 
 **UX-START-001** `M2.2` `[S]` Start is not a home screen of the builder; it is the **New form** tab. It opens from File > New Form…, from the project tree context menu ("New Form…" on any folder, defaulting to `forms/`), and from the Welcome page. Opening an existing `.ui` never shows Start.
 
-**UX-START-002** `M5.5c` `[S]` Layout: a centred column, max 960 px wide, 32 px top padding. Top: Hero "New form", then one sentence in `fb.muted`: "Every starting point is already laid out, so it resizes with the window." Then the name row (UX-START-003). Then three card groups. A right rail (240 px) with recent forms appears when the tab is at least 1180 px wide; below that, recent forms are a list under the cards.
+**UX-START-002** `M5.5c` `[S]` Layout: a centred column, max 960 px wide, 32 px top padding. Top: Hero "New form", then the name row (UX-START-003). The cards already say each starting point is laid out. Then three card groups. A right rail (240 px) with recent forms appears when the tab is at least 1180 px wide; below that, recent forms are a list under the cards.
 
 **UX-START-003** `M2.2` `[S T]` The name row is first and focused on open: "Name [new_form] in [forms/ ▾]" and a live caption "Creates forms/new_form.ui, ui_new_form.py and new_form_window.py." The default name is unique in the folder. Invalid names show an inline message under the field and disable creation: "Use letters, digits and _, starting with a letter."
 

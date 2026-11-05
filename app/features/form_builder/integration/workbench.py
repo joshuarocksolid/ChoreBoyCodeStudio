@@ -586,7 +586,9 @@ class FormToolbar(QWidget):
             box.setObjectName("formBuilder.runBehavior")
             box.setText("Run behavior")
             box.setAccessibleName("Run behavior")
-            box.setToolTip("Run the form's behavior")
+            box.setToolTip(
+                "Starts checked. Runs checks, steps, and rules, and undoes database changes. Uncheck to see the layout only."
+            )
             box.setCheckable(True)
             box.setChecked(True)
             box.setAutoRaise(True)

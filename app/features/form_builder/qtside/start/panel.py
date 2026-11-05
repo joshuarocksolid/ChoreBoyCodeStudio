@@ -155,7 +155,6 @@ class NewFormPanel(QWidget):
                 chrome.border,
             )
         )
-        self._sentence.setStyleSheet("color: %s;" % chrome.muted)
         self._caption.setStyleSheet("color: %s;" % chrome.muted)
         self._error.setStyleSheet("color: %s;" % chrome.error)
         self._status.setStyleSheet("color: %s;" % chrome.muted)
@@ -508,14 +507,6 @@ class NewFormPanel(QWidget):
         hero_font.setWeight(QFont.DemiBold)
         hero.setFont(hero_font)
         column.addWidget(hero)
-
-        self._sentence = QLabel(
-            "Every starting point is already laid out, so it resizes with the window.",
-            self._column,
-        )
-        self._sentence.setObjectName("formBuilder.newForm.sentence")
-        self._sentence.setWordWrap(True)
-        column.addWidget(self._sentence)
 
         name_row = QHBoxLayout()
         column.addLayout(name_row)

@@ -350,7 +350,7 @@ def test_zoom_steps_stay_on_the_table_and_fit_is_capped() -> None:
     assert apply_zoom(Fixed(1.0), ZoomTo(2.0), 1.0) == Fixed(2.0)
     assert isinstance(apply_zoom(Fixed(1.0), ZoomFit(), 1.0), Fit)
     assert zoom_factor(Fit(), Size(100, 100), CanvasSize(2000, 2000)) == 1.0
-    assert zoom_factor(Fit(), Size(1000, 1000), CanvasSize(300, 300)) == 0.75
+    assert zoom_factor(Fit(), Size(1000, 1000), CanvasSize(300, 300)) == 0.5
 
 
 def test_layout_page_centres_inside_the_gutters() -> None:

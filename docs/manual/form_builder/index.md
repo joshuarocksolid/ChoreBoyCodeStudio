@@ -34,7 +34,7 @@ Open a project first. Then use `File > New Form…`, or right-click a folder in 
 
 ## Run it and ship it
 
-- [Preview and Try](preview.md). Look at the form. Try writes, then rolls them back.
+- [Preview and Try](preview.md). Preview opens the form. Run behavior, on by default, runs checks and rolls database changes back.
 - [Generated files](generated_files.md). What you edit, and what you leave alone.
 - [Rename and move a form](rename_and_move.md).
 - [Packaging](packaging.md).

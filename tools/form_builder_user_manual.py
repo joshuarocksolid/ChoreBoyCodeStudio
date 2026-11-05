@@ -91,8 +91,9 @@ def keyboard_markdown() -> str:
     if go_to and preview:
         lines.append(
             "Press %s to go to a widget. Press %s to open Preview. "
-            "The Run behavior box on that toolbar runs the form's behavior. "
-            "On a database form, that mode rolls the data changes back." % (go_to, preview)
+            "Run behavior starts checked. When the form has checks, steps, or rules, "
+            "Preview runs them and undoes database changes. Uncheck Run behavior to see the layout only."
+            % (go_to, preview)
         )
         lines.append("")
     lines.append("The full task pages start at [the form builder manual](index.md).")

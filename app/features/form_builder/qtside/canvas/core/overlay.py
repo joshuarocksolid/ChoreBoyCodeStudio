@@ -128,7 +128,6 @@ _TICK_CORNERS: Dict[str, Tuple[Corner, ...]] = {
 _EMPTY_FORM = (
     "Drop a widget here",
     "or press / to search for one.",
-    "/ insert · Ctrl+Shift+G wrap · F2 rename",
 )
 _EMPTY_NESTED = "Drop widgets here"
 #: UX-CONT-009: the caption on an empty page container.

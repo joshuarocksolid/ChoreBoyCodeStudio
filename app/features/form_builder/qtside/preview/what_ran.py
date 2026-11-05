@@ -399,6 +399,9 @@ class TryChrome(QWidget):
         self.run_behavior.setObjectName("preview.runBehavior")
         self.run_behavior.setText("Run behavior")
         self.run_behavior.setAccessibleName("Run behavior")
+        self.run_behavior.setToolTip(
+            "Starts checked. Runs checks, steps, and rules, and undoes database changes. Uncheck to see the layout only."
+        )
         self.run_behavior.setCheckable(True)
         self.run_behavior.setChecked(True)
         self.run_behavior.setAutoRaise(True)

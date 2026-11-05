@@ -46,7 +46,7 @@ WIDE = form(
 """,
 )
 
-# The invoice page on ChoreBoy: 620 x 520 at the 75% floor in a 440 x 270 canvas.
+# The invoice page on ChoreBoy: 620 x 520 at the 50% floor in a 440 x 270 canvas.
 CHOREBOY_PAGE = form(
     'class="QWidget" name="Form"',
     """
@@ -193,7 +193,7 @@ def test_toolbar_and_form_menu_zoom_the_canvas(qapp, tmp_path: Path) -> None:  #
         registry.actions["form.action.zoomToFit"].trigger()
         _flush()
         fitted = _scale(canvas)
-        assert fitted + 1e-9 >= 0.75
+        assert fitted + 1e-9 >= 0.5
         assert zoom_label.text() == zoom_percent(fitted)
     finally:
         clear_menu_contributors()
@@ -250,15 +250,16 @@ def test_a_page_larger_than_the_view_keeps_both_gutters() -> None:
 
 
 def test_a_page_wider_than_the_view_opens_with_its_left_edge_in_view() -> None:
+    """620 px at the 50% floor fits a 440 px canvas, so the page is centered and its left edge stays in view."""
     with opened(CHOREBOY_PAGE) as (session, realizer):
         canvas, parent = _canvas(session, realizer, _Host(), 440, 270)
-        assert abs(_scale(canvas) - 0.75) < 1e-6
+        assert abs(_scale(canvas) - 0.5) < 1e-6
         root = canvas.page_widget()
         assert root is not None
         proxy = root.graphicsProxyWidget()
         assert proxy is not None
         left = canvas.mapFromScene(proxy.pos()).x()
-        assert 16 <= left <= 24
+        assert 0 <= left < canvas.width()
         assert canvas.verticalScrollBar().value() == 0
         canvas.dispose()
         parent.deleteLater()

@@ -1665,10 +1665,6 @@ class FormSurface(QWidget):
         inspector.focus_tab(TabId.PROPERTIES)
         inspector.properties.focus_tab_order()
 
-    def about_connections(self) -> None:
-        """F4 until the Connections overlay arrives with M6 (R3 212)."""
-        self.narrate("Connections are in the Behavior tab. Alt+4 goes there.")
-
     def _insert_from_canvas(self) -> None:
         if self._source.mode != "visual":
             return
@@ -1747,11 +1743,30 @@ class FormSurface(QWidget):
         self._toolbar.set_undo(design and log.can_undo(), "%s (Ctrl+Z)" % undo_tip)
         self._toolbar.set_redo(design and log.can_redo(), "%s (Ctrl+Shift+Z)" % redo_tip)
 
+    def _sync_missing_connection(self, notice: object) -> None:
+        """FB510 on a new form whose connection is missing. The files appear once it works."""
+        diagnostics = getattr(notice, "diagnostics", ()) or ()
+        codes = {str(getattr(item, "code", "") or "") for item in diagnostics}
+        sentence = "Generated files appear once the connection works."
+        if bool(getattr(notice, "error", False)) and "FB510" in codes and "FB301" in codes:
+
+            def open_connections() -> None:
+                from app.features.form_builder.integration.workbench_ext.data import open_connections_settings
+
+                open_connections_settings(self._workbench)
+
+            self._notice.show_choices(sentence, (("Connections", open_connections),))
+            return
+        label = self._notice.findChild(QLabel, "formBuilder.noticeText")
+        if label is not None and label.text() == sentence:
+            self._notice.dismiss()
+
     def _refresh_save_state(self) -> None:
         notice = self._source.save_notice
         if notice.kind == "hold":
             self._show_hold(notice.text)
             return
+        self._sync_missing_connection(notice)
         timer = self._saved_timer
         if self._source.is_dirty():
             self._saved_timer.stop()

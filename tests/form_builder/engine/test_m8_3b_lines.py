@@ -220,6 +220,118 @@ def test_add_lines_is_one_undo_step(qapp, tmp_path: Path) -> None:
         set_schema_reader(None)
 
 
+def test_a_second_lines_grid_is_refused(qapp, tmp_path: Path) -> None:
+    """Add lines on a second table view leaves the one grid and says why."""
+    del qapp
+    schema = Schema(
+        "office",
+        "sqlite",
+        "",
+        "2026-01-01T00:00:00",
+        "sqlite3",
+        (
+            Table("invoices", (Column("id", "INTEGER", False),), key="id"),
+            Table(
+                "invoice_lines",
+                (
+                    Column("id", "INTEGER", False),
+                    Column("invoice_id", "INTEGER", False, references=Reference("invoices", "id")),
+                    Column("qty", "INTEGER", False),
+                    Column("line_no", "INTEGER", False),
+                ),
+                key="id",
+                unique_keys=(("invoice_id", "line_no"),),
+            ),
+        ),
+    )
+    set_schema_reader(lambda _doc, _name: schema)
+    try:
+        from app.features.form_builder.engine.commands.base import CommandRejected
+        from app.features.form_builder.engine.data.connections import Connection, ConnectionSet, save_connections
+        from app.features.form_builder.engine.diagnostics import CODES
+        from app.features.form_builder.engine.project.forms import FormScope
+        from app.features.form_builder.engine.query.selection import SelectionSource
+        from app.features.form_builder.engine.session import FormSession
+        from app.features.form_builder.qtside.data_panel.edits import connect_form
+        from app.features.form_builder.qtside.data_panel.lines_sheet import add_lines, lines_on
+
+        import app.features.form_builder.engine.diagnostic_codes.fb3xx_data  # noqa: F401
+
+        save_connections(str(tmp_path), ConnectionSet((Connection("office", "Office", "sqlite", file="shop.db"),)))
+        session = FormSession.open(
+            _xml(
+                RecordSource("office", "invoices", "id"),
+                (
+                    ("QLineEdit", "notesEdit", "notes", ""),
+                    ("QTableView", "otherView", "", ""),
+                ),
+            ),
+            path="/tmp/cbcs-m83b-second.ui",
+            scope=FormScope(kind="external", ui_path="/tmp/cbcs-m83b-second.ui", project_root=str(tmp_path)),
+        )
+        connect_form(session, RecordSource("office", "invoices", "id"))
+        rows = Rows(
+            "invoice_lines",
+            "invoice_id",
+            "id",
+            (DataColumn("qty", "Qty", "whole", None, "1"),),
+            "line_no",
+            "line_no",
+        )
+        add_lines(session, rows)
+        other = session.document.by_name("otherView")[0]
+        session.selection.set((other,), source=SelectionSource.PROGRAM)
+        with pytest.raises(CommandRejected) as caught:
+            add_lines(session, rows)
+        assert str(caught.value) == CODES["FB320"].title
+        assert [name for name, _rows in lines_on(session.document)] == ["invoice_linesView"]
+        session.dispose()
+    finally:
+        set_schema_reader(None)
+
+
+def test_a_failed_line_load_keeps_the_record_on_screen(tmp_path: Path) -> None:
+    """Lines are read before the header is shown. A failed line query leaves the previous record."""
+
+    def prepare(root: Path) -> Path:
+        path = _prepare(root)
+        connection = sqlite3.connect(str(path))
+        try:
+            connection.execute("UPDATE invoices SET notes = 'first' WHERE id = 1")
+            connection.execute(
+                "INSERT INTO invoices (id, invoice_no, customer_id, invoice_date, notes, total) "
+                "VALUES (2, 'INV-2', 1, '2026-04-03', 'second', '1.50')"
+            )
+            connection.execute(
+                "INSERT INTO invoice_lines "
+                "(id, invoice_id, line_no, product_id, description, qty, price, needed) "
+                "VALUES (4, 2, 1, 1, 'Only-two', 1, '1.50', NULL)"
+            )
+            connection.commit()
+        finally:
+            connection.close()
+        return path
+
+    with record_window(tmp_path, _ui(), prepare) as (host, db):
+        ui = host.ui
+        assert len(ui._cbcs_keys) == 2
+        before_notes = ui.notesEdit.text()
+        before_lines = [row["id"] for row in ui.cbcs_read_lines()]
+        assert before_notes in ("first", "second")
+        assert before_lines
+        other = 1 if ui._cbcs_index == 0 else 0
+        connection = sqlite3.connect(str(db))
+        try:
+            connection.execute("DROP TABLE invoice_lines")
+            connection.commit()
+        finally:
+            connection.close()
+        with pytest.raises(sqlite3.Error):
+            ui._cbcs_show(other)
+        assert ui.notesEdit.text() == before_notes
+        assert [row["id"] for row in ui.cbcs_read_lines()] == before_lines
+
+
 @pytest.mark.logic("L-invoice-sqlite-lines", "L-master-detail")
 def test_lines_round_trip_on_sqlite(tmp_path: Path) -> None:
     seen: List[str] = []
