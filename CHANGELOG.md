@@ -6,6 +6,12 @@ Release tags: `v0.1`, `v0.2`, `v0.4.5`, `v0.4.9`, `v0.4.10`, `v0.4.11`, `v0.4.12
 
 LibrePy list mail-outs: v0.4.5 on 2026-06-27, v0.4.7 on 2026-06-30, v0.4.8 on 2026-08-24, v0.4.9 on 2026-08-31, v0.4.13 on 2026-10-21.
 
+## [Unreleased]
+
+### Added
+
+- Visual form builder for data-entry screens such as invoices, customers, and inventory. You lay the form out in the editor, bind it to SQLite or PostgreSQL, and save a window class. Preview can run the form and roll database changes back. The manual is [docs/manual/form_builder/index.md](docs/manual/form_builder/index.md).
+
 ## [0.4.13] - 2026-10-21
 
 Fixes what the LibrePy group reported since v0.4.12, and runs on FreeCAD 1.1 as well as FreeCAD 1.0 from one build. Builds tagged 0.4.13 (21 Sep) and 0.4.14 (24 Sep) were never sent to the list. Their tags are deleted and their changes are in this release, reworked where noted below.

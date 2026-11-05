@@ -59,6 +59,10 @@ This matrix links user-facing features to manual chapters.
 - Startup/runtime readiness interpretation -> Chapter 1, 10
 - Headless notes -> Chapter 10 + Appendix
 
+## Form builder
+
+- Lay out a form, bind data, preview, and package -> `docs/manual/form_builder/`
+
 ## Sharing and packaging
 
 - Package Project flow -> Chapter 9

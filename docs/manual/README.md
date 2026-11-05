@@ -6,6 +6,8 @@
 
 This directory contains the source for the printed user manual.
 
+The form builder task pages live in [`form_builder/`](form_builder/index.md). The print build reads `chapters/` only and stays the short hobbyist edition.
+
 The manual is designed for hobbyist users:
 
 - simple language,
