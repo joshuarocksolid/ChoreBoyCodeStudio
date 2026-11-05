@@ -1,0 +1,32 @@
+/opt/freecad/usr/lib/x86_64-linux-gnu:/opt/freecad/usr/lib
+label baseline alias alias
+rename_note_edited_cpu_ms 12.48 12.51 12.54 12.61 12.63 12.68 12.80 p50 12.611
+         186685 function calls (185682 primitive calls) in 0.043 seconds
+
+   Ordered by: cumulative time
+   List reduced from 126 to 20 due to restriction <20>
+
+   ncalls  tottime  percall  cumtime  percall filename:lineno(function)
+        1    0.000    0.000    0.044    0.044 /mnt/cbprobe/incoming/m94/app_base/app/features/form_builder/integration/workbench.py:1673(note_edited)
+        1    0.000    0.000    0.044    0.044 /mnt/cbprobe/incoming/m94/app_base/app/features/form_builder/integration/workbench.py:970(apply_change)
+        1    0.000    0.000    0.044    0.044 /mnt/cbprobe/incoming/m94/app_base/app/features/form_builder/integration/workbench.py:939(patch_rows)
+        1    0.000    0.000    0.044    0.044 /mnt/cbprobe/incoming/m94/app_base/app/features/form_builder/engine/query/outline.py:494(patch_captions)
+        1    0.000    0.000    0.044    0.044 /mnt/cbprobe/incoming/m94/app_base/app/features/form_builder/engine/query/outline.py:1589(_retitle)
+        1    0.000    0.000    0.044    0.044 /mnt/cbprobe/incoming/m94/app_base/app/features/form_builder/engine/query/outline.py:967(_owner_name)
+        1    0.000    0.000    0.044    0.044 /mnt/cbprobe/incoming/m94/app_base/app/features/form_builder/engine/logic/read_as_text.py:83(spoken_display)
+        1    0.001    0.001    0.043    0.043 /mnt/cbprobe/incoming/m94/app_base/app/features/form_builder/engine/logic/read_as_text.py:94(_preferred)
+        1    0.001    0.001    0.019    0.019 /mnt/cbprobe/incoming/m94/app_base/app/features/form_builder/engine/query/tab_stops.py:177(form_row_pairs)
+     1000    0.001    0.000    0.015    0.000 /mnt/cbprobe/incoming/m94/app_base/app/features/form_builder/engine/query/tab_stops.py:80(display_name)
+        1    0.000    0.000    0.013    0.013 /mnt/cbprobe/incoming/m94/app_base/app/features/form_builder/engine/query/tab_stops.py:172(buddy_choices)
+     1000    0.002    0.000    0.013    0.000 /mnt/cbprobe/incoming/m94/app_base/app/features/form_builder/engine/query/tab_stops.py:121(_display_name)
+        1    0.000    0.000    0.010    0.010 /mnt/cbprobe/incoming/m94/app_base/app/features/form_builder/engine/query/tree.py:306(reading_order)
+   1000/1    0.001    0.000    0.010    0.010 /mnt/cbprobe/incoming/m94/app_base/app/features/form_builder/engine/query/tree.py:474(_walk_reading)
+      5/1    0.000    0.000    0.010    0.010 /mnt/cbprobe/incoming/m94/app_base/app/features/form_builder/engine/query/tree.py:485(_walk_layout)
+     6030    0.005    0.000    0.007    0.000 /mnt/cbprobe/incoming/m94/app_base/app/features/form_builder/engine/ui4/document.py:248(iter_preorder)
+     8074    0.002    0.000    0.007    0.000 /mnt/cbprobe/incoming/m94/app_base/app/features/form_builder/engine/ui4/nodes.py:157(_text_field)
+     1000    0.001    0.000    0.007    0.000 /mnt/cbprobe/incoming/m94/app_base/app/features/form_builder/engine/query/tab_stops.py:102(_buddy_captions)
+    11230    0.004    0.000    0.006    0.000 /mnt/cbprobe/incoming/m94/app_base/app/features/form_builder/engine/ui4/nodes.py:81(field)
+     5075    0.001    0.000    0.005    0.000 /mnt/cbprobe/incoming/m94/app_base/app/features/form_builder/engine/ui4/nodes.py:169(object_name)
+move_note_edited_cpu_ms 12.79 12.93 13.03 13.08 13.53 13.65 13.72 p50 13.080
+reparent_note_edited_cpu_ms 13.45 13.52 13.56 13.59 13.60 13.70 13.71 p50 13.589
+

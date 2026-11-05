@@ -14,7 +14,7 @@ from app.features.form_builder.engine.commands.catalog_ext.tab_order import SetL
 from app.features.form_builder.qtside.inspector.api import EditorHost, EditorKey, GroupId, Registrar, RowSpec, Summary
 from app.features.form_builder.qtside.outline.friendly import friendly_of
 from app.qt.QtCore import Qt
-from app.qt.QtGui import QKeyEvent
+from app.qt.QtGui import QFocusEvent, QKeyEvent
 from app.qt.QtWidgets import QComboBox, QCompleter, QWidget
 
 BUDDY_PICKER = EditorKey("buddy_picker")
@@ -32,10 +32,19 @@ class _Combo(QComboBox):
         self._owner = owner
 
     def keyPressEvent(self, event: QKeyEvent) -> None:  # noqa: N802
+        self._owner.ensure_choices()
         if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
             self._owner.pick_typed()
             return
         super().keyPressEvent(event)
+
+    def focusInEvent(self, event: QFocusEvent) -> None:  # noqa: N802
+        self._owner.ensure_choices()
+        super().focusInEvent(event)
+
+    def showPopup(self) -> None:  # noqa: N802
+        self._owner.ensure_choices()
+        super().showPopup()
 
 
 class BuddyEditor:
@@ -55,6 +64,7 @@ class BuddyEditor:
         completer.setCompletionMode(QCompleter.CompletionMode.PopupCompletion)
         self._combo.setCompleter(completer)
         self._combo.activated.connect(self._activated)
+        self._filled_key: Optional[tuple] = None
 
     @property
     def widget(self) -> QWidget:
@@ -64,6 +74,31 @@ class BuddyEditor:
         del value
         owners = self._host.owner_ids()
         document = self._host.document()
+        current = q.buddy_of(document, owners[0]) if len(owners) == 1 else None
+        key = (document.structure_revision, document.focus_revision)
+        if self._filled_key == key and self._combo.count() > 1:
+            self._select(current)
+            return
+        # A caption flush paints this row. The choice list is the whole form's
+        # reading order, so it waits until the drop-down is actually used.
+        self._filled_key = None
+        self._combo.blockSignals(True)
+        self._combo.clear()
+        label = NONE_LABEL if current is None else str(current)
+        self._combo.addItem(label, current)
+        self._combo.setCurrentIndex(0)
+        edit = self._combo.lineEdit()
+        if edit is not None:
+            edit.setCursorPosition(0)
+        self._combo.blockSignals(False)
+
+    def ensure_choices(self) -> None:
+        """Fill the drop-down from reading order. A repeat with the same tree is free."""
+        document = self._host.document()
+        key = (document.structure_revision, document.focus_revision)
+        if self._filled_key == key:
+            return
+        owners = self._host.owner_ids()
         current = q.buddy_of(document, owners[0]) if len(owners) == 1 else None
         choices = q.buddy_choices(document)
         self._combo.blockSignals(True)
@@ -75,11 +110,16 @@ class BuddyEditor:
             names.append(stop.name)
         if current is not None and current not in names:
             self._combo.addItem(current + _MISSING, current)
+        self._filled_key = key
+        self._select(current)
+        self._combo.blockSignals(False)
+
+    def _select(self, current: Optional[str]) -> None:
+        self._combo.blockSignals(True)
         index = 0 if current is None else self._combo.findData(current)
         self._combo.setCurrentIndex(max(0, index))
         edit = self._combo.lineEdit()
         if edit is not None:
-            # Show the start of "phoneEdit · Line edit", not its tail, in a narrow row.
             edit.setCursorPosition(0)
         self._combo.blockSignals(False)
 

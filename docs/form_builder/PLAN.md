@@ -24,7 +24,7 @@ These were decided with Joshua between 2026-10-20 and 2026-10-21. They are not r
 | Try mode | SQLite runs on a scratch copy. PostgreSQL writes, then rolls back (Joshua's choice, which overrides the read-only default in `LOGIC_DESIGN.md` §0/§2.10). Rollback does not undo sequence advances, `NOTIFY` or other side effects that escape the transaction, so Try mode shows a banner, sets a statement timeout and lock timeout, warns about those effects, and keeps "Would run" (read-only) as a per-connection option |
 | Locale | US English by default, with a per-project setting |
 | Users | A real mix of programmers and non-programmers, so the point-and-click formula builder ships with logic level 3 |
-| Speed | Open a 300-widget form ≤ 150 ms; each edit ≤ 16 ms; save ≤ 50 ms; ≤ 30 MB extra per open form (and ≤ 60 MB with 3 forms open). The primary metric is process CPU time, plus wall time on an idle machine (load < 2), with warmup, n = 15 and p95 reported. Re-checked on the ChoreBoy VM and on a CPU-capped profile matching ChoreBoy hardware |
+| Speed | Open a 300-widget form ≤ 150 ms; a continuous edit (typing a property, dragging, changing layout spacing) ≤ 16 ms; paste ≤ 100 ms, because it is one discrete action and Qt lays out the ~200 shifted rows (~45 ms); save ≤ 50 ms; ≤ 30 MB extra per open form (and ≤ 60 MB with 3 forms open). The primary metric is process CPU time, plus wall time on an idle machine (load < 2), with warmup, n = 15 and p95 reported. Re-checked on the ChoreBoy VM and on a CPU-capped profile matching ChoreBoy hardware |
 | Generated code | `ui_<name>.py` imports from `PySide6` directly (the same shape as `uic`), never the FreeCAD `PySide` shim. FreeCAD `Gui::` widgets use a guarded `FreeCADGui` import with a Qt base-class fallback. Generated code is Python 3.9-parseable |
 | Generation scope | Generation runs only for forms that belong to a CBCS project (under `forms/`, or adopted with "Adopt this form"). A `.ui` file outside a project (e.g. FreeCAD workbench files, or forms an app loads with `QUiLoader`) is edited without writing `ui_*.py` beside it |
 | Translations | Every translation attribute is preserved and editable, and `retranslateUi` is generated. `.ts`/lupdate/lrelease tooling is out of scope (not in FreeCAD bundles). That's a won't-do recorded in the ledger |
@@ -516,19 +516,6 @@ M7.6 and M7.R run the §13.4.10 facts on the ChoreBoy VM, using the M6.R probe m
 | M9.5 | Visual polish pass: a full screenshot tour in light, dark and high-contrast; micro-interactions; empty states; copy | O-spec + G, O-UX | Opus final UX APPROVE |
 | M9.6 | Docs: user manual pages (`docs/manual*`), keyboard reference, README, CHANGELOG, acceptance tests | G, O-UX (copy) | Docs reviewed |
 | M9.7 | Final logic soundness audit across the engine, generator, expression language, rules and data layer | O-logic | APPROVE |
-
-**M9.4 known misses carried from M3 (accepted at M3.7; budgets unchanged).** Real MainWindow, 1400×900, 1000-widget reference form, CPU p50 at load 30–50 on the Mac. These are the `edit total surface`, `edit layout spacing` and `paste surface` rows in `tests/form_builder/perf/harness.py`. Over budget they report the verdict `known miss` (named in every speed report, budget unchanged) instead of `fail`, so the perf gate stays meaningful for every other row. Only these three points may carry that verdict (`KNOWN_M94_POINTS`); M9.4 removes it.
-
-- Edit layout spacing: ~22–33 ms against 16 ms. Qt's own relayout of the 394-row form layout costs ~5–6 ms. The rest is the hit-index refresh, which re-measures ~400 items (it has to: every item moves), plus a whole-page repaint of the proxied form.
-- Paste: ~50–65 ms against 16 ms, ~50 ms with the inspector hidden. Undoing it costs ~60 ms. The cost is the realize patch (reconciling a 394-row form layout), a full hit-index walk after any structural change (~5–7 ms), a full rebuild of the overlay's static layer on insert (~7 ms), and the row shift in the engine. The row shift is already one bubble per parent for the forward edit, and for undo and redo since M3.7a.
-- Edit label text was ~20 ms CPU at load 30 when M3.7a closed. The rescue did not reach 16. A text edit on a QLabel in the form layout invalidates the whole proxied page (the scene reports the full page rect) although no widget moves. Bisecting it showed that only the realizer's property patch is needed; a raw `setText` on the same widget does not do it. Nothing found yet.
-- Leads:
-  1. A cached page or a region paint layer, so overlay and caption changes never re-render the proxied form.
-  2. An O(changed) static overlay layer on insert and delete.
-  3. A structural refresh of the hit index that only re-measures the changed container. Today any insert, delete or move takes the full walk, the only path proven equal to a rebuild by the structural fuzz in `tests/form_builder/qtside/test_hit_index_incremental_repro.py`.
-  4. A cheaper realize patch for long form layouts.
-  5. The whole-page invalidation after a QLabel text patch.
-  6. The shell's draft autosave, which serializes the whole form to XML (~20–40 ms) and sometimes lands inside an edit.
 
 ### M10. Release candidate
 

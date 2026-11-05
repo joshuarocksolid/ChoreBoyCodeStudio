@@ -52,6 +52,64 @@ class _Host:
         return None
 
 
+def test_grown_page_stays_in_the_scroll_range() -> None:
+    """A taller page scrolls inside the canvas. The shell is not asked to grow."""
+    from app.qt.QtCore import QEvent, QObject
+    from app.qt.QtWidgets import QApplication, QVBoxLayout
+
+    from app.features.form_builder.engine.commands.catalog import SetProperty
+    from app.features.form_builder.engine.ui4.values import RectValue
+
+    bare = form(
+        'class="QWidget" name="Form"',
+        '<property name="geometry"><rect><x>0</x><y>0</y><width>200</width><height>120</height></rect></property>',
+    )
+    with opened(bare) as (session, realizer):
+        shell = QWidget()
+        shell.setObjectName("shell.editorPage")
+        layout = QVBoxLayout(shell)
+        parent = QWidget(shell)
+        layout.addWidget(parent)
+        shell.resize(320, 220)
+        shell.show()
+        canvas = FormCanvas(session, realizer, _Host(), parent)
+        canvas.resize(300, 180)
+        canvas.show()
+        app = QApplication.instance()
+        assert app is not None
+        app.processEvents()
+        requests = {"n": 0}
+        kind = getattr(getattr(QEvent, "Type", QEvent), "LayoutRequest")
+
+        class _Count(QObject):
+            def eventFilter(self, _watched: object, event: object) -> bool:  # noqa: N802
+                if event.type() == kind:  # type: ignore[attr-defined]
+                    requests["n"] += 1
+                return False
+
+        counter = _Count()
+        shell.installEventFilter(counter)
+        root_id = session.document.root.id
+        session.log.execute(SetProperty(root_id, "geometry", RectValue(0, 0, 200, 1600)))
+        app.processEvents()
+        page = canvas.page_widget()
+        assert page is not None
+        assert page.height() >= 1600
+        assert (canvas.width(), canvas.height()) == (300, 180)
+        bounds = canvas._stage.proxy.sceneBoundingRect()
+        scene = canvas.sceneRect()
+        assert scene.bottom() + 1 >= bounds.bottom()
+        assert scene.right() + 1 >= bounds.right()
+        bar = canvas.verticalScrollBar()
+        visible = canvas.viewport().height()
+        assert bar.maximum() + visible + 2 >= bounds.height()
+        hint = canvas.sizeHint()
+        assert (hint.width(), hint.height()) == (canvas.width(), canvas.height())
+        assert requests["n"] == 0
+        canvas.dispose()
+        shell.deleteLater()
+
+
 def test_authored_page_stays_640_by_480_and_the_readout_matches() -> None:
     with opened(AUTHORED) as (session, realizer):
         parent = QWidget()

@@ -201,6 +201,17 @@ def _without_shortcut(tip: str) -> str:
     return tip
 
 
+def _assign_tool(button: QToolButton, enabled: bool, tip: str) -> None:
+    """Skip setters that would emit for a value the button already has."""
+    if button.isEnabled() != enabled:
+        button.setEnabled(enabled)
+    if button.toolTip() != tip:
+        button.setToolTip(tip)
+    name = _control_name(button.text(), tip)
+    if button.accessibleName() != name:
+        button.setAccessibleName(name)
+
+
 def _control_name(text: str, tip: str) -> str:
     # A glyph has no letters. Its name is the tooltip, and the shortcut parenthesis is not part of that name.
     if any(ch.isalnum() for ch in text):
@@ -624,25 +635,22 @@ class FormToolbar(QWidget):
         self.overflow.setVisible(compact)
 
     def set_undo(self, enabled: bool, tip: str) -> None:
-        self.undo.setEnabled(enabled)
-        self.undo.setToolTip(tip)
-        self.undo.setAccessibleName(_control_name(self.undo.text(), tip))
-        self._paint_glyphs()
+        # The icon already carries a disabled pixmap. Repainting every edit
+        # walked the toolbar glyphs for a state Qt already has.
+        _assign_tool(self.undo, enabled, tip)
 
     def set_redo(self, enabled: bool, tip: str) -> None:
-        self.redo.setEnabled(enabled)
-        self.redo.setToolTip(tip)
-        self.redo.setAccessibleName(_control_name(self.redo.text(), tip))
-        self._paint_glyphs()
+        _assign_tool(self.redo, enabled, tip)
 
     def set_save(self, text: str, *, error: bool, tokens: Optional[ShellThemeTokens]) -> None:
-        self.save_state.setText(text)
+        if self.save_state.text() != text:
+            self.save_state.setText(text)
         if tokens is None:
             return
         color = (tokens.diag_error_color or tokens.accent) if error else (tokens.gutter_text or tokens.text_primary)
-        self.save_state.setStyleSheet(
-            "QLabel#formBuilder\\.saveState { color: %s; background: transparent; border: none; }" % color
-        )
+        style = "QLabel#formBuilder\\.saveState { color: %s; background: transparent; border: none; }" % color
+        if self.save_state.styleSheet() != style:
+            self.save_state.setStyleSheet(style)
 
     def apply_theme(self, tokens: ShellThemeTokens) -> None:
         self._tokens = tokens

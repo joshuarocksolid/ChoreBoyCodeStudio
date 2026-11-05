@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import Callable, Hashable, List, Optional, Sequence, Tuple
 
-from app.qt.QtCore import QEvent, QMimeData, QPoint, QPointF, QRect, QRectF, Qt, QTimer
+from app.qt.QtCore import QEvent, QMimeData, QObject, QPoint, QPointF, QRect, QRectF, QSize, Qt, QTimer
 from app.qt.QtGui import QColor, QContextMenuEvent, QCursor, QDrag, QFont, QImage, QPainter, QPen, QPixmap
 from app.qt.QtWidgets import (
     QApplication,
@@ -173,6 +173,34 @@ def _transparent() -> Qt.WidgetAttribute:
     return getattr(attrs, "WA_TransparentForMouseEvents")
 
 
+def _constraint_key(widget: QObject) -> tuple:
+    """Minimum and maximum of the widgets a layout request would resize."""
+    children = []
+    count = getattr(widget, "count", None)
+    child_at = getattr(widget, "widget", None)
+    if callable(count) and callable(child_at):
+        for index in range(count()):
+            children.append(child_at(index))
+    else:
+        layout_of = getattr(widget, "layout", None)
+        layout = layout_of() if callable(layout_of) else None
+        if layout is not None:
+            for index in range(layout.count()):
+                item = layout.itemAt(index)
+                children.append(item.widget() if item is not None else None)
+        else:
+            children.append(widget)
+    parts = []
+    for child in children:
+        if child is None:
+            parts.append(None)
+            continue
+        parts.append(
+            (child.minimumWidth(), child.maximumWidth(), child.minimumHeight(), child.maximumHeight())
+        )
+    return tuple(parts)
+
+
 class FormCanvas(QGraphicsView):
     """Dot grid, centred page, and the chrome around it."""
 
@@ -184,6 +212,8 @@ class FormCanvas(QGraphicsView):
         parent: QWidget,
     ) -> None:
         super().__init__(parent)
+        self._layout_walls: list = []
+        self._wall_constraints: dict = {}
         self._session = session
         self._realizer = realizer
         self._host = host
@@ -249,9 +279,27 @@ class FormCanvas(QGraphicsView):
         self._chip_timer.timeout.connect(self._refresh_chips_after_scroll)
         self.horizontalScrollBar().valueChanged.connect(self._scroll_moved)
         self.verticalScrollBar().valueChanged.connect(self._scroll_moved)
+        # A caption or a gap edit grows the scene. The view then posts a layout
+        # request even when this canvas's size did not change. Scrollbars still
+        # update inside the view. A window resize arrives as a resize event.
         self._stage.place()
         self._sync_title()
         self._position_chrome()
+        # The row and the workbench splitter. The column between them is left
+        # alone so a drawer can setSizes on it. A scene growth still posts at
+        # the row and the splitter, and those do not change this allocation.
+        self._layout_walls = []
+        row = parent
+        splitter = None
+        if row is not None:
+            column = row.parentWidget()
+            if column is not None:
+                splitter = column.parentWidget()
+        for wall in (row, splitter):
+            if wall is None:
+                continue
+            wall.installEventFilter(self)
+            self._layout_walls.append(wall)
 
     @property
     def preview(self) -> FormPreview:
@@ -634,6 +682,34 @@ class FormCanvas(QGraphicsView):
     def focusNextPrevChild(self, next: bool) -> bool:  # noqa: N802
         del next
         return False
+
+    def sizeHint(self) -> QSize:  # noqa: N802
+        # The scene grows with the form. Once the view is on screen, the
+        # shell's splitters keep the allocation they already gave it.
+        # Before that, the ordinary hint lets the first layout choose a size.
+        if self.isVisible() and self.width() > 1 and self.height() > 1:
+            return QSize(self.width(), self.height())
+        return super().sizeHint()
+
+    def minimumSizeHint(self) -> QSize:  # noqa: N802
+        return QSize(0, 0)
+
+    def eventFilter(self, watched: QObject, event: QEvent) -> bool:  # noqa: N802
+        request = getattr(getattr(QEvent, "Type", QEvent), "LayoutRequest")
+        if event.type() != request or self.width() <= 1 or self.height() <= 1:
+            return False
+        walls = getattr(self, "_layout_walls", ())
+        if not any(watched is wall for wall in walls):
+            return False
+        # A pane moving to its rail changes a minimum. That request has to
+        # reach the splitter. A form edit and a selection do not.
+        constraints = getattr(self, "_wall_constraints", None)
+        if constraints is None:
+            return False
+        key = _constraint_key(watched)
+        previous = constraints.get(id(watched))
+        constraints[id(watched)] = key
+        return previous == key
 
     def resizeEvent(self, event: object) -> None:  # noqa: N802
         super().resizeEvent(event)  # type: ignore[arg-type]

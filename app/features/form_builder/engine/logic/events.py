@@ -278,12 +278,23 @@ def read_events(doc: UiDocument) -> Tuple[EventState, ...]:
         return cached[1]
     if (
         cached is not None
+        and len(cached) >= 7
+        and cached[6] == doc.structure_revision
+        and _event_fingerprint(doc) == cached[2]
+        and _TOUCH.get(doc, None) is None
+        and not _formula_revision(doc)
+    ):
+        # Label text and layout spacing move ``revision`` and leave events alone.
+        _READ[doc] = (doc.revision, cached[1], cached[2], cached[3], cached[4], cached[5], cached[6])
+        return cached[1]
+    if (
+        cached is not None
         and len(cached) >= 6
         and _formula_revision(doc)
         and _event_fingerprint(doc) == cached[2]
     ):
         # A formula commit moves the document revision and leaves events alone.
-        _READ[doc] = (doc.revision, cached[1], cached[2], cached[3], cached[4], cached[5])
+        _READ[doc] = (doc.revision, cached[1], cached[2], cached[3], cached[4], cached[5], doc.structure_revision)
         return cached[1]
     touch = _TOUCH.get(doc, None)
     result: Optional[Tuple[EventState, ...]] = None
@@ -304,7 +315,15 @@ def read_events(doc: UiDocument) -> Tuple[EventState, ...]:
         result, keys, native_count, widget_order = _read_events(doc)
     _TOUCH.pop(doc, None)
     _ANCHORS.pop(doc, None)
-    _READ[doc] = (doc.revision, result, _event_fingerprint(doc), keys, native_count, widget_order)
+    _READ[doc] = (
+        doc.revision,
+        result,
+        _event_fingerprint(doc),
+        keys,
+        native_count,
+        widget_order,
+        doc.structure_revision,
+    )
     return result
 
 

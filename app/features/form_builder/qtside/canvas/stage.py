@@ -11,7 +11,7 @@ import math
 from typing import Callable, Optional, Tuple
 
 from app.qt.QtCore import QPoint, Qt
-from app.qt.QtWidgets import QGraphicsProxyWidget, QGraphicsView, QLabel, QWidget
+from app.qt.QtWidgets import QGraphicsItem, QGraphicsProxyWidget, QGraphicsView, QLabel, QWidget
 from app.qt.qt_compat import wrapper_is_valid
 
 from app.features.form_builder.engine.commands.live import PropKey
@@ -108,6 +108,10 @@ class Stage:
         self._extra: Tuple[QWidget, ...] = ()
         self._dock: Optional[QWidget] = None
         self._proxy = QGraphicsProxyWidget()
+        # The fitted page is taller than the view (about 960×2400). Painting it
+        # at widget resolution was most of a spacing edit.
+        cache = getattr(getattr(QGraphicsItem, "CacheMode", QGraphicsItem), "DeviceCoordinateCache")
+        self._proxy.setCacheMode(cache)
         scene = view.scene()
         if scene is None:
             raise RuntimeError("canvas stage requires a scene")

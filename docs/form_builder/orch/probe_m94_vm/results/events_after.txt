@@ -1,0 +1,90 @@
+alias native watch filter on QApplication
+opened 1000 widgets label 15 layout 13
+widgets1000 edit cpu p50 57.432 p95 81.765 n 7
+widgets1000 spacing cpu p50 103.557 p95 117.831 n 7
+widgets1000 paste cpu p50 176.690 p95 199.439 n 7
+edit-sample events 1223 handler-gap 121.6 ms
+type	class	object	count	ms
+LayoutRequest	QSplitter	shell.editorGroups	4	9.15
+Paint	QWidget	-	70	8.26
+ToolTipChange	QToolButton	formBuilder.rowReset	1	6.92
+Paint	QWidget	qt_scrollarea_viewport	13	6.62
+LayoutRequest	QStackedWidget	qt_tabwidget_stackedwidget	3	5.92
+Timer	QTimer	-	8	5.62
+LayoutRequest	QWidget	formBuilder.inspectorViewport	5	3.00
+Paint	QSlider	field0036	1	2.30
+Paint	QToolButton	-	18	2.17
+Paint	QScrollBar	-	14	2.13
+UpdateRequest	MainWindow	shell.mainWindow	2	1.80
+Paint	QLabel	-	22	1.75
+LayoutRequest	QGroupBox	identity	1	1.65
+Paint	QTabBar	qt_tabwidget_tabbar	4	1.50
+Resize	QWidget	qt_scrollarea_viewport	19	1.44
+spacing-sample events 1291 handler-gap 84.7 ms
+type	class	object	count	ms
+LayoutRequest	QSplitter	shell.editorGroups	4	8.56
+Paint	QWidget	-	70	6.99
+LayoutRequest	QStackedWidget	qt_tabwidget_stackedwidget	2	5.67
+Paint	QWidget	qt_scrollarea_viewport	8	5.03
+Timer	QTimer	-	8	4.46
+Paint	QScrollBar	-	14	1.96
+Paint	QToolButton	-	18	1.76
+LayoutRequest	QGroupBox	identity	1	1.62
+UpdateRequest	MainWindow	shell.mainWindow	2	1.53
+Paint	QLabel	-	22	1.48
+LayoutRequest	QWidget	formBuilder.inspectorViewport	3	1.47
+ToolTipChange	QToolButton	formBuilder.redo	2	1.44
+Resize	QWidget	qt_scrollarea_viewport	19	1.07
+Resize	QLineEdit	qt_spinbox_lineedit	60	0.94
+Paint	_PageTitle	formBuilder.pageTitle	2	0.83
+paste-sample events 1532 handler-gap 224.3 ms
+type	class	object	count	ms
+LayoutRequest	QStackedWidget	qt_tabwidget_stackedwidget	2	48.11
+ActionChanged	QMenu	shell.menu.edit	1	28.75
+Timer	QTimer	-	8	12.46
+Paint	QWidget	-	70	8.73
+ToolTipChange	QToolButton	formBuilder.rowReset	1	7.86
+Paint	QWidget	qt_scrollarea_viewport	14	7.63
+Paint	QLabel	label0000_2	2	5.52
+ToolTipChange	_CrumbLabel	formBuilder.inspectorCrumbs	2	4.30
+LayoutRequest	QGroupBox	identity	1	4.13
+StyleChange	QLabel	formBuilder.saveState	2	3.92
+ShowToParent	QLabel	label0000_2	1	2.64
+Paint	QScrollBar	-	14	2.42
+ChildPolished	QGroupBox	identity	1	2.30
+Paint	QLineEdit	qt_spinbox_lineedit	24	2.25
+Paint	QToolButton	-	18	2.20
+== cProfile paste-dispatch ==
+         375815 function calls (374936 primitive calls) in 0.214 seconds
+
+   Ordered by: cumulative time
+   List reduced from 1088 to 20 due to restriction <20>
+
+   ncalls  tottime  percall  cumtime  percall filename:lineno(function)
+        1    0.000    0.000    0.216    0.216 /home/default/cbprobe_jobs/m94-f3-after-20261105T044957Z-ab0a4f/payload/events_probe.py:314(paste_only)
+        1    0.000    0.000    0.216    0.216 /home/default/cbprobe_jobs/m94-f3-after-20261105T044957Z-ab0a4f/payload/payload/app/features/form_builder/integration/surface.py:654(dispatch)
+        1    0.000    0.000    0.216    0.216 /home/default/cbprobe_jobs/m94-f3-after-20261105T044957Z-ab0a4f/payload/payload/app/features/form_builder/integration/clipboard_actions.py:112(apply_command)
+        1    0.000    0.000    0.216    0.216 /home/default/cbprobe_jobs/m94-f3-after-20261105T044957Z-ab0a4f/payload/payload/app/features/form_builder/integration/clipboard_actions.py:160(_paste)
+        1    0.000    0.000    0.214    0.214 /home/default/cbprobe_jobs/m94-f3-after-20261105T044957Z-ab0a4f/payload/payload/app/features/form_builder/integration/clipboard_actions.py:243(_insert)
+        1    0.000    0.000    0.213    0.213 /home/default/cbprobe_jobs/m94-f3-after-20261105T044957Z-ab0a4f/payload/payload/app/features/form_builder/engine/commands/log.py:165(execute)
+        1    0.000    0.000    0.182    0.182 /home/default/cbprobe_jobs/m94-f3-after-20261105T044957Z-ab0a4f/payload/payload/app/features/form_builder/engine/commands/log.py:458(_store)
+        1    0.000    0.000    0.181    0.181 /home/default/cbprobe_jobs/m94-f3-after-20261105T044957Z-ab0a4f/payload/payload/app/features/form_builder/engine/commands/log.py:678(_emit)
+        1    0.000    0.000    0.055    0.055 /home/default/cbprobe_jobs/m94-f3-after-20261105T044957Z-ab0a4f/payload/payload/app/features/form_builder/qtside/realize/api.py:232(on_changeset)
+        1    0.001    0.001    0.054    0.054 /home/default/cbprobe_jobs/m94-f3-after-20261105T044957Z-ab0a4f/payload/payload/app/features/form_builder/qtside/realize/api.py:406(_patch)
+        1    0.000    0.000    0.045    0.045 /home/default/cbprobe_jobs/m94-f3-after-20261105T044957Z-ab0a4f/payload/payload/app/features/form_builder/qtside/realize/api.py:471(_reconcile_ids)
+        1    0.000    0.000    0.044    0.044 /home/default/cbprobe_jobs/m94-f3-after-20261105T044957Z-ab0a4f/payload/payload/app/features/form_builder/qtside/realize/tree.py:826(_reconcile_node)
+        1    0.000    0.000    0.044    0.044 /home/default/cbprobe_jobs/m94-f3-after-20261105T044957Z-ab0a4f/payload/payload/app/features/form_builder/qtside/realize/slots.py:218(_fill_layout)
+        1    0.003    0.003    0.044    0.044 /home/default/cbprobe_jobs/m94-f3-after-20261105T044957Z-ab0a4f/payload/payload/app/features/form_builder/qtside/realize/slots.py:262(_patch_layout)
+    16115    0.029    0.000    0.040    0.000 /home/default/cbprobe_jobs/m94-f3-after-20261105T044957Z-ab0a4f/payload/payload/app/features/form_builder/engine/ui4/document.py:296(iter_preorder)
+        1    0.000    0.000    0.040    0.040 /home/default/cbprobe_jobs/m94-f3-after-20261105T044957Z-ab0a4f/payload/payload/app/features/form_builder/integration/data_checks_bridge.py:64(refresh)
+        1    0.000    0.000    0.040    0.040 /home/default/cbprobe_jobs/m94-f3-after-20261105T044957Z-ab0a4f/payload/payload/app/features/form_builder/engine/data/publish.py:15(publish_session)
+        1    0.000    0.000    0.039    0.039 /home/default/cbprobe_jobs/m94-f3-after-20261105T044957Z-ab0a4f/payload/payload/app/features/form_builder/engine/data/check.py:88(run_checks)
+        1    0.000    0.000    0.031    0.031 /home/default/cbprobe_jobs/m94-f3-after-20261105T044957Z-ab0a4f/payload/payload/app/features/form_builder/engine/commands/log.py:438(_apply)
+        1    0.000    0.000    0.031    0.031 /home/default/cbprobe_jobs/m94-f3-after-20261105T044957Z-ab0a4f/payload/payload/app/features/form_builder/engine/commands/catalog.py:72(apply)
+
+
+
+opened 60 widgets label 15 layout 13
+widgets60 edit cpu p50 76.242 p95 82.160 n 7
+widgets60 spacing cpu p50 54.365 p95 68.871 n 7
+widgets60 paste cpu p50 84.039 p95 111.231 n 7

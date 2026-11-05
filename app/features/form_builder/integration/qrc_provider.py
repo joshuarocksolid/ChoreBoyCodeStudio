@@ -176,13 +176,13 @@ class _ShellUndo:
         )
 
     def _set(self, undo_text: str, undo_on: bool, redo_text: str, redo_on: bool) -> None:
+        from app.shell.action_state import assign_history_action
+
         undo, redo = self._actions()
         if undo is not None:
-            undo.setText(undo_text)
-            undo.setEnabled(undo_on)
+            assign_history_action(undo, undo_text, undo_on)
         if redo is not None:
-            redo.setText(redo_text)
-            redo.setEnabled(redo_on)
+            assign_history_action(redo, redo_text, redo_on)
 
 
 class _ShowHideFilter(QObject):

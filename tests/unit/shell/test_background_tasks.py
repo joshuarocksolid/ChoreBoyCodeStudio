@@ -13,6 +13,12 @@ from app.shell.background_tasks import GeneralTaskScheduler
 pytestmark = pytest.mark.unit
 
 
+def test_run_after_shutdown_does_not_submit() -> None:
+    runner = GeneralTaskScheduler(dispatch_to_main_thread=lambda callback: callback())
+    runner.shutdown(wait=False)
+    runner.run(key="late", task=lambda _cancel: 1)
+
+
 def test_background_task_runner_dispatches_success_callback() -> None:
     seen: list[int] = []
     done = threading.Event()

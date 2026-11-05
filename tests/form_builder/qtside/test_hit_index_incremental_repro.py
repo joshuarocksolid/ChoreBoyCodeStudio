@@ -45,9 +45,9 @@ def _id(session: FormSession, name: str) -> NodeId:
     return session.document.by_name(name)[0]
 
 
-def _table(entries) -> List[Tuple[object, str, object, bool]]:
+def _table(entries) -> List[Tuple[object, str, object, bool, int]]:
     return sorted(
-        ((entry.node, entry.kind, entry.rect, entry.visible) for entry in entries),
+        ((entry.node, entry.kind, entry.rect, entry.visible, entry.z) for entry in entries),
         key=repr,
     )
 
@@ -409,6 +409,79 @@ def test_late_scrollbar_two_containers_deep_matches_a_full_rebuild(start_page: i
         _assert_full(realizer, index)
 
 
+def _long_form_xml() -> str:
+    rows = []
+    for index in range(12):
+        rows.append(
+            '<item row="%d" column="0"><widget class="QLabel" name="lab%02d">'
+            '<property name="text"><string>Label %02d</string></property></widget></item>'
+            '<item row="%d" column="1"><widget class="QLineEdit" name="field%02d"/></item>'
+            % (index, index, index, index, index)
+        )
+    return form(
+        'class="QWidget" name="Form"',
+        '<property name="geometry"><rect><x>0</x><y>0</y><width>420</width><height>640</height></rect></property>\n'
+        "  <layout class=\"QFormLayout\" name=\"identityForm\">%s</layout>" % "".join(rows),
+    )
+
+
+def _moved_nodes(before, entries) -> set:
+    moved = set()
+    for entry in entries:
+        old = before.get((entry.node, entry.kind))
+        if old != (entry.rect, entry.visible):
+            moved.add(entry.node)
+    return moved
+
+
+def test_long_form_caption_matches_a_full_rebuild() -> None:
+    """A caption on a long form keeps every rect, including z, and names the rows that moved."""
+    with opened(_long_form_xml()) as (session, realizer):
+        root = realizer.root_widget
+        assert root is not None
+        root.resize(420, 640)
+        root.show()
+        QApplication.processEvents()
+        index = HitIndex(LiveGeometrySource(realizer))
+        subscription = session.log.subscribe(HitIndexInvalidator(index).on_changeset, priority=PRIORITY_HIT_INDEX)
+        try:
+            index.ensure_fresh()
+            before = {(entry.node, entry.kind): (entry.rect, entry.visible) for entry in index._entries}
+            session.log.execute(SetProperty(session.document.by_name("lab00")[0], "text", StringValue("Name 00")))
+            QApplication.processEvents()
+            _assert_matches_full(realizer, index)
+            assert index.last_changed is not None
+            assert set(index.last_changed) == _moved_nodes(before, index._entries)
+        finally:
+            subscription.close()
+            root.hide()
+
+
+def test_long_form_spacing_matches_a_full_rebuild() -> None:
+    """Spacing on a long form remeasures that layout and still matches a rebuild."""
+    with opened(_long_form_xml()) as (session, realizer):
+        root = realizer.root_widget
+        assert root is not None
+        root.resize(420, 640)
+        root.show()
+        QApplication.processEvents()
+        index = HitIndex(LiveGeometrySource(realizer))
+        subscription = session.log.subscribe(HitIndexInvalidator(index).on_changeset, priority=PRIORITY_HIT_INDEX)
+        try:
+            index.ensure_fresh()
+            before = {(entry.node, entry.kind): (entry.rect, entry.visible) for entry in index._entries}
+            session.log.execute(SetProperty(session.document.by_name("identityForm")[0], "spacing", NumberValue(18)))
+            QApplication.processEvents()
+            _assert_matches_full(realizer, index)
+            assert index.last_changed is not None
+            assert set(index.last_changed) == _moved_nodes(before, index._entries)
+            # 12 rows are 24 leaves. A full measure visits every one. The shift path samples a few.
+            assert index.last_visit_count < 24
+        finally:
+            subscription.close()
+            root.hide()
+
+
 def test_a_rebuilt_scroll_area_is_watched_again() -> None:
     """Re-realize makes new widgets; the watch must follow them, not a reused id()."""
     with _nested_scroll(1) as (session, realizer, index):
@@ -425,3 +498,100 @@ def test_a_rebuilt_scroll_area_is_watched_again() -> None:
         _late_bar(session, realizer)
         index.ensure_fresh()
         _assert_full(realizer, index)
+
+
+def _hbox_with_spacer() -> str:
+    cells = [
+        '<item><widget class="QLabel" name="pinLeft"><property name="text"><string>P</string></property></widget></item>',
+        '<item><widget class="QLabel" name="label1"><property name="text"><string>A</string></property></widget></item>',
+        '<item><widget class="QPushButton" name="btn2"><property name="text"><string>2</string></property></widget></item>',
+        '<item><widget class="QPushButton" name="btn3"><property name="text"><string>3</string></property></widget></item>',
+        """<item><spacer name="gap">
+     <property name="orientation"><enum>Qt::Horizontal</enum></property>
+     <property name="sizeType"><enum>QSizePolicy::Expanding</enum></property>
+     <property name="sizeHint" stdset="0"><size><width>40</width><height>10</height></size></property>
+    </spacer></item>""",
+    ]
+    for number in range(4, 9):
+        cells.append(
+            '<item><widget class="QPushButton" name="btn%d"><property name="text"><string>%d</string></property></widget></item>'
+            % (number, number)
+        )
+    cells.append(
+        '<item><widget class="QLabel" name="pinRight"><property name="text"><string>R</string></property></widget></item>'
+    )
+    return form(
+        'class="QWidget" name="Form"',
+        """
+  <property name="geometry"><rect><x>0</x><y>0</y><width>900</width><height>80</height></rect></property>
+  <layout class="QHBoxLayout" name="row">
+   %s
+  </layout>
+"""
+        % "\n   ".join(cells),
+    )
+
+
+def _form_with_fixed_field() -> str:
+    rows = []
+    for row in range(8):
+        extra = ""
+        if row == 4:
+            extra = (
+                "<property name=\"sizePolicy\"><sizepolicy hsizetype=\"Fixed\" vsizetype=\"Fixed\">"
+                "<horstretch>0</horstretch><verstretch>0</verstretch></sizepolicy></property>"
+                "<property name=\"maximumSize\"><size><width>40</width><height>16777215</height></size></property>"
+            )
+        rows.append(
+            '<item row="%d" column="0"><widget class="QLabel" name="lab%d">'
+            '<property name="text"><string>L%d</string></property></widget></item>'
+            '<item row="%d" column="1"><widget class="QLineEdit" name="field%d">%s</widget></item>'
+            % (row, row, row, row, row, extra)
+        )
+    return form(
+        'class="QWidget" name="Form"',
+        """
+  <property name="geometry"><rect><x>0</x><y>0</y><width>480</width><height>420</height></rect></property>
+  <layout class="QFormLayout" name="formLayout">
+   <property name="horizontalSpacing"><number>6</number></property>
+   %s
+  </layout>
+"""
+        % "\n   ".join(rows),
+    )
+
+
+def test_widening_a_label_beside_an_expanding_spacer_matches_a_full_rebuild() -> None:
+    with opened(_hbox_with_spacer()) as (session, realizer):
+        root = realizer.root_widget
+        assert root is not None
+        root.resize(900, 80)
+        root.show()
+        QApplication.processEvents()
+        index = HitIndex(LiveGeometrySource(realizer))
+        subscription = session.log.subscribe(HitIndexInvalidator(index).on_changeset, priority=PRIORITY_HIT_INDEX)
+        try:
+            index.ensure_fresh()
+            session.log.execute(SetProperty(_id(session, "label1"), "text", StringValue("A much wider caption")))
+            _assert_matches_full(realizer, index)
+        finally:
+            subscription.close()
+            root.hide()
+
+
+def test_spacing_with_a_fixed_field_matches_a_full_rebuild() -> None:
+    with opened(_form_with_fixed_field()) as (session, realizer):
+        root = realizer.root_widget
+        assert root is not None
+        root.resize(480, 420)
+        root.show()
+        QApplication.processEvents()
+        index = HitIndex(LiveGeometrySource(realizer))
+        subscription = session.log.subscribe(HitIndexInvalidator(index).on_changeset, priority=PRIORITY_HIT_INDEX)
+        try:
+            index.ensure_fresh()
+            session.log.execute(SetProperty(_id(session, "formLayout"), "horizontalSpacing", NumberValue(28)))
+            _assert_matches_full(realizer, index)
+        finally:
+            subscription.close()
+            root.hide()

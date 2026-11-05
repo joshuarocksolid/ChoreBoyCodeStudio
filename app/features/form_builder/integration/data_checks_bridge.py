@@ -29,6 +29,9 @@ _BEHAVIOR_ONLY = frozenset(
         "cbcsSplitterSizes",
         "cbcsValidate",
         "cbcsVisibleWhen",
+        # A caption or a layout gap cannot change a data diagnostic.
+        "text",
+        "spacing",
     }
 )
 

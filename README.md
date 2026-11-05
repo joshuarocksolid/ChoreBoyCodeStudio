@@ -20,6 +20,12 @@ python3 testing/run_test_shard.py fast
 
 Full command catalog: [`docs/TESTS.md` §5](docs/TESTS.md#5-core-commands).
 
+## Form builder
+
+Shop programmers lay out data-entry forms in the editor. You can start from a blank form, a template, or a database table, bind fields to SQLite or PostgreSQL, and save a window class. Preview can run the form and roll database changes back.
+
+The task pages, the keyboard reference, and the problem codes are in the [form builder manual](docs/manual/form_builder/index.md).
+
 ## Documentation map
 
 | Document | Purpose |
@@ -32,6 +38,7 @@ Full command catalog: [`docs/TESTS.md` §5](docs/TESTS.md#5-core-commands).
 | [`docs/TESTS.md`](docs/TESTS.md) | Test strategy and commands |
 | [`docs/TEST_AUDIT.md`](docs/TEST_AUDIT.md) | Test suite audit index |
 | [`docs/manual/README.md`](docs/manual/README.md) | End-user manual source |
+| [`docs/manual/form_builder/index.md`](docs/manual/form_builder/index.md) | Form builder manual |
 | [`CHANGELOG.md`](CHANGELOG.md) | Release history |
 | [`AGENTS.md`](AGENTS.md) | Agent/CI operating rules |
 

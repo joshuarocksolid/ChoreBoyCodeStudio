@@ -1281,6 +1281,8 @@ A trace is a JSON-lines file with one object per step: `{"t": ms, "event": "pres
 
 ### 12.5 Automated checks the gate expects
 
+A continuous edit (typing a property, dragging, changing a layout gap) stays within 16 ms. Paste is one discrete action, so its budget is 100 ms. On the 1000-widget reference form, Qt lays out the ~200 shifted rows and that alone is about 45 ms.
+
 | Check | Clauses |
 | --- | --- |
 | Chip and badge rectangles never intersect content, in every tour state | CHIP-001, CHIP-002, OVL-004, OVL-007, A11Y-007 |

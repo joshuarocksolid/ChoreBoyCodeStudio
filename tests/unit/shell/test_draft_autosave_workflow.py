@@ -392,3 +392,43 @@ def test_migrate_draft_for_move_moves_persisted_draft_to_new_path(tmp_path: Path
     assert moved.content == "print('draft')\n"
     assert moved.recovery_policy == DRAFT_RECOVERY_POLICY_RESTORE_SILENTLY
     assert autosave_store.load_draft(old_path, project_id="proj_demo", project_root=str(project_root)) is None
+
+
+def test_paste_then_quit_leaves_the_draft(qapp, tmp_path: Path) -> None:  # type: ignore[no-untyped-def]
+    """Quit writes the pasted form even though the autosave timer has not fired."""
+    del qapp
+    from app.features.form_builder.engine.commands.catalog import InsertFragment
+    from app.features.form_builder.engine.commands.placement import InBoxLayout
+    from app.features.form_builder.engine.ui4.spec import Fragment
+    from app.features.form_builder.integration.content_source import FormContentSource, open_document_log
+    from tests.support.form_builder.command_fixtures import BOX, button_spec
+
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+    ui_path = project_root / "invoice.ui"
+    ui_path.write_text(BOX, encoding="utf-8")
+    log = open_document_log(BOX)
+    source = FormContentSource(log, BOX)
+    layout = log.document.root.layout
+    assert layout is not None
+    log.execute(InsertFragment(InBoxLayout(layout.id, 1), Fragment(nodes=(button_spec("pastedButton"),))))
+    manager = EditorManager()
+    tab = manager.open_file(str(ui_path.resolve())).tab
+    tab.content_source = source
+    autosave_store = _FakeAutosaveStore()
+    timer = _FakeTimer()
+    workflow = DraftAutosaveWorkflow(
+        parent=None,
+        autosave_store=autosave_store,  # type: ignore[arg-type]
+        editor_manager=manager,
+        context_for_path=_context_for_path(project_root),
+        logger=logging.getLogger("test.draft_autosave_paste"),
+        autosave_timer=timer,  # type: ignore[arg-type]
+    )
+    workflow.note_source_changed(tab.file_path)
+    assert timer.timeout_callback is not None
+    timer.timeout_callback()
+    assert autosave_store.saved == []
+    workflow.keep_drafts_for_paths([tab.file_path])
+    assert len(autosave_store.saved) == 1
+    assert "pastedButton" in autosave_store.saved[0][1]
