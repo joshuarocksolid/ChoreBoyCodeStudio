@@ -1,0 +1,25 @@
+{
+  "python": "3.11.14",
+  "executable": "/opt/freecad/usr/bin/freecad",
+  "loadavg": null,
+  "loadavg_error": "OSError: Load averages are unobtainable",
+  "alias": "native",
+  "runtime": {
+    "executable": "/opt/freecad/usr/bin/freecad",
+    "python": "3.11.14",
+    "freecad": [
+      "1",
+      "1",
+      "1",
+      "20260414 (Git shallow)",
+      "Unknown",
+      "2026/04/14 22:09:59",
+      "(HEAD detached at 0108fd4b4)",
+      "0108fd4b4850cc46e625b60e53cea7a7bbe69f8d"
+    ]
+  },
+  "output": "/home/default/cbprobe_jobs/m94-speed-20261104T235208Z-b707ad/payload/results",
+  "speed_ok": false,
+  "rows": 165,
+  "m7_exit": 1
+}

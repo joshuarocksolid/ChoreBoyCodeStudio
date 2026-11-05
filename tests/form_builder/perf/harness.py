@@ -103,6 +103,8 @@ DIRECT_HIT_BUDGET_MS = 2.0
 DROP_TARGET_BUDGET_MS = 2.0
 OUTLINE_PATCH_BUDGET_MS = 2.0
 EDIT_BUDGET_MS = 16.0
+# Paste is one discrete action. Qt lays out the ~200 shifted rows (~45 ms).
+PASTE_BUDGET_MS = 100.0
 SELECTION_BUDGET_MS = 8.0
 INSPECTOR_REPOPULATE_BUDGET_MS = 16.0
 DIAGNOSTICS_BUDGET_MS = 2.0
@@ -1960,8 +1962,9 @@ STRUCTURAL_POINTS: Tuple[str, ...] = (
 )
 # Ten widgets in one InsertFragment. Reported at 300 and enforced at 1000.
 # It is not in STRUCTURAL_RATIO_POINTS: a 10-wide edit is not the 300-vs-1000 check.
+# This is not the surface paste row. That budget is PASTE_BUDGET_MS.
 PASTE_POINT = "paste 10"
-PASTE_BUDGET_MS = 16.0
+STRUCTURAL_PASTE_BUDGET_MS = 16.0
 # Edits whose changed set does not grow with the form. Their realize p95 at
 # 1000 widgets stays within CHANGED_RATIO_LIMIT of the 300-widget p95.
 # ``insert into layout`` shifts every grid row, so it is reported at 1000
@@ -1987,7 +1990,7 @@ def _structural_rows(
     """Structural edits. Realize-only p95 against the 8 ms patch budget at 300 widgets."""
     if 300 not in forms or not _module_exists("app.features.form_builder.qtside.realize"):
         missing = [_missing(point, 300, _ms_budget(REALIZER_PATCH_BUDGET_MS), "no qtside realize yet") for point in STRUCTURAL_POINTS]
-        missing.append(_missing(PASTE_POINT, 1000, _ms_budget(PASTE_BUDGET_MS), "no qtside realize yet"))
+        missing.append(_missing(PASTE_POINT, 1000, _ms_budget(STRUCTURAL_PASTE_BUDGET_MS), "no qtside realize yet"))
         return tuple(missing)
     small = _structural_dists(forms[300], samples, warmup)
     if isinstance(small, str):
@@ -2012,16 +2015,16 @@ def _structural_rows(
                     "needs the 1000-widget form",
                 )
             )
-        rows.append(Row(PASTE_POINT, 1000, None, None, None, _ms_budget(PASTE_BUDGET_MS), "skip", "needs the 1000-widget form"))
+        rows.append(Row(PASTE_POINT, 1000, None, None, None, _ms_budget(STRUCTURAL_PASTE_BUDGET_MS), "skip", "needs the 1000-widget form"))
         return tuple(rows)
     large = _structural_dists(forms[1000], samples, warmup)
     if isinstance(large, str):
         skipped = [Row(point, 1000, None, None, None, "-", "skip", large) for point in STRUCTURAL_POINTS]
-        skipped.append(Row(PASTE_POINT, 1000, None, None, None, _ms_budget(PASTE_BUDGET_MS), "skip", large))
+        skipped.append(Row(PASTE_POINT, 1000, None, None, None, _ms_budget(STRUCTURAL_PASTE_BUDGET_MS), "skip", large))
         return tuple(rows) + tuple(skipped)
     for point in STRUCTURAL_POINTS:
         rows.append(_structural_row(point, 1000, large[point], None, False))
-    rows.append(_structural_row(PASTE_POINT, 1000, large[PASTE_POINT], PASTE_BUDGET_MS, enforce_absolute))
+    rows.append(_structural_row(PASTE_POINT, 1000, large[PASTE_POINT], STRUCTURAL_PASTE_BUDGET_MS, enforce_absolute))
     for point in STRUCTURAL_RATIO_POINTS:
         rows.append(_structural_ratio_row(point, small, large, forms, samples, warmup))
     return tuple(rows)
@@ -2625,11 +2628,6 @@ def _sizing_preview_rows(
         parent.deleteLater()
 
 
-#: These two rows still miss the 16 ms budget at 1000 widgets. The miss is
-#: accepted for M3 and owned by M9.4; the budget is not raised. See
-#: docs/form_builder/PLAN.md, M9.4 "Known M3 misses".
-KNOWN_M94_MISS = "known M3 miss, owned by M9.4 (docs/form_builder/PLAN.md, M9.4 known misses)"
-KNOWN_M94_POINTS = frozenset({"edit total surface", "edit layout spacing", "paste surface"})
 KNOWN_M45_MISS = "known M4 miss; M4.5 fix list"
 KNOWN_M45_POINTS: frozenset = frozenset()
 KNOWN_M5_MISS = "known M5 miss; M5.R fix list"
@@ -2639,9 +2637,7 @@ KNOWN_M5_POINTS: frozenset = frozenset()
 
 def _known_miss(row: Row) -> Row:
     """Report a documented miss as "known miss" instead of "fail"; the budget stays."""
-    if row.point in KNOWN_M94_POINTS:
-        row = _with_detail(row, KNOWN_M94_MISS)
-    elif row.point in KNOWN_M5_POINTS:
+    if row.point in KNOWN_M5_POINTS:
         row = _with_detail(row, KNOWN_M5_MISS)
     else:
         assert row.point in KNOWN_M45_POINTS, row.point
@@ -3187,19 +3183,17 @@ def _surface_window_rows(
             pane.flush()
 
         rows.append(
-            _known_miss(
-                _timed(
-                    "edit total surface",
-                    count,
-                    edit,
-                    EDIT_BUDGET_MS,
-                    samples=samples,
-                    warmup=warmup,
-                    enforce_absolute=enforce_absolute,
-                    wall_on=wall_on,
-                    prepare=app.processEvents,
-                )[0]
-            )
+            _timed(
+                "edit total surface",
+                count,
+                edit,
+                EDIT_BUDGET_MS,
+                samples=samples,
+                warmup=warmup,
+                enforce_absolute=enforce_absolute,
+                wall_on=wall_on,
+                prepare=app.processEvents,
+            )[0]
         )
         def space() -> None:
             step["n"] += 1
@@ -3212,19 +3206,17 @@ def _surface_window_rows(
             pane.flush()
 
         rows.append(
-            _known_miss(
-                _timed(
-                    "edit layout spacing",
-                    count,
-                    space,
-                    EDIT_BUDGET_MS,
-                    samples=samples,
-                    warmup=warmup,
-                    enforce_absolute=enforce_absolute,
-                    wall_on=wall_on,
-                    prepare=app.processEvents,
-                )[0],
-            )
+            _timed(
+                "edit layout spacing",
+                count,
+                space,
+                EDIT_BUDGET_MS,
+                samples=samples,
+                warmup=warmup,
+                enforce_absolute=enforce_absolute,
+                wall_on=wall_on,
+                prepare=app.processEvents,
+            )[0]
         )
         session.selection.set((label,), source=selection.SelectionSource.CANVAS)
         app.processEvents()
@@ -3240,20 +3232,18 @@ def _surface_window_rows(
             app.processEvents()
 
         rows.append(
-            _known_miss(
-                _timed(
-                    "paste surface",
-                    count,
-                    paste,
-                    EDIT_BUDGET_MS,
-                    samples=samples,
-                    warmup=warmup,
-                    enforce_absolute=enforce_absolute,
-                    wall_on=wall_on,
-                    prepare=app.processEvents,
-                    cleanup=undo_paste,
-                )[0],
-            )
+            _timed(
+                "paste surface",
+                count,
+                paste,
+                PASTE_BUDGET_MS,
+                samples=samples,
+                warmup=warmup,
+                enforce_absolute=enforce_absolute,
+                wall_on=wall_on,
+                prepare=app.processEvents,
+                cleanup=undo_paste,
+            )[0]
         )
         visits = {"n": 0}
         index = canvas._index

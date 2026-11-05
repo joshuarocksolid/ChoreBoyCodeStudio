@@ -45,9 +45,9 @@ def _id(session: FormSession, name: str) -> NodeId:
     return session.document.by_name(name)[0]
 
 
-def _table(entries) -> List[Tuple[object, str, object, bool]]:
+def _table(entries) -> List[Tuple[object, str, object, bool, int]]:
     return sorted(
-        ((entry.node, entry.kind, entry.rect, entry.visible) for entry in entries),
+        ((entry.node, entry.kind, entry.rect, entry.visible, entry.z) for entry in entries),
         key=repr,
     )
 
@@ -407,6 +407,77 @@ def test_late_scrollbar_two_containers_deep_matches_a_full_rebuild(start_page: i
         QApplication.processEvents()
         index.ensure_fresh()
         _assert_full(realizer, index)
+
+
+def _long_form_xml() -> str:
+    rows = []
+    for index in range(12):
+        rows.append(
+            '<item row="%d" column="0"><widget class="QLabel" name="lab%02d">'
+            '<property name="text"><string>Label %02d</string></property></widget></item>'
+            '<item row="%d" column="1"><widget class="QLineEdit" name="field%02d"/></item>'
+            % (index, index, index, index, index)
+        )
+    return form(
+        'class="QWidget" name="Form"',
+        '<property name="geometry"><rect><x>0</x><y>0</y><width>420</width><height>640</height></rect></property>\n'
+        "  <layout class=\"QFormLayout\" name=\"identityForm\">%s</layout>" % "".join(rows),
+    )
+
+
+def _moved_nodes(before, entries) -> set:
+    moved = set()
+    for entry in entries:
+        old = before.get((entry.node, entry.kind))
+        if old != (entry.rect, entry.visible):
+            moved.add(entry.node)
+    return moved
+
+
+def test_long_form_caption_matches_a_full_rebuild() -> None:
+    """A caption on a long form keeps every rect, including z, and names the rows that moved."""
+    with opened(_long_form_xml()) as (session, realizer):
+        root = realizer.root_widget
+        assert root is not None
+        root.resize(420, 640)
+        root.show()
+        QApplication.processEvents()
+        index = HitIndex(LiveGeometrySource(realizer))
+        subscription = session.log.subscribe(HitIndexInvalidator(index).on_changeset, priority=PRIORITY_HIT_INDEX)
+        try:
+            index.ensure_fresh()
+            before = {(entry.node, entry.kind): (entry.rect, entry.visible) for entry in index._entries}
+            session.log.execute(SetProperty(session.document.by_name("lab00")[0], "text", StringValue("Name 00")))
+            QApplication.processEvents()
+            _assert_matches_full(realizer, index)
+            assert index.last_changed is not None
+            assert set(index.last_changed) == _moved_nodes(before, index._entries)
+        finally:
+            subscription.close()
+            root.hide()
+
+
+def test_long_form_spacing_matches_a_full_rebuild() -> None:
+    """Spacing on a long form remeasures that layout and still matches a rebuild."""
+    with opened(_long_form_xml()) as (session, realizer):
+        root = realizer.root_widget
+        assert root is not None
+        root.resize(420, 640)
+        root.show()
+        QApplication.processEvents()
+        index = HitIndex(LiveGeometrySource(realizer))
+        subscription = session.log.subscribe(HitIndexInvalidator(index).on_changeset, priority=PRIORITY_HIT_INDEX)
+        try:
+            index.ensure_fresh()
+            before = {(entry.node, entry.kind): (entry.rect, entry.visible) for entry in index._entries}
+            session.log.execute(SetProperty(session.document.by_name("identityForm")[0], "spacing", NumberValue(18)))
+            QApplication.processEvents()
+            _assert_matches_full(realizer, index)
+            assert index.last_changed is not None
+            assert set(index.last_changed) == _moved_nodes(before, index._entries)
+        finally:
+            subscription.close()
+            root.hide()
 
 
 def test_a_rebuilt_scroll_area_is_watched_again() -> None:

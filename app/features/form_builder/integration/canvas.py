@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import Callable, Hashable, List, Optional, Sequence, Tuple
 
-from app.qt.QtCore import QEvent, QMimeData, QPoint, QPointF, QRect, QRectF, Qt, QTimer
+from app.qt.QtCore import QEvent, QMimeData, QObject, QPoint, QPointF, QRect, QRectF, Qt, QTimer
 from app.qt.QtGui import QColor, QContextMenuEvent, QCursor, QDrag, QFont, QImage, QPainter, QPen, QPixmap
 from app.qt.QtWidgets import (
     QApplication,
@@ -249,9 +249,14 @@ class FormCanvas(QGraphicsView):
         self._chip_timer.timeout.connect(self._refresh_chips_after_scroll)
         self.horizontalScrollBar().valueChanged.connect(self._scroll_moved)
         self.verticalScrollBar().valueChanged.connect(self._scroll_moved)
+        # A caption or a gap edit grows the scene. The view then posts a layout
+        # request even when this canvas's size did not change, and the shell
+        # lays itself out. Scrollbars still update inside the view.
+        self._layout_stamp: Optional[Tuple[int, int]] = None
         self._stage.place()
         self._sync_title()
         self._position_chrome()
+        parent.installEventFilter(self)
 
     @property
     def preview(self) -> FormPreview:
@@ -635,7 +640,17 @@ class FormCanvas(QGraphicsView):
         del next
         return False
 
+    def eventFilter(self, watched: QObject, event: QEvent) -> bool:  # noqa: N802
+        request = getattr(getattr(QEvent, "Type", QEvent), "LayoutRequest")
+        if watched is self.parentWidget() and event.type() == request:
+            stamp = (self.width(), self.height())
+            if stamp[0] > 1 and stamp == self._layout_stamp:
+                return True
+            self._layout_stamp = stamp
+        return False
+
     def resizeEvent(self, event: object) -> None:  # noqa: N802
+        self._layout_stamp = None
         super().resizeEvent(event)  # type: ignore[arg-type]
         banner = getattr(self, "_banner", None)
         if banner is not None and banner.isVisible():

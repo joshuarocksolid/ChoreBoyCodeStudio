@@ -1,0 +1,107 @@
+edit cpu 221.91 ms
+== edit ==
+         136081 function calls (134947 primitive calls) in 0.214 seconds
+
+   Ordered by: cumulative time
+   List reduced from 1575 to 25 due to restriction <25>
+
+   ncalls  tottime  percall  cumtime  percall filename:lineno(function)
+        1    0.000    0.000    0.218    0.218 /home/default/cbprobe_jobs/m94-profile2-20261105T000735Z-d92f5f/payload/profile_surface.py:103(edit)
+        1    0.047    0.047    0.197    0.197 {built-in method processEvents}
+        2    0.000    0.000    0.102    0.051 /home/default/cbprobe_jobs/m94-profile2-20261105T000735Z-d92f5f/payload/payload/app/features/form_builder/qtside/inspector/pane.py:297(flush)
+        1    0.000    0.000    0.077    0.077 /home/default/cbprobe_jobs/m94-profile2-20261105T000735Z-d92f5f/payload/payload/app/features/form_builder/qtside/inspector/_properties.py:434(paint)
+        6    0.000    0.000    0.077    0.013 /home/default/cbprobe_jobs/m94-profile2-20261105T000735Z-d92f5f/payload/payload/app/features/form_builder/qtside/inspector/_properties.py:819(paint)
+        4    0.000    0.000    0.069    0.017 /home/default/cbprobe_jobs/m94-profile2-20261105T000735Z-d92f5f/payload/payload/app/features/form_builder/qtside/inspector/_properties.py:933(_paint_rows)
+       20    0.001    0.000    0.068    0.003 /home/default/cbprobe_jobs/m94-profile2-20261105T000735Z-d92f5f/payload/payload/app/features/form_builder/qtside/inspector/_properties.py:1203(paint)
+        1    0.002    0.002    0.059    0.059 /home/default/cbprobe_jobs/m94-profile2-20261105T000735Z-d92f5f/payload/payload/app/features/form_builder/qtside/inspector/editors/buddy.py:63(show)
+        1    0.000    0.000    0.042    0.042 /home/default/cbprobe_jobs/m94-profile2-20261105T000735Z-d92f5f/payload/payload/app/features/form_builder/engine/query/tab_stops.py:176(buddy_choices)
+        1    0.000    0.000    0.033    0.033 /home/default/cbprobe_jobs/m94-profile2-20261105T000735Z-d92f5f/payload/payload/app/features/form_builder/engine/query/tree.py:306(reading_order)
+   1000/1    0.003    0.000    0.033    0.033 /home/default/cbprobe_jobs/m94-profile2-20261105T000735Z-d92f5f/payload/payload/app/features/form_builder/engine/query/tree.py:474(_walk_reading)
+      5/1    0.002    0.000    0.033    0.033 /home/default/cbprobe_jobs/m94-profile2-20261105T000735Z-d92f5f/payload/payload/app/features/form_builder/engine/query/tree.py:485(_walk_layout)
+        2    0.000    0.000    0.027    0.014 /home/default/cbprobe_jobs/m94-profile2-20261105T000735Z-d92f5f/payload/payload/app/features/form_builder/integration/canvas.py:624(event)
+        3    0.000    0.000    0.027    0.009 /home/default/cbprobe_jobs/m94-profile2-20261105T000735Z-d92f5f/payload/payload/app/features/form_builder/qtside/canvas/controller.py:278(handle)
+        1    0.000    0.000    0.027    0.027 /home/default/cbprobe_jobs/m94-profile2-20261105T000735Z-d92f5f/payload/payload/app/features/form_builder/qtside/canvas/controller.py:1099(_pre_paint)
+        1    0.000    0.000    0.021    0.021 /home/default/cbprobe_jobs/m94-profile2-20261105T000735Z-d92f5f/payload/payload/app/features/form_builder/engine/commands/log.py:165(execute)
+        1    0.000    0.000    0.019    0.019 /home/default/cbprobe_jobs/m94-profile2-20261105T000735Z-d92f5f/payload/payload/app/features/form_builder/engine/commands/log.py:458(_store)
+        1    0.000    0.000    0.019    0.019 /home/default/cbprobe_jobs/m94-profile2-20261105T000735Z-d92f5f/payload/payload/app/features/form_builder/engine/commands/log.py:678(_emit)
+        1    0.000    0.000    0.017    0.017 /home/default/cbprobe_jobs/m94-profile2-20261105T000735Z-d92f5f/payload/payload/app/features/form_builder/qtside/canvas/controller.py:1261(_rebuild)
+        1    0.000    0.000    0.017    0.017 /home/default/cbprobe_jobs/m94-profile2-20261105T000735Z-d92f5f/payload/payload/app/features/form_builder/qtside/inspector/_behavior.py:114(paint)
+        1    0.000    0.000    0.016    0.016 /home/default/cbprobe_jobs/m94-profile2-20261105T000735Z-d92f5f/payload/payload/app/features/form_builder/qtside/canvas/controller.py:1280(_frame_inputs)
+        3    0.000    0.000    0.016    0.005 /home/default/cbprobe_jobs/m94-profile2-20261105T000735Z-d92f5f/payload/payload/app/features/form_builder/qtside/inspector/_behavior.py:172(_call)
+        1    0.000    0.000    0.016    0.016 /home/default/cbprobe_jobs/m94-profile2-20261105T000735Z-d92f5f/payload/payload/app/features/form_builder/qtside/canvas/controller.py:1386(_knob_set)
+        1    0.000    0.000    0.014    0.014 /home/default/cbprobe_jobs/m94-profile2-20261105T000735Z-d92f5f/payload/payload/app/features/form_builder/qtside/canvas/geometry.py:822(survey_live)
+        1    0.000    0.000    0.013    0.013 /home/default/cbprobe_jobs/m94-profile2-20261105T000735Z-d92f5f/payload/payload/app/features/form_builder/qtside/canvas/geometry.py:842(<listcomp>)
+
+
+
+spacing cpu 173.40 ms
+== spacing ==
+         90464 function calls (90347 primitive calls) in 0.168 seconds
+
+   Ordered by: cumulative time
+   List reduced from 1110 to 25 due to restriction <25>
+
+   ncalls  tottime  percall  cumtime  percall filename:lineno(function)
+        1    0.000    0.000    0.173    0.173 /home/default/cbprobe_jobs/m94-profile2-20261105T000735Z-d92f5f/payload/profile_surface.py:111(space)
+        1    0.049    0.049    0.160    0.160 {built-in method processEvents}
+        5    0.000    0.000    0.081    0.016 /home/default/cbprobe_jobs/m94-profile2-20261105T000735Z-d92f5f/payload/payload/app/features/form_builder/qtside/canvas/controller.py:278(handle)
+        3    0.000    0.000    0.081    0.027 /home/default/cbprobe_jobs/m94-profile2-20261105T000735Z-d92f5f/payload/payload/app/features/form_builder/integration/canvas.py:624(event)
+        1    0.000    0.000    0.080    0.080 /home/default/cbprobe_jobs/m94-profile2-20261105T000735Z-d92f5f/payload/payload/app/features/form_builder/qtside/canvas/controller.py:1099(_pre_paint)
+        1    0.000    0.000    0.033    0.033 /home/default/cbprobe_jobs/m94-profile2-20261105T000735Z-d92f5f/payload/payload/app/features/form_builder/qtside/canvas/controller.py:1261(_rebuild)
+        1    0.000    0.000    0.033    0.033 /home/default/cbprobe_jobs/m94-profile2-20261105T000735Z-d92f5f/payload/payload/app/features/form_builder/engine/query/hit_index.py:192(ensure_fresh)
+        1    0.000    0.000    0.031    0.031 /home/default/cbprobe_jobs/m94-profile2-20261105T000735Z-d92f5f/payload/payload/app/features/form_builder/qtside/canvas/geometry.py:234(retouch)
+        1    0.000    0.000    0.031    0.031 /home/default/cbprobe_jobs/m94-profile2-20261105T000735Z-d92f5f/payload/payload/app/features/form_builder/qtside/canvas/geometry.py:248(_retouch)
+        1    0.005    0.005    0.023    0.023 /home/default/cbprobe_jobs/m94-profile2-20261105T000735Z-d92f5f/payload/payload/app/features/form_builder/qtside/canvas/geometry.py:425(_refresh_layout_items)
+        1    0.000    0.000    0.018    0.018 /home/default/cbprobe_jobs/m94-profile2-20261105T000735Z-d92f5f/payload/payload/app/features/form_builder/qtside/canvas/core/overlay.py:483(build_frame)
+        1    0.000    0.000    0.015    0.015 /home/default/cbprobe_jobs/m94-profile2-20261105T000735Z-d92f5f/payload/payload/app/features/form_builder/qtside/canvas/controller.py:1280(_frame_inputs)
+        1    0.000    0.000    0.014    0.014 /home/default/cbprobe_jobs/m94-profile2-20261105T000735Z-d92f5f/payload/payload/app/features/form_builder/qtside/canvas/controller.py:1386(_knob_set)
+        2    0.000    0.000    0.013    0.006 /home/default/cbprobe_jobs/m94-profile2-20261105T000735Z-d92f5f/payload/payload/app/features/form_builder/integration/canvas.py:579(viewportEvent)
+        1    0.000    0.000    0.013    0.013 /home/default/cbprobe_jobs/m94-profile2-20261105T000735Z-d92f5f/payload/payload/app/features/form_builder/qtside/canvas/geometry.py:822(survey_live)
+        2    0.003    0.001    0.013    0.006 {function FormCanvas.viewportEvent at 0x7fb30a34db20}
+        1    0.000    0.000    0.013    0.013 /home/default/cbprobe_jobs/m94-profile2-20261105T000735Z-d92f5f/payload/payload/app/features/form_builder/engine/commands/log.py:165(execute)
+        1    0.000    0.000    0.012    0.012 /home/default/cbprobe_jobs/m94-profile2-20261105T000735Z-d92f5f/payload/payload/app/features/form_builder/qtside/canvas/controller.py:1127(_static_stale)
+        1    0.000    0.000    0.012    0.012 /home/default/cbprobe_jobs/m94-profile2-20261105T000735Z-d92f5f/payload/payload/app/features/form_builder/qtside/canvas/controller.py:1148(_shift_changed)
+        1    0.000    0.000    0.012    0.012 /home/default/cbprobe_jobs/m94-profile2-20261105T000735Z-d92f5f/payload/payload/app/features/form_builder/qtside/canvas/geometry.py:842(<listcomp>)
+        1    0.000    0.000    0.012    0.012 /home/default/cbprobe_jobs/m94-profile2-20261105T000735Z-d92f5f/payload/payload/app/features/form_builder/qtside/canvas/geometry.py:867(_layout_facts)
+      395    0.005    0.000    0.012    0.000 /home/default/cbprobe_jobs/m94-profile2-20261105T000735Z-d92f5f/payload/payload/app/features/form_builder/qtside/canvas/geometry.py:577(_measure)
+        1    0.000    0.000    0.012    0.012 /home/default/cbprobe_jobs/m94-profile2-20261105T000735Z-d92f5f/payload/payload/app/features/form_builder/engine/commands/log.py:458(_store)
+        1    0.000    0.000    0.012    0.012 /home/default/cbprobe_jobs/m94-profile2-20261105T000735Z-d92f5f/payload/payload/app/features/form_builder/engine/commands/log.py:678(_emit)
+        1    0.003    0.003    0.011    0.011 /home/default/cbprobe_jobs/m94-profile2-20261105T000735Z-d92f5f/payload/payload/app/features/form_builder/qtside/canvas/core/overlay.py:402(shift_static)
+
+
+
+paste cpu 1068.54 ms
+== paste ==
+         1106385 function calls (1102244 primitive calls) in 1.101 seconds
+
+   Ordered by: cumulative time
+   List reduced from 2340 to 25 due to restriction <25>
+
+   ncalls  tottime  percall  cumtime  percall filename:lineno(function)
+        1    0.000    0.000    1.114    1.114 /home/default/cbprobe_jobs/m94-profile2-20261105T000735Z-d92f5f/payload/profile_surface.py:119(paste)
+        3    0.039    0.013    0.738    0.246 {built-in method processEvents}
+        2    0.000    0.000    0.375    0.188 /home/default/cbprobe_jobs/m94-profile2-20261105T000735Z-d92f5f/payload/payload/app/features/form_builder/integration/surface.py:654(dispatch)
+        2    0.000    0.000    0.375    0.188 /home/default/cbprobe_jobs/m94-profile2-20261105T000735Z-d92f5f/payload/payload/app/features/form_builder/integration/clipboard_actions.py:112(apply_command)
+        1    0.000    0.000    0.314    0.314 /home/default/cbprobe_jobs/m94-profile2-20261105T000735Z-d92f5f/payload/payload/app/features/form_builder/integration/clipboard_actions.py:160(_paste)
+        1    0.000    0.000    0.311    0.311 /home/default/cbprobe_jobs/m94-profile2-20261105T000735Z-d92f5f/payload/payload/app/features/form_builder/integration/clipboard_actions.py:243(_insert)
+        1    0.000    0.000    0.309    0.309 /home/default/cbprobe_jobs/m94-profile2-20261105T000735Z-d92f5f/payload/payload/app/features/form_builder/engine/commands/log.py:165(execute)
+        5    0.000    0.000    0.281    0.056 /home/default/cbprobe_jobs/m94-profile2-20261105T000735Z-d92f5f/payload/payload/app/features/form_builder/qtside/canvas/controller.py:278(handle)
+        3    0.000    0.000    0.281    0.094 /home/default/cbprobe_jobs/m94-profile2-20261105T000735Z-d92f5f/payload/payload/app/features/form_builder/integration/canvas.py:624(event)
+        1    0.000    0.000    0.280    0.280 /home/default/cbprobe_jobs/m94-profile2-20261105T000735Z-d92f5f/payload/payload/app/features/form_builder/qtside/canvas/controller.py:1099(_pre_paint)
+        1    0.000    0.000    0.255    0.255 /home/default/cbprobe_jobs/m94-profile2-20261105T000735Z-d92f5f/payload/payload/app/features/form_builder/engine/commands/log.py:458(_store)
+        1    0.000    0.000    0.253    0.253 /home/default/cbprobe_jobs/m94-profile2-20261105T000735Z-d92f5f/payload/payload/app/features/form_builder/engine/commands/log.py:678(_emit)
+        1    0.001    0.001    0.216    0.216 /home/default/cbprobe_jobs/m94-profile2-20261105T000735Z-d92f5f/payload/payload/app/features/form_builder/qtside/canvas/controller.py:1261(_rebuild)
+        1    0.000    0.000    0.207    0.207 /home/default/cbprobe_jobs/m94-profile2-20261105T000735Z-d92f5f/payload/payload/app/shell/draft_autosave_workflow.py:169(flush_pending_autosaves)
+        1    0.000    0.000    0.207    0.207 /home/default/cbprobe_jobs/m94-profile2-20261105T000735Z-d92f5f/payload/payload/app/shell/draft_autosave_workflow.py:214(_flush_sourced_drafts)
+    44273    0.126    0.000    0.170    0.000 /home/default/cbprobe_jobs/m94-profile2-20261105T000735Z-d92f5f/payload/payload/app/features/form_builder/engine/ui4/document.py:286(iter_preorder)
+        1    0.022    0.022    0.168    0.168 /home/default/cbprobe_jobs/m94-profile2-20261105T000735Z-d92f5f/payload/payload/app/features/form_builder/qtside/canvas/core/overlay.py:268(build_static)
+        2    0.000    0.000    0.162    0.081 /home/default/cbprobe_jobs/m94-profile2-20261105T000735Z-d92f5f/payload/payload/app/features/form_builder/engine/ui4/writer.py:109(write_ui)
+   2016/2    0.015    0.000    0.161    0.081 /home/default/cbprobe_jobs/m94-profile2-20261105T000735Z-d92f5f/payload/payload/app/features/form_builder/engine/ui4/writer.py:193(node)
+     33/2    0.000    0.000    0.161    0.080 /home/default/cbprobe_jobs/m94-profile2-20261105T000735Z-d92f5f/payload/payload/app/features/form_builder/engine/ui4/writer.py:243(_node_plain)
+        1    0.000    0.000    0.161    0.161 /home/default/cbprobe_jobs/m94-profile2-20261105T000735Z-d92f5f/payload/payload/app/features/form_builder/integration/content_source.py:117(current_text)
+        1    0.000    0.000    0.161    0.161 /home/default/cbprobe_jobs/m94-profile2-20261105T000735Z-d92f5f/payload/payload/app/features/form_builder/engine/ui4/writer.py:157(text)
+        1    0.000    0.000    0.161    0.161 /home/default/cbprobe_jobs/m94-profile2-20261105T000735Z-d92f5f/payload/payload/app/features/form_builder/engine/ui4/writer.py:160(result)
+    54/34    0.000    0.000    0.161    0.005 /home/default/cbprobe_jobs/m94-profile2-20261105T000735Z-d92f5f/payload/payload/app/features/form_builder/engine/ui4/writer.py:653(_group)
+    54/34    0.001    0.000    0.161    0.005 /home/default/cbprobe_jobs/m94-profile2-20261105T000735Z-d92f5f/payload/payload/app/features/form_builder/engine/ui4/writer.py:308(_group_plain)
+
+

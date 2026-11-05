@@ -314,10 +314,18 @@ class LiveGeometrySource:
             if isinstance(found, LayoutNode) and found.id not in expanded:
                 if found.id in scope.dirty or found.id in expand_ids:
                     expanded.add(found.id)
-                    for item in found.items:
-                        content = item.content
-                        if content is not None:
-                            queue.append(content.id)
+                    # Spacing dirties the layout, so every item is measured.
+                    # A child resize only asks for siblings. Three that did not
+                    # move mean the rest did not either.
+                    if found.id in scope.dirty or not self._siblings_stable(
+                        found, scope.dirty, previous, located, root
+                    ):
+                        refreshed = self._refresh_layout_items(
+                            found, root, previous, located, replacements, changed, seen, queue
+                        )
+                        if refreshed is None:
+                            return None
+                        visits += refreshed
             measured = self._measure(found, root)
             if measured is None:
                 return None
@@ -382,6 +390,79 @@ class LiveGeometrySource:
             visits=visits,
             changed=tuple(dict.fromkeys(changed)),
         )
+
+    def _siblings_stable(
+        self,
+        layout: LayoutNode,
+        dirty: FrozenSet[NodeId],
+        previous: Sequence[GeoEntry],
+        located: Mapping[Tuple[NodeId, str], int],
+        root: QWidget,
+    ) -> bool:
+        """True when a long layout's other items kept their rects.
+
+        The edited widget is left out of the sample. A short layout is measured
+        in full; the skip is for the hundred-row form.
+        """
+        contents = [item.content for item in layout.items if item.content is not None and item.content.id not in dirty]
+        if len(contents) < 8:
+            return False
+        picks = (contents[0], contents[len(contents) // 2], contents[-1])
+        for node in picks:
+            measured = self._measure(node, root)
+            if measured is None:
+                return False
+            kind = "widget" if isinstance(node, WidgetNode) else "layout" if isinstance(node, LayoutNode) else "spacer"
+            index = located.get((node.id, kind))
+            if index is None:
+                return False
+            old = previous[index]
+            rect, visible = measured
+            if old.rect != rect or old.visible != visible:
+                return False
+        return True
+
+    def _refresh_layout_items(
+        self,
+        layout: LayoutNode,
+        root: QWidget,
+        previous: Sequence[GeoEntry],
+        located: Mapping[Tuple[NodeId, str], int],
+        replacements: List[Tuple[int, GeoEntry]],
+        changed: List[NodeId],
+        seen: Dict[NodeId, bool],
+        queue: List[NodeId],
+    ) -> Optional[int]:
+        """Remeasure one layout's items. None means the caller walks the form.
+
+        A leaf keeps the rect here. A container whose rect moved goes back on
+        the queue so its descendants are walked once, not once per sibling.
+        """
+        count = 0
+        for item in layout.items:
+            content = item.content
+            if content is None or content.id in seen:
+                continue
+            measured = self._measure(content, root)
+            if measured is None:
+                return None
+            rect, visible = measured
+            count += 1
+            kind = "widget" if isinstance(content, WidgetNode) else "layout" if isinstance(content, LayoutNode) else "spacer"
+            index = located.get((content.id, kind))
+            if index is None:
+                return None
+            old = previous[index]
+            container = isinstance(content, WidgetNode) and bool(content.child_widgets or content.layout is not None)
+            moved = old.rect != rect or old.visible != visible
+            if moved and (container or isinstance(content, LayoutNode)):
+                queue.append(content.id)
+                continue
+            seen[content.id] = True
+            if moved:
+                replacements.append((index, GeoEntry(old.node, old.kind, rect, old.container, visible, old.z)))
+                changed.append(content.id)
+        return count
 
     def _remeasure_layouts(
         self,

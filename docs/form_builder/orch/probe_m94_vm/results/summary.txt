@@ -1,0 +1,324 @@
+profile mac  interpreter 3.11.14  Qt 6.8.3  cpus 2
+load avg 1m/5m/15m start 0.00/0.00/0.00 end 0.00/0.00/0.00
+samples 7  warmup 2  cpu tolerance 1.25  wall enforced
+
+point                                   widgets  n    p50       p95       total p95  budget       verdict          
+--------------------------------------  -------  ---  --------  --------  ---------  -----------  -----------------
+read_ui                                 300      7    33.729    35.070    -          25 ms        fail             
+read_ui                                 1000     7    109.710   113.445   -          -            reported         
+class table first load                  -        7    68.025    72.197    -          25 ms        fail             
+Realizer.build                          300      7    627.170   636.686   -          90 ms        fail             
+outline full build                      300      7    40.838    44.473    -          15 ms        fail             
+read + build                            300      7    609.139   620.968   -          150 ms       partial          
+one command                             300      7    0.298     0.369     -          2 ms         pass             
+one command                             1000     7    0.481     1.169     -          3 ms         pass             
+one command O(changed)                  -        7    -         1.362     -          1.6x         pass             
+undo                                    300      7    0.275     0.292     -          2 ms         pass             
+redo                                    300      7    0.274     0.287     -          2 ms         pass             
+undo                                    1000     7    0.370     0.472     -          3 ms         pass             
+redo                                    1000     7    0.339     0.383     -          3 ms         pass             
+property patch                          300      7    0.072     0.091     -          8 ms         pass             
+insert into layout                      300      7    5.949     6.126     16.134     8 ms         pass             
+insert into box layout                  300      7    0.824     0.947     5.664      8 ms         pass             
+insert into loose container             300      7    1.267     1.374     6.957      8 ms         pass             
+insert tab page                         300      7    0.896     0.946     6.084      8 ms         pass             
+delete from layout                      300      7    0.580     0.598     7.185      8 ms         pass             
+move into earlier container             300      7    1.681     1.763     3.617      8 ms         pass             
+morph                                   300      7    1.846     2.343     6.062      8 ms         pass             
+toolbar edit                            300      7    4.002     4.248     10.046     8 ms         pass             
+paste 10                                300      7    3.946     4.474     14.667     -            reported         
+insert into layout                      1000     7    21.613    22.346    52.057     -            reported         
+insert into box layout                  1000     7    0.949     1.091     14.497     -            reported         
+insert into loose container             1000     7    1.416     1.528     14.828     -            reported         
+insert tab page                         1000     7    0.939     1.000     13.101     -            reported         
+delete from layout                      1000     7    0.652     0.700     20.158     -            reported         
+move into earlier container             1000     7    1.957     2.014     7.479      -            reported         
+morph                                   1000     7    2.065     2.818     4.542      -            reported         
+toolbar edit                            1000     7    5.632     5.987     19.206     -            reported         
+paste 10                                1000     7    4.022     4.765     21.223     16 ms        pass             
+insert into box layout O(changed)       -        7    -         1.153     -          1.6x         pass             
+insert into loose container O(changed)  -        7    -         1.112     -          1.6x         pass             
+insert tab page O(changed)              -        7    -         1.057     -          1.6x         pass             
+delete from layout O(changed)           -        7    -         1.171     -          1.6x         pass             
+move into earlier container O(changed)  -        7    -         1.142     -          1.6x         pass             
+morph O(changed)                        -        7    -         1.203     -          1.6x         pass             
+toolbar edit O(changed)                 -        7    -         1.409     -          1.6x         pass             
+hit index invalidate                    -        7    0.001     0.010     -          -            reported         
+hit index refresh                       300      7    7.625     8.310     -          4 ms         fail             
+hit index refresh                       1000     7    24.729    25.139    -          12 ms        fail             
+hit query                               300      7    0.058     0.062     -          0.2 ms       pass             
+drop target @300                        300      7    1.490     1.525     -          2 ms         pass             
+drop target @1000                       1000     7    4.580     4.807     -          2 ms         fail             
+overlay paint                           300      7    4.815     4.988     -          4 ms         fail             
+selection change                        300      7    6.863     8.569     -          8 ms         fail             
+edit total                              300      7    15.250    16.134    -          16 ms        fail             
+direct hit                              1000     7    0.024     0.038     -          2 ms         pass             
+overlay paint direct                    1000     7    3.899     4.823     -          4 ms         fail             
+selection change outline                300      7    22.162    26.188    -          8 ms         fail             
+selection change outline                1000     7    12.413    13.016    -          8 ms         fail             
+outline patch                           300      7    0.693     0.761     -          2 ms         pass             
+outline rename                          1000     7    54.747    55.920    -          16 ms        fail             
+outline alt down                        1000     7    37.878    41.990    -          16 ms        fail             
+outline rename share                    1000     7    33.381    33.946    -          2 ms         fail             
+outline move share                      1000     7    36.672    38.832    -          2 ms         fail             
+outline form move share                 1000     7    3.647     3.847     -          2 ms         fail             
+outline delete share                    1000     7    3.676     4.050     -          2 ms         fail             
+outline undo add share                  1000     7    37.753    38.108    -          2 ms         fail             
+outline reparent share                  1000     7    37.786    38.699    -          2 ms         fail             
+inspector repopulate                    300      7    21.928    23.213    -          16 ms        fail             
+inspector select collapsed              300      7    24.733    27.301    -          16 ms        fail             
+inspector select expanded               300      7    51.161    52.633    -          16 ms        fail             
+inspector select expanded shell         300      7    113.569   123.831   -          16 ms        fail             
+select real window                      300      7    21.435    27.195    -          8 ms         fail             
+select real window                      1000     7    18.383    25.868    -          8 ms         fail             
+select real window + inspector          1000     7    74.264    79.273    -          16 ms        fail             
+edit total surface                      1000     7    54.018    58.836    -          16 ms        fail             
+edit layout spacing                     1000     7    79.723    90.617    -          16 ms        fail             
+paste surface                           1000     7    301.595   320.704   -          100 ms       fail             
+hit index refresh after edit            1000     7    15.844    16.225    -          12 ms        fail             
+sizing panel repopulate                 300      7    22.169    23.610    -          16 ms        fail             
+sizing edit                             300      7    1.439     1.557     -          16 ms        pass             
+sizing edit canvas normal               300      7    14.192    14.308    -          16 ms        pass             
+sizing edit canvas 16pt                 300      7    9.960     12.795    -          16 ms        pass             
+sizing panel repopulate                 1000     7    21.322    22.498    -          16 ms        fail             
+sizing edit                             1000     7    1.562     1.675     -          16 ms        pass             
+sizing edit canvas normal               1000     7    26.727    38.754    -          16 ms        fail             
+sizing edit canvas 16pt                 1000     7    14.410    15.333    -          16 ms        fail             
+m4 open flags popover                   300      7    30.909    56.381    -          50 ms        fail             
+m4 flags live toggle                    300      7    95.109    99.403    -          16 ms        fail             
+m4 open size policy popover             300      7    70.536    74.478    -          50 ms        fail             
+m4 open font popover                    300      7    129.331   134.375   -          50 ms        fail             
+m4 font size step                       300      7    111.184   121.562   -          16 ms        fail             
+m4 open colour popover                  300      7    51.766    60.702    -          50 ms        fail             
+m4 open brush popover                   300      7    167.707   177.657   -          50 ms        fail             
+m4 open palette popover                 300      7    298.490   303.932   -          50 ms        fail             
+m4 colour square drag                   300      7    57.943    59.034    -          16 ms        fail             
+m4 gradient stop drag                   300      7    45.213    50.497    -          16 ms        fail             
+m4 palette role change                  300      7    99.110    104.740   -          16 ms        fail             
+m4 open rich text popover               300      7    66.588    68.203    -          50 ms        fail             
+m4 rich text keystroke                  300      7    100.654   105.383   -          16 ms        fail             
+m4 open translation panel               300      7    4.108     4.899     -          50 ms        pass             
+m4 open icon picker                     300      7    89.940    91.104    -          50 ms        fail             
+m4 icon grid arrow                      300      7    30.802    32.141    -          16 ms        fail             
+m4 open item editor combo 500           500      7    170.888   203.824   -          50 ms        fail             
+m4 item editor combo keystroke          500      7    41.511    48.792    -          16 ms        fail             
+m4 open item more properties            500      7    158.351   166.669   -          50 ms        fail             
+m4 open item editor table 30x8          240      7    483.788   532.180   -          50 ms        fail             
+m4 item editor table cell keystroke     240      7    12.947    17.019    -          16 ms        fail             
+m4 insert pane keystroke                -        7    18.586    20.446    -          16 ms        fail             
+m4 quick insert keystroke               -        7    11.453    11.896    -          16 ms        pass             
+m4 open item editor tree 100            100      7    310.201   334.532   -          50 ms        fail             
+m4 item editor tree 100 keystroke       100      7    31.208    32.838    -          16 ms        fail             
+m4 open item editor tree 500            500      7    308.517   332.392   -          50 ms        fail             
+m4 item editor tree 500 keystroke       500      7    44.398    46.924    -          16 ms        fail             
+m5 menu Type here keystroke             300      7    7.197     10.156    -          16 ms        pass             
+m5 toolbar reuse list keystroke         300      7    10.341    10.713    -          16 ms        pass             
+m5 open menu on canvas                  300      7    7.247     7.606     -          50 ms        pass             
+m5 commit menu entry                    300      7    73.214    78.720    -          50 ms        fail             
+m5 drop action on toolbar               300      7    37.431    41.567    -          50 ms        pass             
+m5 drop action on menu                  300      7    30.859    31.730    -          50 ms        pass             
+m5 actions filter keystroke             300      7    21.872    23.073    -          16 ms        fail             
+m5 picture picker first index           300      7    117.792   119.235   -          300 ms       pass             
+m5 open picture picker warm             300      7    62.471    87.503    -          50 ms        fail             
+m5 add 1 MB picture                     300      7    127.243   147.075   -          200 ms       pass             
+m5 open own class popover               300      7    32.413    43.659    -          50 ms        fail             
+m5 own class module check               300      7    86.899    94.225    -          30 ms        fail             
+m5 start with 20 templates              -        7    185.588   200.784   -          150 ms       fail             
+m5 style sheet keystroke                300      7    16.763    20.070    -          16 ms        fail             
+m5 style sheet check and matches        300      7    8.742     9.292     -          50 ms        pass             
+m5 style sheet apply to canvas          300      7    455.690   487.960   -          100 ms       fail             
+m5 view code refresh                    300      7    1480.754  1517.854  -          100 ms       fail             
+m5 open form designer keys              300      7    110.756   124.211   -          100 ms       fail             
+m5 keys page filter keystroke           300      7    30.950    44.854    -          16 ms        fail             
+m5 open tab order overlay               300      7    47.339    51.486    -          50 ms        fail             
+m5 assign tab order number              300      7    83.199    101.679   -          16 ms        fail             
+m5 open buddies overlay                 300      7    28.676    31.642    -          50 ms        pass             
+m5 preview change screen warm           300      -    -         -         -          300 ms       skip             
+m5 preview change style warm            300      -    -         -         -          300 ms       skip             
+m6 codec 50 steps                       -        7    1.292     1.372     -          1 ms         fail             
+m6 rename 40 events                     -        7    4.057     4.205     -          3 ms         fail             
+m6 read window 100 KB                   -        7    20.518    21.302    -          30 ms        pass             
+m6 read window 1 MB                     -        7    156.075   159.904   -          250 ms       pass             
+m6 read window cached                   -        7    0.488     0.546     -          1 ms         pass             
+m6 code checks cached                   -        7    0.704     0.774     -          5 ms         pass             
+m6 behavior fill                        300      7    49.259    65.119    -          16 ms        fail             
+m6 picker keystroke                     300      7    4.984     7.495     -          16 ms        pass             
+m6 step commit command                  300      7    18.832    20.654    -          2 ms         fail             
+m6 step commit added                    300      7    71.512    62.612    -          50 ms        fail             
+m6 arrows                               300      7    5.848     6.019     -          4 ms         fail             
+m6 show all                             300      7    8.450     13.795    -          16 ms        pass             
+m6 open connections                     300      7    127.060   149.276   -          50 ms        fail             
+m6 link drag frame                      300      7    39.448    70.024    -          16 ms        fail             
+m6 double-click tab open                300      7    102.257   152.409   -          80 ms        fail             
+m6 double-click dirty tab               300      7    149.743   159.605   -          80 ms        fail             
+m6 double-click file not open           300      7    167.021   171.099   -          200 ms       pass             
+m6 F12 tab open                         300      7    16.976    28.257    -          30 ms        pass             
+m6 F12 not open                         300      7    575.800   635.420   -          150 ms       fail             
+m6 save 40 step lists                   300      7    77.482    81.981    -          60 ms        fail             
+is_dirty                                -        7    0.002     0.011     -          -            reported         
+revision                                -        7    0.001     0.012     -          -            reported         
+cheap diagnostics                       300      -    -         -         -          2 ms         not yet available
+write_ui                                300      7    12.188    14.325    -          10 ms        fail             
+write_ui                                1000     7    37.752    39.866    -          -            reported         
+generate_form_module                    300      7    75.762    79.366    -          30 ms        fail             
+save total                              300      7    81.271    83.821    -          50 ms        fail             
+memory one form tracemalloc             300      1    -         2.386     -          30 MB        pass             
+memory one form rss                     300      1    -         1.027     -          30 MB        pass             
+memory three forms tracemalloc          300      1    -         6.823     -          60 MB        pass             
+memory three forms rss                  300      1    -         3.094     -          60 MB        pass             
+undo log                                300      500  -         0.718     -          2 MB         pass             
+preview warm update                     -        -    -         -         -          100 ms wall  not yet available
+preview cold start                      -        -    -         -         -          -            not yet available
+
+read_ui @300: retried the sample set once cpu p95 exceeded the tolerated budget
+class table first load: retried the sample set once cpu p95 exceeded the tolerated budget
+Realizer.build @300: retried the sample set once cpu p95 exceeded the tolerated budget
+outline full build @300: project and install every outline row. retried the sample set once cpu p95 exceeded the tolerated budget
+read + build @300: read plus Realizer.build. Outline, inspector and the first hit index are not in this number
+one command O(changed): 1000-widget p95 / 300-widget p95 (0.533 / 0.392 ms). retried the pair once
+undo @300: same millisecond budget as one command. Undo and redo have no row of their own in section 12
+redo @300: same millisecond budget as one command. Undo and redo have no row of their own in section 12
+undo @1000: same millisecond budget as one command. Undo and redo have no row of their own in section 12
+redo @1000: same millisecond budget as one command. Undo and redo have no row of their own in section 12
+property patch @300: property patch. PatchStats.cpu_ms for one toolTip edit. Command planning is the one-command row
+insert into layout @300: realize p95 is PatchStats.cpu_ms. total p95 is log execute + realize + repaint
+insert into box layout @300: realize p95 is PatchStats.cpu_ms. total p95 is log execute + realize + repaint
+insert into loose container @300: realize p95 is PatchStats.cpu_ms. total p95 is log execute + realize + repaint
+insert tab page @300: realize p95 is PatchStats.cpu_ms. total p95 is log execute + realize + repaint
+delete from layout @300: realize p95 is PatchStats.cpu_ms. total p95 is log execute + realize + repaint
+move into earlier container @300: realize p95 is PatchStats.cpu_ms. total p95 is log execute + realize + repaint
+morph @300: realize p95 is PatchStats.cpu_ms. total p95 is log execute + realize + repaint
+toolbar edit @300: realize p95 is PatchStats.cpu_ms. total p95 is log execute + realize + repaint
+paste 10 @300: realize p95 is PatchStats.cpu_ms. total p95 is log execute + realize + repaint
+insert into layout @1000: realize p95 is PatchStats.cpu_ms. total p95 is log execute + realize + repaint
+insert into box layout @1000: realize p95 is PatchStats.cpu_ms. total p95 is log execute + realize + repaint
+insert into loose container @1000: realize p95 is PatchStats.cpu_ms. total p95 is log execute + realize + repaint
+insert tab page @1000: realize p95 is PatchStats.cpu_ms. total p95 is log execute + realize + repaint
+delete from layout @1000: realize p95 is PatchStats.cpu_ms. total p95 is log execute + realize + repaint
+move into earlier container @1000: realize p95 is PatchStats.cpu_ms. total p95 is log execute + realize + repaint
+morph @1000: realize p95 is PatchStats.cpu_ms. total p95 is log execute + realize + repaint
+toolbar edit @1000: realize p95 is PatchStats.cpu_ms. total p95 is log execute + realize + repaint
+paste 10 @1000: realize p95 is PatchStats.cpu_ms. total p95 is log execute + realize + repaint
+insert into box layout O(changed): 1000-widget p95 / 300-widget p95 (1.091 / 0.947 ms)
+insert into loose container O(changed): 1000-widget p95 / 300-widget p95 (1.528 / 1.374 ms)
+insert tab page O(changed): 1000-widget p95 / 300-widget p95 (1.000 / 0.946 ms)
+delete from layout O(changed): 1000-widget p95 / 300-widget p95 (0.700 / 0.598 ms)
+move into earlier container O(changed): 1000-widget p95 / 300-widget p95 (2.014 / 1.763 ms)
+morph O(changed): 1000-widget p95 / 300-widget p95 (2.818 / 2.343 ms)
+toolbar edit O(changed): 1000-widget p95 / 300-widget p95 (5.987 / 4.248 ms)
+hit index refresh @300: settle plus walk after an invalidate. 247 entries, 246 visible. retried the sample set once cpu p95 exceeded the tolerated budget
+hit index refresh @1000: settle plus walk after an invalidate. 807 entries, 806 visible. retried the sample set once cpu p95 exceeded the tolerated budget
+hit query @300: one query at the deepest point, path length 9
+drop target @1000 @1000: retried the sample set once cpu p95 exceeded the tolerated budget
+overlay paint @300: paint_frame of 10 overlay items into a 960x720 image. wall p95 exceeded the budget
+selection change @300: selection.set plus one frame. Outline is not attached. wall p95 exceeded the budget
+edit total @300: SetProperty plus one frame. The hit index refreshes once. Inspector is not attached. wall p95 exceeded the budget
+direct hit @1000: aim over 7 overlay targets, then turn and live_props of the last grip knob. The layout holds 394 items
+overlay paint direct @1000: paint_frame of 14 overlay items with 4 knob sites. A frame paints the visible 946x720 scene rect. wall p95 exceeded the budget
+selection change outline @300: selection.set plus one frame. Outline show_current is attached. retried the sample set once cpu p95 exceeded the tolerated budget
+selection change outline @1000: selection.set plus one frame. Outline show_current is attached. retried the sample set once cpu p95 exceeded the tolerated budget
+outline patch @300: one caption rewritten on its row
+outline rename @1000: rename one widget and patch that outline row. retried the sample set once cpu p95 exceeded the tolerated budget
+outline alt down @1000: Alt+Down moves one page and reuses the outline items. retried the sample set once cpu p95 exceeded the tolerated budget
+outline rename share @1000: outline rename updates only the changed row. retried the sample set once cpu p95 exceeded the tolerated budget
+outline move share @1000: outline page move patches the page rows. retried the sample set once cpu p95 exceeded the tolerated budget
+outline form move share @1000: Alt+Down in a 394-row form layout moves only that row. retried the sample set once cpu p95 exceeded the tolerated budget
+outline delete share @1000: a delete takes only the removed row. retried the sample set once cpu p95 exceeded the tolerated budget
+outline undo add share @1000: the undo of a delete inserts only that row. retried the sample set once cpu p95 exceeded the tolerated budget
+outline reparent share @1000: a move to another parent takes and inserts that row. retried the sample set once cpu p95 exceeded the tolerated budget
+inspector repopulate @300: retried the sample set once cpu p95 exceeded the tolerated budget
+inspector select collapsed @300: retried the sample set once cpu p95 exceeded the tolerated budget
+inspector select expanded @300: retried the sample set once cpu p95 exceeded the tolerated budget
+inspector select expanded shell @300: retried the sample set once cpu p95 exceeded the tolerated budget. first build 1508.0 ms wall (row widgets made once per key)
+select real window @300: retried the sample set once cpu p95 exceeded the tolerated budget
+select real window @1000: retried the sample set once cpu p95 exceeded the tolerated budget
+select real window + inspector @1000: retried the sample set once cpu p95 exceeded the tolerated budget
+edit total surface @1000: retried the sample set once cpu p95 exceeded the tolerated budget
+edit layout spacing @1000: retried the sample set once cpu p95 exceeded the tolerated budget
+paste surface @1000: retried the sample set once cpu p95 exceeded the tolerated budget
+hit index refresh after edit @1000: visits 403. retried the sample set once cpu p95 exceeded the tolerated budget
+sizing panel repopulate @300: retried the sample set once cpu p95 exceeded the tolerated budget
+sizing edit canvas normal @300: retried the sample set once
+sizing panel repopulate @1000: retried the sample set once cpu p95 exceeded the tolerated budget
+sizing edit canvas normal @1000: retried the sample set once cpu p95 exceeded the tolerated budget
+sizing edit canvas 16pt @1000: wall p95 exceeded the budget
+m4 open flags popover @300: wall p95 exceeded the budget
+m4 flags live toggle @300: retried the sample set once cpu p95 exceeded the tolerated budget
+m4 open size policy popover @300: retried the sample set once cpu p95 exceeded the tolerated budget
+m4 open font popover @300: retried the sample set once cpu p95 exceeded the tolerated budget
+m4 font size step @300: retried the sample set once cpu p95 exceeded the tolerated budget
+m4 open colour popover @300: wall p95 exceeded the budget
+m4 open brush popover @300: retried the sample set once cpu p95 exceeded the tolerated budget
+m4 open palette popover @300: retried the sample set once cpu p95 exceeded the tolerated budget
+m4 colour square drag @300: retried the sample set once cpu p95 exceeded the tolerated budget
+m4 gradient stop drag @300: retried the sample set once cpu p95 exceeded the tolerated budget
+m4 palette role change @300: retried the sample set once cpu p95 exceeded the tolerated budget
+m4 open rich text popover @300: retried the sample set once cpu p95 exceeded the tolerated budget
+m4 rich text keystroke @300: retried the sample set once cpu p95 exceeded the tolerated budget
+m4 open icon picker @300: retried the sample set once cpu p95 exceeded the tolerated budget
+m4 icon grid arrow @300: retried the sample set once cpu p95 exceeded the tolerated budget
+m4 open item editor combo 500 @500: retried the sample set once cpu p95 exceeded the tolerated budget
+m4 item editor combo keystroke @500: retried the sample set once cpu p95 exceeded the tolerated budget
+m4 open item more properties @500: retried the sample set once cpu p95 exceeded the tolerated budget
+m4 open item editor table 30x8 @240: retried the sample set once cpu p95 exceeded the tolerated budget
+m4 item editor table cell keystroke @240: retried the sample set once wall p95 exceeded the budget
+m4 insert pane keystroke: retried the sample set once cpu p95 exceeded the tolerated budget
+m4 open item editor tree 100 @100: retried the sample set once cpu p95 exceeded the tolerated budget
+m4 item editor tree 100 keystroke @100: retried the sample set once cpu p95 exceeded the tolerated budget
+m4 open item editor tree 500 @500: retried the sample set once cpu p95 exceeded the tolerated budget
+m4 item editor tree 500 keystroke @500: retried the sample set once cpu p95 exceeded the tolerated budget
+m5 menu Type here keystroke @300: a key in the in-place line edit on the menu bar's Type here (6 menus)
+m5 toolbar reuse list keystroke @300: a key in the toolbar line edit; the reuse list filters 40 actions
+m5 open menu on canvas @300: Down on a menu title with 6 menus, 40 actions: opens the 7-entry menu
+m5 commit menu entry @300: Enter in the line edit: AddEntry, one undo step, canvas redrawn. retried the sample set once cpu p95 exceeded the tolerated budget
+m5 drop action on toolbar @300: dropEvent with the Actions row mime on the second toolbar
+m5 drop action on menu @300: dropEvent with the Actions row mime on an open menu
+m5 actions filter keystroke @300: a key in the Actions filter: the 200-action list is rebuilt. retried the sample set once cpu p95 exceeded the tolerated budget
+m5 picture picker first index @300: popover opens with the picture index cleared (clear_picture_cache): 3 .qrc files, 500 pictures
+m5 open picture picker warm @300: popover opens with the parsed .qrc files cached: 500 pictures. retried the sample set once cpu p95 exceeded the tolerated budget
+m5 add 1 MB picture @300: PicturePicker.add_pictures: copy 1 MB into the project, .qrc write, include, row set
+m5 open own class popover @300: open_popover on a label. wall p95 exceeded the budget
+m5 own class module check @300: OwnClassPopover.update_check on a 100 KB module changed since the last check (read + class scan). retried the sample set once cpu p95 exceeded the tolerated budget
+m5 start with 20 templates: NewFormPanel built, shown, 20 saved templates set, events run, panel.grab() (first paint). retried the sample set once cpu p95 exceeded the tolerated budget
+m5 style sheet keystroke @300: a key in the drawer editor holding 200 rules (the 300 ms timer is not waited for). retried the sample set once cpu p95 exceeded the tolerated budget
+m5 style sheet check and matches @300: StyleDrawer._apply after the pause on text it has not read: check_text, shared_index, match_sheet, chips
+m5 style sheet apply to canvas @300: StyleDrawer._write of a valid 200-rule sheet on the form (one undo step) and events run, which include the Inspector's refresh; the check is not in it. retried the sample set once cpu p95 exceeded the tolerated budget
+m5 view code refresh @300: CodeViewController.refresh after an edit: generate_view of the 300 form and show_code. retried the sample set once cpu p95 exceeded the tolerated budget
+m5 open form designer keys @300: show_keys_page: the dialog is rebuilt from the registered form commands. wall p95 exceeded the budget
+m5 keys page filter keystroke @300: a key in the keys page filter. retried the sample set once cpu p95 exceeded the tolerated budget
+m5 open tab order overlay @300: ModeController.open('tab_order'): banner, badges and flow line drawn. wall p95 exceeded the budget
+m5 assign tab order number @300: ModeController.assign: one number given, tabstops written. retried the sample set once cpu p95 exceeded the tolerated budget
+m5 open buddies overlay @300: ModeController.open('buddies')
+m5 preview change screen warm @300: could not build: RuntimeError('the preview child did not answer in 40 s')
+m5 preview change style warm @300: could not build: RuntimeError('the preview child did not answer in 40 s')
+m6 codec 50 steps: parse and write a 50-step list. retried the sample set once cpu p95 exceeded the tolerated budget
+m6 rename 40 events: 40 connections and 60 logic properties. retried the sample set once cpu p95 exceeded the tolerated budget
+m6 read window 100 KB: pre-scan plus ast
+m6 read window 1 MB: pre-scan plus ast, idle
+m6 read window cached: same editor token
+m6 code checks cached: against a cached reading
+m6 behavior fill @300: widget with 20 events. retried the sample set once cpu p95 exceeded the tolerated budget
+m6 picker keystroke @300: event picker
+m6 step commit command @300: SetEventSteps alone. retried the sample set once cpu p95 exceeded the tolerated budget
+m6 step commit added @300: command through repaint, minus the repaint. added over the repaint. retried the sample set once cpu p95 exceeded the tolerated budget
+m6 arrows @300: selection with 10 connections. retried the sample set once cpu p95 exceeded the tolerated budget
+m6 show all @300: 120 events on the reference form
+m6 open connections @300: retried the sample set once cpu p95 exceeded the tolerated budget
+m6 link drag frame @300: retried the sample set once cpu p95 exceeded the tolerated budget
+m6 double-click tab open @300: clean tab, history deferred. retried the sample set once cpu p95 exceeded the tolerated budget
+m6 double-click dirty tab @300: retried the sample set once cpu p95 exceeded the tolerated budget
+m6 F12 not open @300: retried the sample set once cpu p95 exceeded the tolerated budget
+m6 save 40 step lists @300: write plus generate. retried the sample set once cpu p95 exceeded the tolerated budget
+cheap diagnostics @300: no edit-path diagnostic producer yet
+write_ui @300: retried the sample set once cpu p95 exceeded the tolerated budget
+generate_form_module @300: retried the sample set once cpu p95 exceeded the tolerated budget
+save total @300: retried the sample set once cpu p95 exceeded the tolerated budget
+memory one form tracemalloc @300: tracemalloc peak. read and realize
+memory one form rss @300: VmRSS delta. read and realize
+memory three forms tracemalloc @300: tracemalloc peak. read and realize
+memory three forms rss @300: VmRSS delta. read and realize
+undo log @300: 500 property edits, object-graph bytes of the undo entries
+preview warm update: no preview yet
+preview cold start: no preview yet. No budget. Report against the M0.7 cold start when it exists
+
+speed: FAIL
