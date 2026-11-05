@@ -20,6 +20,7 @@ from app.features.form_builder.engine.data.listing import FILTER_SIGNAL, VALUE_R
 from app.features.form_builder.engine.data.source import ListSource, read_data
 from app.features.form_builder.engine.data.sql import (
     IdentifierError,
+    PG8000_SCAN_SENTENCE,
     _double_percent_outside,
     _pg8000_walk,
     adapt_user_sql,
@@ -135,6 +136,7 @@ def _refresh_body(made, connection: str, limit: Optional[int]) -> List[str]:
     count_sql = py_string(made.total.text)
     rows_sql = py_string(made.rows.text)
     lines = [
+        "self._cbcs_list_unsearched = False",
         "_keep = self._cbcs_selected_key()",
         "_params = self._cbcs_list_params()",
         "try:",
@@ -168,6 +170,7 @@ def _refresh_inner_body(made, connection: str) -> List[str]:
     count_tail = py_string(made.count_tail)
     row_tail = py_string(made.row_tail)
     lines = [
+        "self._cbcs_list_unsearched = False",
         "_keep = self._cbcs_selected_key()",
         "_params = self._cbcs_list_params()",
         "try:",
@@ -181,7 +184,8 @@ def _refresh_inner_body(made, connection: str) -> List[str]:
         "        elif %s in _module:" % py_string("psycopg"),
         "            _driver = %s" % py_string("psycopg"),
         "        _closed = self._cbcs_pg8000_walk(%s + %s)[1]" % (user, py_string("\n")),
-        "        if _driver == %s and not _closed:" % py_string("pg8000"),
+        "        self._cbcs_list_unsearched = _driver == %s and not _closed" % py_string("pg8000"),
+        "        if self._cbcs_list_unsearched:",
         "            _params = ()",
         "        _inner = self._cbcs_adapt_user_sql(_driver, %s, bool(_params))" % user,
         "        if _driver == %s and not _closed:" % py_string("pg8000"),
@@ -326,7 +330,15 @@ def _fill_body(columns: Sequence[str], key: str, limit: Optional[int], table: st
                 "    self._cbcs_limit_label.hide()",
             ]
         )
-    lines.append("self._cbcs_reselect(_keep)")
+    lines.extend(
+        [
+            "if getattr(self, %s, False):" % py_string("_cbcs_list_unsearched"),
+            "    self._cbcs_ensure_limit_label()",
+            "    self._cbcs_limit_label.setText(%s)" % py_string(PG8000_SCAN_SENTENCE),
+            "    self._cbcs_limit_label.show()",
+            "self._cbcs_reselect(_keep)",
+        ]
+    )
     return lines
 
 

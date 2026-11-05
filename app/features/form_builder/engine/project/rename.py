@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple
 
 from app.features.form_builder.engine.codegen.api import generate_form_module
+from app.features.form_builder.engine.logic.verbs.m7 import leaving_stems
 from app.features.form_builder.engine.diagnostics import FormDiagnostic
 from app.features.form_builder.engine.ids import IdAllocator
 from app.features.form_builder.engine.project.adoption import (
@@ -21,6 +22,7 @@ from app.features.form_builder.engine.project.adoption import (
     write_adopted,
 )
 from app.features.form_builder.engine.project.cache import clear_inference_cache
+from app.features.form_builder.engine.project.form_refs import retarget_ui_text
 from app.features.form_builder.engine.project.forms import FormScope, classify_form
 from app.features.form_builder.engine.project.fs import (
     OsFileSystem,
@@ -32,7 +34,7 @@ from app.features.form_builder.engine.project.fs import (
 )
 from app.features.form_builder.engine.project.imports import package_of, python_files, rewrite_imports
 from app.features.form_builder.engine.project.names import explain_form_name
-from app.features.form_builder.engine.project.save import _hand_edit_backup
+from app.features.form_builder.engine.project.save import _hand_edit_backup, project_ui_files
 from app.features.form_builder.engine.ui4.reader import UiReadError, read_ui
 
 
@@ -124,16 +126,33 @@ def plan_rename(project_root: str, old_ui: str, new_ui: str, fs: OsFileSystem) -
         return _refused(root, "A file named %s is already in that folder." % os.path.basename(occupied))
     try:
         ui_bytes = fs.read_bytes(old_abs)
-        document = read_ui(ui_bytes.decode("utf-8"), allocator=IdAllocator()).document
+        source_text = ui_bytes.decode("utf-8")
+        document = read_ui(source_text, allocator=IdAllocator()).document
     except (OSError, UnicodeError, UiReadError) as exc:
         return _refused(root, str(exc))
+    old_stem = os.path.splitext(os.path.basename(old_abs))[0]
+    moved_text = source_text
+    if old_stem != new_stem:
+        try:
+            retargeted = retarget_ui_text(source_text, old_stem, new_stem)
+        except (OSError, UnicodeError, UiReadError):
+            retargeted = None
+        if retargeted is not None:
+            moved_text = retargeted
+            document = read_ui(retargeted, allocator=IdAllocator()).document
+            ui_bytes = retargeted.encode("utf-8")
     old_scope = classify_form(old_abs, project_root=root, adopted=adopted_forms(root, fs))
     adopted = retarget_adoption(root, old_abs, new_abs, fs)
     new_list = adopted if adopted is not None else adopted_forms(root, fs)
     new_scope = classify_form(new_abs, project_root=root, adopted=new_list)
     if not new_scope.generates or not new_scope.generated_path:
         return _refused(root, "The new location is outside the project.")
-    generated = generate_form_module(document, scope=new_scope, source_bytes=ui_bytes)
+    generated = generate_form_module(
+        document,
+        scope=new_scope,
+        source_bytes=ui_bytes,
+        known_stems=(new_stem,) if old_stem != new_stem else (),
+    )
     if generated.text is None:
         message = generated.diagnostics[0].message if generated.diagnostics else "The form could not be generated."
         return _refused(root, message)
@@ -160,12 +179,37 @@ def plan_rename(project_root: str, old_ui: str, new_ui: str, fs: OsFileSystem) -
         old_scope.window_path if window_exists else None,
         new_scope.window_path,
     )
+    if moved_text != source_text:
+        edits.append(TextEdit(path=new_abs, old=source_text, new=moved_text))
+    same_folder = os.path.dirname(old_abs) == os.path.dirname(new_abs)
+    if old_stem != new_stem and same_folder:
+        extra_edits, extra_generated, extra_notices = _retarget_other_forms(
+            root,
+            fs,
+            old_abs,
+            old_stem,
+            new_stem,
+            new_list,
+        )
+        edits.extend(extra_edits)
+        notices.extend(extra_notices)
+    else:
+        extra_generated = []
+    if not same_folder:
+        # openForm resolves in the generating form's folder, so a form left
+        # behind cannot see the moved file. Report that now. Do not rewrite it.
+        diagnostics.extend(
+            item for _path, item in open_form_problems(root, os.path.dirname(old_abs), old_stem, fs)
+        )
+    regenerated = [RegeneratedFile(path=new_scope.generated_path, text=generated.text)] + list(extra_generated)
+    rewritten = {os.path.abspath(item.path) for item in regenerated}
+    edits = [edit for edit in edits if os.path.abspath(edit.path) not in rewritten]
     return RenamePlan(
         project_root=root,
         reason=None,
         moves=tuple(moves),
         edits=tuple(edits),
-        regenerated=(RegeneratedFile(path=new_scope.generated_path, text=generated.text),),
+        regenerated=tuple(regenerated),
         removed=tuple(removed),
         adopted=adopted,
         backups=tuple(backups),
@@ -213,6 +257,101 @@ def apply(plan: RenamePlan, fs: OsFileSystem) -> None:
         restore(fs, originals)
         raise
     clear_inference_cache()
+
+
+def _retarget_other_forms(
+    root: str,
+    fs: OsFileSystem,
+    old_abs: str,
+    old_stem: str,
+    new_stem: str,
+    adopted: Tuple[str, ...],
+) -> Tuple[List[TextEdit], List[RegeneratedFile], List[str]]:
+    """Point other forms' open-form steps at ``new_stem`` and regenerate their modules."""
+
+    edits = []
+    generated = []
+    notices = []
+    old_dir = os.path.dirname(os.path.abspath(old_abs))
+    for path in project_ui_files(root):
+        if same_path(path, old_abs):
+            continue
+        if os.path.dirname(os.path.abspath(path)) != old_dir:
+            continue
+        try:
+            text = fs.read_text(path)
+        except (OSError, UnicodeError):
+            notices.append("not updated: could not be read: %s" % path)
+            continue
+        try:
+            updated = retarget_ui_text(text, old_stem, new_stem)
+        except (OSError, UnicodeError, UiReadError):
+            notices.append("not updated: could not be read: %s" % path)
+            continue
+        if updated is None:
+            continue
+        edits.append(TextEdit(path=path, old=text, new=updated))
+        scope = classify_form(path, project_root=root, adopted=adopted)
+        if not scope.generates or not scope.generated_path:
+            continue
+        try:
+            document = read_ui(updated, allocator=IdAllocator()).document
+            result = generate_form_module(
+                document,
+                scope=scope,
+                source_bytes=updated.encode("utf-8"),
+                known_stems=(new_stem,),
+            )
+        except (OSError, UnicodeError, UiReadError) as exc:
+            notices.append("not updated: %s" % exc)
+            continue
+        if result.text is None:
+            message = result.diagnostics[0].message if result.diagnostics else "The form could not be generated."
+            notices.append("%s: %s" % (os.path.basename(path), message))
+            continue
+        generated.append(RegeneratedFile(path=scope.generated_path, text=result.text))
+    return edits, generated, notices
+
+
+def open_form_problems(
+    root: str, folder: str, stem: str, fs: OsFileSystem
+) -> List[Tuple[str, FormDiagnostic]]:
+    """FB120 for forms in ``folder`` whose open-form step names ``stem``.
+
+    The check is the same generate the Problems panel uses. Nothing is written.
+    Each pair is the opener's ``.ui`` path and one diagnostic.
+    """
+
+    found: List[Tuple[str, FormDiagnostic]] = []
+    folder_abs = os.path.abspath(folder)
+    adopted = adopted_forms(root, fs)
+    for path in project_ui_files(root):
+        if os.path.dirname(os.path.abspath(path)) != folder_abs:
+            continue
+        if os.path.splitext(os.path.basename(path))[0] == stem:
+            continue
+        try:
+            text = fs.read_text(path)
+        except (OSError, UnicodeError):
+            continue
+        if stem not in text:
+            continue
+        scope = classify_form(path, project_root=root, adopted=adopted)
+        if not scope.generates:
+            continue
+        previous = leaving_stems((stem,))
+        try:
+            try:
+                document = read_ui(text, allocator=IdAllocator()).document
+                result = generate_form_module(document, scope=scope, source_bytes=text.encode("utf-8"))
+            except (OSError, UnicodeError, UiReadError):
+                continue
+        finally:
+            leaving_stems(previous)
+        for item in result.diagnostics:
+            if item.code == "FB120" and stem in (item.message or ""):
+                found.append((path, item))
+    return found
 
 
 def _occupied(old_ui: str, new_ui: str, fs: OsFileSystem) -> Optional[str]:

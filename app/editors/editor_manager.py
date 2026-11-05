@@ -30,6 +30,18 @@ def _normalize(file_path: str) -> str:
     return normalized_path(file_path)
 
 
+def _has_surrogate(text: str) -> bool:
+    """True when ``text`` holds bytes that were not UTF-8 (``surrogateescape``)."""
+
+    return any(0xD800 <= ord(char) <= 0xDFFF for char in text)
+
+
+NON_UTF8_UI_NOTICE = (
+    "This form can't be opened in the form builder: the file isn't UTF-8. "
+    "It's open read-only so its bytes stay as they are."
+)
+
+
 class EditorManager:
     """Owns open-tab state and file-backed read/save operations.
 
@@ -58,6 +70,8 @@ class EditorManager:
             last_known_mtime=self._read_file_mtime(normalized_path),
             is_preview=preview,
         )
+        if Path(normalized_path).suffix.lower() == ".ui" and _has_surrogate(content):
+            tab.byte_lock_reason = NON_UTF8_UI_NOTICE
         return self._add_tab(tab, preview=preview)
 
     def open_file_with_content(
@@ -147,6 +161,8 @@ class EditorManager:
     ) -> EditorTabState:
         """Replace tab buffer content authoritatively."""
         tab = self._require_tab(file_path)
+        if tab.byte_lock_reason:
+            return tab
         tab.update_content(content)
         if tab.is_preview and tab.is_dirty:
             self._promote(tab)
@@ -157,9 +173,12 @@ class EditorManager:
     def save_tab(self, file_path: str) -> EditorTabState:
         """Save current content for an open tab back to disk."""
         tab = self._require_tab(file_path)
+        if tab.byte_lock_reason:
+            raise ValueError(tab.byte_lock_reason)
         path = Path(tab.file_path)
         text = tab.current_content
-        atomic_write_text(path, text)
+        errors = "surrogateescape" if _has_surrogate(text) else "strict"
+        atomic_write_text(path, text, errors=errors)
         tab.mark_saved(last_known_mtime=self._read_file_mtime(tab.file_path), saved_text=text)
         source = tab.content_source
         after_save = getattr(source, "after_save", None)
@@ -319,6 +338,8 @@ class EditorManager:
         try:
             return path.read_text(encoding="utf-8")
         except UnicodeDecodeError as exc:
+            if path.suffix.lower() == ".ui":
+                return path.read_text(encoding="utf-8", errors="surrogateescape")
             raise ValueError(f"File is not valid UTF-8 text: {file_path}") from exc
 
     def _read_file_mtime(self, file_path: str) -> float | None:

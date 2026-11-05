@@ -17,6 +17,7 @@ from app.features.form_builder.integration.qrc_provider import (
     is_qrc,
 )
 from app.features.form_builder.integration.surface import FormSurface
+from app.editors.editor_manager import NON_UTF8_UI_NOTICE
 from app.shell.tab_content_providers import ProviderDeclined, TabMatchContext, TabSurfaceRequest
 
 
@@ -34,6 +35,8 @@ class FormTabProvider:
     def create_surface(self, request: TabSurfaceRequest) -> object:
         if is_qrc(request.file_path):
             return QrcTabProvider().create_surface(request)
+        if _not_utf8(request.initial_text):
+            raise ProviderDeclined(NON_UTF8_UI_NOTICE)
         try:
             scope = form_scope(request.file_path, request.project_root)
             session = FormSession.open(request.initial_text, path=request.file_path, scope=scope)
@@ -56,6 +59,10 @@ class FormTabProvider:
         if stops:
             surface.attach_checks(stops)
         return surface
+
+
+def _not_utf8(text: str) -> bool:
+    return any(0xD800 <= ord(char) <= 0xDFFF for char in text)
 
 
 __all__ = ["FormTabProvider"]

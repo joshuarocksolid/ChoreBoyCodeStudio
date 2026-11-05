@@ -9,6 +9,7 @@ import sys
 import time
 import traceback
 import types
+import weakref
 from typing import Dict, Optional
 
 from app.features.form_builder.engine.ipc.protocol import (
@@ -64,10 +65,19 @@ from app.features.form_builder.qtside.preview.child.stdio import FrameWriter
 
 
 class _View:
-    def __init__(self, widget: QWidget, revision: int, scale: float) -> None:
+    def __init__(
+        self,
+        widget: QWidget,
+        revision: int,
+        scale: float,
+        module_name: str = "",
+        module: object = None,
+    ) -> None:
         self.widget = widget
         self.revision = revision
         self.scale = scale
+        self.module_name = module_name
+        self.module = module
         #: The size the form asked for, before a screen profile clamped it.
         self.natural = (widget.width(), widget.height())
         self.screen: tuple = ()
@@ -82,18 +92,70 @@ class _UserClose(QObject):
 
     def __init__(self, session: "ChildSession") -> None:
         super().__init__()
-        self._session = session
+        self._session = weakref.ref(session)
 
     def eventFilter(self, watched: QObject, event: QEvent) -> bool:  # noqa: N802
+        session = self._session()
+        if session is None:
+            return False
         kind = event.type()
         event_type = getattr(QEvent, "Type", QEvent)
         if kind == event_type.KeyPress and isinstance(watched, QWidget):
             if event.key() == Qt.Key_Escape and not event.modifiers():  # type: ignore[attr-defined]
-                if self._session.close_window_of(watched):
+                if session.close_window_of(watched):
                     return True
         elif kind == event_type.Close and isinstance(watched, QWidget):
-            self._session.window_closed(watched)
+            session.window_closed(watched)
         return False
+
+
+def _drop_app_filter(app: QApplication, filt: QObject) -> None:
+    """Take the preview filter off the application. Safe if either side is already gone."""
+
+    try:
+        app.removeEventFilter(filt)
+    except RuntimeError:
+        return
+
+
+def _drop_preview_module(name: str, module: object = None) -> None:
+    """Drop the module object this view registered. A replacement under the same name stays."""
+
+    if not name or module is None:
+        return
+    current = sys.modules.get(name)
+    if current is not module:
+        return
+    filename = getattr(module, "__file__", "")
+    if isinstance(filename, str) and filename.startswith("<"):
+        sys.modules.pop(name, None)
+
+
+def _drop_view(view: "_View") -> None:
+    """Destroy the preview window.
+
+    ``deleteLater`` does not run inside a nested event loop, so a lone loop
+    deletes now. A loop already inside another (a dialog is open) waits.
+    """
+
+    _drop_preview_module(view.module_name, view.module)
+    widget = view.widget
+    try:
+        widget.hide()
+    except RuntimeError:
+        return
+    from app.qt.QtCore import QThread
+
+    try:
+        nested = QThread.currentThread().loopLevel() > 1
+    except Exception:
+        nested = False
+    if nested:
+        widget.deleteLater()
+        return
+    from app.qt.qt_compat import delete_now
+
+    delete_now(widget)
 
 
 class ChildSession:
@@ -122,6 +184,7 @@ class ChildSession:
         self._base_font = QFont(font)
         self._user_close = _UserClose(self)
         app.installEventFilter(self._user_close)
+        self._filter_finalizer = weakref.finalize(self, _drop_app_filter, app, self._user_close)
 
     @property
     def exit_code(self) -> int:
@@ -320,7 +383,14 @@ class ChildSession:
                     restore_texts(built.widget, saved)  # type: ignore[arg-type]
             self._apply_appearance(message.appearance)
             scale = float(message.appearance.scale)
-            self._replace_view(message.view_id, built.widget, message.revision, scale)
+            self._replace_view(
+                message.view_id,
+                built.widget,
+                message.revision,
+                scale,
+                message.module_name or "",
+                built.module,
+            )
             self._dress(message.view_id, message.appearance, first=True)
         except Exception:
             from app.features.form_builder.qtside.preview.child.try_connections import end_try
@@ -537,8 +607,7 @@ class ChildSession:
         end_try(message.view_id)
         view = self._views.pop(message.view_id, None)
         if view is not None:
-            view.widget.hide()
-            view.widget.deleteLater()
+            _drop_view(view)
             self._writer.send(ViewClosed(view_id=message.view_id, reason="host"))
         if not self._views:
             self._last_view_change = time.monotonic()
@@ -550,17 +619,24 @@ class ChildSession:
         end_all()
         for view_id in list(self._views):
             view = self._views.pop(view_id)
-            view.widget.hide()
+            _drop_view(view)
             self._writer.send(ViewClosed(view_id=view_id, reason="host"))
         self._writer.send(Response(request_id=message.request_id, ok=True, result={"bye": True}))
         self._finish(0)
 
-    def _replace_view(self, view_id: str, widget: QWidget, revision: int, scale: float) -> None:
+    def _replace_view(
+        self,
+        view_id: str,
+        widget: QWidget,
+        revision: int,
+        scale: float,
+        module_name: str = "",
+        module: object = None,
+    ) -> None:
         previous = self._views.pop(view_id, None)
         if previous is not None:
-            previous.widget.hide()
-            previous.widget.deleteLater()
-        self._views[view_id] = _View(widget, revision, scale)
+            _drop_view(previous)
+        self._views[view_id] = _View(widget, revision, scale, module_name, module)
         self._last_view_change = time.monotonic()
 
     def _apply_appearance(self, appearance: object) -> None:
@@ -628,6 +704,7 @@ class ChildSession:
 
                 end_try(view_id)
                 self._views.pop(view_id)
+                _drop_preview_module(view.module_name, view.module)
                 widget.deleteLater()
                 self._last_view_change = time.monotonic()
                 self._writer.send(ViewClosed(view_id=view_id, reason="user"))
@@ -660,7 +737,9 @@ class ChildSession:
             return
         self._closed = True
         self._exit_code = code
-        self._app.removeEventFilter(self._user_close)
+        finalizer = getattr(self, "_filter_finalizer", None)
+        if finalizer is not None:
+            finalizer()
         if hard:
             os._exit(code)
         self._app.quit()

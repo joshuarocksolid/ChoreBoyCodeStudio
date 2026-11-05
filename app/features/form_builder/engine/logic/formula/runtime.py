@@ -482,6 +482,8 @@ return widget.date().toPython()
         "_cbcs_read_timeedit",
         "widget",
         """
+if widget.property("cbcsTimeBlank"):
+    return None
 if widget.specialValueText() and widget.time() == widget.minimumTime():
     return None
 return widget.time().toPython()
