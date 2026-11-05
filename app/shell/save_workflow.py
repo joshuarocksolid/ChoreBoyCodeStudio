@@ -622,6 +622,11 @@ class SaveWorkflow:
             return True
         path_existed_before_save = Path(file_path).expanduser().resolve().exists()
         tab_state = self._editor_manager().get_tab(file_path)
+        locked = None if tab_state is None else getattr(tab_state, "byte_lock_reason", None)
+        if locked:
+            if checkpoint_source != "auto_save_to_file":
+                QMessageBox.warning(host.dialog_parent(), "Save", str(locked))
+            return False
         source = None if tab_state is None else tab_state.content_source
         prepare_save = getattr(source, "prepare_save", None)
         if callable(prepare_save) and prepare_save() is False:

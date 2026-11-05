@@ -211,9 +211,18 @@ def emit_module(
     trace: bool = False,
     window: Optional[WindowFacts] = None,
     formats: Optional[FormatSettings] = None,
+    known_stems: Tuple[str, ...] = (),
 ) -> ModulePieces:
     """Generate the module body, or refuse when a name cannot be emitted."""
-    emitter = _Emitter(doc, scope, options, trace=trace, window=window, formats=formats)
+    emitter = _Emitter(
+        doc,
+        scope,
+        options,
+        trace=trace,
+        window=window,
+        formats=formats,
+        known_stems=known_stems,
+    )
     return emitter.build()
 
 
@@ -243,6 +252,7 @@ class _Emitter:
         trace: bool = False,
         window: Optional[WindowFacts] = None,
         formats: Optional[FormatSettings] = None,
+        known_stems: Tuple[str, ...] = (),
     ) -> None:
         self.doc = doc
         self.scope = scope
@@ -250,6 +260,7 @@ class _Emitter:
         self.trace = trace
         self._window = window
         self._formats = formats
+        self._known_stems = tuple(known_stems)
         self._widgets: Dict[str, WidgetFacts] = {}
         self.lines: List[str] = []
         self.retranslate: List[str] = []
@@ -1793,6 +1804,7 @@ class _Emitter:
             widgets=self._widgets,
             trace=self.trace,
             forms_dir=_forms_dir(self.scope),
+            known_stems=self._known_stems,
         )
         found = []
         for expander in load_expanders():

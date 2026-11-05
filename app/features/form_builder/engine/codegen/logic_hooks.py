@@ -93,6 +93,7 @@ class CodegenContext:
     widgets: Mapping[str, WidgetFacts] = field(default_factory=dict)
     trace: bool = False
     forms_dir: Optional[str] = None
+    known_stems: Tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)

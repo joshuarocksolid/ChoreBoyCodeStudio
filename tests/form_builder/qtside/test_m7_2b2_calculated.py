@@ -102,6 +102,7 @@ def _rule_button(row: QWidget) -> QPushButton:
     return found[0]
 
 
+@pytest.mark.logic("L-state-rules")
 def test_a_value_rule_locks_the_property_and_edit_rule_opens_the_formula() -> None:
     with desk() as (session, pane, _window):
         _properties(session, pane, "totalLabel")
@@ -128,6 +129,7 @@ def test_a_value_rule_locks_the_property_and_edit_rule_opens_the_formula() -> No
         assert not session.log.is_dirty()
 
 
+@pytest.mark.logic("L-state-rules")
 def test_when_rules_keep_the_value_and_add_a_rule_link() -> None:
     with desk() as (session, pane, _window):
         _properties(session, pane, "discountEdit")

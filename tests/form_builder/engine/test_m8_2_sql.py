@@ -111,7 +111,7 @@ def test_find_uses_like_or_ilike_with_one_backslash(dialect: str) -> None:
     statement = find_keys(dialect, "invoices", "id", _ORDER, ("invoice_no", "notes"))
     mark = _mark(dialect)
     op = _like(dialect)
-    escape = "E'\\\\'" if dialect == "postgres" else "'\\'"
+    escape = "$$\\$$" if dialect == "postgres" else "'\\'"
     assert statement.text == (
         "SELECT \"id\" FROM \"invoices\" WHERE (CAST(\"invoice_no\" AS TEXT) %s %s ESCAPE %s OR CAST(\"notes\" AS TEXT) %s %s ESCAPE %s)"
         % (op, mark, escape, op, mark, escape)
@@ -119,9 +119,10 @@ def test_find_uses_like_or_ilike_with_one_backslash(dialect: str) -> None:
     )
     assert statement.params_order == ("find:invoice_no", "find:notes")
     assert statement.caption == "Find invoice keys"
-    assert statement.text.count("\\") == (4 if dialect == "postgres" else 2)
+    assert statement.text.count("\\") == 2
 
 
+@pytest.mark.logic("L-safe-sql")
 def test_a_bad_name_is_not_quoted() -> None:
     assert is_identifier("invoice_no") is True
     assert is_identifier("a b") is False
@@ -134,6 +135,7 @@ def test_a_bad_name_is_not_quoted() -> None:
         select_keys("mysql", "invoices", "id", ())
 
 
+@pytest.mark.logic("L-safe-sql")
 def test_sqlite_statements_change_the_shop_rows(tmp_path) -> None:
     path = tmp_path / "shop.db"
     build(str(path))

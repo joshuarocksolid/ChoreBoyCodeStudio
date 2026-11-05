@@ -29,6 +29,7 @@ DISCARD = "discard"
 CANCEL = "cancel"
 
 
+@pytest.mark.logic("L-form-data-source", "L-field-bindings", "L-record-navigation")
 def test_invoice_story_reads_and_writes_sqlite_rows(tmp_path: Path) -> None:
     seen: List[str] = []
 

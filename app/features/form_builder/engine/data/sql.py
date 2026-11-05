@@ -127,14 +127,15 @@ def like_piece(dialect: str, column: str) -> str:
     """``CAST("column" AS TEXT) LIKE ? ESCAPE '\\'``, or ``ILIKE`` on PostgreSQL.
 
     The SQL text contains one backslash, which is the escape character.
+    PostgreSQL writes it as ``$$\\$$``. An ``E'\\'`` string does not end for
+    pg8000's placeholder scan, so a later ``%s`` would stay in the statement.
+    SQLite keeps a normal quoted backslash.
     """
 
     op = "ILIKE" if _dialect(dialect) == "postgres" else "LIKE"
     # A date or number has no LIKE operator on PostgreSQL 9.3. Text does.
-    # standard_conforming_strings is on, so a plain '\\' is two characters.
-    # E'\\' is one backslash. SQLite keeps the ordinary string.
     one = "\\"
-    escape = "E'%s%s'" % (one, one) if dialect == "postgres" else "'%s'" % one
+    escape = "$$\\$$" if dialect == "postgres" else "'%s'" % one
     return "CAST(%s AS TEXT) %s %s ESCAPE %s" % (quote_ident(column), op, placeholder(dialect), escape)
 
 
@@ -546,16 +547,9 @@ def _list_where(dialect: str, search: Sequence[str], filters: Sequence[str]) -> 
 
 
 def _list_like(dialect: str, column: str) -> str:
-    """``like_piece`` for a list. PostgreSQL's escape is a dollar quote.
+    """``like_piece``. Find and lists share one escape."""
 
-    ``E'\\'`` does not end for pg8000's placeholder scan, so a ``%s`` written
-    after it stays in the statement. ``$$\\$$`` is one backslash on PostgreSQL
-    9.3, and the scan leaves the quote. SQLite keeps ``like_piece``.
-    """
-
-    if _dialect(dialect) != "postgres":
-        return like_piece(dialect, column)
-    return "CAST(%s AS TEXT) ILIKE %s ESCAPE $$\\$$" % (quote_ident(column), placeholder(dialect))
+    return like_piece(dialect, column)
 
 
 def _list_order(order: Sequence[Sequence[str]], key: str) -> str:

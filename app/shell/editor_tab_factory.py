@@ -220,9 +220,12 @@ class EditorTabFactory:
         editor_widget: Optional[CodeEditorWidget]
         if provider is None:
             editor_widget = create_source_editor()
-            hint = self._pyside2_ui_hint(tab_file_path)
-            if hint is None:
-                tab_content: QWidget = editor_widget
+            locked = getattr(opened_result.tab, "byte_lock_reason", None)
+            hint = None if locked else self._pyside2_ui_hint(tab_file_path)
+            if locked:
+                tab_content = _DeclinedTextTab(editor_widget, locked, window._editor_tabs_widget)
+            elif hint is None:
+                tab_content = editor_widget
             else:
                 tab_content = _PySide2UiHint(
                     editor_widget,
@@ -345,6 +348,8 @@ class EditorTabFactory:
         editor_widget = CodeEditorWidget(parent)
         self._configure_editor_widget(editor_widget)
         editor_widget.setPlainText(opened_result.tab.current_content)
+        if opened_result.tab.byte_lock_reason:
+            editor_widget.setReadOnly(True)
         editor_widget.set_language_for_path(opened_result.tab.file_path)
         bindings_host: EditorTabBindingsHost = MainWindowEditorBindingsHost(window)
         window._editor_tab_workflow.attach_editor_bindings(bindings_host, editor_widget, opened_result.tab)

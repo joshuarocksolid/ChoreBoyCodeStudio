@@ -160,6 +160,11 @@ class RecordExpander:
         open_line = _open_line(source.open_at)
         if open_line:
             ordered.append((890, open_line))
+        if _nullable_time(fields):
+            saved_at = next(
+                index for index, item in enumerate(ordered) if item[1] == "self._cbcs_saved_fields = {}"
+            )
+            ordered.insert(saved_at + 1, (10, "self._cbcs_cleared = set()"))
         return Contribution(
             imports=tuple(imports),
             setup_lines=tuple(setup),
@@ -210,12 +215,12 @@ def _methods(source, fields, engine, record_word, order, search, check, hooks, a
         "cbcs_delete": ("", _delete_body(pieces, connection, hooks, has_lines and source.delete_lines is not False, events)),
         "cbcs_new": ("", _verb_new()),
         "cbcs_revert": ("", _revert_body()),
-        "cbcs_reload": ("", ["self.cbcs_revert()"]),
+        "cbcs_reload": ("", ["return self.cbcs_revert()"]),
         "cbcs_first": ("", _move_body("first")),
         "cbcs_previous": ("", _move_body("previous")),
         "cbcs_next": ("", _move_body("next")),
         "cbcs_last": ("", _move_body("last")),
-        "cbcs_find": ("", _find_body(pieces, connection)),
+        "cbcs_find": ("", _find_body(pieces, connection, fields)),
         "cbcs_show_all": ("", _show_all_body()),
         "_cbcs_form_position": ("", _position_body()),
         "_cbcs_form_count": ("", ["return len(getattr(self, %s, ()) or ())" % _q("_cbcs_keys")]),
@@ -228,6 +233,9 @@ def _methods(source, fields, engine, record_word, order, search, check, hooks, a
     }
     if any(field.family in ("date", "time", "datetime") for field in fields) or has_lines:
         bodies["_cbcs_note_unparsed"] = ("_column, _kind, _shown", _note_body())
+    if any(field.nullable and field.io == "time" for field in fields):
+        bodies["_cbcs_time_touched"] = ("widget", _time_touched_body())
+        bodies["_cbcs_clear_time"] = ("widget, column", _clear_time_body())
     if any(field.io == "decimal" for field in writable):
         bodies["_cbcs_numbers_match"] = ("_left, _right, _places", _numbers_match_body())
     methods = []
@@ -320,6 +328,7 @@ def _show_body(pieces, connection, fields, hooks, events=None) -> List[str]:
             "self._cbcs_clear_errors()",
             "self.cbcs_write_fields(_raw)",
             "self._cbcs_saved_fields = self.cbcs_read_fields()",
+            *_cleared_reset(fields),
             "self._cbcs_ready = True",
             "self._cbcs_new = False",
             "self._cbcs_key = _key",
@@ -347,6 +356,7 @@ def _new_body(fields, hooks, clear_lines: bool = False, events=None) -> List[str
         "self._cbcs_clear_errors()",
         "self.cbcs_write_fields({})",
         "self._cbcs_saved_fields = self.cbcs_read_fields()",
+        *_cleared_reset(fields),
     ]
     if clear_lines:
         lines.extend(
@@ -387,7 +397,14 @@ def _read_field(field: _Field) -> List[str]:
     elif field.io == "date":
         return _read_date(field, key)
     elif field.io == "time":
-        return _read_minimum(field, key, "%s.time()" % widget, "%s.minimumTime()" % widget, "%s.time().toPython()" % widget)
+        if not field.nullable:
+            return ["%s = %s.time().toPython()" % (key, widget)]
+        return [
+            "if %s.property(%s):" % (widget, _q("cbcsTimeBlank")),
+            "    %s = None" % key,
+            "else:",
+            "    %s = %s.time().toPython()" % (key, widget),
+        ]
     elif field.io == "datetime":
         return _read_minimum(
             field,
@@ -403,7 +420,7 @@ def _read_field(field: _Field) -> List[str]:
     else:
         lines = ["_text = %s.text()" % widget]
     if field.family == "text" and field.nullable:
-        lines.extend(["if _text == %s:" % _q(""), "    %s = None" % key, "else:", "    %s = _text" % key])
+        lines.extend(["if _text.strip() == %s:" % _q(""), "    %s = None" % key, "else:", "    %s = _text" % key])
     else:
         lines.append("%s = _text" % key)
     return lines
@@ -574,10 +591,20 @@ def _write_date(widget: str, nullable: bool, column: str) -> List[str]:
 
 
 def _write_time(widget: str, nullable: bool, column: str) -> List[str]:
-    blank = "        %s.setTime(%s.minimumTime())" % (widget, widget) if nullable else "        %s.setTime(QTime(0, 0, 0))"
+    if nullable:
+        blank = _blank_time_lines(widget, "        ")
+        failed = _blank_time_lines(widget, "            ")
+        show = _show_time_lines(widget, "            ")
+    else:
+        blank = ["        %s.setTime(QTime(0, 0, 0))" % widget]
+        failed = ["            %s.setTime(QTime(0, 0, 0))" % widget]
+        show = [
+            "            %s.setTime(QTime(_clock.hour, _clock.minute, _clock.second, _clock.microsecond // 1000))"
+            % widget
+        ]
     return [
         "    if _value is None or _value == %s:" % _q(""),
-        blank,
+        *blank,
         "    else:",
         "        try:",
         "            if isinstance(_value, datetime):",
@@ -590,9 +617,95 @@ def _write_time(widget: str, nullable: bool, column: str) -> List[str]:
         "            _note = getattr(self, %s, None)" % _q("_cbcs_note_unparsed"),
         "            if _note is not None:",
         "                _note(%s, %s, _value)" % (_q(column), _q("time")),
-        "    " + blank,
+        *failed,
         "        else:",
-        "            %s.setTime(QTime(_clock.hour, _clock.minute, _clock.second, _clock.microsecond // 1000))" % widget,
+        *show,
+    ]
+
+
+def _blank_time_lines(widget: str, indent: str) -> List[str]:
+    """Blank is a flag plus the special-value text. Midnight clears both.
+
+    QTime cannot go below 00:00:00, so the clock value alone cannot be the blank.
+    """
+
+    return [
+        "%s%s._cbcs_time_arming = True" % (indent, widget),
+        "%s%s.setProperty(%s, True)" % (indent, widget, _q("cbcsTimeBlank")),
+        "%s%s.setSpecialValueText(%s)" % (indent, widget, _q(_NULL_TEXT)),
+        "%s%s.setTime(%s.minimumTime())" % (indent, widget, widget),
+        "%s%s._cbcs_time_arming = False" % (indent, widget),
+    ]
+
+
+def _show_time_lines(widget: str, indent: str) -> List[str]:
+    return [
+        "%s%s._cbcs_time_arming = True" % (indent, widget),
+        "%s%s.setProperty(%s, False)" % (indent, widget, _q("cbcsTimeBlank")),
+        "%s%s.setSpecialValueText(%s)" % (indent, widget, _q("")),
+        "%s%s.setTime(QTime(_clock.hour, _clock.minute, _clock.second, _clock.microsecond // 1000))" % (indent, widget),
+        "%s%s._cbcs_time_arming = False" % (indent, widget),
+    ]
+
+
+def _time_touched_body() -> List[str]:
+    return [
+        "if getattr(widget, %s, False):" % _q("_cbcs_time_arming"),
+        "    return",
+        "if not widget.property(%s):" % _q("cbcsTimeBlank"),
+        "    return",
+        "widget.setProperty(%s, False)" % _q("cbcsTimeBlank"),
+        "widget.setSpecialValueText(%s)" % _q(""),
+    ]
+
+
+def _clear_time_body() -> List[str]:
+    """Delete, Backspace on a full selection, or the Clear menu item.
+
+    A stored value that is not a time already reads as None, same as Clear.
+    Remembering the column is what makes that Clear reach the UPDATE.
+    """
+
+    return [
+        "self._cbcs_cleared.add(column)",
+        "widget._cbcs_time_arming = True",
+        "widget.setProperty(%s, True)" % _q("cbcsTimeBlank"),
+        "widget.setSpecialValueText(%s)" % _q(_NULL_TEXT),
+        "widget.setTime(widget.minimumTime())",
+        "widget._cbcs_time_arming = False",
+    ]
+
+
+def _time_clear_class() -> List[str]:
+    """UX_SPEC does not name a clear gesture for a nullable date. Time uses Delete, Backspace, and Clear."""
+
+    return [
+        "class _CbcsTimeClear(QObject):",
+        "    def __init__(self, ui, widget, column):",
+        "        super().__init__(widget)",
+        "        self._ui = ui",
+        "        self._widget = widget",
+        "        self._column = column",
+        "        widget.installEventFilter(self)",
+        "        _line = widget.lineEdit()",
+        "        if _line is not None:",
+        "            _line.installEventFilter(self)",
+        "            _line.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)",
+        "            _line.customContextMenuRequested.connect(self._menu)",
+        "    def _menu(self, _pos):",
+        "        _line = self._widget.lineEdit()",
+        "        if _line is None:",
+        "            return",
+        "        _menu = _line.createStandardContextMenu()",
+        "        _menu.addAction(%s, lambda: self._ui._cbcs_clear_time(self._widget, self._column))" % _q("Clear"),
+        "        _menu.popup(_line.mapToGlobal(_pos))",
+        "    def eventFilter(self, _watched, _event):",
+        "        if _event.type() == QEvent.Type.KeyPress and _event.key() in (Qt.Key.Key_Delete, Qt.Key.Key_Backspace):",
+        "            _line = self._widget.lineEdit()",
+        "            if _line is not None and _line.text() and _line.selectedText() == _line.text():",
+        "                self._ui._cbcs_clear_time(self._widget, self._column)",
+        "                return True",
+        "        return False",
     ]
 
 
@@ -664,6 +777,14 @@ def _dirty_body(writable: Sequence[_Field]) -> List[str]:
                 [
                     "if not self._cbcs_numbers_match(_fields.get(%s), _saved.get(%s), self.%s.decimals()):"
                     % (_q(field.column), _q(field.column), field.widget),
+                    "    return True",
+                ]
+            )
+        elif field.nullable and field.io == "time":
+            lines.extend(
+                [
+                    "if _fields.get(%s) != _saved.get(%s) or %s in self._cbcs_cleared:"
+                    % (_q(field.column), _q(field.column), _q(field.column)),
                     "    return True",
                 ]
             )
@@ -1122,18 +1243,27 @@ def _below_minimum(widget: str, io: str) -> List[str]:
         return ["%s.setMinimumDate(%s.minimumDate().addDays(-1))" % (widget, widget)]
     if io == "datetime":
         return ["%s.setMinimumDateTime(%s.minimumDateTime().addSecs(-1))" % (widget, widget)]
-    # QTime can't go below 00:00:00, so a nullable time keeps midnight as its blank.
     return []
 
 
 def _null_markers(fields: Sequence[_Field]) -> List[str]:
     lines = []
+    if any(field.nullable and field.io == "time" for field in fields):
+        lines.extend(_time_clear_class())
     for field in fields:
         widget = "self.%s" % field.widget
-        if field.nullable and field.io in ("int", "decimal", "date", "time", "datetime"):
+        if field.nullable and field.io in ("int", "decimal", "date", "datetime"):
             # Blank sits one step below the designed minimum, so every real value stays saveable.
             lines.extend(_below_minimum(widget, field.io))
             lines.append("%s.setSpecialValueText(%s)" % (widget, _q(_NULL_TEXT)))
+        if field.nullable and field.io == "time":
+            # Midnight is a real time. The special-value text is only the blank.
+            lines.append(
+                "%s.timeChanged.connect(lambda *_a, _w=%s: self._cbcs_time_touched(_w))" % (widget, widget)
+            )
+            lines.append(
+                "self._cbcs_time_clear_%s = _CbcsTimeClear(self, %s, %s)" % (field.widget, widget, _q(field.column))
+            )
         if field.nullable and field.io == "bool":
             lines.append("%s.setTristate(True)" % widget)
         if field.error_label:
@@ -1212,6 +1342,7 @@ def _write_sql_body(pieces, connection, fields, writable, check, hooks, events=N
         "class _CbcsStop(Exception):",
         "    pass",
         "_db_error = None",
+        "_lines = None",
         "try:",
         "    with cbcs_connections.work(%s) as _conn:" % _q(connection),
         "        _cursor = _conn.cursor()",
@@ -1233,8 +1364,8 @@ def _write_sql_body(pieces, connection, fields, writable, check, hooks, events=N
     lines.extend(
         [
             "                _inserted = True",
-            "                self._cbcs_key = _key",
             "            else:",
+            "                _key = self._cbcs_key",
             "                _sets = []",
             "                _params = []",
         ]
@@ -1245,6 +1376,12 @@ def _write_sql_body(pieces, connection, fields, writable, check, hooks, events=N
                 _q(field.column),
                 _q(field.column),
                 field.widget,
+            )
+        elif field.nullable and field.io == "time":
+            differ = "(_fields.get(%s) != self._cbcs_saved_fields.get(%s) or %s in self._cbcs_cleared)" % (
+                _q(field.column),
+                _q(field.column),
+                _q(field.column),
             )
         else:
             differ = "_fields.get(%s) != self._cbcs_saved_fields.get(%s)" % (_q(field.column), _q(field.column))
@@ -1258,7 +1395,7 @@ def _write_sql_body(pieces, connection, fields, writable, check, hooks, events=N
     lines.extend(
         [
             "                if _sets:",
-            "                    _params.append(self._cbcs_key)",
+            "                    _params.append(_key)",
         ]
     )
     if check:
@@ -1284,7 +1421,7 @@ def _write_sql_body(pieces, connection, fields, writable, check, hooks, events=N
         [
             "                    _cursor.execute(_sql, tuple(_params))",
             "                    if _cursor.rowcount == 0:",
-            "                        _cursor.execute(%s, (self._cbcs_key,))" % _q(pieces["exists"]),
+            "                        _cursor.execute(%s, (_key,))" % _q(pieces["exists"]),
             "                        if _cursor.fetchone() is None:",
             "                            raise _CbcsStop(%s)" % _q("deleted"),
         ]
@@ -1298,9 +1435,8 @@ def _write_sql_body(pieces, connection, fields, writable, check, hooks, events=N
         )
     lines.extend(
         [
-            "                _key = self._cbcs_key",
-            "            getattr(self, %s, lambda *a: None)(_conn, self._cbcs_key)" % _q("_cbcs_save_lines"),
-            "            _cursor.execute(%s, (self._cbcs_key,))" % _q(pieces["load"]),
+            "            getattr(self, %s, lambda *a: None)(_conn, _key)" % _q("_cbcs_save_lines"),
+            "            _cursor.execute(%s, (_key,))" % _q(pieces["load"]),
             "            _fetched = _cursor.fetchone()",
             "            if _fetched is None:",
             "                raise _CbcsStop(%s)" % _q("deleted"),
@@ -1311,10 +1447,9 @@ def _write_sql_body(pieces, connection, fields, writable, check, hooks, events=N
         lines.append("            _raw[%s] = _fetched[%d]" % (_q(column), index))
     lines.extend(
         [
-            "            self._cbcs_loaded = _raw",
-            "            self._cbcs_fill_record(_raw)",
-            "            self.cbcs_write_fields(_raw)",
-            "            getattr(self, %s, lambda *a: None)(_conn, self._cbcs_key)" % _q("_cbcs_load_lines"),
+            "            _collect_lines = getattr(self, %s, None)" % _q("_cbcs_collect_lines"),
+            "            if _collect_lines is not None:",
+            "                _lines = _collect_lines(_conn, _key)",
             "        except _CbcsStop:",
             "            raise",
             "        except Exception as _error:",
@@ -1330,8 +1465,16 @@ def _write_sql_body(pieces, connection, fields, writable, check, hooks, events=N
         "except Exception as _error:",
         "    self._cbcs_show_db_error(_db_error if _db_error is not None else _error)",
         "    return False",
+        "self._cbcs_key = _key",
+        "self._cbcs_loaded = _raw",
+        "self._cbcs_fill_record(_raw)",
+        "self.cbcs_write_fields(_raw)",
+        "_install_lines = getattr(self, %s, None)" % _q("_cbcs_install_lines"),
+        "if _install_lines is not None:",
+        "    _install_lines(_lines)",
         "self._cbcs_clear_errors()",
         "self._cbcs_saved_fields = self.cbcs_read_fields()",
+        *_cleared_reset(fields),
         "self._cbcs_ready = True",
         "self._cbcs_new = False",
         "if _inserted or not self._cbcs_filtered:",
@@ -1416,24 +1559,38 @@ def _delete_body(pieces, connection, hooks, delete_children: bool = False, event
 def _verb_new() -> List[str]:
     return [
         "if not self._cbcs_confirm_leave():",
-        "    return",
+        "    return False",
         "self._cbcs_start_new()",
+        "return True",
     ]
+
+
+def _nullable_time(fields: Sequence[_Field]) -> bool:
+    return any(field.nullable and field.io == "time" for field in fields)
+
+
+def _cleared_reset(fields: Sequence[_Field], indent: str = "") -> List[str]:
+    """Drop Clear marks when the snapshot is replaced. Forms with no time omit the set."""
+
+    if not _nullable_time(fields):
+        return []
+    return ["%sself._cbcs_cleared = set()" % indent]
 
 
 def _revert_body() -> List[str]:
     return [
         "if self._cbcs_new or self._cbcs_key is None:",
         "    self._cbcs_start_new()",
-        "    return",
+        "    return True",
         "self._cbcs_show(self._cbcs_index)",
+        "return True",
     ]
 
 
 def _move_body(kind: str) -> List[str]:
     lines = [
         "if not self._cbcs_confirm_leave():",
-        "    return",
+        "    return False",
     ]
     if kind == "first":
         lines.extend(["if self._cbcs_keys:", "    self._cbcs_show(0)"])
@@ -1450,10 +1607,11 @@ def _move_body(kind: str) -> List[str]:
                 "    self._cbcs_show(_next)",
             ]
         )
+    lines.append("return True")
     return lines
 
 
-def _find_body(pieces, connection) -> List[str]:
+def _find_body(pieces, connection, fields) -> List[str]:
     count = len(pieces["search"])
     params = ", ".join(["_pattern"] * count) if count else ""
     lines = [
@@ -1467,18 +1625,23 @@ def _find_body(pieces, connection) -> List[str]:
         "    return",
         "_pattern = self._cbcs_like_pattern(_text)",
         "import cbcs_connections",
-        "with cbcs_connections.work(%s) as _conn:" % _q(connection),
-        "    _cursor = _conn.cursor()",
+        "try:",
+        "    with cbcs_connections.work(%s) as _conn:" % _q(connection),
+        "        _cursor = _conn.cursor()",
     ]
     if count == 1:
-        lines.append("    _cursor.execute(%s, (_pattern,))" % _q(pieces["find"]))
+        lines.append("        _cursor.execute(%s, (_pattern,))" % _q(pieces["find"]))
     elif count:
-        lines.append("    _cursor.execute(%s, (%s))" % (_q(pieces["find"]), params))
+        lines.append("        _cursor.execute(%s, (%s))" % (_q(pieces["find"]), params))
     else:
-        lines.append("    _cursor.execute(%s)" % _q(pieces["find"]))
+        lines.append("        _cursor.execute(%s)" % _q(pieces["find"]))
     lines.extend(
         [
-            "    self._cbcs_keys = [_item[0] for _item in _cursor.fetchall()]",
+            "        _found = [_item[0] for _item in _cursor.fetchall()]",
+            "except Exception as _error:",
+            "    self._cbcs_show_db_error(_error)",
+            "    return",
+            "self._cbcs_keys = _found",
             "self._cbcs_filtered = True",
             "self._cbcs_find_note(len(self._cbcs_keys))",
             "if self._cbcs_keys:",
@@ -1490,6 +1653,7 @@ def _find_body(pieces, connection) -> List[str]:
             "    self._cbcs_record = {}",
             "    self.cbcs_write_fields({})",
             "    self._cbcs_saved_fields = self.cbcs_read_fields()",
+            *_cleared_reset(fields, "    "),
             "    self._cbcs_ready = True",
         ]
     )
@@ -1640,6 +1804,15 @@ def _imports(fields: Sequence[_Field], own_filter: bool, extras: Sequence[Tuple[
         found.append(("PySide6.QtCore", "QDateTime"))
     if any(field.nullable and field.io == "bool" for field in fields):
         found.append(("PySide6.QtCore", "Qt"))
+    if any(field.nullable and field.io == "time" for field in fields):
+        found.extend(
+            (
+                ("PySide6.QtCore", "QObject"),
+                ("PySide6.QtCore", "QEvent"),
+                ("PySide6.QtCore", "Qt"),
+                ("PySide6.QtWidgets", "QMenu"),
+            )
+        )
     if own_filter:
         found.extend(
             [

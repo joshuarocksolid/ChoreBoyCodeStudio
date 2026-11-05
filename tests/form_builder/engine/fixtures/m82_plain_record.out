@@ -7,7 +7,7 @@
 ## Loading invoice.ui with QUiLoader gives the layout without the behaviour.
 ## cbcs-codegen: 1
 ## cbcs-source-sha256: b8cd346e4f118b4532706c944619ae721d9f15fb0c083e14cce6c4529cd69b07
-## cbcs-body-sha256: 2653e0ba2e9457d4c85bdd52c68a7d6480c2120d1c919671b28d02fffb81806e
+## cbcs-body-sha256: 609f31d825c0c0ff23f8d721a92c5b37e4e03dec4637ec1f44ab6fd07e7f8aac
 ################################################################################
 from PySide6.QtCore import (QEvent, QMetaObject, QObject, Qt)
 from PySide6.QtWidgets import (
@@ -115,7 +115,7 @@ class Ui_Invoice(object):
         # record
         _fields = {}
         _text = self.notesEdit.text()
-        if _text == u"":
+        if _text.strip() == u"":
             _fields[u"notes"] = None
         else:
             _fields[u"notes"] = _text
@@ -392,6 +392,7 @@ class Ui_Invoice(object):
         class _CbcsStop(Exception):
             pass
         _db_error = None
+        _lines = None
         try:
             with cbcs_connections.work(u"shop") as _conn:
                 _cursor = _conn.cursor()
@@ -402,15 +403,15 @@ class Ui_Invoice(object):
                         _cursor.execute(u"INSERT INTO \"invoices\" (\"notes\") VALUES (?)", tuple(_params))
                         _key = _cursor.lastrowid
                         _inserted = True
-                        self._cbcs_key = _key
                     else:
+                        _key = self._cbcs_key
                         _sets = []
                         _params = []
                         if _fields.get(u"notes") != self._cbcs_saved_fields.get(u"notes"):
                             _sets.append(u"\"notes\" = ?")
                             _params.append(self._cbcs_bind(u"notes", _fields.get(u"notes")))
                         if _sets:
-                            _params.append(self._cbcs_key)
+                            _params.append(_key)
                             if not _overwrite:
                                 _sql = u"UPDATE \"invoices\" SET " + u", ".join(_sets) + u" WHERE \"id\" = ? AND \"notes\" IS ?"
                                 _params.append(self._cbcs_loaded.get(u"notes"))
@@ -418,24 +419,22 @@ class Ui_Invoice(object):
                                 _sql = u"UPDATE \"invoices\" SET " + u", ".join(_sets) + u" WHERE \"id\" = ?"
                             _cursor.execute(_sql, tuple(_params))
                             if _cursor.rowcount == 0:
-                                _cursor.execute(u"SELECT \"id\" FROM \"invoices\" WHERE \"id\" = ?", (self._cbcs_key,))
+                                _cursor.execute(u"SELECT \"id\" FROM \"invoices\" WHERE \"id\" = ?", (_key,))
                                 if _cursor.fetchone() is None:
                                     raise _CbcsStop(u"deleted")
                                 if not _overwrite:
                                     raise _CbcsStop(u"conflict")
-                        _key = self._cbcs_key
-                    getattr(self, u"_cbcs_save_lines", lambda *a: None)(_conn, self._cbcs_key)
-                    _cursor.execute(u"SELECT \"notes\", \"id\" FROM \"invoices\" WHERE \"id\" = ?", (self._cbcs_key,))
+                    getattr(self, u"_cbcs_save_lines", lambda *a: None)(_conn, _key)
+                    _cursor.execute(u"SELECT \"notes\", \"id\" FROM \"invoices\" WHERE \"id\" = ?", (_key,))
                     _fetched = _cursor.fetchone()
                     if _fetched is None:
                         raise _CbcsStop(u"deleted")
                     _raw = {}
                     _raw[u"notes"] = _fetched[0]
                     _raw[u"id"] = _fetched[1]
-                    self._cbcs_loaded = _raw
-                    self._cbcs_fill_record(_raw)
-                    self.cbcs_write_fields(_raw)
-                    getattr(self, u"_cbcs_load_lines", lambda *a: None)(_conn, self._cbcs_key)
+                    _collect_lines = getattr(self, u"_cbcs_collect_lines", None)
+                    if _collect_lines is not None:
+                        _lines = _collect_lines(_conn, _key)
                 except _CbcsStop:
                     raise
                 except Exception as _error:
@@ -451,6 +450,13 @@ class Ui_Invoice(object):
         except Exception as _error:
             self._cbcs_show_db_error(_db_error if _db_error is not None else _error)
             return False
+        self._cbcs_key = _key
+        self._cbcs_loaded = _raw
+        self._cbcs_fill_record(_raw)
+        self.cbcs_write_fields(_raw)
+        _install_lines = getattr(self, u"_cbcs_install_lines", None)
+        if _install_lines is not None:
+            _install_lines(_lines)
         self._cbcs_clear_errors()
         self._cbcs_saved_fields = self.cbcs_read_fields()
         self._cbcs_ready = True
@@ -506,49 +512,55 @@ class Ui_Invoice(object):
     def cbcs_new(self):
         # record
         if not self._cbcs_confirm_leave():
-            return
+            return False
         self._cbcs_start_new()
+        return True
 
     def cbcs_revert(self):
         # record
         if self._cbcs_new or self._cbcs_key is None:
             self._cbcs_start_new()
-            return
+            return True
         self._cbcs_show(self._cbcs_index)
+        return True
 
     def cbcs_reload(self):
         # record
-        self.cbcs_revert()
+        return self.cbcs_revert()
 
     def cbcs_first(self):
         # record
         if not self._cbcs_confirm_leave():
-            return
+            return False
         if self._cbcs_keys:
             self._cbcs_show(0)
+        return True
 
     def cbcs_previous(self):
         # record
         if not self._cbcs_confirm_leave():
-            return
+            return False
         if self._cbcs_index > 0:
             self._cbcs_show(self._cbcs_index - 1)
+        return True
 
     def cbcs_next(self):
         # record
         if not self._cbcs_confirm_leave():
-            return
+            return False
         _index = self._cbcs_index
         _next = 0 if _index < 0 else _index + 1
         if _next < len(self._cbcs_keys):
             self._cbcs_show(_next)
+        return True
 
     def cbcs_last(self):
         # record
         if not self._cbcs_confirm_leave():
-            return
+            return False
         if self._cbcs_keys:
             self._cbcs_show(len(self._cbcs_keys) - 1)
+        return True
 
     def cbcs_find(self):
         # record
@@ -562,10 +574,15 @@ class Ui_Invoice(object):
             return
         _pattern = self._cbcs_like_pattern(_text)
         import cbcs_connections
-        with cbcs_connections.work(u"shop") as _conn:
-            _cursor = _conn.cursor()
-            _cursor.execute(u"SELECT \"id\" FROM \"invoices\" WHERE (CAST(\"notes\" AS TEXT) LIKE ? ESCAPE '\\') ORDER BY \"id\" ASC", (_pattern,))
-            self._cbcs_keys = [_item[0] for _item in _cursor.fetchall()]
+        try:
+            with cbcs_connections.work(u"shop") as _conn:
+                _cursor = _conn.cursor()
+                _cursor.execute(u"SELECT \"id\" FROM \"invoices\" WHERE (CAST(\"notes\" AS TEXT) LIKE ? ESCAPE '\\') ORDER BY \"id\" ASC", (_pattern,))
+                _found = [_item[0] for _item in _cursor.fetchall()]
+        except Exception as _error:
+            self._cbcs_show_db_error(_error)
+            return
+        self._cbcs_keys = _found
         self._cbcs_filtered = True
         self._cbcs_find_note(len(self._cbcs_keys))
         if self._cbcs_keys:

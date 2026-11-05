@@ -68,6 +68,7 @@ def test_an_empty_search_lists_a_null_name(tmp_path: Path) -> None:
         assert _stored_names(db).count(None) == 1
 
 
+@pytest.mark.logic("L-list-search-screens")
 def test_a_typed_search_skips_a_null_name(tmp_path: Path) -> None:
     with _open(tmp_path, limit=10) as (host, db):
         _type(host, "ann")
@@ -114,6 +115,7 @@ def test_a_price_shows_the_stored_decimal(tmp_path: Path) -> None:
         assert _cell(host, 2) == "2026-04-01"
 
 
+@pytest.mark.logic("L-list-search-screens")
 def test_a_text_key_opens_that_record(tmp_path: Path) -> None:
     with _open(tmp_path, limit=10) as (host, db):
         _install_window(db)
@@ -192,6 +194,10 @@ def test_pg8000_runs_a_stuck_select_without_search(tmp_path: Path) -> None:
         assert "LIMIT 10" in calls[1][0]
         assert "ORDER BY" in calls[1][0]
         assert _names(host) == ["Ann", "Bob"]
+        from app.features.form_builder.engine.data.sql import PG8000_SCAN_SENTENCE
+
+        assert host.ui.limitLabel.text() == PG8000_SCAN_SENTENCE
+        assert host.ui.limitLabel.isVisible()
 
 
 def test_own_sql_with_a_percent_returns_the_matching_rows(tmp_path: Path) -> None:

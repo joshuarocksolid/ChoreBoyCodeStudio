@@ -76,6 +76,7 @@ def _row_named(panel: QWidget, section: str, widget: str) -> QWidget:
     raise AssertionError(prefix)
 
 
+@pytest.mark.logic("L-logic-outline-search")
 def test_filter_and_enter_open_the_behavior_row(tmp_path: Path, qapp: QApplication) -> None:
     window, surface, guard = open_invoice(tmp_path, qapp)
     try:

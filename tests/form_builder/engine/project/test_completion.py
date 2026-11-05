@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from app.features.form_builder.engine.ids import IdAllocator
 from app.features.form_builder.engine.project.adoption import scope_for
 from app.features.form_builder.engine.project.create import create_form
@@ -42,6 +44,7 @@ def _labels(root: Path, service: CompletionService, window_name: str = "invoice_
     return {item.label for item in envelope.items if isinstance(item, CompletionItem)}
 
 
+@pytest.mark.pain("P-15")
 def test_completion_follows_a_widget_rename(tmp_path: Path) -> None:
     root = tmp_path / "proj"
     fs = OsFileSystem()

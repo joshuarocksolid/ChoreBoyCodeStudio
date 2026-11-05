@@ -4,11 +4,12 @@ from __future__ import annotations
 
 import sqlite3
 import time
+from contextlib import contextmanager
 from dataclasses import replace
 from datetime import date
 from decimal import Decimal
 from pathlib import Path
-from typing import Any, Callable, List, Optional, Sequence, Tuple
+from typing import Any, Callable, Iterator, List, Optional, Sequence, Tuple
 from xml.sax.saxutils import escape
 
 import pytest
@@ -73,9 +74,10 @@ def test_plan_covers_edits_nulls_and_keys() -> None:
     swapped = (same[1], same[0])
     ops = plan_lines(snap, swapped, (), "id", "line_no", ("qty", "note"), True)
     assert [op[0] for op in ops] == ["park", "park", "position", "position"]
-    assert all(isinstance(op[2], int) and op[2] < 0 for op in ops if op[0] == "park")
+    assert [op[2] for op in ops if op[0] == "park"] == [3, 4]
     plain = plan_lines(snap, swapped, (), "id", "line_no", ("qty", "note"), False)
-    assert [op[0] for op in plain] == ["position", "position"]
+    assert [op[0] for op in plain] == ["park", "park", "position", "position"]
+    assert [op[2] for op in plain if op[0] == "park"] == [3, 4]
     removed = plan_lines(snap, (same[1],), ("L1",), "id", "line_no", ("qty", "note"), True)
     assert removed[0] == ("delete", "L1")
     added = plan_lines(snap, same + ({"id": None, "qty": Decimal("3"), "note": ""},), (), "id", "line_no", ("qty", "note"), False)
@@ -91,6 +93,22 @@ def test_plan_covers_edits_nulls_and_keys() -> None:
         plan_lines(snap, same, (None,), "id", "line_no", ("qty", "note"), False)
     dated = ({"id": 1, "needed": date(2026, 4, 2)},)
     assert plan_lines(dated, dated, (), "id", "", ("needed",), False) == ()
+
+
+def test_park_clears_decimal_and_float_positions() -> None:
+    """NUMERIC and REAL positions still leave a free integer for the park."""
+
+    def parks(first: object, second: object) -> List[object]:
+        snap = (
+            {"id": "L1", "qty": 1, "line_no": first},
+            {"id": "L2", "qty": 1, "line_no": second},
+        )
+        swapped = ({"id": "L2", "qty": 1}, {"id": "L1", "qty": 1})
+        ops = plan_lines(snap, swapped, (), "id", "line_no", ("qty",), True)
+        return [op[2] for op in ops if op[0] == "park"]
+
+    assert parks(Decimal("1"), Decimal("2.5")) == [3, 4]
+    assert parks(1.2, 2.8) == [3, 4]
 
 
 def test_a_link_that_does_not_point_here_is_fb313() -> None:
@@ -202,6 +220,7 @@ def test_add_lines_is_one_undo_step(qapp, tmp_path: Path) -> None:
         set_schema_reader(None)
 
 
+@pytest.mark.logic("L-invoice-sqlite-lines", "L-master-detail")
 def test_lines_round_trip_on_sqlite(tmp_path: Path) -> None:
     seen: List[str] = []
 
@@ -525,6 +544,236 @@ def test_a_null_time_stays_null_and_a_set_time_saves(tmp_path: Path) -> None:
         assert not seen
 
 
+def test_clear_on_a_line_time_menu_saves_null(tmp_path: Path) -> None:
+    from PySide6.QtWidgets import QApplication, QMenu
+
+    rows = Rows(
+        "xl",
+        "invoice_id",
+        "id",
+        (DataColumn("tm", "Tm", "time"),),
+        "line_no",
+        "line_no",
+    )
+    ui_text = _xml(
+        RecordSource("shop", "invoices", "id"),
+        (
+            ("QLineEdit", "invoiceNoEdit", "invoice_no", ""),
+            ("QTableView", "linesView", "", _rows_xml(rows)),
+            ("QPushButton", "saveButton", "", ""),
+        ),
+    )
+    schema = Schema(
+        "shop",
+        "sqlite",
+        "",
+        "2026-04-02T00:00:00",
+        "sqlite3",
+        (
+            Table("invoices", (Column("id", "INTEGER", False), Column("invoice_no", "TEXT", False)), key="id"),
+            Table(
+                "xl",
+                (
+                    Column("id", "INTEGER", False),
+                    Column("invoice_id", "INTEGER", False),
+                    Column("line_no", "INTEGER", False),
+                    Column("tm", "TIME", True),
+                ),
+                key="id",
+            ),
+        ),
+    )
+
+    def prepare(root: Path) -> Path:
+        path = root / "data" / "shop.db"
+        path.parent.mkdir(parents=True)
+        connection = sqlite3.connect(str(path))
+        try:
+            connection.execute("CREATE TABLE invoices (id INTEGER PRIMARY KEY, invoice_no TEXT NOT NULL)")
+            connection.execute(
+                "CREATE TABLE xl (id INTEGER PRIMARY KEY, invoice_id INTEGER NOT NULL, line_no INTEGER NOT NULL, tm TIME)"
+            )
+            connection.execute("INSERT INTO invoices VALUES (1, 'INV-1')")
+            connection.execute("INSERT INTO xl VALUES (1, 1, 1, '10:30:00')")
+            connection.commit()
+        finally:
+            connection.close()
+        return path
+
+    with record_window(tmp_path, ui_text, prepare, schema=schema) as (host, db):
+        ui = host.ui
+
+        def clear(editor: Any) -> None:
+            line = editor.lineEdit()
+            assert line is not None
+            line.customContextMenuRequested.emit(line.rect().center())
+            app = QApplication.instance()
+            if app is not None:
+                app.processEvents()
+            found = False
+            for widget in QApplication.topLevelWidgets():
+                if not isinstance(widget, QMenu):
+                    continue
+                for action in widget.actions():
+                    if action.text() == "Clear":
+                        action.trigger()
+                        found = True
+                widget.close()
+            assert found
+
+        _edit(ui, 0, "tm", clear)
+        assert _value(ui, 0, "tm") is None
+        assert ui.cbcs_save() is True
+        connection = sqlite3.connect(str(db))
+        try:
+            stored = connection.execute("SELECT tm FROM xl").fetchone()
+        finally:
+            connection.close()
+        assert stored == (None,)
+
+
+@contextmanager
+def _bad_line_time(tmp_path: Path) -> Iterator[Tuple[Any, Path]]:
+    rows = Rows(
+        "xl",
+        "invoice_id",
+        "id",
+        (DataColumn("tm", "Tm", "time"),),
+        "line_no",
+        "line_no",
+    )
+    ui_text = _xml(
+        RecordSource("shop", "invoices", "id"),
+        (
+            ("QLineEdit", "invoiceNoEdit", "invoice_no", ""),
+            ("QTableView", "linesView", "", _rows_xml(rows)),
+            ("QPushButton", "saveButton", "", ""),
+        ),
+    )
+    schema = Schema(
+        "shop",
+        "sqlite",
+        "",
+        "2026-04-02T00:00:00",
+        "sqlite3",
+        (
+            Table("invoices", (Column("id", "INTEGER", False), Column("invoice_no", "TEXT", False)), key="id"),
+            Table(
+                "xl",
+                (
+                    Column("id", "INTEGER", False),
+                    Column("invoice_id", "INTEGER", False),
+                    Column("line_no", "INTEGER", False),
+                    Column("tm", "TIME", True),
+                ),
+                key="id",
+            ),
+        ),
+    )
+
+    def prepare(root: Path) -> Path:
+        path = root / "data" / "shop.db"
+        path.parent.mkdir(parents=True)
+        connection = sqlite3.connect(str(path))
+        try:
+            connection.execute("CREATE TABLE invoices (id INTEGER PRIMARY KEY, invoice_no TEXT NOT NULL)")
+            connection.execute(
+                "CREATE TABLE xl (id INTEGER PRIMARY KEY, invoice_id INTEGER NOT NULL, line_no INTEGER NOT NULL, tm TIME)"
+            )
+            connection.execute("INSERT INTO invoices VALUES (1, 'INV-1')")
+            connection.execute("INSERT INTO xl VALUES (1, 1, 1, 'nope')")
+            connection.commit()
+        finally:
+            connection.close()
+        return path
+
+    with record_window(tmp_path, ui_text, prepare, schema=schema) as opened:
+        yield opened
+
+
+def _stored_tm(db: Path) -> Any:
+    connection = sqlite3.connect(str(db))
+    try:
+        return connection.execute("SELECT tm FROM xl").fetchone()
+    finally:
+        connection.close()
+
+
+def test_a_bad_line_time_stays_when_another_column_is_saved(tmp_path: Path) -> None:
+    with _bad_line_time(tmp_path) as (host, db):
+        ui = host.ui
+        ui.invoiceNoEdit.setText(ui.invoiceNoEdit.text() + "x")
+        assert ui.cbcs_save() is True
+        assert _stored_tm(db) == ("nope",)
+
+
+def test_clear_on_a_bad_line_time_saves_null(tmp_path: Path) -> None:
+    from PySide6.QtWidgets import QApplication, QMenu
+
+    with _bad_line_time(tmp_path) as (host, db):
+        ui = host.ui
+
+        def clear(editor: Any) -> None:
+            line = editor.lineEdit()
+            assert line is not None
+            line.customContextMenuRequested.emit(line.rect().center())
+            app = QApplication.instance()
+            if app is not None:
+                app.processEvents()
+            found = False
+            for widget in QApplication.topLevelWidgets():
+                if not isinstance(widget, QMenu):
+                    continue
+                for action in widget.actions():
+                    if action.text() == "Clear":
+                        action.trigger()
+                        found = True
+                widget.close()
+            assert found
+
+        _edit(ui, 0, "tm", clear)
+        assert ui.cbcs_save() is True
+        assert _stored_tm(db) == (None,)
+
+
+def test_entering_a_line_time_over_a_bad_value_saves_it(tmp_path: Path) -> None:
+    from PySide6.QtCore import QTime
+
+    with _bad_line_time(tmp_path) as (host, db):
+        _edit(host.ui, 0, "tm", lambda editor: editor.setTime(QTime(9, 15, 0)))
+        assert host.ui.cbcs_save() is True
+        assert _stored_tm(db) == ("09:15:00",)
+
+
+def test_a_failed_lookup_does_not_mark_the_other_column(tmp_path: Path) -> None:
+    rows = Rows(
+        "invoice_lines",
+        "invoice_id",
+        "id",
+        (
+            DataColumn("product_id", "Product", "whole", Lookup("products", "id", "name", "name")),
+            DataColumn("needed", "Bin", "text", Lookup("bins", "id", "name", "name")),
+        ),
+        "line_no",
+        "line_no",
+    )
+    ui_text = _xml(
+        RecordSource("shop", "invoices", "id"),
+        (
+            ("QLineEdit", "invoiceNoEdit", "invoice_no", ""),
+            ("QTableView", "linesView", "", _rows_xml(rows)),
+            ("QPushButton", "saveButton", "", ""),
+        ),
+    )
+    with record_window(tmp_path, ui_text, _prepare, schema=_invoice_schema()) as (host, _db):
+        ui = host.ui
+        product = ui.linesView.model().item(0, _index(ui, "product_id")).text()
+        missing = ui.linesView.model().item(0, _index(ui, "needed")).text()
+        assert product == "Widget"
+        assert "no such table" in missing
+        assert "no such table" not in product
+
+
 def test_a_lookup_keeps_show_and_also_when_names_repeat(tmp_path: Path) -> None:
     shown = list(_spec().columns)
     shown[0] = replace(shown[0], lookup=Lookup("products", "id", "id", "id", ("price",)))
@@ -565,7 +814,9 @@ def test_a_failed_line_lookup_still_saves_the_lines(tmp_path: Path) -> None:
         told = len(seen)
         assert ui._cbcs_key == 1
         assert ui.linesView.model().rowCount() == 3
-        assert ui.linesView.model().item(0, _index(ui, "product_id")).text() == "(unknown #1)"
+        shown = ui.linesView.model().item(0, _index(ui, "product_id")).text()
+        assert "no such table" in shown
+        assert not shown.startswith("(unknown #")
         assert _value(ui, 0, "product_id") == 1
         ui.cbcs_first()
         assert len(seen) == told
@@ -743,7 +994,7 @@ def _story(host: Any, read: Callable[[], Sequence[Tuple[Any, ...]]]) -> None:
     assert added[-1][1] == 3
 
 
-def _speed(host: Any, db: Path) -> Tuple[Tuple[float, ...], Tuple[float, ...], Tuple[float, ...], Tuple[float, ...]]:
+def _speed(host: Any, db: Path) -> Tuple[Tuple[float, ...], Tuple[float, ...], Tuple[float, ...]]:
     import cbcs_connections  # type: ignore[reportMissingImports]
 
     key = host.ui.cbcs_current_key()
@@ -783,12 +1034,7 @@ def _speed(host: Any, db: Path) -> Tuple[Tuple[float, ...], Tuple[float, ...], T
         samples.append(time.perf_counter() - started)
     assert host.ui.linesView.model().rowCount() == 200
     host.ui._cbcs_line_snapshot = host.ui._cbcs_line_rows()
-    dirty: List[float] = []
-    for _ in range(3):
-        started = time.perf_counter()
-        host.ui._cbcs_is_dirty()
-        dirty.append(time.perf_counter() - started)
-    assert max(dirty) < 0.005
+    assert host.ui._cbcs_is_dirty() is False
     saves: List[float] = []
     for sample in range(3):
         for row in range(20):
@@ -804,7 +1050,7 @@ def _speed(host: Any, db: Path) -> Tuple[Tuple[float, ...], Tuple[float, ...], T
     finally:
         connection.close()
     assert left == 0
-    return (tuple(small), tuple(samples), tuple(dirty), tuple(saves))
+    return (tuple(small), tuple(samples), tuple(saves))
 
 
 def _prepare(root: Path) -> Path:

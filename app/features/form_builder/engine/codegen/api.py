@@ -11,7 +11,7 @@ from __future__ import annotations
 import ast
 import hashlib
 import os
-from typing import Optional
+from typing import Optional, Tuple
 
 from app.features.form_builder.engine.codegen.api_types import (
     CODEGEN_VERSION,
@@ -39,6 +39,7 @@ from app.features.form_builder.engine.project.forms import FormScope
 from app.features.form_builder.engine.project.window_facts import WindowFacts
 from app.features.form_builder.engine.project.window_file import read_window
 from app.features.form_builder.engine.ui4.document import UiDocument
+from app.features.form_builder.engine.ui4.schema import HeaderDecl
 
 del _fb5xx
 
@@ -53,6 +54,22 @@ __all__ = (
     "read_header",
     "render_header",
 )
+
+
+def _dependency_text(doc: UiDocument) -> str:
+    """``uic -d``: include text, then custom-widget headers. No class."""
+    lines = []
+    for node in doc.ui.children("includes"):
+        text = node.field("text")
+        if isinstance(text, str) and text:
+            lines.append(text)
+    for node in doc.ui.children("customwidgets"):
+        header = node.field("header")
+        if isinstance(header, HeaderDecl) and header.text:
+            lines.append(header.text)
+    if not lines:
+        return ""
+    return "\n".join(lines) + "\n"
 
 
 def _form_diagnostic(code: str, message: str) -> FormDiagnostic:
@@ -92,6 +109,7 @@ def generate_form_module(
     source_bytes: Optional[bytes],
     options: CodegenOptions = CodegenOptions(),
     trace: bool = False,
+    known_stems: Tuple[str, ...] = (),
 ) -> CodegenResult:
     """Generate ``ui_<name>.py`` for a project or adopted form.
 
@@ -116,6 +134,15 @@ def generate_form_module(
         )
     basename = os.path.basename(scope.ui_path)
     stem = basename[:-3] if basename.endswith(".ui") else os.path.splitext(basename)[0]
+    if options.dependencies_only:
+        return CodegenResult(
+            text=_dependency_text(doc),
+            diagnostics=(),
+            attribute_names=(),
+            resource_modules=(),
+            uses_freecadgui=False,
+            header=None,
+        )
     if not ui_basename_ok(basename):
         return CodegenResult(
             text=None,
@@ -137,6 +164,7 @@ def generate_form_module(
         trace=trace,
         window=_window_facts(scope),
         formats=read_formats(scope.project_root),
+        known_stems=known_stems,
     )
     if pieces.refused:
         return CodegenResult(

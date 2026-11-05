@@ -30,6 +30,7 @@ _ATTR = re.compile(r'([\w:-]+)="([^"]*)"')
 class Materialized:
     widget: QWidget
     failures: Tuple[Tuple[str, BaseException], ...]
+    module: Optional[object] = None
 
 
 class FormMaterializer:
@@ -54,12 +55,15 @@ class FormMaterializer:
     ) -> Materialized:
         methods = tuple(getattr(request, "form_methods", ()) or ())
         if request.module_source:
-            return Materialized(self._from_module(request.module_source, request.module_name, methods), ())
+            widget, module = self._from_module(request.module_source, request.module_name, methods)
+            return Materialized(widget, (), module)
         if request.ui_xml:
             return self._from_xml(request.ui_xml, classes, extends)
         raise RuntimeError("load_form needs module_source or ui_xml")
 
-    def _from_module(self, source: str, module_name: str, methods: Tuple[Tuple[str, int], ...] = ()) -> QWidget:
+    def _from_module(
+        self, source: str, module_name: str, methods: Tuple[Tuple[str, int], ...] = ()
+    ) -> Tuple[QWidget, types.ModuleType]:
         module = types.ModuleType(module_name)
         module.__file__ = "<%s>" % module_name
         sys.modules[module_name] = module
@@ -76,14 +80,14 @@ class FormMaterializer:
                 pin_runtime_look(host)
             _ensure_size(host)
             host.show()
-            return host
+            return host, module
         build = module.__dict__.get("build_preview")
         if callable(build):
             widget = build()
             if isinstance(widget, QWidget):
                 _ensure_size(widget)
                 widget.show()
-                return widget
+                return widget, module
         raise RuntimeError("generated module %s has no Ui_ class" % module_name)
 
     def _from_xml(
@@ -198,7 +202,9 @@ def _host_for(
             return host
         except AttributeError as exc:
             error = exc
-            host.deleteLater()
+            from app.qt.qt_compat import delete_now
+
+            delete_now(host)
     assert error is not None
     raise error
 

@@ -117,6 +117,8 @@ def _contribution(
     nulls = {name: _nullable_of(name, columns, rows) for name in select_names}
     select_sql = select_lines(engine, rows.table, select_names, rows.link, rows.order or rows.position, rows.key)
     methods = [
+        _method("_cbcs_collect_lines", "_conn, _key", _collect_body(view)),
+        _method("_cbcs_install_lines", "_payload", _install_body(view)),
         _method("_cbcs_load_lines", "_conn, _key", _load_body(view)),
         _method("_cbcs_save_lines", "_conn, _parent", _save_body(view, engine, rows, stored, stamp)),
         _method("_cbcs_lines_dirty", "", _dirty_body()),
@@ -174,6 +176,14 @@ def _contribution(
         imports.append(("decimal", "Decimal"))
     if families_used.intersection(("date", "time", "datetime")) or any(column.kind in ("date", "time", "datetime") for column in columns):
         imports.extend((("datetime", "date"), ("datetime", "datetime"), ("datetime", "time")))
+    if any(column.kind == "time" and column.nullable for column in columns):
+        imports.extend(
+            (
+                ("PySide6.QtCore", "QObject"),
+                ("PySide6.QtCore", "QEvent"),
+                ("PySide6.QtWidgets", "QMenu"),
+            )
+        )
     helpers = ["_cbcs_line_plan"]
     for _column, compiled in _formulas(columns, attrs or {}):
         for helper in compiled[1]:
@@ -307,6 +317,8 @@ def _setup(view, rows, columns, select_names, stored, unique, select_sql, engine
         "self._cbcs_line_lookup = {}",
         "self._cbcs_line_also_map = {}",
         "self._cbcs_line_snapshot = ()",
+        "self._cbcs_line_view = %s" % py_string(view),
+        "self._cbcs_cleared_time = object()",
         "self._cbcs_deleted_line_keys = []",
         "self._cbcs_line_guard = False",
         "self._cbcs_add_shortcut = QShortcut(QKeySequence(%s), self.%s)" % (py_string("Ctrl+Insert"), view),
@@ -362,16 +374,19 @@ def _insert_sql(engine: str, rows: Rows, stored: Sequence[str], stamp: str = "")
 
 
 def _load_body(view: str) -> List[str]:
+    del view
+    return ["self._cbcs_install_lines(self._cbcs_collect_lines(_conn, _key))"]
+
+
+def _collect_body(view: str) -> List[str]:
     return [
         "_cursor = _conn.cursor()",
         "_cursor.execute(self._cbcs_line_select, (_key,))",
         "_fetched = _cursor.fetchall()",
         "_model = self.%s.model()" % view,
         "if _model is None:",
-        "    return",
-        "_model.blockSignals(True)",
-        "_model.removeRows(0, _model.rowCount())",
-        "_snapshot = []",
+        "    return None",
+        "_payload = []",
         "for _item in _fetched:",
         "    _raw = {}",
         "    for _i, _name in enumerate(self._cbcs_line_select_names):",
@@ -381,7 +396,6 @@ def _load_body(view: str) -> List[str]:
         "        _snap[_name] = _raw.get(_name)",
         "    if self._cbcs_line_position:",
         "        _snap[self._cbcs_line_position] = _raw.get(self._cbcs_line_position)",
-        "    _snapshot.append(_snap)",
         "    _cells = []",
         "    for _i, _name in enumerate(self._cbcs_line_names):",
         "        _kind = self._cbcs_line_kinds[_i]",
@@ -391,15 +405,37 @@ def _load_body(view: str) -> List[str]:
         "            _label = self._cbcs_line_lookup_label(_name, _value)",
         "            if _label:",
         "                _text = _label",
+        "        _locked = _kind == %s or self._cbcs_line_locked[_i]" % py_string("calc"),
+        "        _align = self._cbcs_line_scales[_i] >= 0",
+        "        _cells.append((_text, _value, _raw.get(self._cbcs_line_key), _locked, _align))",
+        "    _payload.append((_snap, _cells))",
+        "return _payload",
+    ]
+
+
+def _install_body(view: str) -> List[str]:
+    return [
+        "if _payload is None:",
+        "    return",
+        "_model = self.%s.model()" % view,
+        "if _model is None:",
+        "    return",
+        "_model.blockSignals(True)",
+        "_model.removeRows(0, _model.rowCount())",
+        "_snapshot = []",
+        "for _snap, _cells in _payload:",
+        "    _snapshot.append(_snap)",
+        "    _items = []",
+        "    for _text, _value, _line_key, _locked, _align in _cells:",
         "        _cell = QStandardItem(_text)",
         "        _cell.setData(_value, self._cbcs_line_role)",
-        "        _cell.setData(_raw.get(self._cbcs_line_key), self._cbcs_line_key_role)",
-        "        if _kind == %s or self._cbcs_line_locked[_i]:" % py_string("calc"),
+        "        _cell.setData(_line_key, self._cbcs_line_key_role)",
+        "        if _locked:",
         "            _cell.setEditable(False)",
-        "        if self._cbcs_line_scales[_i] >= 0:",
+        "        if _align:",
         "            _cell.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)",
-        "        _cells.append(_cell)",
-        "    _model.appendRow(_cells)",
+        "        _items.append(_cell)",
+        "    _model.appendRow(_items)",
         "_model.blockSignals(False)",
         "self._cbcs_line_snapshot = tuple(_snapshot)",
         "self._cbcs_deleted_line_keys = []",
@@ -659,6 +695,14 @@ def _dict_body(view: str) -> List[str]:
 
 def _convert_body(families, nulls, engine: str, outbound: bool) -> List[str]:
     lines = []
+    if outbound:
+        # The sentinel is not a time. Returning None here is the NULL bind.
+        lines.extend(
+            [
+                "if _value is self._cbcs_cleared_time:",
+                "    return None",
+            ]
+        )
     first = True
     for name, family in families.items():
         word = "if" if first else "elif"
@@ -877,7 +921,47 @@ def _editor_body() -> List[str]:
         "    _edit = QTimeEdit(_parent)",
         "    _edit.setDisplayFormat(%s)" % py_string("HH:mm:ss"),
         "    if _nullable:",
-        "        _edit.setSpecialValueText(%s)" % py_string(" "),
+        "        def _touch(_t, _w=_edit):",
+        "            if getattr(_w, %s, False):" % py_string("_cbcs_time_arming"),
+        "                return",
+        "            if not _w.property(%s):" % py_string("cbcsTimeBlank"),
+        "                return",
+        "            _w.setProperty(%s, False)" % py_string("cbcsTimeBlank"),
+        "            _w.setSpecialValueText(%s)" % py_string(""),
+        "        _edit.timeChanged.connect(_touch)",
+        "        class _CbcsTimeClear(QObject):",
+        "            def __init__(self, widget):",
+        "                super().__init__(widget)",
+        "                self._widget = widget",
+        "                widget.installEventFilter(self)",
+        "                _line = widget.lineEdit()",
+        "                if _line is not None:",
+        "                    _line.installEventFilter(self)",
+        "                    _line.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)",
+        "                    _line.customContextMenuRequested.connect(self._menu)",
+        "            def _blank(self):",
+        "                _w = self._widget",
+        "                _w._cbcs_time_arming = True",
+        "                _w.setProperty(%s, True)" % py_string("cbcsTimeBlank"),
+        "                _w.setProperty(%s, True)" % py_string("cbcsTimeCleared"),
+        "                _w.setSpecialValueText(%s)" % py_string(" "),
+        "                _w.setTime(_w.minimumTime())",
+        "                _w._cbcs_time_arming = False",
+        "            def _menu(self, _pos):",
+        "                _line = self._widget.lineEdit()",
+        "                if _line is None:",
+        "                    return",
+        "                _menu = _line.createStandardContextMenu()",
+        "                _menu.addAction(%s, self._blank)" % py_string("Clear"),
+        "                _menu.popup(_line.mapToGlobal(_pos))",
+        "            def eventFilter(self, _watched, _event):",
+        "                if _event.type() == QEvent.Type.KeyPress and _event.key() in (Qt.Key.Key_Delete, Qt.Key.Key_Backspace):",
+        "                    _line = self._widget.lineEdit()",
+        "                    if _line is not None and _line.text() and _line.selectedText() == _line.text():",
+        "                        self._blank()",
+        "                        return True",
+        "                return False",
+        "        _edit._cbcs_time_clear = _CbcsTimeClear(_edit)",
         "    return _edit",
         "if _kind == %s:" % py_string("datetime"),
         "    _edit = QDateTimeEdit(_parent)",
@@ -938,7 +1022,11 @@ def _editor_data_body() -> List[str]:
         "    return",
         "if _kind == %s:" % py_string("time"),
         "    if _value is None and _nullable:",
+        "        _editor._cbcs_time_arming = True",
+        "        _editor.setProperty(%s, True)" % py_string("cbcsTimeBlank"),
+        "        _editor.setSpecialValueText(%s)" % py_string(" "),
         "        _editor.setTime(_editor.minimumTime())",
+        "        _editor._cbcs_time_arming = False",
         "        return",
         "    try:",
         "        if isinstance(_value, datetime):",
@@ -947,14 +1035,21 @@ def _editor_data_body() -> List[str]:
         "            _clock = _value",
         "        else:",
         "            _clock = time.fromisoformat(str(_value or %s))" % py_string("00:00:00"),
+        # A failed parse is blank on screen. It is not a Clear, so the stored text stays.
         "    except ValueError:",
         "        _note = getattr(self, %s, None)" % py_string("_cbcs_note_unparsed"),
         "        if _note is not None:",
         "            _names = getattr(self, %s, ())" % py_string("_cbcs_line_names"),
         "            _col = _names[_index.column()] if _index.column() < len(_names) else %s" % py_string("time"),
         "            _note(_col, %s, _value)" % py_string("time"),
+        "        _editor._cbcs_time_arming = True",
+        "        _editor.setProperty(%s, True)" % py_string("cbcsTimeBlank"),
+        "        _editor.setSpecialValueText(%s)" % py_string(" "),
         "        _editor.setTime(_editor.minimumTime())",
+        "        _editor._cbcs_time_arming = False",
         "        return",
+        "    _editor.setProperty(%s, False)" % py_string("cbcsTimeBlank"),
+        "    _editor.setSpecialValueText(%s)" % py_string(""),
         "    _editor.setTime(QTime(_clock.hour, _clock.minute, _clock.second))",
         "    return",
         "if _kind == %s:" % py_string("datetime"),
@@ -976,7 +1071,12 @@ def _editor_data_body() -> List[str]:
         "if _kind == %s:" % py_string("lookup"),
         "    _found = _editor.findData(_value)",
         "    if _found < 0 and _value is not None:",
-        "        _editor.addItem(%s %% _value, _value)" % py_string("(unknown #%s)"),
+        "        _errors = getattr(self, %s, None)" % py_string("_cbcs_line_lookup_error"),
+        "        _reason = _errors.get(_name) if isinstance(_errors, dict) else None",
+        "        if _reason:",
+        "            _editor.addItem(str(_reason), _value)",
+        "        else:",
+        "            _editor.addItem(%s %% _value, _value)" % py_string("(unknown #%s)"),
         "        _found = _editor.findData(_value)",
         "    _editor.setCurrentIndex(0 if _found < 0 else _found)",
         "    return",
@@ -1014,11 +1114,14 @@ def _commit_body() -> List[str]:
         "    else:",
         "        _value = None if _nullable else _index.data(self._cbcs_line_role)",
         "elif _kind == %s:" % py_string("time"),
-        "    _clock = _editor.time()",
-        "    if _nullable and _clock == _editor.minimumTime():",
+        # Clear of a blank parsed from a bad value stores a sentinel. Clear of a real time stores None.
+        "    _previous = _index.data(self._cbcs_line_role)",
+        "    if _nullable and _editor.property(%s) and _previous is None:" % py_string("cbcsTimeCleared"),
+        "        _value = self._cbcs_cleared_time",
+        "    elif _nullable and _editor.property(%s):" % py_string("cbcsTimeBlank"),
         "        _value = None",
         "    else:",
-        "        _value = _clock.toPython()",
+        "        _value = _editor.time().toPython()",
         "elif _kind == %s:" % py_string("datetime"),
         "    _stamp = _editor.dateTime()",
         "    if _nullable and _stamp == _editor.minimumDateTime():",
@@ -1052,6 +1155,11 @@ def _also_body() -> List[str]:
 
 def _label_body() -> List[str]:
     return [
+        "_errors = getattr(self, %s, None)" % py_string("_cbcs_line_lookup_error"),
+        "if isinstance(_errors, dict):",
+        "    _reason = _errors.get(_name)",
+        "    if _reason:",
+        "        return str(_reason)",
         "for _id, _label in self._cbcs_line_lookup.get(_name, ()):",
         "    if _id == _key:",
         "        return str(_label)",
@@ -1066,9 +1174,15 @@ def _lookup_body(columns: Sequence[_Col], engine: str) -> List[str]:
     return [
         "_lookup = {}",
         "_also_map = {}",
+        "_errors = {}",
         "_cursor = _conn.cursor()",
         "for _name, _sql, _table, _show_at, _also in self._cbcs_line_lookups:",
-        "    _cursor.execute(_sql)",
+        "    try:",
+        "        _cursor.execute(_sql)",
+        "    except Exception as _error:",
+        "        _text = str(_error).strip().splitlines()",
+        "        _errors[_name] = _text[0] if _text else %s" % py_string("Couldn't load this list."),
+        "        continue",
         "    _pairs = []",
         "    for _item in _cursor.fetchall():",
         "        _key = _item[0]",
@@ -1080,6 +1194,9 @@ def _lookup_body(columns: Sequence[_Col], engine: str) -> List[str]:
         "    _lookup[_name] = tuple(_pairs)",
         "self._cbcs_line_lookup = _lookup",
         "self._cbcs_line_also_map = _also_map",
+        "self._cbcs_line_lookup_error = _errors",
+        "if _errors:",
+        "    raise RuntimeError(next(iter(_errors.values())))",
     ]
 
 
@@ -1364,7 +1481,7 @@ def _formulas(columns: Sequence[_Col], attrs: Optional[Mapping[str, Mapping[str,
 
 def _show_body() -> List[str]:
     return [
-        "if _value is None:",
+        "if _value is None or _value is self._cbcs_cleared_time:",
         "    return %s" % py_string(""),
         "_scale = self._cbcs_line_scales[_column]",
         "if _scale < 0:",
