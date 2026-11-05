@@ -95,6 +95,7 @@ def test_invoice_story_on_postgres(tmp_path: Path) -> None:
             closer()
 
 
+@pytest.mark.logic("L-safe-sql")
 def test_statements_execute_on_postgres(tmp_path: Path) -> None:
     del tmp_path
     _dsn, connect = _driver()

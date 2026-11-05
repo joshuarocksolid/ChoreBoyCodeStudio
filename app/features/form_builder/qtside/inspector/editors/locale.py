@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import List, Optional, Tuple
+from typing import Iterable, List, Optional, Tuple, cast
 
 from app.features.form_builder.engine.ui4.values import LocaleValue
 from app.features.form_builder.qtside.inspector.api import (
@@ -64,7 +64,7 @@ class _LanguageList(QListWidget):
 
 def _languages() -> List[Tuple[str, str]]:
     rows = []
-    for language in QLocale.Language:
+    for language in cast(Iterable[object], QLocale.Language):
         key = str(getattr(language, "name", "") or "")
         if not key or key == "AnyLanguage":
             continue

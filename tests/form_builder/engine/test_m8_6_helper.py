@@ -188,6 +188,7 @@ def test_single_column_keys_and_references_come_from_the_catalog() -> None:
     assert columns["customer_id"].references.column == "id"
 
 
+@pytest.mark.logic("L-schema-cache")
 def test_a_slow_helper_is_unreachable_and_the_tester_uses_the_host_sentence(tmp_path: Path, monkeypatch) -> None:
     script = _script(tmp_path)
     command = [sys.executable, script, "sleep"]

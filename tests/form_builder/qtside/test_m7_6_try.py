@@ -165,6 +165,7 @@ def child(qapp: QApplication):  # type: ignore[no-untyped-def]
         sys.modules[name] = module
 
 
+@pytest.mark.logic("L-try-mode")
 def test_invoice_preview_logs_the_behavior_in_order(child, qapp: QApplication, tmp_path: Path) -> None:
     session_child, writer = child
     text = _invoice_text()
@@ -244,6 +245,7 @@ def test_preview_never_imports_the_window_file(child, qapp: QApplication, tmp_pa
     assert not any(name.endswith("invoice_window") for name in sys.modules)
 
 
+@pytest.mark.logic("L-try-mode")
 def test_needs_value_once_then_the_formula_uses_the_strip(child, qapp: QApplication, tmp_path: Path) -> None:
     session_child, writer = child
     text = _INVOICE.read_text(encoding="utf-8").replace(
@@ -273,6 +275,7 @@ def test_needs_value_once_then_the_formula_uses_the_strip(child, qapp: QApplicat
     assert total.text() == "9"  # type: ignore[attr-defined]
 
 
+@pytest.mark.logic("L-shipped-app-errors")
 def test_a_step_traceback_is_one_log_line_and_the_preview_stays(child, qapp: QApplication, tmp_path: Path) -> None:
     session_child, writer = child
     steps = write_list((slot_step("emailEdit", "missingSlot()"),))

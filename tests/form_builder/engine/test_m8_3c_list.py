@@ -68,6 +68,7 @@ def test_an_empty_search_lists_a_null_name(tmp_path: Path) -> None:
         assert _stored_names(db).count(None) == 1
 
 
+@pytest.mark.logic("L-list-search-screens")
 def test_a_typed_search_skips_a_null_name(tmp_path: Path) -> None:
     with _open(tmp_path, limit=10) as (host, db):
         _type(host, "ann")
@@ -114,6 +115,7 @@ def test_a_price_shows_the_stored_decimal(tmp_path: Path) -> None:
         assert _cell(host, 2) == "2026-04-01"
 
 
+@pytest.mark.logic("L-list-search-screens")
 def test_a_text_key_opens_that_record(tmp_path: Path) -> None:
     with _open(tmp_path, limit=10) as (host, db):
         _install_window(db)

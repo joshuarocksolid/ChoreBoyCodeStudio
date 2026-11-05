@@ -220,6 +220,7 @@ def test_add_lines_is_one_undo_step(qapp, tmp_path: Path) -> None:
         set_schema_reader(None)
 
 
+@pytest.mark.logic("L-invoice-sqlite-lines", "L-master-detail")
 def test_lines_round_trip_on_sqlite(tmp_path: Path) -> None:
     seen: List[str] = []
 

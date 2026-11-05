@@ -157,6 +157,7 @@ def test_clearing_the_field_is_its_own_undo() -> None:
         assert session.log.undo_label() == "Clear Enabled when for Discount rate"
 
 
+@pytest.mark.logic("L-excel-habit-fixes")
 def test_ctrl_dot_applies_one_fix_and_lists_several() -> None:
     with desk() as (session, pane):
         _select(session, pane, "discountEdit")

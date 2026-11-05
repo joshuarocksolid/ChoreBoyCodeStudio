@@ -161,6 +161,7 @@ def test_verb_round_trip_and_words(payload: dict, words: str) -> None:
     assert step_words(step, payload.get("field") or payload.get("target") or "Sale") == words
 
 
+@pytest.mark.logic("L-save-checks-then-calls")
 def test_scenario_4_checks_then_calls_and_stops_when_invalid(tmp_path: Path, qapp: Any) -> None:
     del qapp
     steps = (_step({"do": "validate"}), _step({"do": "call", "method": "save_invoice"}))
@@ -230,6 +231,7 @@ def _drop_imported_forms() -> None:
             sys.modules.pop(name, None)
 
 
+@pytest.mark.logic("L-action-vocabulary")
 def test_each_verb_emits_and_runs(tmp_path: Path, qapp: Any) -> None:
     del qapp
     from PySide6 import QtWidgets

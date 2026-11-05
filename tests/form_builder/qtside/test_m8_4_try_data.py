@@ -78,6 +78,7 @@ def test_backup_keeps_a_committed_wal_row(tmp_path: Path) -> None:
     assert seen == ("from-wal",)
 
 
+@pytest.mark.logic("L-try-mode-data")
 def test_scratch_session_leaves_the_file_hash_unchanged(tmp_path: Path, qapp: Any) -> None:
     root, db = _project(tmp_path)
     before = _hash(db)

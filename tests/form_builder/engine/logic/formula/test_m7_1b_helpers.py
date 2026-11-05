@@ -201,6 +201,7 @@ def _reachable() -> set:
 
 
 @pytest.mark.unit
+@pytest.mark.logic("L-function-library")
 def test_every_library_helper_is_in_the_runtime_table() -> None:
     from app.features.form_builder.engine.logic.formula.library import FUNCTIONS
 

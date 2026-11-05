@@ -827,3 +827,80 @@ def test_module_that_would_not_parse_is_not_written(tmp_path: Path, monkeypatch:
     result = _generate(tmp_path)
     assert result.text is None
     assert any(item.code == "FB502" and item.severity is Severity.ERROR for item in result.diagnostics)
+
+
+_DEPENDENCY_TAIL = """<customwidgets>
+ <customwidget>
+  <class>InvoiceHeader</class>
+  <extends>QWidget</extends>
+  <header>shop/widgets/invoice_header.h</header>
+ </customwidget>
+</customwidgets>
+<includes>
+ <include location="local">extra.h</include>
+</includes>"""
+
+
+def _uic_stdout(ui_path: Path, *flags: str) -> str:
+    candidates = (
+        Path(os.environ["CBCS_FB_UIC"]) if os.environ.get("CBCS_FB_UIC") else None,
+        Path("/usr/local/bin/cbcs-fb-uic"),
+        Path("/opt/freecad-1.1/usr/lib/qt6/libexec/uic"),
+        Path("/opt/freecad-1.1/usr/lib/qt6/bin/uic"),
+        Path("/Applications/FreeCAD.app/Contents/Resources/lib/qt6/uic"),
+    )
+    uic = next((path for path in candidates if path is not None and path.is_file()), None)
+    if uic is None:
+        return ""
+    completed = subprocess.run(
+        [str(uic), "-g", "python", *flags, str(ui_path)],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    return completed.stdout
+
+
+@pytest.mark.parity("R3-328")
+def test_dependency_flag_lists_headers_and_emits_no_class(tmp_path: Path) -> None:
+    path, scope, document = _form(tmp_path, tail=_DEPENDENCY_TAIL)
+    listed = generate_form_module(
+        document,
+        scope=scope,
+        source_bytes=path.read_bytes(),
+        options=CodegenOptions(dependencies_only=True),
+    )
+    assert listed.text == "extra.h\nshop/widgets/invoice_header.h\n"
+    assert "class " not in (listed.text or "")
+    empty_path, empty_scope, empty_doc = _form(tmp_path, stem="plain")
+    empty = generate_form_module(
+        empty_doc,
+        scope=empty_scope,
+        source_bytes=empty_path.read_bytes(),
+        options=CodegenOptions(dependencies_only=True),
+    )
+    assert empty.text == ""
+    module = generate_form_module(document, scope=scope, source_bytes=path.read_bytes())
+    assert module.text is not None and "class Ui_Invoice" in module.text
+    oracle = _uic_stdout(path, "-d")
+    if oracle:
+        assert listed.text == oracle
+
+
+@pytest.mark.parity("R3-329")
+def test_protection_flags_do_not_change_the_python_form(tmp_path: Path) -> None:
+    body = '<widget class="InvoiceHeader" name="banner"/>'
+    path, scope, document = _form(tmp_path, body=body, tail=_DEPENDENCY_TAIL)
+    result = generate_form_module(document, scope=scope, source_bytes=path.read_bytes())
+    assert result.text is not None
+    assert "class Ui_Invoice" in result.text
+    assert "#ifndef" not in result.text
+    assert "#endif" not in result.text
+    assert "from shop.widgets.invoice_header import InvoiceHeader" in result.text
+    plain = _uic_stdout(path)
+    if not plain:
+        return
+    skipped_guard = _uic_stdout(path, "-p")
+    skipped_includes = _uic_stdout(path, "-n")
+    both = _uic_stdout(path, "-p", "-n")
+    assert plain == skipped_guard == skipped_includes == both

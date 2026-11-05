@@ -77,6 +77,7 @@ def _scenario2() -> str:
     )
 
 
+@pytest.mark.logic("L-discount-enables-field", "L-state-rules")
 def test_scenario1_matches_the_listing_and_runs(tmp_path: Path) -> None:
     _doc, result = _load(_scenario1(), "invoice", tmp_path)
     text = result.text or ""
@@ -92,6 +93,7 @@ def test_scenario1_matches_the_listing_and_runs(tmp_path: Path) -> None:
     _run_scenario1(text)
 
 
+@pytest.mark.logic("L-line-total-live")
 def test_scenario2_matches_the_listing_and_runs(tmp_path: Path) -> None:
     _doc, result = _load(_scenario2(), "invoice", tmp_path)
     text = result.text or ""
@@ -106,6 +108,7 @@ def test_scenario2_matches_the_listing_and_runs(tmp_path: Path) -> None:
     _run_scenario2(text)
 
 
+@pytest.mark.logic("L-shipped-app-errors")
 def test_blank_and_divide_by_zero(tmp_path: Path) -> None:
     body = "\n".join(
         (
@@ -172,6 +175,7 @@ def test_cycle_generates_nothing_and_every_node_is_fb104(tmp_path: Path) -> None
     assert len(graph.cycles()) == 1
 
 
+@pytest.mark.logic("L-state-rules")
 def test_defaults_run_once_before_refresh_and_a_calculated_read_is_fb104(tmp_path: Path) -> None:
     body = "\n".join(
         (
@@ -197,6 +201,7 @@ def test_defaults_run_once_before_refresh_and_a_calculated_read_is_fb104(tmp_pat
     assert [item.widget for item in graph.defaults()] == ["nameEdit"]
 
 
+@pytest.mark.logic("L-generated-logic-module")
 def test_window_file_and_qt_properties_stay(tmp_path: Path) -> None:
     window = tmp_path / "invoice_window.py"
     original = _WINDOW.read_bytes()
@@ -225,6 +230,7 @@ def test_trace_lines_when_asked(tmp_path: Path) -> None:
     assert "_cbcs_trace('rule'" in (result.text or "") or '_cbcs_trace("rule"' in (result.text or "")
 
 
+@pytest.mark.logic("L-designer-roundtrip-merge")
 def test_repair_pairs_a_missing_name_with_a_new_widget_of_the_same_class() -> None:
     body = _widget("QLineEdit", "fresh", _prop("cbcsValue", "oldName"))
     doc = read_ui(_form(body), allocator=IdAllocator()).document
@@ -347,6 +353,7 @@ _SCENARIO2_SETUP = """    def _cbcs_setup(self, Invoice):
         self.priceSpin.valueChanged.connect(self.cbcs_refresh)"""
 
 
+@pytest.mark.logic("L-generated-logic-module")
 def test_scenario_blocks_are_exact(tmp_path: Path) -> None:
     (tmp_path / "one").mkdir()
     (tmp_path / "two").mkdir()
