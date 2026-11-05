@@ -172,6 +172,7 @@ def test_a_latin1_ui_stays_unchanged_when_the_text_editor_saves(tmp_path: Path, 
     workflow = SaveWorkflow.__new__(SaveWorkflow)
     workflow._host = SimpleNamespace(dialog_parent=lambda: None)  # type: ignore[attr-defined]
     workflow._editor_manager = lambda: manager  # type: ignore[method-assign]
+    workflow._local_history = None  # type: ignore[attr-defined]
     import app.shell.save_workflow as save_workflow
 
     previous = save_workflow.QMessageBox.warning
