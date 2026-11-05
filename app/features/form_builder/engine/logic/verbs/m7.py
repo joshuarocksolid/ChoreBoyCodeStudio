@@ -1,14 +1,15 @@
 """M7 step verbs (CONTRACTS section 18.4, LOGIC_DESIGN section 4.12).
 
 One ``VerbSpec`` per verb. ``register`` is discovered beside ``m6.py``. Formula
-text goes through ``analyze`` and ``compile_formula``. FB117 and FB120 are
-declared by M7.1a; this module only produces them.
+text goes through ``analyze`` and ``compile_formula``. FB117, FB120 and
+FB121 are declared by M7.1a; this module only produces them.
 """
 
 from __future__ import annotations
 
 import os
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from contextlib import contextmanager
+from typing import Any, Dict, Iterator, List, Optional, Sequence, Tuple
 
 from app.features.form_builder.engine.logic import compat
 from app.features.form_builder.engine.logic.verbs import FieldSpec, VerbSpec, require_text
@@ -500,6 +501,7 @@ def _emit_message(step: Any, ctx: Any) -> Tuple[str, ...]:
         # A blank shows as an empty message, never "None"; numbers read like the form shows them.
         expr = '(_cbcs_text(%s) or "")' % source
         _add(ctx, "helpers", "_cbcs_text")
+        _add(ctx, "helpers", "_cbcs_is_blank")
         for item in (("decimal", "Decimal"), ("decimal", "ROUND_HALF_UP")):
             _add(ctx, "imports", item)
     else:
@@ -534,9 +536,130 @@ def _emit_page(step: Any, ctx: Any) -> Tuple[str, ...]:
     return ("%s.setCurrentWidget(%s)" % (_owner(ctx, field), _owner(ctx, page)),)
 
 
-def _window_class(stem: str) -> str:
-    parts = [part for part in stem.split("_") if part]
-    return "".join(part[:1].upper() + part[1:] for part in parts) + "Window"
+# One expression for the record key. A spin box is value(), a line edit is
+# text(), and a combo is currentData() only when an item stores more than text.
+_KEY_READ = {
+    "QLineEdit": "text()",
+    "QLabel": "text()",
+    "QPlainTextEdit": "toPlainText()",
+    "QTextEdit": "toPlainText()",
+    "QSpinBox": "value()",
+    "QDoubleSpinBox": "value()",
+    "QSlider": "value()",
+    "QDial": "value()",
+    "QProgressBar": "value()",
+    "QCheckBox": "isChecked()",
+    "QRadioButton": "isChecked()",
+    "QDateEdit": "date().toPython()",
+    "QTimeEdit": "time().toPython()",
+    "QDateTimeEdit": "dateTime().toPython()",
+}
+
+_NOT_A_DIALOG = (
+    "%s is not a dialog, so Open as a dialog cannot run it. "
+    "Open it as a window, or make the form a dialog."
+)
+_REFUSED_DIALOG_ROOTS = frozenset({"QWidget", "QMainWindow"})
+# stem -> (window class, root base). Set while a rename generates openers
+# before the new .ui path exists. Rename keeps the class, so the stem is wrong.
+_pending: Dict[str, Tuple[str, str]] = {}
+
+
+@contextmanager
+def remember_open_target(stem: str, doc: Any) -> Iterator[None]:
+    """Remember ``doc``'s window class for ``stem`` until the block ends."""
+
+    class_name = _target_window_class(doc)
+    previous = _pending.get(stem)
+    if class_name:
+        _pending[stem] = (class_name, _root_base(doc))
+    try:
+        yield
+    finally:
+        if previous is None:
+            _pending.pop(stem, None)
+        else:
+            _pending[stem] = previous
+
+
+def _stem_window(stem: str) -> str:
+    from app.features.form_builder.engine.project.names import class_name_for_stem
+
+    return "%sWindow" % class_name_for_stem(stem)
+
+
+def _target_document(stem: str, ctx: Any) -> Any:
+    folder = getattr(ctx, "forms_dir", None)
+    if not isinstance(folder, str) or not folder:
+        return None
+    path = os.path.join(folder, "%s.ui" % stem)
+    try:
+        with open(path, "r", encoding="utf-8") as handle:
+            text = handle.read()
+    except (OSError, UnicodeError):
+        return None
+    from app.features.form_builder.engine.ids import IdAllocator
+    from app.features.form_builder.engine.ui4.reader import UiReadError, read_ui
+
+    try:
+        return read_ui(text, allocator=IdAllocator()).document
+    except UiReadError:
+        return None
+
+
+def _target_window_class(doc: Any) -> str:
+    """``<class>`` plus ``Window``, the name ``render_window_class`` writes."""
+
+    from app.features.form_builder.engine.codegen.names import check_cpp_name, python_class_stem
+
+    raw = doc.form_class_name()
+    if not isinstance(raw, str) or not check_cpp_name(raw):
+        return ""
+    return "%sWindow" % python_class_stem(raw)
+
+
+def _root_base(doc: Any) -> str:
+    from app.features.form_builder.engine.codegen.qtmap import base_qt_class
+
+    root = getattr(doc, "root", None)
+    class_name = (getattr(root, "class_name", "") or "").rsplit(".", 1)[-1]
+    extends = ""
+    custom = doc.custom_widget(class_name) if class_name else None
+    if custom is not None:
+        value = custom.field("extends")
+        if isinstance(value, str):
+            extends = value
+    return base_qt_class(class_name, extends)
+
+
+def _combo_stores_data(ctx: Any, name: str) -> bool:
+    # A lookup fills item data at run time. The file often has no userData.
+    if _prop_text(ctx, name, "cbcsLookup").strip():
+        return True
+    node = _node(ctx, name)
+    if node is None:
+        return False
+    from app.features.form_builder.engine.logic.formula_env import _items_have_data
+
+    return bool(_items_have_data(node))
+
+
+def _key_expr(ctx: Any, name: str) -> str:
+    owner = _owner(ctx, name)
+    cls = _class_of(ctx, name)
+    if cls == "QComboBox":
+        getter = "currentData()" if _combo_stores_data(ctx, name) else "currentText()"
+        return "%s.%s" % (owner, getter)
+    getter = _KEY_READ.get(cls)
+    if getter is None:
+        # Unknown class. Prefer value(), then text(), and currentData() last,
+        # so a spin box is not read with a method it does not have.
+        return "(getattr(%s, 'value', None) or getattr(%s, 'text', None) or getattr(%s, 'currentData', lambda: None))()" % (
+            owner,
+            owner,
+            owner,
+        )
+    return "%s.%s" % (owner, getter)
 
 
 _leaving: Tuple[str, ...] = ()
@@ -572,24 +695,72 @@ def form_is_generated(stem: str, folder: Optional[str], known: Tuple[str, ...] =
     return os.path.isfile(os.path.join(folder, "%s.ui" % stem))
 
 
+def _missing_open(step: Any, ctx: Any, stem: str) -> Tuple[str, ...]:
+    ctx.step = step
+    _diagnose(ctx, "FB120", missing_form_sentence(stem), stem)
+    return _skip(ctx, "FB120")
+
+
+def _open_target(stem: str, ctx: Any) -> Optional[Tuple[str, str, bool]]:
+    """Window class, root base, and whether the root base is known.
+
+    A readable ``.ui`` wins. A rename that has not written the new path yet
+    supplies the class it is keeping. A file that is present but not a form
+    falls back to the stem, and the root stays unknown.
+    """
+
+    document = _target_document(stem, ctx)
+    if document is not None:
+        class_name = _target_window_class(document)
+        if not class_name:
+            return None
+        return class_name, _root_base(document), True
+    pending = _pending.get(stem)
+    if pending is not None:
+        return pending[0], pending[1], True
+    folder = getattr(ctx, "forms_dir", None)
+    if isinstance(folder, str) and folder and os.path.isfile(os.path.join(folder, "%s.ui" % stem)):
+        return _stem_window(stem), "", False
+    return None
+
+
 def _emit_open(step: Any, ctx: Any) -> Tuple[str, ...]:
     stem = _text(step, "form")
     known = tuple(getattr(ctx, "known_stems", ()) or ())
     if not form_is_generated(stem, getattr(ctx, "forms_dir", None), known):
+        return _missing_open(step, ctx, stem)
+    target = _open_target(stem, ctx)
+    if target is None:
+        return _missing_open(step, ctx, stem)
+    class_name, root_base, root_known = target
+    mode = _text(step, "mode", "dialog") or "dialog"
+    if mode == "dialog" and root_known and root_base in _REFUSED_DIALOG_ROOTS:
         ctx.step = step
-        _diagnose(ctx, "FB120", missing_form_sentence(stem), stem)
-        return _skip(ctx, "FB120")
-    class_name = _window_class(stem)
+        _diagnose(ctx, "FB121", _NOT_A_DIALOG % stem, stem)
+        return _skip(ctx, "FB121")
     local = "_cbcs_%s" % stem
-    lines = ["from forms.%s_window import %s" % (stem, class_name), "%s = %s(self._form)" % (local, class_name)]
+    lines = []  # type: List[str]
+    if mode != "dialog":
+        # Only a form with a record source has unsaved changes to ask about.
+        lines.extend(
+            (
+                "_leave = getattr(self, %s, None)" % _quote("_cbcs_confirm_leave"),
+                "if _leave is not None and _leave() is False:",
+                "    return",
+            )
+        )
+    lines.extend(
+        (
+            "from forms.%s_window import %s" % (stem, class_name),
+            "%s = %s(self._form)" % (local, class_name),
+        )
+    )
     key = _text(step, "key")
     if key and _present(ctx, key):
-        lines.append("%s.cbcs_open(%s.currentData())" % (local, _owner(ctx, key)))
-    mode = _text(step, "mode", "dialog") or "dialog"
+        lines.append("%s.ui.cbcs_open(%s)" % (local, _key_expr(ctx, key)))
     lines.append("%s.exec()" % local if mode == "dialog" else "%s.show()" % local)
-    then = _text(step, "then")
-    if then:
-        lines.append("# then %s" % then)
+    if _text(step, "then") == "refreshLookups":
+        lines.append("self.cbcs_load_lookups()")
     return tuple(lines)
 
 

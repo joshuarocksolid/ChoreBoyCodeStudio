@@ -197,14 +197,13 @@ def write_value(
             ("_cbcs_money",),
             (("decimal", "Decimal"), ("decimal", "ROUND_HALF_UP")),
         )
-    if fmt and kind == "setText(formatted)":
+    if kind == "setText(formatted)":
+        call = "_cbcs_text(_cbcs_value)" if not fmt else "_cbcs_text(_cbcs_value, %s)" % repr(fmt)
         return (
-            [assign, "self.%s.setText(_cbcs_text(_cbcs_value, %s) or \"\")" % (widget, repr(fmt))],
-            ("_cbcs_text",),
+            [assign, 'self.%s.setText(%s or "")' % (widget, call)],
+            ("_cbcs_text", "_cbcs_is_blank"),
             (("decimal", "Decimal"), ("decimal", "ROUND_HALF_UP")),
         )
-    if kind == "setText(formatted)":
-        return [assign, 'self.%s.setText("" if _cbcs_value is None else str(_cbcs_value))' % widget], (), ()
     if kind == "setPlainText":
         return [assign, 'self.%s.setPlainText("" if _cbcs_value is None else str(_cbcs_value))' % widget], (), ()
     if kind == "setValue":

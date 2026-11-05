@@ -65,6 +65,40 @@ def opening_diagnostics(
     )
 
 
+_DATA_METHOD_DROPOUT = frozenset({"FB301", "FB302", "FB307"})
+
+
+def _data_expanders_dropped(diagnostics: Tuple[FormDiagnostic, ...], text: str) -> bool:
+    """True when a data expander returned an error and did not emit its methods.
+
+    FB314 is included only when the list methods are absent. A bad SELECT that
+    still emits ``cbcs_refresh_list`` is a module that can be written.
+    """
+
+    for item in diagnostics:
+        if item.severity is not Severity.ERROR or not item.code.startswith("FB3"):
+            continue
+        if item.code in _DATA_METHOD_DROPOUT:
+            return True
+        if item.code == "FB314" and "def cbcs_refresh_list(" not in text:
+            return True
+    return False
+
+
+def _withhold_generated(scope: FormScope, fs: OsFileSystem, diagnostics: Tuple[FormDiagnostic, ...]) -> WriteResult:
+    """Leave the generated module alone and say why."""
+
+    if scope.generated_path and fs.is_file(scope.generated_path):
+        sentence = "The form has a data error, so the previous generated Python file was left unchanged."
+    else:
+        sentence = "The form has a data error, so no Python file was written."
+    return WriteResult(
+        diagnostics=diagnostics + (_diagnostic("FB510", sentence),),
+        files=(),
+        text_written=False,
+    )
+
+
 def write_generated(
     scope: FormScope,
     doc: UiDocument,
@@ -90,7 +124,11 @@ def write_generated(
         )
     result = generate_form_module(doc, scope=scope, source_bytes=ui_bytes, options=options)
     if result.text is None:
+        if _data_expanders_dropped(result.diagnostics, ""):
+            return _withhold_generated(scope, fs, result.diagnostics)
         return WriteResult(diagnostics=result.diagnostics, files=(), text_written=False)
+    if _data_expanders_dropped(result.diagnostics, result.text):
+        return _withhold_generated(scope, fs, result.diagnostics)
     window_text = _window_text(scope, doc, fs)
     if isinstance(window_text, FormDiagnostic):
         return WriteResult(

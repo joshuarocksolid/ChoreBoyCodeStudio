@@ -637,6 +637,154 @@ def _activate(view_id: str) -> Iterator[None]:
         _current.reset(token)
 
 
+@dataclass
+class _SaveHold:
+    """Form fields a save writes before Try decides the database write did not stick."""
+
+    key_set: bool
+    key: object
+    snapshot_set: bool
+    snapshot: object
+    deleted_set: bool
+    deleted: object
+    model: Optional[Tuple[List[List[object]], int, object]]
+
+
+def _copy_line_row(value: object) -> object:
+    if isinstance(value, dict):
+        return {key: item for key, item in value.items()}
+    return value
+
+
+def _copy_line_snapshot(value: object) -> object:
+    if isinstance(value, tuple):
+        return tuple(_copy_line_row(item) for item in value)
+    if isinstance(value, list):
+        return [_copy_line_row(item) for item in value]
+    return value
+
+
+def _copy_deleted(value: object) -> object:
+    if isinstance(value, list):
+        return list(value)
+    if isinstance(value, tuple):
+        return tuple(value)
+    return value
+
+
+def _line_model(form: object) -> object:
+    name = getattr(form, "_cbcs_line_view", None)
+    if not isinstance(name, str) or not name:
+        return None
+    view = getattr(form, name, None)
+    if view is None:
+        return None
+    getter = getattr(view, "model", None)
+    if not callable(getter):
+        return None
+    return getter()
+
+
+def _capture_line_model(form: object) -> Optional[Tuple[List[List[object]], int, object]]:
+    model = _line_model(form)
+    if model is None:
+        return None
+    row_count = getattr(model, "rowCount", None)
+    column_count = getattr(model, "columnCount", None)
+    item = getattr(model, "item", None)
+    if not callable(row_count) or not callable(column_count) or not callable(item):
+        return None
+    height = int(row_count())
+    width = int(column_count())
+    rows = []  # type: List[List[object]]
+    for row in range(height):
+        cells = []  # type: List[object]
+        for column in range(width):
+            cell = item(row, column)
+            if cell is None:
+                cells.append(None)
+                continue
+            clone = getattr(cell, "clone", None)
+            cells.append(clone() if callable(clone) else cell)
+        rows.append(cells)
+    token = item(0, 0) if height and width else None
+    return (rows, height, token)
+
+
+def _restore_line_model(form: object, shot: Optional[Tuple[List[List[object]], int, object]]) -> None:
+    if shot is None:
+        return
+    model = _line_model(form)
+    if model is None:
+        return
+    blocker = getattr(model, "blockSignals", None)
+    if callable(blocker):
+        blocker(True)
+    try:
+        remover = getattr(model, "removeRows", None)
+        if callable(remover):
+            remover(0, int(model.rowCount()))
+        append = getattr(model, "appendRow", None)
+        if not callable(append):
+            return
+        for cells in shot[0]:
+            append(list(cells))
+    finally:
+        if callable(blocker):
+            blocker(False)
+
+
+def _line_model_changed(form: object, shot: Optional[Tuple[List[List[object]], int, object]]) -> bool:
+    if shot is None:
+        return False
+    model = _line_model(form)
+    if model is None:
+        return True
+    if int(model.rowCount()) != shot[1]:
+        return True
+    if shot[1] == 0:
+        return False
+    item = getattr(model, "item", None)
+    if not callable(item):
+        return True
+    return item(0, 0) is not shot[2]
+
+
+def _hold_save_state(form: object) -> _SaveHold:
+    key_set = hasattr(form, "_cbcs_key")
+    snapshot_set = hasattr(form, "_cbcs_line_snapshot")
+    deleted_set = hasattr(form, "_cbcs_deleted_line_keys")
+    return _SaveHold(
+        key_set,
+        getattr(form, "_cbcs_key", None) if key_set else None,
+        snapshot_set,
+        _copy_line_snapshot(getattr(form, "_cbcs_line_snapshot", None)) if snapshot_set else None,
+        deleted_set,
+        _copy_deleted(getattr(form, "_cbcs_deleted_line_keys", None)) if deleted_set else None,
+        _capture_line_model(form),
+    )
+
+
+def _save_state_changed(form: object, held: _SaveHold) -> bool:
+    if held.key_set and getattr(form, "_cbcs_key", None) != held.key:
+        return True
+    if held.snapshot_set and _copy_line_snapshot(getattr(form, "_cbcs_line_snapshot", None)) != held.snapshot:
+        return True
+    if held.deleted_set and _copy_deleted(getattr(form, "_cbcs_deleted_line_keys", None)) != held.deleted:
+        return True
+    return _line_model_changed(form, held.model)
+
+
+def _restore_save_state(form: object, held: _SaveHold) -> None:
+    if held.key_set:
+        setattr(form, "_cbcs_key", held.key)
+    if held.snapshot_set:
+        setattr(form, "_cbcs_line_snapshot", held.snapshot)
+    if held.deleted_set:
+        setattr(form, "_cbcs_deleted_line_keys", _copy_deleted(held.deleted))
+    _restore_line_model(form, held.model)
+
+
 def _bound(fn: types.FunctionType, view_id: str, name: str) -> types.FunctionType:
     def wrapped(self: object, *args: object, **kwargs: object) -> object:
         token = _current.set(view_id)
@@ -647,6 +795,8 @@ def _bound(fn: types.FunctionType, view_id: str, name: str) -> types.FunctionTyp
                 index = getattr(self, "_cbcs_index", -1)
                 loaded = _copy_map(getattr(self, "_cbcs_loaded", None))
                 saved = _copy_map(getattr(self, "_cbcs_saved_fields", None))
+                # The save writes the key and the lines, then Try rolls the database back.
+                held = _hold_save_state(self)
                 result = fn(self, *args, **kwargs)
                 if result and not writes_stick(view_id):
                     if was_new:
@@ -657,6 +807,9 @@ def _bound(fn: types.FunctionType, view_id: str, name: str) -> types.FunctionTyp
                         setattr(self, "_cbcs_loaded", loaded)
                     if saved is not None:
                         setattr(self, "_cbcs_saved_fields", saved)
+                    _restore_save_state(self, held)
+                elif not result and _save_state_changed(self, held):
+                    _restore_save_state(self, held)
                 return result
             if name == "cbcs_delete":
                 keys = list(getattr(self, "_cbcs_keys", []) or [])
@@ -1397,16 +1550,18 @@ def _prepare_postgres(raw: object, spec: TryConnectionSpec) -> None:
 
 
 def _begin_read_only(connection: object) -> None:
-    """Start the would-run transaction as read only, before any other statement."""
+    """Mark the would-run transaction read only before any other statement.
+
+    psycopg starts the transaction inside the first execute. pg8000 does the
+    same, with ``begin transaction``, when the cursor is not yet in one.
+    ``SET TRANSACTION READ ONLY`` is legal only as that transaction's first
+    statement. ``BEGIN READ ONLY`` after the driver's begin is a warning, and
+    the transaction stays read-write.
+    """
 
     raw = _conn_of(connection)
-    module = type(raw).__module__
-    if "pg8000" in module:
-        if not getattr(raw, "_in_transaction", False) and not getattr(raw, "autocommit", False):
-            raw.execute_simple("BEGIN READ ONLY")  # type: ignore[attr-defined]
-        return
     cursor = raw.cursor()  # type: ignore[attr-defined]
-    cursor.execute("BEGIN READ ONLY")
+    cursor.execute("SET TRANSACTION READ ONLY")
 
 
 def send_extended(driver: object, sql: str, params: object = None) -> None:

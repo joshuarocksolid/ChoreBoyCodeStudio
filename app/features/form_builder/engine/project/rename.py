@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple
 
 from app.features.form_builder.engine.codegen.api import generate_form_module
-from app.features.form_builder.engine.logic.verbs.m7 import leaving_stems
+from app.features.form_builder.engine.logic.verbs.m7 import leaving_stems, remember_open_target
 from app.features.form_builder.engine.diagnostics import FormDiagnostic
 from app.features.form_builder.engine.ids import IdAllocator
 from app.features.form_builder.engine.project.adoption import (
@@ -147,12 +147,13 @@ def plan_rename(project_root: str, old_ui: str, new_ui: str, fs: OsFileSystem) -
     new_scope = classify_form(new_abs, project_root=root, adopted=new_list)
     if not new_scope.generates or not new_scope.generated_path:
         return _refused(root, "The new location is outside the project.")
-    generated = generate_form_module(
-        document,
-        scope=new_scope,
-        source_bytes=ui_bytes,
-        known_stems=(new_stem,) if old_stem != new_stem else (),
-    )
+    with remember_open_target(new_stem, document):
+        generated = generate_form_module(
+            document,
+            scope=new_scope,
+            source_bytes=ui_bytes,
+            known_stems=(new_stem,) if old_stem != new_stem else (),
+        )
     if generated.text is None:
         message = generated.diagnostics[0].message if generated.diagnostics else "The form could not be generated."
         return _refused(root, message)
@@ -296,12 +297,14 @@ def _retarget_other_forms(
             continue
         try:
             document = read_ui(updated, allocator=IdAllocator()).document
-            result = generate_form_module(
-                document,
-                scope=scope,
-                source_bytes=updated.encode("utf-8"),
-                known_stems=(new_stem,),
-            )
+            target = read_ui(fs.read_text(old_abs), allocator=IdAllocator()).document
+            with remember_open_target(new_stem, target):
+                result = generate_form_module(
+                    document,
+                    scope=scope,
+                    source_bytes=updated.encode("utf-8"),
+                    known_stems=(new_stem,),
+                )
         except (OSError, UnicodeError, UiReadError) as exc:
             notices.append("not updated: %s" % exc)
             continue

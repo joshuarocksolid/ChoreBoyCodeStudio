@@ -215,7 +215,7 @@ def _methods(source, fields, engine, record_word, order, search, check, hooks, a
         "cbcs_delete": ("", _delete_body(pieces, connection, hooks, has_lines and source.delete_lines is not False, events)),
         "cbcs_new": ("", _verb_new()),
         "cbcs_revert": ("", _revert_body()),
-        "cbcs_reload": ("", ["self.cbcs_revert()"]),
+        "cbcs_reload": ("", ["return self.cbcs_revert()"]),
         "cbcs_first": ("", _move_body("first")),
         "cbcs_previous": ("", _move_body("previous")),
         "cbcs_next": ("", _move_body("next")),
@@ -420,7 +420,7 @@ def _read_field(field: _Field) -> List[str]:
     else:
         lines = ["_text = %s.text()" % widget]
     if field.family == "text" and field.nullable:
-        lines.extend(["if _text == %s:" % _q(""), "    %s = None" % key, "else:", "    %s = _text" % key])
+        lines.extend(["if _text.strip() == %s:" % _q(""), "    %s = None" % key, "else:", "    %s = _text" % key])
     else:
         lines.append("%s = _text" % key)
     return lines
@@ -1342,6 +1342,7 @@ def _write_sql_body(pieces, connection, fields, writable, check, hooks, events=N
         "class _CbcsStop(Exception):",
         "    pass",
         "_db_error = None",
+        "_lines = None",
         "try:",
         "    with cbcs_connections.work(%s) as _conn:" % _q(connection),
         "        _cursor = _conn.cursor()",
@@ -1363,8 +1364,8 @@ def _write_sql_body(pieces, connection, fields, writable, check, hooks, events=N
     lines.extend(
         [
             "                _inserted = True",
-            "                self._cbcs_key = _key",
             "            else:",
+            "                _key = self._cbcs_key",
             "                _sets = []",
             "                _params = []",
         ]
@@ -1394,7 +1395,7 @@ def _write_sql_body(pieces, connection, fields, writable, check, hooks, events=N
     lines.extend(
         [
             "                if _sets:",
-            "                    _params.append(self._cbcs_key)",
+            "                    _params.append(_key)",
         ]
     )
     if check:
@@ -1420,7 +1421,7 @@ def _write_sql_body(pieces, connection, fields, writable, check, hooks, events=N
         [
             "                    _cursor.execute(_sql, tuple(_params))",
             "                    if _cursor.rowcount == 0:",
-            "                        _cursor.execute(%s, (self._cbcs_key,))" % _q(pieces["exists"]),
+            "                        _cursor.execute(%s, (_key,))" % _q(pieces["exists"]),
             "                        if _cursor.fetchone() is None:",
             "                            raise _CbcsStop(%s)" % _q("deleted"),
         ]
@@ -1434,9 +1435,8 @@ def _write_sql_body(pieces, connection, fields, writable, check, hooks, events=N
         )
     lines.extend(
         [
-            "                _key = self._cbcs_key",
-            "            getattr(self, %s, lambda *a: None)(_conn, self._cbcs_key)" % _q("_cbcs_save_lines"),
-            "            _cursor.execute(%s, (self._cbcs_key,))" % _q(pieces["load"]),
+            "            getattr(self, %s, lambda *a: None)(_conn, _key)" % _q("_cbcs_save_lines"),
+            "            _cursor.execute(%s, (_key,))" % _q(pieces["load"]),
             "            _fetched = _cursor.fetchone()",
             "            if _fetched is None:",
             "                raise _CbcsStop(%s)" % _q("deleted"),
@@ -1447,10 +1447,9 @@ def _write_sql_body(pieces, connection, fields, writable, check, hooks, events=N
         lines.append("            _raw[%s] = _fetched[%d]" % (_q(column), index))
     lines.extend(
         [
-            "            self._cbcs_loaded = _raw",
-            "            self._cbcs_fill_record(_raw)",
-            "            self.cbcs_write_fields(_raw)",
-            "            getattr(self, %s, lambda *a: None)(_conn, self._cbcs_key)" % _q("_cbcs_load_lines"),
+            "            _collect_lines = getattr(self, %s, None)" % _q("_cbcs_collect_lines"),
+            "            if _collect_lines is not None:",
+            "                _lines = _collect_lines(_conn, _key)",
             "        except _CbcsStop:",
             "            raise",
             "        except Exception as _error:",
@@ -1466,6 +1465,13 @@ def _write_sql_body(pieces, connection, fields, writable, check, hooks, events=N
         "except Exception as _error:",
         "    self._cbcs_show_db_error(_db_error if _db_error is not None else _error)",
         "    return False",
+        "self._cbcs_key = _key",
+        "self._cbcs_loaded = _raw",
+        "self._cbcs_fill_record(_raw)",
+        "self.cbcs_write_fields(_raw)",
+        "_install_lines = getattr(self, %s, None)" % _q("_cbcs_install_lines"),
+        "if _install_lines is not None:",
+        "    _install_lines(_lines)",
         "self._cbcs_clear_errors()",
         "self._cbcs_saved_fields = self.cbcs_read_fields()",
         *_cleared_reset(fields),
@@ -1553,8 +1559,9 @@ def _delete_body(pieces, connection, hooks, delete_children: bool = False, event
 def _verb_new() -> List[str]:
     return [
         "if not self._cbcs_confirm_leave():",
-        "    return",
+        "    return False",
         "self._cbcs_start_new()",
+        "return True",
     ]
 
 
@@ -1574,15 +1581,16 @@ def _revert_body() -> List[str]:
     return [
         "if self._cbcs_new or self._cbcs_key is None:",
         "    self._cbcs_start_new()",
-        "    return",
+        "    return True",
         "self._cbcs_show(self._cbcs_index)",
+        "return True",
     ]
 
 
 def _move_body(kind: str) -> List[str]:
     lines = [
         "if not self._cbcs_confirm_leave():",
-        "    return",
+        "    return False",
     ]
     if kind == "first":
         lines.extend(["if self._cbcs_keys:", "    self._cbcs_show(0)"])
@@ -1599,6 +1607,7 @@ def _move_body(kind: str) -> List[str]:
                 "    self._cbcs_show(_next)",
             ]
         )
+    lines.append("return True")
     return lines
 
 
@@ -1616,18 +1625,23 @@ def _find_body(pieces, connection, fields) -> List[str]:
         "    return",
         "_pattern = self._cbcs_like_pattern(_text)",
         "import cbcs_connections",
-        "with cbcs_connections.work(%s) as _conn:" % _q(connection),
-        "    _cursor = _conn.cursor()",
+        "try:",
+        "    with cbcs_connections.work(%s) as _conn:" % _q(connection),
+        "        _cursor = _conn.cursor()",
     ]
     if count == 1:
-        lines.append("    _cursor.execute(%s, (_pattern,))" % _q(pieces["find"]))
+        lines.append("        _cursor.execute(%s, (_pattern,))" % _q(pieces["find"]))
     elif count:
-        lines.append("    _cursor.execute(%s, (%s))" % (_q(pieces["find"]), params))
+        lines.append("        _cursor.execute(%s, (%s))" % (_q(pieces["find"]), params))
     else:
-        lines.append("    _cursor.execute(%s)" % _q(pieces["find"]))
+        lines.append("        _cursor.execute(%s)" % _q(pieces["find"]))
     lines.extend(
         [
-            "    self._cbcs_keys = [_item[0] for _item in _cursor.fetchall()]",
+            "        _found = [_item[0] for _item in _cursor.fetchall()]",
+            "except Exception as _error:",
+            "    self._cbcs_show_db_error(_error)",
+            "    return",
+            "self._cbcs_keys = _found",
             "self._cbcs_filtered = True",
             "self._cbcs_find_note(len(self._cbcs_keys))",
             "if self._cbcs_keys:",

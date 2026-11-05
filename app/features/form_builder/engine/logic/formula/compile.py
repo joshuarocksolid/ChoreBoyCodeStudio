@@ -555,11 +555,14 @@ def _emit_bool(node: Any, env: Any, self_name: str, wraps: Set[Any]) -> _Piece:
         raise ValueError("boolean formula needs two values")
     parts = [_emit(value, env, self_name, wraps) for value in values]
     if any(part.blank for part in parts):
-        helper = "_cbcs_and" if node.op == "and" else "_cbcs_or"
-        src = parts[0].source
-        for part in parts[1:]:
-            src = "%s(%s, %s)" % (helper, src, part.source)
-        return _Piece(src, PREC_ATOM, False)
+        # _cbcs_and(a, b) runs both arguments. The call on the right of and/or does not.
+        op = "and" if node.op == "and" else "or"
+        prec = PREC_AND if op == "and" else PREC_OR
+        wrapped = [_Piece("_cbcs_bool(%s)" % part.source, PREC_ATOM, False) for part in parts]
+        src = _paren(wrapped[0], prec, "left")
+        for part in wrapped[1:]:
+            src = "%s %s %s" % (src, op, _paren(part, prec, "right"))
+        return _Piece(src, prec, False)
     prec = PREC_AND if node.op == "and" else PREC_OR
     src = _paren(parts[0], prec, "left")
     for part in parts[1:]:

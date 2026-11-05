@@ -136,7 +136,7 @@ def test_postgres_find_escape_matches_one_column(tmp_path: Path, pg93_dsn: str, 
             cursor.execute("INSERT INTO %s (code) VALUES (%%s)" % table, ("a_b",))
             cursor.execute("INSERT INTO %s (code) VALUES (%%s)" % table, ("axb",))
         statement = find_keys("postgres", table, "id", (), ("code",))
-        assert "E'\\\\'" in statement.text
+        assert "$$\\$$" in statement.text
         with module.work("shop") as connection:
             cursor = connection.cursor()
             cursor.execute(statement.text, (r"%a\_b%",))
@@ -146,6 +146,40 @@ def test_postgres_find_escape_matches_one_column(tmp_path: Path, pg93_dsn: str, 
             cursor = connection.cursor()
             cursor.execute("SELECT code FROM %s WHERE id = %%s" % table, (found[0],))
             assert cursor.fetchone()[0] == "a_b"
+    finally:
+        _drop(module, table)
+
+
+@pytest.mark.parametrize("driver", ["psycopg", "pg8000"])
+def test_postgres_find_escape_matches_two_columns(tmp_path: Path, pg93_dsn: str, driver: str, connections_module) -> None:
+    _import(driver)
+    module = _module(tmp_path, _fields(pg93_dsn), driver, connections_module)
+    table = "m82g_%s" % uuid.uuid4().hex[:8]
+    try:
+        with module.work("shop") as connection:
+            cursor = connection.cursor()
+            cursor.execute("CREATE TABLE %s (id serial PRIMARY KEY, code text, name text)" % table)
+            cursor.execute("INSERT INTO %s (code, name) VALUES (%%s, %%s)" % table, ("a_b", "plain"))
+            cursor.execute("INSERT INTO %s (code, name) VALUES (%%s, %%s)" % table, ("plain", "a_b"))
+            cursor.execute("INSERT INTO %s (code, name) VALUES (%%s, %%s)" % table, ("axb", "axb"))
+        statement = find_keys("postgres", table, "id", (), ("code", "name"))
+        assert statement.text.count("%s") == 2
+        assert "$$\\$$" in statement.text
+        pattern = r"%a\_b%"
+        with module.work("shop") as connection:
+            cursor = connection.cursor()
+            cursor.execute(statement.text, (pattern, pattern))
+            found = [row[0] for row in cursor.fetchall()]
+        assert len(found) == 2
+        placeholders = ", ".join(["%s"] * len(found))
+        with module.work("shop") as connection:
+            cursor = connection.cursor()
+            cursor.execute(
+                "SELECT code, name FROM %s WHERE id IN (%s)" % (table, placeholders),
+                tuple(found),
+            )
+            rows = {tuple(row) for row in cursor.fetchall()}
+        assert rows == {("a_b", "plain"), ("plain", "a_b")}
     finally:
         _drop(module, table)
 

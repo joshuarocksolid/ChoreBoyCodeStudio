@@ -117,6 +117,8 @@ def _contribution(
     nulls = {name: _nullable_of(name, columns, rows) for name in select_names}
     select_sql = select_lines(engine, rows.table, select_names, rows.link, rows.order or rows.position, rows.key)
     methods = [
+        _method("_cbcs_collect_lines", "_conn, _key", _collect_body(view)),
+        _method("_cbcs_install_lines", "_payload", _install_body(view)),
         _method("_cbcs_load_lines", "_conn, _key", _load_body(view)),
         _method("_cbcs_save_lines", "_conn, _parent", _save_body(view, engine, rows, stored, stamp)),
         _method("_cbcs_lines_dirty", "", _dirty_body()),
@@ -315,6 +317,7 @@ def _setup(view, rows, columns, select_names, stored, unique, select_sql, engine
         "self._cbcs_line_lookup = {}",
         "self._cbcs_line_also_map = {}",
         "self._cbcs_line_snapshot = ()",
+        "self._cbcs_line_view = %s" % py_string(view),
         "self._cbcs_cleared_time = object()",
         "self._cbcs_deleted_line_keys = []",
         "self._cbcs_line_guard = False",
@@ -371,16 +374,19 @@ def _insert_sql(engine: str, rows: Rows, stored: Sequence[str], stamp: str = "")
 
 
 def _load_body(view: str) -> List[str]:
+    del view
+    return ["self._cbcs_install_lines(self._cbcs_collect_lines(_conn, _key))"]
+
+
+def _collect_body(view: str) -> List[str]:
     return [
         "_cursor = _conn.cursor()",
         "_cursor.execute(self._cbcs_line_select, (_key,))",
         "_fetched = _cursor.fetchall()",
         "_model = self.%s.model()" % view,
         "if _model is None:",
-        "    return",
-        "_model.blockSignals(True)",
-        "_model.removeRows(0, _model.rowCount())",
-        "_snapshot = []",
+        "    return None",
+        "_payload = []",
         "for _item in _fetched:",
         "    _raw = {}",
         "    for _i, _name in enumerate(self._cbcs_line_select_names):",
@@ -390,7 +396,6 @@ def _load_body(view: str) -> List[str]:
         "        _snap[_name] = _raw.get(_name)",
         "    if self._cbcs_line_position:",
         "        _snap[self._cbcs_line_position] = _raw.get(self._cbcs_line_position)",
-        "    _snapshot.append(_snap)",
         "    _cells = []",
         "    for _i, _name in enumerate(self._cbcs_line_names):",
         "        _kind = self._cbcs_line_kinds[_i]",
@@ -400,15 +405,37 @@ def _load_body(view: str) -> List[str]:
         "            _label = self._cbcs_line_lookup_label(_name, _value)",
         "            if _label:",
         "                _text = _label",
+        "        _locked = _kind == %s or self._cbcs_line_locked[_i]" % py_string("calc"),
+        "        _align = self._cbcs_line_scales[_i] >= 0",
+        "        _cells.append((_text, _value, _raw.get(self._cbcs_line_key), _locked, _align))",
+        "    _payload.append((_snap, _cells))",
+        "return _payload",
+    ]
+
+
+def _install_body(view: str) -> List[str]:
+    return [
+        "if _payload is None:",
+        "    return",
+        "_model = self.%s.model()" % view,
+        "if _model is None:",
+        "    return",
+        "_model.blockSignals(True)",
+        "_model.removeRows(0, _model.rowCount())",
+        "_snapshot = []",
+        "for _snap, _cells in _payload:",
+        "    _snapshot.append(_snap)",
+        "    _items = []",
+        "    for _text, _value, _line_key, _locked, _align in _cells:",
         "        _cell = QStandardItem(_text)",
         "        _cell.setData(_value, self._cbcs_line_role)",
-        "        _cell.setData(_raw.get(self._cbcs_line_key), self._cbcs_line_key_role)",
-        "        if _kind == %s or self._cbcs_line_locked[_i]:" % py_string("calc"),
+        "        _cell.setData(_line_key, self._cbcs_line_key_role)",
+        "        if _locked:",
         "            _cell.setEditable(False)",
-        "        if self._cbcs_line_scales[_i] >= 0:",
+        "        if _align:",
         "            _cell.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)",
-        "        _cells.append(_cell)",
-        "    _model.appendRow(_cells)",
+        "        _items.append(_cell)",
+        "    _model.appendRow(_items)",
         "_model.blockSignals(False)",
         "self._cbcs_line_snapshot = tuple(_snapshot)",
         "self._cbcs_deleted_line_keys = []",

@@ -87,14 +87,17 @@ def create_form(
             refused="The form could not be created: %s" % exc,
         )
     if not written.text_written:
-        journal.rollback()
-        detail = written.diagnostics[0].message if written.diagnostics else "the form could not be generated"
-        return CreateResult(
-            files=(),
-            diagnostics=written.diagnostics,
-            scope=None,
-            refused="The form could not be created: %s" % detail,
-        )
+        # FB510 keeps the .ui and withholds a module that would crash in setupUi.
+        # Any other reason still rolls the new file back.
+        if not any(item.code == "FB510" for item in written.diagnostics):
+            journal.rollback()
+            detail = written.diagnostics[0].message if written.diagnostics else "the form could not be generated"
+            return CreateResult(
+                files=(),
+                diagnostics=written.diagnostics,
+                scope=None,
+                refused="The form could not be created: %s" % detail,
+            )
     files = [ui_path]
     for path in written.files:
         if path not in files:

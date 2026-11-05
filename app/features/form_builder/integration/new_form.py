@@ -602,7 +602,7 @@ class NewFormSurface:
             data = finished.encode("utf-8")
             fs.write_bytes(scope.ui_path, data)
             written = write_generated(scope, document, data, fs)
-            if not written.text_written:
+            if not written.text_written and not any(item.code == "FB510" for item in written.diagnostics):
                 detail = written.diagnostics[0].message if written.diagnostics else "the form could not be generated"
                 raise ProjectOpError(detail)
         except Exception as exc:

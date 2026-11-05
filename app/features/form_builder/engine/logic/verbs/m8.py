@@ -73,6 +73,22 @@ _CALLS = {
     "showAll": "cbcs_show_all",
 }
 
+# LOGIC §4.12. These return False when the step fails or the clerk cancels.
+# Find and Show all do not stop the list.
+_STOPS = frozenset(
+    {
+        "cbcs_new",
+        "cbcs_save",
+        "cbcs_delete",
+        "cbcs_revert",
+        "cbcs_reload",
+        "cbcs_first",
+        "cbcs_previous",
+        "cbcs_next",
+        "cbcs_last",
+    }
+)
+
 
 def _validate(taken: Any) -> None:
     del taken
@@ -117,7 +133,10 @@ def _emit_row(method: str):
 def _emit_call(method: str):
     def emit(step: Any, ctx: Any) -> Tuple[str, ...]:
         del step, ctx
-        return ("self.%s()" % method,)
+        call = "self.%s()" % method
+        if method not in _STOPS:
+            return (call,)
+        return ("if %s is False:" % call, "    return")
 
     return emit
 
