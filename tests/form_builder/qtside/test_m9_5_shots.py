@@ -283,6 +283,18 @@ def _select_name(surface: object, name: str) -> None:
     surface.workbench.inspector.flush()  # type: ignore[attr-defined]
 
 
+def _bottom_panel(window: QWidget, open_panel: bool) -> None:
+    """Full-window shots keep the Python Console collapsed unless a shot asks for it."""
+    splitter = getattr(window, "_vertical_splitter", None)
+    if splitter is None:
+        return
+    height = max(int(window.height()), 1)
+    if open_panel:
+        splitter.setSizes([int(height * 0.62), max(1, int(height * 0.38))])
+        return
+    splitter.setSizes([height, 0])
+
+
 def _open_groups(inspector: QWidget) -> None:
     for button in inspector.findChildren(QToolButton):
         if button.objectName().startswith("formBuilder.group.") and not button.isChecked():
@@ -321,6 +333,19 @@ def _new_form(tour: _Tour, tmp: Path) -> None:
             return found
 
         tour.paint(window, 2, "start", "templates", _cards, dense=True)
+
+        def _hovered_card() -> QWidget:
+            from app.qt.QtCore import QPointF
+            from app.qt.QtGui import QEnterEvent
+
+            cards = window.findChildren(QWidget, "formBuilder.newForm.card.blank")
+            card = cards[0] if cards else _cards()
+            point = QPointF(card.width() / 2.0, card.height() / 2.0)
+            card.enterEvent(QEnterEvent(point, point, point))
+            card.setFocus()
+            return card
+
+        tour.paint(window, 64, "start", "card-hover-focus", _hovered_card)
         from app.features.form_builder.engine.project.user_templates import TemplateInfo
 
         _cards().set_user_templates(  # type: ignore[attr-defined]
@@ -475,6 +500,7 @@ def _invoice(tour: _Tour, tmp: Path) -> None:
     if callable(reload):
         reload()
     try:
+        _bottom_panel(window, False)
         tour.paint(window, 8, "form", "invoice", lambda: window, dense=True)
         _select_name(surface, "emailEdit")
         _pump(tour.qapp)
@@ -537,6 +563,14 @@ def _overlays(tour: _Tour, window: MainWindow, surface: object) -> None:
             surface.toggle_overlay(kind)  # type: ignore[attr-defined]
             _pump(tour.qapp)
             tour.paint(window, number, "canvas", state, lambda: window, dense=(kind == "connections"))
+            if kind == "buddies":
+                tour.paint(
+                    window,
+                    66,
+                    "canvas",
+                    "mode-banner-buddies",
+                    lambda: window.findChild(QWidget, "formBuilder.overlayBanner") or window,
+                )
         except Exception as exc:
             tour.note(number, "canvas", state, str(exc))
         finally:
@@ -580,6 +614,7 @@ def _inspector(tour: _Tour, window: MainWindow, surface: object) -> None:
     _open_groups(inspector)
     _pump(tour.qapp)
     tour.paint(window, 27, "inspector", "properties", lambda: _child(window, "formBuilder.inspector"), dense=True)
+    tour.paint(window, 63, "inspector", "size", lambda: _child(window, "formBuilder.inspector"))
     inspector.focus_tab(TabId.BEHAVIOR)
     _pump(tour.qapp)
     tour.paint(window, 28, "inspector", "behavior", lambda: _child(window, "formBuilder.inspector"), dense=True)
@@ -719,6 +754,7 @@ def _outline(tour: _Tour, window: MainWindow, surface: object) -> None:
     surface.workbench.focus_outline()  # type: ignore[attr-defined]
     _pump(tour.qapp)
     tour.paint(window, 23, "outline", "tree", lambda: _child(window, "formBuilder.outline"), dense=True)
+    tour.paint(window, 65, "outline", "hover", lambda: _child(window, "formBuilder.outline"))
     node = surface.session.document.by_name("emailEdit")[0]
     try:
         surface.workbench.outline.begin_rename(node)  # type: ignore[attr-defined]
@@ -849,8 +885,10 @@ def _big(tour: _Tour, tmp: Path) -> None:
             scroll = bar()
             scroll.setValue(scroll.maximum() // 2)
         _pump(tour.qapp)
+        _bottom_panel(window, False)
         tour.paint(window, 9, "form", "thousand", lambda: window)
         window.resize(1366, 768)
+        _bottom_panel(window, False)
         _pump(tour.qapp)
         column = window.findChild(QWidget, "formBuilder.leftScroll")
         sentence = window.findChild(QLabel, "formBuilder.logic.empty")
@@ -859,6 +897,9 @@ def _big(tour: _Tour, tmp: Path) -> None:
             ensure(sentence)
             _pump(tour.qapp)
         tour.paint(window, 62, "window", "short", lambda: window)
+        _bottom_panel(window, True)
+        _pump(tour.qapp)
+        tour.paint(window, 62, "window", "short-console", lambda: window)
     finally:
         _shutdown(window, tour.qapp, guard)
 
@@ -877,6 +918,7 @@ def _missing_connection(tour: _Tour, tmp: Path) -> None:
         if callable(save):
             save(str(path))
         _pump(tour.qapp, 8)
+        _bottom_panel(window, False)
         tour.paint(window, 56, "form", "fb510", lambda: window)
         py = root / "forms" / "ui_gone.py"
         py.write_text("## Generated from gone.ui by ChoreBoy Code Studio\n", encoding="utf-8")
@@ -888,6 +930,7 @@ def _missing_connection(tour: _Tour, tmp: Path) -> None:
             return visible[-1] if visible else None
 
         tour.paint(window, 54, "files", "generated-banner", _banner)
+        tour.paint(window, 67, "files", "generated-banner", _banner)
         damaged = root / "forms" / "broken.ui"
         damaged.write_bytes(b"<?xml version='1.0' \xff\xfe not utf-8")
         window._editor_tab_factory.open_file_in_editor(str(damaged))  # noqa: SLF001

@@ -318,6 +318,12 @@ def map_python_tooling_status_view(
     return PythonToolingStatusView(severity=copy.severity, text=copy.text, details=copy.details)
 
 
+def _elide_middle(label: "QLabel", full: str) -> str:
+    """The status label keeps the whole sentence. Screen readers read ``text()``."""
+    del label
+    return full
+
+
 class ShellStatusBarController:
     """Small controller for shell status bar labels."""
 
@@ -423,7 +429,9 @@ class ShellStatusBarController:
             disk_state=disk_state,
             sentence=sentence,
         )
-        self._editor_label.setText(view.text)
+        full = view.text
+        self._editor_label.setToolTip(full)
+        self._editor_label.setText(_elide_middle(self._editor_label, full))
 
     def set_completion_mode(self, mode: str, *, scope: str, global_mode: str | None = None) -> None:
         """Update the completion mode chip (mode plus the settings scope it comes from)."""

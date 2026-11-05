@@ -92,12 +92,12 @@ def test_filter_and_enter_open_the_behavior_row(tmp_path: Path, qapp: QApplicati
         assert any(str(row.accessibleName()).startswith("STATE,") for row in visible)
         assert visible
         assert all("disc" in str(row.toolTip()).casefold() for row in visible)
-        rules = panel.findChild(QWidget, "formBuilder.logic.chip.rules")
-        assert rules is not None
-        rules.setChecked(False)  # type: ignore[attr-defined]
+        segments = panel.findChild(QWidget, "formBuilder.logic.segments")
+        assert segments is not None
+        segments.set_current_index(2)  # type: ignore[attr-defined]
         _pump(qapp)
         assert not any(str(row.accessibleName()).startswith("STATE,") for row in _rows(panel))
-        rules.setChecked(True)  # type: ignore[attr-defined]
+        segments.set_current_index(0)  # type: ignore[attr-defined]
         _pump(qapp)
         state = _row_named(panel, "STATE", "discountEdit")
         state.setFocus()

@@ -16,6 +16,22 @@ from app.features.form_builder.qtside.inspector._services import Dropped, Reject
 from app.features.form_builder.qtside.inspector.editors._popover import SummaryButton
 from app.features.form_builder.qtside.inspector.editors._editor_kit import warning_color
 from app.features.form_builder.qtside.theme.chrome import FormChrome, control_qss
+from app.features.form_builder.qtside.theme.metrics import (
+    CONTROL,
+    ICON,
+    ICON_BUTTON_HEADER,
+    INSPECTOR_ROW,
+    LABEL_MAX,
+    LABEL_MIN,
+    LABEL_RATIO,
+    PANE_PAD,
+    R_CONTROL,
+    S2,
+    S1,
+    TYPE_BODY,
+)
+from app.features.form_builder.qtside.icons.glyphs import paint_glyph
+from app.features.form_builder.qtside.theme.section_header import SectionHeader
 from app.features.form_builder.qtside.inspector.api import (
     NOT_SET_TEXT,
     Editor,
@@ -42,9 +58,9 @@ from app.features.form_builder.qtside.inspector.model import (
     form_shortcuts,
     value_text,
 )
-from app.qt.QtCore import QEvent, QObject, QPoint, Qt, QTimer
+from app.qt.QtCore import QEvent, QObject, QPoint, QSize, Qt, QTimer
 from app.qt.qt_compat import delete_now, wrapper_is_valid
-from app.qt.QtGui import QFont
+from app.qt.QtGui import QFont, QIcon
 from app.qt.QtWidgets import (
     QAbstractSlider,
     QAbstractSpinBox,
@@ -67,8 +83,8 @@ from app.qt.QtWidgets import (
 logger = logging.getLogger(__name__)
 
 _DRAG = "Drag the page's right or bottom edge to try other sizes."
-_LABEL_WIDE = 104
-_LABEL_COMPACT = 96
+_LABEL_WIDE = LABEL_MAX
+_LABEL_COMPACT = LABEL_MIN
 
 @dataclasses.dataclass(frozen=True)
 class FormGroupSpec:
@@ -191,7 +207,9 @@ class PropertiesPage(QWidget):
         self._search.setObjectName("formBuilder.inspectorSearch")
         self._search.setPlaceholderText("Find a property")
         self._search.setAccessibleName("Find a property")
+        self._search.setFixedHeight(CONTROL)
         self._search.textChanged.connect(self._search_changed)
+        self._search.installEventFilter(self)
         self._pill = QLabel(self)
         self._pill.setObjectName("formBuilder.inspectorFilter")
         self._pill.setTextFormat(Qt.RichText)
@@ -199,11 +217,13 @@ class PropertiesPage(QWidget):
         self._pill.setOpenExternalLinks(False)
         self._pill.linkActivated.connect(lambda _link: self.clear_search())
         self._pill.hide()
-        self._more = QToolButton(self)
+        self._more = QToolButton(self._search)
         self._more.setObjectName("formBuilder.inspectorMenu")
-        self._more.setText("\u22ef")
+        self._more.setText("")
+        self._more.setToolTip("Inspector menu")
         self._more.setAccessibleName("Inspector menu")
         self._more.setAutoRaise(True)
+        self._more.setFixedSize(ICON_BUTTON_HEADER, ICON_BUTTON_HEADER)
         self._more.setPopupMode(_popup_mode())
         menu = QMenu(self._more)
         self._qt_names_action = menu.addAction("Qt names")
@@ -219,11 +239,11 @@ class PropertiesPage(QWidget):
         self._scroll.setWidgetResizable(True)
         self._scroll.setFrameShape(_no_frame())
         self._scroll.setHorizontalScrollBarPolicy(_scroll_off())
-        self._content = QWidget(self._scroll)
+        self._content = _Content(self._scroll)
         self._content.setObjectName("formBuilder.inspectorContent")
         self._content_layout = QVBoxLayout(self._content)
-        self._content_layout.setContentsMargins(8, 4, 8, 8)
-        self._content_layout.setSpacing(4)
+        self._content_layout.setContentsMargins(PANE_PAD, S2, PANE_PAD, PANE_PAD)
+        self._content_layout.setSpacing(S2)
         self._form = _FormSection(services, self._content)
         self._content_layout.addWidget(self._form)
         self._form_groups: List[_FormGroup] = []
@@ -244,11 +264,10 @@ class PropertiesPage(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
         tools = QHBoxLayout()
-        tools.setContentsMargins(0, 0, 0, 0)
+        tools.setContentsMargins(PANE_PAD, S2, PANE_PAD, S2)
         tools.setSpacing(0)
         layout.addLayout(tools)
         tools.addWidget(self._search, 1)
-        tools.addWidget(self._more, 0)
         layout.addWidget(self._pill)
         layout.addWidget(self._scroll, 1)
         self.setFocusProxy(self._search)
@@ -285,9 +304,28 @@ class PropertiesPage(QWidget):
         super().resizeEvent(event)
         self._apply_label_budget()
 
+    def eventFilter(self, watched: QObject, event: QEvent) -> bool:  # noqa: N802
+        if watched is self._search and event.type() in (_RESIZE, _SHOW):
+            self._seat_menu()
+        return super().eventFilter(watched, event)
+
+    def _seat_menu(self) -> None:
+        field = self._search
+        button = self._more
+        inset = max(0, (field.height() - button.height()) // 2)
+        button.move(max(0, field.width() - button.width() - inset), inset)
+        button.raise_()
+        field.setTextMargins(ICON + S2, 0, button.width() + inset, 0)
+
     def _apply_label_budget(self) -> None:
-        narrow = self._scroll.viewport().width() - 16 < _NARROW_ROW
-        width = _LABEL_COMPACT if (self._compact or narrow) else _LABEL_WIDE
+        viewport = self._scroll.viewport().width()
+        if viewport <= 0:
+            return
+        width = int(viewport * LABEL_RATIO)
+        if width < LABEL_MIN:
+            width = LABEL_MIN
+        if width > LABEL_MAX:
+            width = LABEL_MAX
         if width == self._label_width:
             return
         self._label_width = width
@@ -376,8 +414,7 @@ class PropertiesPage(QWidget):
         self.setStyleSheet(
             "QWidget#formBuilder\\.inspectorBody { background: %s; color: %s; }"
             "QLabel { color: %s; background: transparent; }"
-            "QCheckBox { color: %s; background: transparent; }"
-            % (panel, text, text, text)
+            % (panel, text, text)
         )
         self._scroll.setStyleSheet(
             "QScrollArea#formBuilder\\.inspectorScroll { background: %s; border: none; }" % panel
@@ -393,7 +430,7 @@ class PropertiesPage(QWidget):
             "QLabel { color: %s; background: transparent; }"
             "QLabel#formBuilder\\.rowQtName, QLabel#formBuilder\\.rowDefault,"
             " QLabel#formBuilder\\.rowMixed, QLabel#formBuilder\\.formCaption { color: %s; }"
-            "QCheckBox { color: %s; background: transparent; }"
+            "QLabel#formBuilder\\.rowLabel { font-size: %dpx; }"
             # Flat only for the row reset and group headers: an unscoped rule
             # also hid the checked state of the alignment segments.
             "QToolButton[fbFlat=\"true\"] { color: %s; background: transparent; border: none; }"
@@ -417,7 +454,7 @@ class PropertiesPage(QWidget):
                 text,
                 text,
                 faint,
-                text,
+                TYPE_BODY,
                 text,
                 faint,
                 faint,
@@ -430,6 +467,37 @@ class PropertiesPage(QWidget):
                 control_qss(chrome) if chrome is not None else "",
             )
         )
+        self._paint_search(chrome)
+        if chrome is not None:
+            for header in self.findChildren(SectionHeader):
+                header.apply_chrome(chrome)
+
+    def _paint_search(self, chrome: Optional[FormChrome]) -> None:
+        if chrome is None:
+            return
+        focus = chrome.focus_width if chrome.focus_width > 0 else 1
+        self._search.setStyleSheet(
+            "QLineEdit#formBuilder\\.inspectorSearch {"
+            " background: %s; color: %s; border: 1px solid %s; border-radius: %dpx;"
+            " font-size: %dpx; }"
+            "QLineEdit#formBuilder\\.inspectorSearch:focus { border: %dpx solid %s; }"
+            % (chrome.input, chrome.text, chrome.border, R_CONTROL, TYPE_BODY, focus, chrome.accent)
+        )
+        self._more.setStyleSheet(
+            "QToolButton#formBuilder\\.inspectorMenu { background: transparent; border: none; padding: 0px; }"
+            "QToolButton#formBuilder\\.inspectorMenu::menu-indicator { image: none; width: 0px; }"
+            "QToolButton#formBuilder\\.inspectorMenu:focus { border: %dpx solid %s; }"
+            % (focus, chrome.accent)
+        )
+        dpr = float(self.devicePixelRatioF()) if hasattr(self, "devicePixelRatioF") else 1.0
+        ink = chrome.icon_muted or chrome.muted
+        leading = getattr(getattr(QLineEdit, "ActionPosition", QLineEdit), "LeadingPosition")
+        for action in list(self._search.actions()):
+            self._search.removeAction(action)
+        self._search.addAction(QIcon(paint_glyph("search", ink, ICON, dpr)), leading)
+        self._more.setIcon(QIcon(paint_glyph("more", ink, ICON, dpr)))
+        self._more.setIconSize(self._more.size())
+        self._seat_menu()
 
     def paint(self, body: BodyView) -> None:
         searching = bool(self.search.strip())
@@ -700,25 +768,17 @@ class _FormGroup(QWidget):
         self._expanded = spec.expanded
         self._custom: Optional[GroupBody] = None
         self._host = _GroupHost(services, ())
-        self._toggle = QToolButton(self)
-        self._toggle.setObjectName("formBuilder.group.%s" % spec.key)
-        self._toggle.setProperty("fbFlat", "true")
-        self._toggle.setText(spec.title.upper())
-        self._toggle.setFont(_overline_font())
-        self._toggle.setCheckable(True)
-        self._toggle.setChecked(self._expanded)
-        self._toggle.setAccessibleName("%s group" % spec.title)
-        self._toggle.setToolButtonStyle(_beside())
-        self._toggle.setArrowType(_arrow(self._expanded))
+        self._header = _group_header(self, "formBuilder.group.%s" % spec.key, spec.title, self._expanded)
+        self._toggle = self._header.toggle
         self._toggle.clicked.connect(self._toggled)
         self._body = QWidget(self)
         self._body_layout = QVBoxLayout(self._body)
-        self._body_layout.setContentsMargins(0, 0, 0, 4)
-        self._body_layout.setSpacing(2)
+        self._body_layout.setContentsMargins(0, S1, 0, S1)
+        self._body_layout.setSpacing(S1)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(0)
-        layout.addWidget(self._toggle)
+        layout.setSpacing(S1)
+        layout.addWidget(self._header)
         layout.addWidget(self._body)
 
     def paint(self, document: UiDocument) -> None:
@@ -760,7 +820,6 @@ class _FormGroup(QWidget):
 
     def _toggled(self, checked: bool) -> None:
         self._expanded = bool(checked)
-        self._toggle.setArrowType(_arrow(self._expanded))
         self._body.setVisible(self._expanded)
         if self._expanded:
             # A closed group is not painted: fill it now, then let the page relink its Tab stops.
@@ -787,21 +846,18 @@ class _Group(QWidget):
         self._show_origin = False
         self._custom: Optional[GroupBody] = None
         self._host: Optional[_GroupHost] = None
-        self._toggle = QToolButton(self)
-        self._toggle.setObjectName("formBuilder.group.%s" % group.value)
-        self._toggle.setProperty("fbFlat", "true")
-        self._toggle.setText(group.title.upper())
-        self._toggle.setFont(_overline_font())
-        self._toggle.setCheckable(True)
-        self._toggle.setAccessibleName("%s group" % group.title)
-        self._toggle.setChecked(page._expanded[group])
-        self._toggle.setToolButtonStyle(_beside())
-        self._toggle.setArrowType(_arrow(page._expanded[group]))
+        self._header = _group_header(
+            self,
+            "formBuilder.group.%s" % group.value,
+            group.title,
+            page._expanded[group],
+        )
+        self._toggle = self._header.toggle
         self._toggle.clicked.connect(lambda: self._toggled(self._toggle.isChecked()))
         self._body = QWidget(self)
         self._body_layout = QVBoxLayout(self._body)
-        self._body_layout.setContentsMargins(0, 0, 0, 4)
-        self._body_layout.setSpacing(2)
+        self._body_layout.setContentsMargins(0, S1, 0, S1)
+        self._body_layout.setSpacing(S1)
         self._adder: Optional[object] = None
         if group is GroupId.ALL:
             from app.features.form_builder.qtside.inspector.editors.custom_props import CustomPropertyAdder
@@ -812,8 +868,8 @@ class _Group(QWidget):
             self._body_layout.addWidget(adder)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(0)
-        layout.addWidget(self._toggle)
+        layout.setSpacing(S1)
+        layout.addWidget(self._header)
         layout.addWidget(self._body)
 
     def paint(
@@ -834,7 +890,6 @@ class _Group(QWidget):
         self._show_origin = show_origin
         self._toggle.setText(view.group.title.upper())
         self._toggle.setChecked(expanded)
-        self._toggle.setArrowType(_arrow(expanded))
         if not expanded:
             self._body.hide()
             self._drop_rows()
@@ -854,7 +909,6 @@ class _Group(QWidget):
 
     def set_checked(self, expanded: bool) -> None:
         self._toggle.setChecked(expanded)
-        self._toggle.setArrowType(_arrow(expanded))
 
     def note_focus(self, focus: object) -> None:
         for row in self._rows.values():
@@ -898,10 +952,8 @@ class _Group(QWidget):
     def _toggled(self, checked: bool) -> None:
         if self._searching:
             self._toggle.setChecked(True)
-            self._toggle.setArrowType(_arrow(True))
             return
         expanded = bool(checked)
-        self._toggle.setArrowType(_arrow(expanded))
         self._page._set_expanded(self._group, expanded)
         if self._group is GroupId.ALL:
             if not expanded:
@@ -937,11 +989,11 @@ class _Group(QWidget):
         title_at = 0
         for block in view.blocks:
             if block.title:
-                label = self._title_label(title_at)
+                header = self._title_header(title_at)
                 title_at += 1
-                label.setText(block.title)
-                label.show()
-                self._body_layout.addWidget(label)
+                header.setText(block.title)
+                header.show()
+                self._body_layout.addWidget(header)
             for row in block.rows:
                 widget = self._rows.get(row.key)
                 if widget is None:
@@ -972,7 +1024,7 @@ class _Group(QWidget):
         for title in self._titles:
             title.hide()
 
-    def _title_label(self, index: int) -> QLabel:
+    def _title_header(self, index: int) -> QLabel:
         while len(self._titles) <= index:
             label = QLabel(self._body)
             label.setObjectName("formBuilder.blockTitle")
@@ -993,14 +1045,12 @@ class _Group(QWidget):
         while len(self._spare) > 160:
             delete_now(self._spare.popitem(last=False)[1])
 
-_BAR_SLOT = 8
+_BAR_SLOT = S2
 _UNBOUNDED = 16777215
-_STACK_GAP = 2
-# UX-PED-002: label 96 + gap 8 + editor. The label budget holds the changed
-# bar's slot, so the editor column is the row width less 104 at 236 px.
-_ROW_GAP = 8
-# Below this row width the label uses the compact budget, whatever the window density.
-_NARROW_ROW = 300
+_ROW_GAP = S2
+
+_RESIZE = getattr(getattr(QEvent, "Type", QEvent), "Resize")
+_SHOW = getattr(getattr(QEvent, "Type", QEvent), "Show")
 
 class _Row(QWidget):
 
@@ -1032,13 +1082,21 @@ class _Row(QWidget):
         self._caption: Optional[QLabel] = None
         self._extra_caption: Optional[QWidget] = None
         self._label = QLabel(self)
+        self._label.setObjectName("formBuilder.rowLabel")
+        self._label.setAlignment(
+            getattr(getattr(Qt, "AlignmentFlag", Qt), "AlignLeft")
+            | getattr(getattr(Qt, "AlignmentFlag", Qt), "AlignVCenter")
+        )
+        label_font = self._label.font()
+        label_font.setPixelSize(TYPE_BODY)
+        self._label.setFont(label_font)
         self._elided_key: Optional[Tuple[str, int, str]] = None
         self._elided_text = ""
         self._label.setWordWrap(False)
         self._label_col = QWidget(self)
-        self._label_px = _LABEL_WIDE
+        self._label_px = LABEL_MIN
         self._stacked = False
-        self._label_col.setFixedWidth(_LABEL_WIDE - _BAR_SLOT)
+        self._label_col.setFixedWidth(LABEL_MIN - _BAR_SLOT)
         self._column = QVBoxLayout(self._label_col)
         self._column.setContentsMargins(0, 0, 0, 0)
         self._column.setSpacing(0)
@@ -1053,14 +1111,15 @@ class _Row(QWidget):
         # after it, so the columns line up.
         self._head: Optional[QHBoxLayout] = None
         self._outer = QVBoxLayout(self)
-        self._outer.setContentsMargins(0, 2, 0, 2)
-        self._outer.setSpacing(2)
+        self._outer.setContentsMargins(0, 0, 0, 0)
+        self._outer.setSpacing(S1)
         self._line = QHBoxLayout()
         self._line.setContentsMargins(_BAR_SLOT, 0, 0, 0)
         self._line.setSpacing(_ROW_GAP)
         self._outer.addLayout(self._line)
         self._line.addWidget(self._label_col, 0)
         self._line.addWidget(self._slot, 1)
+        self.setMinimumHeight(INSPECTOR_ROW)
 
     def _bar_widget(self) -> QFrame:
         if self._bar is None:
@@ -1121,13 +1180,15 @@ class _Row(QWidget):
             button = QToolButton(self)
             button.setObjectName("formBuilder.rowReset")
             button.setProperty("fbFlat", "true")
-            button.setText("\u21ba")
-            button.setFixedSize(16, 16)
+            button.setText("")
+            button.setFixedSize(ICON, ICON)
             button.setAccessibleName("Reset")
             button.setToolTip("Reset: remove this property from the file")
+            button.setFocusPolicy(getattr(getattr(Qt, "FocusPolicy", Qt), "NoFocus"))
             button.clicked.connect(self._reset_clicked)
             button.hide()
             self._reset = button
+            self._paint_reset()
             self._place_reset()
         return self._reset
 
@@ -1258,8 +1319,16 @@ class _Row(QWidget):
         if self._stacked:
             self._label_col.setMinimumWidth(0)
             self._label_col.setMaximumWidth(_UNBOUNDED)
-        else:
-            self._label_col.setFixedWidth(max(0, self._label_px - _BAR_SLOT))
+            return
+        label_px = self._label_px
+        editor = self._editor
+        if editor is not None and self.width() > 0:
+            needed = int(editor.widget.minimumWidth())
+            room = max(0, self.width() - _BAR_SLOT - _ROW_GAP)
+            if needed > 0 and label_px > room - needed:
+                # A 4-cell alignment control is 4 x 28. The label yields so those cells do not overlap.
+                label_px = max(0, room - needed)
+        self._label_col.setFixedWidth(max(0, label_px - _BAR_SLOT))
 
     def _label_needs_line(self) -> bool:
         """A phrase that does not fit the 96 px column stacks (UX-PED-002).
@@ -1274,28 +1343,20 @@ class _Row(QWidget):
         return self._label.fontMetrics().horizontalAdvance(view.label) > budget
 
     def _sync_stacked(self) -> None:
-        """Stack the label over the editor when the editor asks for it at this width (UX-PED-002)."""
+        """The label stays beside the editor. A narrow row elides the label.
+
+        ``wants_stacked`` still runs so a rect or size editor can pair its own
+        fields. The return value no longer moves the property label.
+        """
         editor = self._editor
         wants = getattr(editor, "wants_stacked", None)
-        stacked = bool(callable(wants) and wants(self.width())) or self._label_needs_line()
-        if stacked == self._stacked:
-            return
-        self._stacked = stacked
-        if stacked:
-            self._ensure_head()
-        direction = getattr(QBoxLayout, "Direction", QBoxLayout)
-        self._line.setDirection(
-            getattr(direction, "TopToBottom") if stacked else getattr(direction, "LeftToRight")
-        )
-        self._line.setSpacing(_STACK_GAP if stacked else _ROW_GAP)
-        self._label.setWordWrap(stacked)
+        if callable(wants):
+            wants(self.width())
+        self._stacked = False
         self._apply_label_width()
-        self._place_reset()
-        if self._bar is not None:
-            self._seat_bar()
 
     def _place_reset(self) -> None:
-        """The reset button overlays the right edge of the label, so the editor keeps its width."""
+        """The reset mark sits at the far right of a changed row."""
         button = self._reset
         if button is None:
             return
@@ -1309,10 +1370,19 @@ class _Row(QWidget):
         button = self._reset
         if button is None:
             return
-        label = self._label
-        point = label.mapTo(self, QPoint(max(0, label.width() - button.width()), 0))
-        button.move(point)
+        button.move(max(0, self.width() - button.width() - S2), max(0, (self.height() - button.height()) // 2))
         button.raise_()
+
+    def _paint_reset(self) -> None:
+        button = self._reset
+        if button is None:
+            return
+        chrome = self._services.chrome
+        if chrome is None:
+            return
+        dpr = float(button.devicePixelRatioF()) if hasattr(button, "devicePixelRatioF") else 1.0
+        button.setIcon(QIcon(paint_glyph("close", chrome.icon_muted or chrome.muted, ICON, dpr)))
+        button.setIconSize(button.size())
 
     def note_focus(self, focus: object) -> None:
         del focus
@@ -1795,6 +1865,10 @@ class _GroupHost:
         self._qt_names = qt_names
 
     @property
+    def chrome(self):  # type: ignore[no-untyped-def]
+        return self._services.chrome
+
+    @property
     def document(self) -> UiDocument:
         return self._services.session.document
 
@@ -1985,6 +2059,11 @@ def _stops_in_layout(layout: QLayout, owner: QWidget) -> List[QWidget]:
             found.extend(_stops_in_layout(child, owner))
         elif isinstance(child, QWidget):
             found.extend(_stops_under(child))
+    seen = {id(stop) for stop in found}
+    for child in owner.children():
+        # A glyph button parked on a field is not in the layout, and it is still a tab stop.
+        if isinstance(child, QWidget) and id(child) not in seen and _tab_stop(child):
+            found.append(child)
     return found
 
 
@@ -2011,14 +2090,6 @@ def _scroll_off() -> Qt.ScrollBarPolicy:
 def _popup_mode() -> QToolButton.ToolButtonPopupMode:
     return getattr(getattr(QToolButton, "ToolButtonPopupMode", QToolButton), "InstantPopup")
 
-def _beside() -> Qt.ToolButtonStyle:
-    return getattr(getattr(Qt, "ToolButtonStyle", Qt), "ToolButtonTextBesideIcon")
-
-def _arrow(expanded: bool) -> Qt.ArrowType:
-    name = "DownArrow" if expanded else "RightArrow"
-    arrows = getattr(Qt, "ArrowType", Qt)
-    return getattr(arrows, name, getattr(Qt, name))
-
 def _weight(name: str) -> QFont.Weight:
     return getattr(getattr(QFont, "Weight", QFont), name)
 
@@ -2034,6 +2105,31 @@ def _caption(parent: QWidget, name: str, text: str) -> QLabel:
     label.setObjectName("formBuilder.formCaption.%s" % name)
     label.setFont(_overline_font())
     return label
+
+
+class _Content(QWidget):
+    """The scroll body reports no horizontal hint, so a wide size hint cannot open a sideways bar."""
+
+    def sizeHint(self) -> QSize:  # noqa: N802
+        hint = super().sizeHint()
+        return QSize(0, hint.height())
+
+    def minimumSizeHint(self) -> QSize:  # noqa: N802
+        hint = super().minimumSizeHint()
+        return QSize(0, hint.height())
+
+
+def _group_header(parent: QWidget, object_name: str, title: str, expanded: bool) -> SectionHeader:
+    header = SectionHeader(
+        parent,
+        title,
+        collapsible=True,
+        checkable=True,
+        object_name=object_name,
+        accessible_name="%s group" % title,
+    )
+    header.setChecked(expanded)
+    return header
 
 def _set_tip(label: QLabel, text: str) -> None:
     if label.toolTip() != text:

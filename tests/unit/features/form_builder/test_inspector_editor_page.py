@@ -345,7 +345,7 @@ def test_adding_a_connection_keeps_the_sender_selected(tmp_path: Path, qapp: QAp
         tabs.setCurrentIndex(behavior)
         pane.flush()
         qapp.processEvents()
-        add = next(button for button in pane.findChildren(QPushButton) if button.text().startswith("+ When"))
+        add = pane.findChild(QWidget, "formBuilder.events.first") or pane.findChild(QWidget, "formBuilder.events.when")
         add.click()
         qapp.processEvents()
         search = surface.findChild(QLineEdit, "formBuilder.eventPickerSearch")

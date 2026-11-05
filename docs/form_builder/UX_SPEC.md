@@ -382,7 +382,7 @@ The shell table in `app/shell/shortcut_preferences.py` is authoritative. A form 
 
 **UX-START-002** `M5.5c` `[S]` Layout: a centred column, max 960 px wide, 32 px top padding. Top: Hero "New form", then the name row (UX-START-003). The cards already say each starting point is laid out. Then three card groups. A right rail (240 px) with recent forms appears when the tab is at least 1180 px wide; below that, recent forms are a list under the cards.
 
-**UX-START-003** `M2.2` `[S T]` The name row is first and focused on open: "Name [new_form] in [forms/ ▾]" and a live caption "Creates forms/new_form.ui, ui_new_form.py and new_form_window.py." The default name is unique in the folder. Invalid names show an inline message under the field and disable creation: "Use letters, digits and _, starting with a letter."
+**UX-START-003** `M2.2` `[S T]` The name row is first and focused on open: "Name [new_form] in [forms/ ▾]". The live caption "Creates forms/new_form.ui, ui_new_form.py and new_form_window.py." is the name field tooltip. The default name is unique in the folder. Invalid names show an inline message under the field and disable creation: "Use letters, digits and _, starting with a letter."
 
 **UX-START-004** `M2.2` `[S K]` Card groups, each card a whole click target (no inner buttons):
 - **Templates**: Data entry form; List and detail; Table with search; Dialog with OK and Cancel.
@@ -446,7 +446,7 @@ Clicking a card, or pressing Enter on a focused card, creates the files with the
 
 Every empty surface says what it is and what to do next, in one or two sentences, with at most one button.
 
-**UX-EMPTY-001** `M3.1` `[S]` Empty form (root layout with no items): the drop zone fills the root layout's whole interior (the spike's only fills a 160 px band at the top, `empty-form.png`). Centre text: "Drop a widget here" (Strong) and "or press / to search for one." (Caption), and under it three key hints in Caption: "/ insert · Ctrl+Shift+G wrap · F2 rename".
+**UX-EMPTY-001** `M3.1` `[S]` Empty form (root layout with no items): the drop zone fills the root layout's whole interior (the spike's only fills a 160 px band at the top, `empty-form.png`). Centre text: "Drop a widget here" (Strong) and "or press / to search for one." (Caption). The shortcut hints live on the keys page.
 
 **UX-EMPTY-002** `M3.1` `[S]` Empty nested layout or empty container: drawn at least 32 px tall and 48 px wide with a dashed `ov.layout_faint` outline and centred Caption "Drop widgets here" when the area is at least 120 px wide, else a 12 px plus glyph. This minimum is a canvas-only size and is never saved (pain 4).
 

@@ -9,7 +9,7 @@ from typing import Callable, Dict, Iterator, Optional, Tuple, cast
 import pytest
 
 from app.qt.QtCore import QEvent, QPoint, QRect, Qt, QTimer
-from app.qt.QtGui import QColor, QImage, QKeyEvent, QPainter
+from app.qt.QtGui import QColor, QFont, QFontMetrics, QImage, QKeyEvent, QPainter
 from app.qt.QtTest import QTest
 from app.qt.qt_compat import enum_value
 from app.qt.QtWidgets import (
@@ -787,7 +787,7 @@ def test_row_boxes_stay_disjoint_at_236(qapp: QApplication) -> None:
         mode = pane.tree.textElideMode()
         elide = getattr(getattr(Qt, "TextElideMode", Qt), "ElideRight")
         assert enum_value(mode) == enum_value(elide)
-        assert pane.tree.indentation() == 12
+        assert pane.tree.indentation() == 16
         assert session.document.by_name(name)
 
 
@@ -833,7 +833,7 @@ def test_a_depth_4_name_keeps_its_prefix_at_the_default_width(qapp: QApplication
         shown = metrics.elidedText("streetLabel", elide, boxes.name[2])
         assert shown.startswith("streetLa") or shown == "streetLabel"
         assert "streetLabel" in item.toolTip(0)
-        assert pane.tree.indentation() == 12
+        assert pane.tree.indentation() == 16
 
 
 def test_shift_click_extends_the_outline_selection(qapp: QApplication) -> None:
@@ -1057,13 +1057,19 @@ def test_a_narrow_outline_drops_the_caption_before_the_name(qapp: QApplication, 
         pane.setFixedWidth(width)
         qapp.processEvents()
         metrics = pane.tree.fontMetrics()
+        body = QFont(pane.tree.font())
+        body.setPixelSize(12)
+        fine = QFont(pane.tree.font())
+        fine.setPixelSize(11)
+        painted = (QFontMetrics(body), QFontMetrics(fine))
         for name in ("Form", "verticalLayout", "receiptGroup", "ok", "emailLabel", "N" * 48):
             item = _find_item(pane.tree, name)
             caption = str(item.data(0, int(getattr(Qt, "UserRole")) + 1) or "")
             assert caption
             drawn = _painted(pane, item)
-            for rect, text in drawn:
-                assert metrics.horizontalAdvance(text) <= rect.width(), (width, name, text)
+            for index, (rect, text) in enumerate(drawn):
+                advance = painted[0 if index == 0 else 1].horizontalAdvance(text)
+                assert advance <= rect.width(), (width, name, text)
             shown = item.text(0)
             texts = [text for _rect, text in drawn]
             rect = pane.tree.visualItemRect(item)

@@ -51,7 +51,7 @@ def _key(name: str) -> object:
 
 
 def _pick(window: QWidget, qapp: QApplication, key: str) -> None:
-    add = window.findChild(QPushButton, "formBuilder.checks.add")
+    add = window.findChild(QWidget, "formBuilder.checks.add")
     assert add is not None
     add.click()
     _pump(qapp)
@@ -94,7 +94,7 @@ def _shoot(qapp: QApplication, folder: Path, scale: str) -> None:
             section = window.findChild(QWidget, "formBuilder.checks")
             assert section is not None
             _save(section, window, folder, "checks-empty", mode, scale, qapp)
-            add = window.findChild(QPushButton, "formBuilder.checks.add")
+            add = window.findChild(QWidget, "formBuilder.checks.add")
             assert add is not None
             add.click()
             _pump(qapp)

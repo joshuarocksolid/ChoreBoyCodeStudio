@@ -169,11 +169,10 @@ def _group_phrase(node: WidgetNode) -> str:
 
 def _form_sentence(document: UiDocument) -> str:
     name = document.root.object_name or "Form"
-    sentence = "%s · the form" % name
     size = page_size_text(document)
     if size:
-        return "%s · %s" % (sentence, size)
-    return sentence
+        return "%s · %s" % (name, size)
+    return name
 
 
 _CONTAINED_LAYOUT = {
@@ -211,16 +210,16 @@ def _place_phrase(document: UiDocument, node: WidgetNode) -> str:
     column = parent.column
     if layout.class_name == "QFormLayout":
         number = row + 1 if isinstance(row, int) else index
-        return "row %d of the form layout" % number
+        return "row %d" % number
     if layout.class_name == "QGridLayout":
         row_number = row + 1 if isinstance(row, int) else index
         column_number = column + 1 if isinstance(column, int) else 1
-        return "row %d, column %d of the grid" % (row_number, column_number)
+        return "row %d, column %d" % (row_number, column_number)
     if layout.class_name == "QHBoxLayout":
-        return "column %d of the horizontal layout" % index
+        return "column %d" % index
     if layout.class_name == "QVBoxLayout":
-        return "row %d of the vertical layout" % index
-    return "item %d of the layout" % index
+        return "row %d" % index
+    return "item %d" % index
 
 
 def draft_clock(saved_at: str) -> str:

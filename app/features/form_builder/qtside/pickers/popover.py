@@ -35,7 +35,7 @@ from app.features.form_builder.qtside.pickers.flow import (
     opening,
     reduce,
 )
-from app.features.form_builder.qtside.theme.chrome import FormChrome, popover_style
+from app.features.form_builder.qtside.theme.chrome import FormChrome, apply_page_shadow, popover_style
 
 _WIDTH = 320
 _ROW = 24
@@ -80,10 +80,11 @@ class EventPicker(QFrame):
         self._filling = False
         self._listening = False
         column = QVBoxLayout(self)
-        column.setContentsMargins(10, 8, 10, 10)
-        column.setSpacing(6)
+        column.setContentsMargins(8, 8, 8, 8)
+        column.setSpacing(8)
         self._title = QLabel(self)
         self._title.setObjectName("formBuilder.eventPickerTitle")
+        self._title.hide()
         column.addWidget(self._title)
         self.search = QLineEdit(self)
         self.search.setObjectName("formBuilder.eventPickerSearch")
@@ -130,6 +131,8 @@ class EventPicker(QFrame):
         self.check.toggled.connect(self._toggled)
         column.addWidget(self.check)
         self.setStyleSheet(popover_style(self.objectName(), chrome) + self._extra(chrome))
+        self.rows.setMaximumHeight(_ROW * 8)
+        apply_page_shadow(self, is_dark=chrome.is_dark, is_high_contrast=chrome.is_high_contrast)
         self.setFixedWidth(_WIDTH)
 
     def open_at(self, host: QWidget, ctx: PickContext, at: Optional[QPoint] = None) -> None:
@@ -306,7 +309,9 @@ class EventPicker(QFrame):
     def _apply(self, page: Page) -> None:
         self._page = page
         self._filling = True
-        self._title.setText(page.title)
+        self._title.hide()
+        title = str(page.title or "")
+        self.search.setPlaceholderText("Then…" if title.startswith("Then") else (title or "Type to find an event"))
         method = page.kind == "method"
         self.search.setVisible(page.kind not in ("method", "verb"))
         self.field.setVisible(method)

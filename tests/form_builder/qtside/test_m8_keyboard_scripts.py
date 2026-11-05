@@ -659,7 +659,7 @@ def script_k34(kb: Kb) -> None:
         banner = ""
         ran = ""
         if shell is not None:
-            banner_label = shell.findChild(QLabel, "preview.banner")
+            banner_label = shell.findChild(QWidget, "preview.banner")
             strip_label = shell.findChild(QLabel, "preview.dataStrip.label")
             banner = "" if banner_label is None else str(banner_label.text() or "")
             if not banner and strip_label is not None:

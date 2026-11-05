@@ -22,6 +22,7 @@ from app.features.form_builder.qtside.canvas.core.frame import (
 from app.features.form_builder.qtside.canvas.core.overlay import LayerItem
 from app.features.form_builder.qtside.canvas.core.space import CanvasRect
 from app.features.form_builder.qtside.canvas.layers import paint_layer_item
+from app.features.form_builder.qtside.theme.chrome import PAGE_TITLE_GLYPH, PAGE_TITLE_TEXT
 from app.features.form_builder.qtside.theme.overlay import CanvasPalette
 
 _CHIP_RADIUS = 4.0
@@ -103,7 +104,11 @@ def _stroke(painter: QPainter, item: Stroke, palette: CanvasPalette) -> None:
         _capped_line(painter, item, palette, width)
         return
     painter.setPen(_pen(_ink(palette, item.role, item.alpha), width, item.style))
-    painter.drawRect(_box(item.rect))
+    box = _box(item.rect)
+    if item.radius > 0:
+        painter.drawRoundedRect(box, item.radius, item.radius)
+    else:
+        painter.drawRect(box)
 
 
 def _capped_line(painter: QPainter, item: Stroke, palette: CanvasPalette, width: float) -> None:
@@ -219,12 +224,18 @@ def paint_docked_chip(painter: QPainter, item: Chip, palette: CanvasPalette) -> 
 
 
 def _chip_body(painter: QPainter, item: Chip, fill: QColor, palette: CanvasPalette) -> None:
-    painter.setPen(_no_pen())
+    box = _box(item.rect)
+    backdrop = QColor(palette.backdrop.fill[:7])
+    dark = backdrop.red() == 0 and backdrop.green() == 0 and backdrop.blue() == 0
+    if item.on_backdrop and palette.overlay.min_stroke >= 2 and dark:
+        painter.setPen(_pen(QColor(255, 255, 255), 1.0, "solid"))
+    else:
+        painter.setPen(_no_pen())
     painter.setBrush(fill)
-    painter.drawRoundedRect(_box(item.rect), _CHIP_RADIUS, _CHIP_RADIUS)
+    painter.drawRoundedRect(box, _CHIP_RADIUS, _CHIP_RADIUS)
     painter.setPen(_color(palette.overlay.chip_text, 1.0))
-    painter.setFont(_semibold(11))
-    painter.drawText(_box(item.rect), _align("AlignCenter"), item.text)
+    painter.setFont(_weighted(11, "DemiBold"))
+    painter.drawText(box, _align("AlignCenter"), item.text)
 
 
 def _badge(painter: QPainter, item: Badge, palette: CanvasPalette) -> None:
@@ -240,6 +251,11 @@ def _badge(painter: QPainter, item: Badge, palette: CanvasPalette) -> None:
 
 
 def _caption(painter: QPainter, item: Caption, palette: CanvasPalette) -> None:
+    if item.lines[:1] == ("Drop a widget here",) and (
+        len(item.lines) < 2 or item.lines[1] == "or press / to search"
+    ):
+        _empty_caption(painter, item)
+        return
     painter.setPen(_ink(palette, item.role, item.alpha))
     painter.setFont(_semibold(11))
     line_height = 14.0
@@ -251,6 +267,27 @@ def _caption(painter: QPainter, item: Caption, palette: CanvasPalette) -> None:
             _align("AlignCenter"),
             line,
         )
+
+
+def _empty_caption(painter: QPainter, item: Caption) -> None:
+    rows = (
+        (16.0, _weighted(12, "DemiBold"), QColor(PAGE_TITLE_TEXT)),
+        (14.0, _weighted(11, "Normal"), QColor(PAGE_TITLE_GLYPH)),
+    )
+    shown = item.lines[:2]
+    total = sum(rows[index][0] for index in range(len(shown)))
+    top = item.rect.y + (item.rect.height - total) / 2.0
+    cursor = top
+    for index, line in enumerate(shown):
+        height, font, color = rows[index]
+        painter.setPen(color)
+        painter.setFont(font)
+        painter.drawText(
+            QRectF(item.rect.x, cursor, item.rect.width, height),
+            _align("AlignCenter"),
+            line,
+        )
+        cursor += height
 
 
 def _glyph(painter: QPainter, name: str, rect: CanvasRect, colour: QColor, text: QColor) -> None:
@@ -340,6 +377,13 @@ def _semibold(pixel_size: int) -> QFont:
     font = QFont()
     font.setPixelSize(pixel_size)
     font.setBold(True)
+    return font
+
+
+def _weighted(pixel_size: int, weight: str) -> QFont:
+    font = QFont()
+    font.setPixelSize(pixel_size)
+    font.setWeight(getattr(getattr(QFont, "Weight", QFont), weight))
     return font
 
 

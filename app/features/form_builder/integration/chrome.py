@@ -33,6 +33,7 @@ def chrome_for(tokens: ShellThemeTokens) -> FormChrome:
         popup=tokens.popup_bg,
         popup_border=tokens.popup_border,
         glyph=tokens.icon_primary,
+        icon_muted=tokens.icon_muted,
         is_dark=tokens.is_dark,
         is_high_contrast=tokens.is_high_contrast,
         layout=_ink(overlay.layout),
@@ -45,4 +46,23 @@ def chrome_for(tokens: ShellThemeTokens) -> FormChrome:
         syntax_keyword=tokens.syntax_keyword,
         warning=tokens.diag_warning_color,
         info=tokens.diag_info_color,
+    )
+
+
+def shell_dialog_parts() -> tuple:
+    """The host dialog chrome. qtside cannot import ``app.shell``, so callers pass this in."""
+    from app.shell.dialog_chrome import (
+        FOOTER_ROLE_PRIMARY,
+        FOOTER_ROLE_SECONDARY,
+        add_footer_button,
+        add_footer_stretch,
+        build_dialog_chrome,
+    )
+
+    return (
+        build_dialog_chrome,
+        add_footer_button,
+        add_footer_stretch,
+        FOOTER_ROLE_PRIMARY,
+        FOOTER_ROLE_SECONDARY,
     )

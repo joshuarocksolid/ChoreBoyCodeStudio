@@ -7,6 +7,8 @@ from types import SimpleNamespace
 from typing import Dict, Optional, Tuple
 
 from app.qt.QtCore import QSize, Qt, Signal
+from app.features.form_builder.qtside.inspector.behavior_ext.value_button import ValueButton
+from app.features.form_builder.qtside.theme.metrics import INSPECTOR_ROW, S2
 from app.qt.QtWidgets import (
     QComboBox,
     QHBoxLayout,
@@ -91,13 +93,13 @@ class _Row(QWidget):
         self.setMinimumWidth(0)
         self.words = QLabel(spec.words, self)
         self.words.setMinimumWidth(0)
-        self.value = QLabel(self)
+        self.value = ValueButton(self)
         self.value.setObjectName("formBuilder.state.value.%s" % spec.key)
-        self.value.setWordWrap(True)
         self.value.setMinimumWidth(0)
-        value_policy = self.value.sizePolicy()
-        value_policy.setHeightForWidth(True)
-        self.value.setSizePolicy(value_policy)
+        self.value.clicked.connect(lambda: self._body.open_row(self.spec.key))
+        chrome = getattr(getattr(body, "_services", None), "chrome", None)
+        if chrome is not None:
+            self.value.apply_chrome(chrome)
         self.now = QLabel(self)
         self.now.setObjectName("formBuilder.state.now.%s" % spec.key)
         self.now.setMinimumWidth(0)
@@ -108,10 +110,10 @@ class _Row(QWidget):
         self.column.setContentsMargins(0, 0, 0, 0)
         self.column.setSpacing(0)
         self.line_host = QWidget(self)
-        self.line_host.setMinimumHeight(22)
+        self.line_host.setMinimumHeight(INSPECTOR_ROW)
         self.line = QHBoxLayout(self.line_host)
         self.line.setContentsMargins(0, 0, 0, 0)
-        self.line.setSpacing(8)
+        self.line.setSpacing(S2)
         self.line.addWidget(self.words)
         self.line.addWidget(self.value, 1)
         self.column.addWidget(self.line_host)
@@ -144,9 +146,7 @@ class _Row(QWidget):
         """Keep the whole sentence. ``now:`` sits on the next line, so the rule is not cut."""
         if self.spec.slot in ("kind", "format"):
             return
-        full = self._full
-        if self.value.text() != full:
-            self.value.setText(full)
+        self.value.set_value(self._full)
         self._set_tip(getattr(self, "_tip", "") or "")
 
     def _set_tip(self, elided: str) -> None:
@@ -230,6 +230,8 @@ class StateBody(QWidget):
         # One sheet for the section. A row's muted or body ink is a property,
         # polished on that label, so a rule commit does not restyle the tree.
         self._install_sheet(panel, text)
+        for row in self._rows.values():
+            row.value.apply_chrome(chrome)
         if self._editor is not None:
             self._editor.set_chrome(chrome)
         self._sync_columns()
@@ -240,8 +242,7 @@ class StateBody(QWidget):
             "QWidget#formBuilder\\.state { background: %s; color: %s; }"
             "QLabel { color: %s; background: transparent; }"
             "QLabel[stateInk=\"muted\"] { color: %s; background: transparent; }"
-            "QComboBox, QSpinBox { color: %s; background: %s; }"
-            % (panel, text, text, chrome.muted, text, chrome.input)
+            % (panel, text, text, chrome.muted)
         )
 
     def paint(self, inputs: SectionInputs) -> None:
@@ -748,9 +749,15 @@ def _slot(spec: StateRowSpec, env: object, node: WidgetNode) -> SlotKind:
     return SlotKind.value(target)
 
 
-def _ink(label: QLabel, muted: bool) -> None:
-    """Mark one label muted or body-colored. The sheet itself is set once."""
+def _ink(label: QWidget, muted: bool) -> None:
+    """Mark one value muted or body-colored."""
     role = "muted" if muted else "text"
+    setter = getattr(label, "set_muted", None)
+    if callable(setter):
+        if label.property("stateInk") != role:
+            label.setProperty("stateInk", role)
+        setter(muted)
+        return
     if label.property("stateInk") == role:
         return
     label.setProperty("stateInk", role)

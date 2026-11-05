@@ -26,6 +26,7 @@ from typing import TYPE_CHECKING, Callable, List, Optional, Tuple
 
 from app.qt.QtCore import QEvent, QObject, QPoint, QRect, Qt, QTimer
 from app.features.form_builder.qtside.theme.chrome import apply_level2_shadow, control_qss
+from app.features.form_builder.qtside.theme.metrics import CONTROL
 from app.qt.QtGui import QColor, QFontMetrics, QKeySequence, QPalette
 from app.qt.QtWidgets import (
     QAbstractItemView,
@@ -120,6 +121,7 @@ class SummaryButton(QPushButton):
         self._elided_for: Optional[Tuple[str, int]] = None
         self._named_for: Optional[Tuple[str, str]] = None
         self.setMinimumWidth(0)
+        self.setFixedHeight(CONTROL)
         self.clicked.connect(self._open)
         self.set_summary("")
 

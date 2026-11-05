@@ -153,9 +153,9 @@ def test_a_line_edit_lists_kind_through_format_and_a_button_lists_two() -> None:
         _select(session, pane, "discountEdit")
         assert _showing(pane) == _LINE
         enabled = _row(pane, "cbcsEnabledWhen")
-        value = enabled.findChild(QLabel, "formBuilder.state.value.cbcsEnabledWhen")
+        value = enabled.findChild(QWidget, "formBuilder.state.value.cbcsEnabledWhen")
         assert value is not None
-        assert value.text() == "always"
+        assert value.text() == "Always"
         assert value.property("stateInk") == "muted"
         assert pane._services.chrome.muted in state.styleSheet()  # type: ignore[attr-defined]
         assert enabled.accessibleName() == "Enabled when  always"
@@ -188,7 +188,7 @@ def test_a_filled_enabled_when_row_shows_the_formula_and_now_no(qapp: QApplicati
         try:
             _select(session, pane, "discountEdit")
             row = _row(pane, "cbcsEnabledWhen")
-            formula = row.findChild(QLabel, "formBuilder.state.value.cbcsEnabledWhen")
+            formula = row.findChild(QWidget, "formBuilder.state.value.cbcsEnabledWhen")
             now = row.findChild(QLabel, "formBuilder.state.now.cbcsEnabledWhen")
             assert formula is not None and formula.text() == "Discount is checked"
             assert formula.toolTip() == "discountCheck"

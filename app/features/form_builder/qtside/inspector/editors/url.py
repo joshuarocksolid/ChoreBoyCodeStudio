@@ -12,7 +12,6 @@ from typing import Optional
 from app.features.form_builder.engine.ui4.values import StringValue, UrlValue
 from app.features.form_builder.qtside.inspector.api import (
     MIXED_TEXT,
-    NOT_SET_TEXT,
     EditorHost,
     EditorKey,
     Mixed,
@@ -71,6 +70,7 @@ class UrlEditor:
         self._warning.hide()
         self._translation = TranslationDisclosure()
         self._translation.set_on_change(self._change_attr)
+        self._translation.place_on(self._edit)
         layout = QVBoxLayout(self._box)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(2)
@@ -96,7 +96,7 @@ class UrlEditor:
         if isinstance(value, Mixed):
             self._edit.setPlaceholderText(MIXED_TEXT)
         elif isinstance(value, Unset):
-            self._edit.setPlaceholderText(NOT_SET_TEXT)
+            self._edit.setPlaceholderText("")
         else:
             self._edit.setPlaceholderText("")
         self._edit.blockSignals(False)

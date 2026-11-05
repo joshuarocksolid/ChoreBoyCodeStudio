@@ -21,8 +21,12 @@ from app.features.form_builder.qtside.theme.chrome import (
     FormChrome,
     chrome_from_values,
 )
+from app.features.form_builder.qtside.theme.info_bar import TabInfoBar
+from app.features.form_builder.qtside.theme.items import polish_item_view
+from app.features.form_builder.qtside.theme.metrics import ROW, S2, TOOLBAR, TYPE_FINE
+from app.features.form_builder.qtside.theme.section_header import SectionHeader
 from app.qt.QtCore import Qt, Signal
-from app.qt.QtGui import QColor, QFontMetrics, QPalette, QPainter
+from app.qt.QtGui import QBrush, QColor, QFont, QFontMetrics, QPalette, QPainter
 from app.qt.QtWidgets import (
     QComboBox,
     QFrame,
@@ -75,19 +79,16 @@ class WhatRan(QWidget):
         super().__init__(parent)
         self.setObjectName("preview.whatRan")
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(8, 8, 8, 8)
-        title = QLabel("What ran", self)
-        title.setObjectName("preview.whatRan.title")
-        layout.addWidget(title)
-        buttons = QHBoxLayout()
-        layout.addLayout(buttons)
-        self._clear = QPushButton("Clear", self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+        self._header = SectionHeader(self, "What ran", object_name="preview.whatRan.title")
+        self._header.set_pad(S2)
+        self._header.setFocusPolicy(Qt.NoFocus)
+        self._clear = self._header.add_action("reset", "Clear", "Clear")
         self._clear.setObjectName("preview.whatRan.clear")
-        self._copy = QPushButton("Copy", self)
+        self._copy = self._header.add_action("copy", "Copy", "Copy")
         self._copy.setObjectName("preview.whatRan.copy")
-        buttons.addWidget(self._clear)
-        buttons.addWidget(self._copy)
-        buttons.addStretch(1)
+        layout.addWidget(self._header)
         self._list = QTreeWidget(self)
         self._list.setObjectName("preview.whatRan.list")
         self._list.setColumnCount(3)
@@ -108,6 +109,10 @@ class WhatRan(QWidget):
         self._copy.clicked.connect(self.copy)
         self._lines: list[TryLine] = []
         self._names: Dict[str, str] = {}
+        self._chrome = fallback_chrome()
+        self._time_font = QFont()
+        self._time_font.setPixelSize(TYPE_FINE)
+        self._time_font.setStyleHint(QFont.Monospace)
 
     def set_names(self, names: Mapping[str, str]) -> None:
         """Object name to display name, sent with the preview start."""
@@ -119,6 +124,9 @@ class WhatRan(QWidget):
             if self._absorb_rule(line):
                 continue
             item = QTreeWidgetItem([stamp, line.sentence, _shown_source(line, self._names)])
+            item.setFont(0, self._time_font)
+            item.setForeground(0, QBrush(QColor(self._chrome.muted)))
+            item.setTextAlignment(0, Qt.AlignLeft | Qt.AlignVCenter)
             item.setData(0, _user_role(), line)
             item.setToolTip(1, line.sentence)
             item.setToolTip(2, _source_tip(line, self._names))
@@ -238,36 +246,25 @@ class WhatRan(QWidget):
         self._list.header().setSectionHidden(2, not present)
 
     def apply_chrome(self, chrome: FormChrome) -> None:
-        width = int(chrome.focus_width or 1)
+        self._chrome = chrome
         _paint(self, chrome.panel, chrome.text)
-        self.setStyleSheet(
-            """
-            background: %s; color: %s;
-            QLabel { color: %s; background: transparent; }
-            QTreeWidget { background: %s; color: %s; border: 1px solid %s; }
-            QTreeWidget:focus { border: %dpx solid %s; }
-            QHeaderView::section { background: %s; color: %s; }
-            QPushButton { background: %s; color: %s; border: 1px solid %s; }
-            QPushButton:focus { border: %dpx solid %s; }
-            """
-            % (
-                chrome.panel,
-                chrome.text,
-                chrome.text,
-                chrome.input or chrome.panel,
-                chrome.text,
-                chrome.border,
-                width,
-                chrome.accent,
-                chrome.panel,
-                chrome.text,
-                chrome.panel,
-                chrome.text,
-                chrome.border,
-                width,
-                chrome.accent,
+        self._header.apply_chrome(chrome)
+        polish_item_view(self._list, chrome)
+        self._list.setStyleSheet(
+            self._list.styleSheet()
+            + (
+                "QTreeWidget#preview\\.whatRan\\.list QHeaderView::section {"
+                " background: %s; color: %s; border: none; border-bottom: 1px solid %s;"
+                " padding: 0 4px; font-size: %dpx; font-weight: 600; }"
+                % (chrome.panel, chrome.muted, chrome.border, TYPE_FINE)
             )
         )
+        header = self._list.header()
+        font = header.font()
+        font.setPixelSize(TYPE_FINE)
+        font.setWeight(QFont.DemiBold)
+        header.setFont(font)
+        header.setDefaultAlignment(Qt.AlignLeft | Qt.AlignVCenter)
 
     def _clicked(self, item: QTreeWidgetItem, _column: int) -> None:
         line = item.data(0, _user_role())
@@ -368,15 +365,14 @@ class DataStrip(QWidget):
         self.setAutoFillBackground(False)
         self._label.setFrameShape(QFrame.NoFrame)
         self.setStyleSheet(
-            """
-            background: transparent; color: %s; border: none;
-            QLabel { color: %s; background: transparent; border: none; }
-            """
+            "QWidget#preview\\.dataStrip { background: transparent; color: %s; border: none; }"
+            "QLabel#preview\\.dataStrip\\.label { color: %s; background: transparent; border: none; }"
             % (chrome.text, chrome.text)
         )
         self._reset.setStyleSheet(
-            "QPushButton { color: %s; background: %s; border: 1px solid %s; padding: 4px 12px; border-radius: 3px; }"
-            "QPushButton:focus { border: %dpx solid %s; }"
+            "QPushButton#preview\\.dataStrip\\.reset { color: %s; background: %s; border: 1px solid %s;"
+            " padding: 4px 12px; border-radius: 3px; }"
+            "QPushButton#preview\\.dataStrip\\.reset:focus { border: %dpx solid %s; }"
             % (chrome.text, chrome.panel, chrome.muted or chrome.border, width, chrome.accent)
         )
 
@@ -393,8 +389,9 @@ class TryChrome(QWidget):
         root.setContentsMargins(0, 0, 0, 0)
         self._toolbar = QWidget(self)
         self._toolbar.setObjectName("preview.toolbar")
+        self._toolbar.setFixedHeight(TOOLBAR)
         bar = QHBoxLayout(self._toolbar)
-        bar.setContentsMargins(8, 4, 8, 4)
+        bar.setContentsMargins(S2, 0, S2, 0)
         self.run_behavior = QToolButton(self._toolbar)
         self.run_behavior.setObjectName("preview.runBehavior")
         self.run_behavior.setText("Run behavior")
@@ -410,10 +407,10 @@ class TryChrome(QWidget):
         bar.addWidget(self.run_behavior)
         bar.addStretch(1)
         root.addWidget(self._toolbar)
-        self._banner = QLabel("", self)
+        self._banner = TabInfoBar(self)
         self._banner.setObjectName("preview.banner")
-        self._banner.setWordWrap(True)
-        self._banner.setVisible(False)
+        self._banner.set_glyph("info")
+        self._banner.set_text("")
         root.addWidget(self._banner)
         self._splitter = QSplitter(self)
         self._splitter.setObjectName("preview.splitter")
@@ -438,6 +435,7 @@ class TryChrome(QWidget):
         self._splitter.setStretchFactor(0, 3)
         self._splitter.setStretchFactor(1, 2)
         self._splitter.setChildrenCollapsible(False)
+        self._splitter.setHandleWidth(6)
         root.addWidget(self._splitter, 1)
         from app.qt.QtWidgets import QApplication
 
@@ -471,42 +469,36 @@ class TryChrome(QWidget):
 
     def apply_chrome(self, chrome: FormChrome) -> None:
         self._chrome = chrome
-        width = int(chrome.focus_width or 1)
+        focus = int(chrome.focus_width or 1)
         _paint(self, chrome.window, chrome.text)
         _paint(self._toolbar, chrome.panel, chrome.text)
+        chosen = chrome.selected or chrome.row_hover
         self._toolbar.setStyleSheet(
-            "background: %s; color: %s; border-bottom: 1px solid %s;"
-            "QToolButton { background: transparent; color: %s; border: none; padding: 2px 8px; }"
-            "QToolButton:checked { border: %dpx solid %s; }"
-            "QToolButton:focus { border: %dpx solid %s; }"
-            % (chrome.panel, chrome.text, chrome.border, chrome.text, width, chrome.accent, width, chrome.accent)
+            "QWidget#preview\\.toolbar { background: %s; color: %s; border-bottom: 1px solid %s; }"
+            "QToolButton#preview\\.runBehavior { background: transparent; color: %s; border: none; padding: 2px 8px; }"
+            "QToolButton#preview\\.runBehavior:checked { background: %s; color: %s; }"
+            "QToolButton#preview\\.runBehavior:focus { border: %dpx solid %s; }"
+            % (chrome.panel, chrome.text, chrome.border, chrome.text, chosen, chrome.text, focus, chrome.accent)
         )
         self._column.setStyleSheet("")
         self._form_parent.setStyleSheet("")
-        self._splitter.setStyleSheet("QSplitter::handle { background: %s; }" % chrome.border)
+        self._splitter.setStyleSheet(
+            "QSplitter#preview\\.splitter::handle { background: %s; border: none; margin: 0px 2px; }"
+            % chrome.border
+        )
         self.what_ran.apply_chrome(chrome)
         self.values.apply_chrome(chrome)
         self.data_strip.apply_chrome(chrome)
-        self._paint_banner(chrome)
+        self._banner.apply_chrome(chrome)
         self._keep_form_style()
 
     def set_try_data(self, text: str, banner: str, reset: bool) -> None:
         """The data strip under Window values, and the rollback banner."""
 
         self.data_strip.set_text(text, reset)
-        self._banner.setText(banner)
-        self._banner.setVisible(bool(banner))
+        self._banner.set_text(banner)
         if banner:
             self._banner.setAccessibleName(banner)
-        self._paint_banner(self._chrome)
-
-    def _paint_banner(self, chrome: FormChrome) -> None:
-        fill = chrome.warning or chrome.accent
-        ink = _ink_for(fill, chrome.text)
-        self._banner.setAutoFillBackground(True)
-        self._banner.setStyleSheet(
-            "background: %s; color: %s; padding: 6px 10px;" % (fill, ink)
-        )
 
     def _keep_form_style(self) -> None:
         """The person's form keeps the light runtime look. Only the chrome is themed."""
@@ -519,18 +511,6 @@ class TryChrome(QWidget):
         if form is None:
             return
         pin_runtime_look(form)
-
-
-def _ink_for(fill: str, fallback: str) -> str:
-    """Black or white text, whichever reads on ``fill``."""
-
-    color = QColor(fill)
-    if not color.isValid():
-        return fallback
-    luma = (0.2126 * color.red()) + (0.7152 * color.green()) + (0.0722 * color.blue())
-    if luma > 140:
-        return QColor(0, 0, 0).name()
-    return QColor(255, 255, 255).name()
 
 
 def _shown_source(line: TryLine, names: Mapping[str, str]) -> str:

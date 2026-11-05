@@ -46,15 +46,16 @@ class GeneratedFileBar(QFrame):
         self.setObjectName("shell.generatedFileBar")
         self._banner: Optional[GeneratedBanner] = None
         self._tokens: Optional[ShellThemeTokens] = None
+        self.setFixedHeight(32)
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(10, 6, 10, 6)
+        layout.setContentsMargins(12, 0, 8, 0)
         layout.setSpacing(8)
         self._icon = QLabel(self)
         self._icon.setObjectName("shell.generatedFileBar.icon")
         layout.addWidget(self._icon)
         self._message = QLabel(self)
         self._message.setObjectName("shell.generatedFileBar.message")
-        self._message.setWordWrap(True)
+        self._message.setWordWrap(False)
         layout.addWidget(self._message, 1)
         self._source_button = QPushButton(self)
         self._source_button.setObjectName("shell.generatedFileBar.openSource")
@@ -76,7 +77,8 @@ class GeneratedFileBar(QFrame):
         return self._banner
 
     def message(self) -> str:
-        return self._message.text()
+        banner = self._banner
+        return "" if banner is None else banner.message
 
     def show_banner(self, banner: GeneratedBanner) -> None:
         self._banner = banner
@@ -87,9 +89,12 @@ class GeneratedFileBar(QFrame):
         if banner.logic_path:
             logic_name = banner.logic_path.rsplit("/", 1)[-1]
             self._logic_button.setText("Open %s" % logic_name)
+            self._logic_button.setToolTip("Put your code in %s." % logic_name)
             self._logic_button.setVisible(True)
         else:
             self._logic_button.setVisible(False)
+        self._message.setToolTip(banner.message)
+        self._elide()
         self._edit_button.setVisible(True)
         self._apply_look()
         self.setVisible(True)
@@ -101,6 +106,22 @@ class GeneratedFileBar(QFrame):
     def apply_theme(self, tokens: ShellThemeTokens) -> None:
         self._tokens = tokens
         self._apply_look()
+
+    def resizeEvent(self, event: object) -> None:  # noqa: N802
+        super().resizeEvent(event)  # type: ignore[arg-type]
+        self._elide()
+
+    def _elide(self) -> None:
+        full = self.message()
+        if not full:
+            self._message.setText("")
+            return
+        width = self._message.width()
+        if width < 8:
+            self._message.setText(full)
+            return
+        mode = getattr(getattr(Qt, "TextElideMode", Qt), "ElideRight")
+        self._message.setText(self._message.fontMetrics().elidedText(full, mode, width))
 
     def _open_source(self) -> None:
         banner = self._banner
@@ -120,12 +141,12 @@ class GeneratedFileBar(QFrame):
             return
         self.setStyleSheet(
             "QFrame#shell\\.generatedFileBar { background: %s; color: %s;"
-            " border-bottom: 1px solid %s; }"
-            "QFrame#shell\\.generatedFileBar QLabel { color: %s; background: transparent; }"
+            " border: none; border-bottom: 1px solid %s; }"
+            "QFrame#shell\\.generatedFileBar QLabel { color: %s; background: transparent; font-size: 12px; }"
             "QFrame#shell\\.generatedFileBar QPushButton { background: %s; color: %s;"
-            " border: 1px solid %s; border-radius: 4px; padding: 3px 10px; }"
+            " border: 1px solid %s; border-radius: 4px; padding: 2px 8px; font-weight: 600; }"
             % (
-                tokens.panel_bg,
+                tokens.tree_hover_bg or tokens.panel_bg,
                 tokens.text_primary,
                 tokens.border,
                 tokens.text_primary,

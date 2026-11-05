@@ -135,9 +135,9 @@ def test_the_default_name_is_unique_in_the_folder(tmp_path: Path, qapp: object) 
     (forms / "new_form.ui").write_text("<ui/>\n", encoding="utf-8")
     panel = _panel(tmp_path, qapp)
     assert panel.stem() == "new_form_2"
-    caption = panel.findChild(QLabel, "formBuilder.newForm.caption")
-    assert caption is not None
-    assert caption.text() == (
+    name = panel.findChild(QLineEdit, "formBuilder.newForm.name")
+    assert name is not None
+    assert name.toolTip() == (
         "Creates forms/new_form_2.ui, ui_new_form_2.py and new_form_2_window.py."
     )
     empty = panel.findChild(QLabel, "formBuilder.newForm.recentEmpty")
@@ -263,9 +263,9 @@ def test_the_project_root_caption_has_no_folder(tmp_path: Path, qapp: object) ->
     folder = panel.findChild(QComboBox, "formBuilder.newForm.folder")
     assert folder is not None
     assert folder.currentText() == "(project root)"
-    caption = panel.findChild(QLabel, "formBuilder.newForm.caption")
-    assert caption is not None
-    assert caption.text() == "Creates new_form.ui, ui_new_form.py and new_form_window.py."
+    name = panel.findChild(QLineEdit, "formBuilder.newForm.name")
+    assert name is not None
+    assert name.toolTip() == "Creates new_form.ui, ui_new_form.py and new_form_window.py."
     panel.close()
 
 
@@ -369,12 +369,12 @@ def test_from_table_maps_columns_to_widgets(tmp_path: Path, qapp: object) -> Non
     shows = {}
     for row in range(table.rowCount()):
         name_item = table.item(row, 1)
-        label_item = table.item(row, 4)
+        label_edit = table.cellWidget(row, 4)
         widget = table.cellWidget(row, 3)
         assert name_item is not None
-        assert label_item is not None
+        assert isinstance(label_edit, QLineEdit)
         assert widget is not None
-        labels[name_item.text()] = label_item.text()
+        labels[name_item.text()] = label_edit.text()
         shows[name_item.text()] = widget.currentText()  # type: ignore[attr-defined]
     assert labels["customer_id"] == "Customer"
     assert labels["first_name"] == "First Name"
@@ -478,7 +478,7 @@ def test_an_integer_primary_key_starts_unchecked(tmp_path: Path, qapp: object) -
 
 
 def test_the_preview_follows_the_dialog_chrome(tmp_path: Path, qapp: object) -> None:
-    # CONTRACTS 5.4: chrome rules live on the window; the app sheet is tooltip-only.
+    # The window sheet does not paint the realized form. Fusion stays light (UX-ISO).
     app = QApplication.instance()
     assert app is not None
     window = QWidget()
@@ -526,8 +526,8 @@ def test_the_preview_follows_the_dialog_chrome(tmp_path: Path, qapp: object) -> 
                     light += 1
                 elif value < 80:
                     dark += 1
-        assert dark > 0
-        assert dark > light
+        assert light > 0
+        assert light > dark
     finally:
         dialog.close()
         window.deleteLater()

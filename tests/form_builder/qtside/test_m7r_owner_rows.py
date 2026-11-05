@@ -231,8 +231,7 @@ def test_step_sentence_wraps_in_full(qapp: QApplication) -> None:
     row = _Row(host, "clicked", 0, _STEP, _STEP, False, False, False, "cbcsOnClicked")
     row.resize(180, 24)
     qapp.processEvents()
-    label = row.findChild(QLabel)
-    assert label is not None
+    label = next(item for item in row.findChildren(QLabel) if item.text() == _STEP)
     assert label.text() == _STEP
     assert "\u2026" not in label.text()
     assert label.wordWrap() is True

@@ -163,7 +163,7 @@ def test_a_filter_with_no_match_says_so_and_offers_clear(tmp_path: Path, qapp: Q
     pane.filter.setText("zzqq")
     QApplication.processEvents()
     assert not pane.empty.isHidden()
-    assert pane.empty_text.text() == "Nothing called “zzqq”. Try text, list or date."
+    assert pane.empty_text.text() == "Nothing called “zzqq”."
     assert pane.body.isHidden()
     pane.clear_link.click()
     assert pane.filter.text() == ""
@@ -186,7 +186,7 @@ def test_enter_after_a_query_with_no_match_inserts_nothing(qapp: QApplication) -
     QApplication.processEvents()
     pane.activate_current()
     assert placed == ["QDateEdit"]
-    assert said == ["Nothing to insert. Change the search or press Esc."]
+    assert said == ["Nothing to insert."]
 
 
 def test_your_widgets_follow_the_document(qapp: QApplication) -> None:

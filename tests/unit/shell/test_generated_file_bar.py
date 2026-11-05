@@ -30,8 +30,9 @@ def test_edit_anyway_unlocks_only_that_tab(qapp, tmp_path: Path) -> None:  # typ
     (tmp_path / "invoice.ui").write_text("<ui/>\n", encoding="utf-8")
     page.show_generated(str(tmp_path / "ui_invoice.py"), "")
     assert editor.isReadOnly()
-    assert "invoice.ui" in page.generated_bar.message()
-    assert "invoice_window.py" in page.generated_bar.message()
+    assert page.generated_bar.message() == "Generated from invoice.ui. Saving the form overwrites this file."
+    logic = page.generated_bar.findChild(QPushButton, "shell.generatedFileBar.openLogic")
+    assert logic is not None and logic.toolTip() == "Put your code in invoice_window.py."
     out = Path(os.environ.get("CBCS_FB_SCREENSHOT_DIR") or tmp_path)
     out.mkdir(parents=True, exist_ok=True)
     page.resize(960, 72)

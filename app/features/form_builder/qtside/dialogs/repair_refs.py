@@ -119,7 +119,7 @@ class RepairDialog(QDialog):
             "QDialog#formBuilder\\.repairRefs { background: %s; color: %s; }"
             "QLabel { color: %s; background: transparent; }"
             "QLabel[repairUses=\"true\"] { color: %s; }"
-            "QComboBox { color: %s; background: %s; border: 1px solid %s; padding: 2px 6px; }"
+            "QDialog#formBuilder\\.repairRefs QComboBox { color: %s; background: %s; border: 1px solid %s; padding: 2px 6px; }"
             "QPushButton { color: %s; background: %s; border: 1px solid %s; padding: 4px 12px; }"
             "QPushButton:default { color: %s; background: %s; }"
             "QPushButton:focus { border: %dpx solid %s; }"

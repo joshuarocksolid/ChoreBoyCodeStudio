@@ -12,6 +12,7 @@ from app.qt.QtCore import QEvent, QMimeData, QSize, Qt
 from app.qt.QtGui import QAction, QActionGroup, QDrag, QIcon, QKeyEvent, QMouseEvent
 from app.qt.QtWidgets import (
     QApplication,
+    QFrame,
     QInputDialog,
     QLabel,
     QLineEdit,
@@ -35,18 +36,20 @@ from app.features.form_builder.qtside.insert.catalog import in_sentence, load_ca
 from app.features.form_builder.qtside.insert.catalog._custom import custom_entries
 from app.features.form_builder.qtside.insert.catalog._model import CATEGORY_ORDER, Entry
 from app.features.form_builder.qtside.insert.delegate import ROW_ROLE, EntryDelegate
-from app.features.form_builder.qtside.insert.header import PaneHeader
+from app.features.form_builder.qtside.theme.section_header import SectionHeader
 from app.features.form_builder.qtside.insert.pieces_box import PieceBox
 from app.features.form_builder.qtside.insert.ports import InsertMemoryPort, PieceOps
 from app.features.form_builder.qtside.insert.rows import ENTRY, HEADER, Row, browse_rows, search_rows
 from app.features.form_builder.qtside.insert.catalog.search import search
 from app.features.form_builder.qtside.theme.chrome import FormChrome, scrollbar_qss
 
-ICONS_MIN_WIDTH = 216
+from app.features.form_builder.qtside.theme.metrics import S1, S6, TILE_PANE, TYPE_BODY
+
+ICONS_MIN_WIDTH = TILE_PANE
 _KEY_ROW = Qt.ItemDataRole.UserRole
 _ACCESSIBLE = Qt.ItemDataRole.AccessibleTextRole
-_EMPTY_TEXT = "Nothing called “%s”. Try text, list or date."
-_NOTHING_TO_INSERT = "Nothing to insert. Change the search or press Esc."
+_EMPTY_TEXT = "Nothing called “%s”."
+_NOTHING_TO_INSERT = "Nothing to insert."
 FREECAD_TIP = (
     "These widgets come from FreeCAD. In an app that runs without FreeCAD's window, "
     "each one is the plain Qt widget it is based on."
@@ -181,14 +184,30 @@ class InsertPane(QWidget):
         self.setObjectName("formBuilder.insert")
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(0)
-        self.header = PaneHeader("Insert", self, self._toggle)
-        self.search_button = self.header.add_extra("", "Search widgets", "formBuilder.insertSearch", True)
+        layout.setSpacing(S1)
+        self.header = SectionHeader(
+            self,
+            "Insert",
+            collapsible=True,
+            object_name="formBuilder.sectionHeader",
+            accessible_name="Insert",
+        )
+        self.header.toggled.connect(lambda expanded: self._collapse_from_header(not expanded))
+        self.search_button = self.header.add_action(
+            "search",
+            "Search widgets",
+            "Search widgets",
+            "formBuilder.insertSearch",
+        )
         self.search_button.clicked.connect(self._focus_filter)
-        self.more_button = self.header.add_extra("", "More insert options", "formBuilder.insertMore", True)
+        self.more_button = self.header.add_action(
+            "more",
+            "More insert options",
+            "More insert options",
+            "formBuilder.insertMore",
+        )
         self.more_button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
         self.more_button.setMenu(self._build_menu())
-        self._paint_header_glyphs()
         layout.addWidget(self.header)
         self.filter = _FilterEdit(self)
         self.filter.setObjectName("formBuilder.insertFilter")
@@ -203,9 +222,10 @@ class InsertPane(QWidget):
         self.empty = QWidget(self)
         self.empty.setObjectName("formBuilder.insertEmpty")
         empty_layout = QVBoxLayout(self.empty)
-        empty_layout.setContentsMargins(12, 12, 12, 12)
+        empty_layout.setContentsMargins(12, S6, 12, 12)
         self.empty_text = QLabel(self.empty)
-        self.empty_text.setWordWrap(True)
+        self.empty_text.setWordWrap(False)
+        self.empty_text.setAlignment(Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignTop)
         empty_layout.addWidget(self.empty_text)
         self.clear_link = QPushButton("Clear", self.empty)
         self.clear_link.setObjectName("formBuilder.insertClear")
@@ -275,19 +295,23 @@ class InsertPane(QWidget):
         self._chrome = chrome
         self._delegate.set_chrome(chrome)
         self._piece_box.apply_chrome(chrome)
-        self._paint_header_glyphs()
+        self.header.apply_chrome(chrome)
         self.caption.setStyleSheet(
             "color: %s; background: transparent;" % chrome.text
         )
+        self.empty_text.setStyleSheet(
+            "color: %s; background: transparent; font-size: %dpx;" % (chrome.muted, TYPE_BODY)
+        )
+        from app.features.form_builder.qtside.theme.items import item_view_qss
+
+        shapes = getattr(QFrame, "Shape", QFrame)
+        self.body.setFrameShape(getattr(shapes, "NoFrame"))
         self.body.setStyleSheet(
-            "QListWidget { background: %s; color: %s; border: 1px solid %s; }"
-            "QListWidget::item:selected { background: %s; color: %s; }"
-            % (chrome.input, chrome.text, chrome.border, chrome.selected, chrome.text)
-            + scrollbar_qss(chrome)
+            item_view_qss("QListWidget#formBuilder\\.insertBody", chrome) + scrollbar_qss(chrome)
         )
         self.filter.setStyleSheet(
-            "QLineEdit { background: %s; color: %s; border: 1px solid %s; }"
-            "QLineEdit:focus { border: %dpx solid %s; }"
+            "QLineEdit#formBuilder\\.insertFilter { background: %s; color: %s; border: 1px solid %s; border-radius: 4px; min-height: 24px; }"
+            "QLineEdit#formBuilder\\.insertFilter:focus { border: %dpx solid %s; }"
             % (chrome.input, chrome.text, chrome.border, chrome.focus_width, chrome.accent)
         )
         self.body.viewport().update()
@@ -459,7 +483,10 @@ class InsertPane(QWidget):
         self._refresh_pieces()
 
     def _toggle(self) -> None:
-        self.set_collapsed(not self._collapsed)
+        self.header.click()
+
+    def _collapse_from_header(self, collapsed: bool) -> None:
+        self.set_collapsed(collapsed)
         self._on_collapsed(self._collapsed)
 
     def focus_filter(self) -> None:

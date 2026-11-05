@@ -8,6 +8,11 @@ from app.features.form_builder.engine.commands.base import CommandRejected
 from app.features.form_builder.engine.data.schema import schema_for
 from app.features.form_builder.engine.data.source import RecordSource, singular
 from app.features.form_builder.qtside.data_panel.chrome import apply_chrome
+from app.features.form_builder.qtside.theme.chrome import FormChrome, chrome_from_values
+from app.features.form_builder.qtside.theme.items import polish_item_view
+from app.features.form_builder.qtside.theme.metrics import CONTROL, ORDER_SEGMENT, S1, S2, TABLE_LIST
+from app.features.form_builder.qtside.theme.dialog_body import parts_from
+from app.features.form_builder.qtside.theme.segmented import SegmentedControl
 from app.features.form_builder.qtside.data_panel.edits import (
     assign_hook,
     bind_named,
@@ -29,6 +34,7 @@ from app.qt.QtWidgets import (
     QCheckBox,
     QComboBox,
     QDialog,
+    QGridLayout,
     QHBoxLayout,
     QLabel,
     QLineEdit,
@@ -49,7 +55,6 @@ _OPENS = (
     ("A new record", "new"),
     ("Nothing", "none"),
 )
-_DIRECTIONS = (("Ascending", "asc"), ("Descending", "desc"))
 
 
 def open_connect_sheet(host: Any, tokens: object = None) -> None:
@@ -120,18 +125,23 @@ class SourceForm(QWidget):
         self._session = session
         self._word_edited = False
         self._loading = False
-        layout = QVBoxLayout(self)
+        layout = QGridLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
+        layout.setHorizontalSpacing(S2)
+        layout.setVerticalSpacing(S1)
+        layout.setColumnStretch(1, 1)
         self._connection = QComboBox(self)
         self._connection.setObjectName("formBuilder.data.connection")
+        self._connection.setFixedHeight(CONTROL)
         self._filter = QLineEdit(self)
         self._filter.setPlaceholderText("Filter tables")
         self._filter.setObjectName("formBuilder.data.tableFilter")
         self._filter.setAccessibleName("Filter tables")
+        self._filter.setFixedHeight(CONTROL)
         self._tables = QListWidget(self)
         self._tables.setObjectName("formBuilder.data.tables")
         self._tables.setAccessibleName("Tables")
-        self._tables.setFixedHeight(8 * 24)
+        self._tables.setFixedHeight(TABLE_LIST)
         self._tables.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self._keep = QCheckBox("Let people keep their version on a conflict", self)
         self._keep.setObjectName("formBuilder.data.allowOverwrite")
@@ -139,33 +149,43 @@ class SourceForm(QWidget):
         self._key = QLabel(self)
         self._key.setObjectName("formBuilder.data.key")
         self._notice = QLabel(self)
-        self._notice.setWordWrap(True)
+        self._notice.setWordWrap(False)
         self._notice.setProperty("fbFaint", True)
         self._notice.setObjectName("formBuilder.data.keyNotice")
         self._orders = []
         order_box = QWidget(self)
         order_layout = QVBoxLayout(order_box)
         order_layout.setContentsMargins(0, 0, 0, 0)
+        order_layout.setSpacing(S1)
         for index in range(3):
             row = QHBoxLayout()
+            row.setSpacing(S2)
             order_layout.addLayout(row)
             column = QComboBox(order_box)
             column.setObjectName("formBuilder.data.orderColumn%d" % index)
             column.setAccessibleName("Order by, choice %d" % (index + 1))
-            direction = QComboBox(order_box)
+            column.setFixedHeight(CONTROL)
+            direction = SegmentedControl(order_box)
             direction.setObjectName("formBuilder.data.orderDirection%d" % index)
             direction.setAccessibleName("Order direction, choice %d" % (index + 1))
-            for label, value in _DIRECTIONS:
-                direction.addItem(label, value)
+            direction.setFixedWidth(ORDER_SEGMENT)
+            direction.set_items(
+                ("\u2191", "\u2193"),
+                tooltips=("Ascending", "Descending"),
+                names=("Ascending", "Descending"),
+            )
             row.addWidget(column, 1)
             row.addWidget(direction)
             self._orders.append((column, direction))
         self._opens = QComboBox(self)
         self._opens.setObjectName("formBuilder.data.opensAt")
+        self._opens.setFixedHeight(CONTROL)
         for label, value in _OPENS:
             self._opens.addItem(label, value)
         self._word = QLineEdit(self)
         self._word.setObjectName("formBuilder.data.recordWord")
+        self._word.setFixedHeight(CONTROL)
+        row_index = 0
         for title, widget in (
             ("Connection", self._connection),
             ("Table", self._filter),
@@ -182,8 +202,12 @@ class SourceForm(QWidget):
                 label.setBuddy(widget)
                 if not (widget.accessibleName() or "").strip():
                     widget.setAccessibleName(title)
-                layout.addWidget(label)
-            layout.addWidget(widget)
+                layout.addWidget(label, row_index, 0)
+                layout.addWidget(widget, row_index, 1)
+            else:
+                layout.addWidget(widget, row_index, 0, 1, 2)
+            row_index += 1
+        self._chrome: Optional[FormChrome] = None
         self._connection.currentIndexChanged.connect(self._reload_tables)
         self._filter.textChanged.connect(self._apply_filter)
         self._tables.currentItemChanged.connect(lambda _cur, _prev: self._on_table())
@@ -192,6 +216,30 @@ class SourceForm(QWidget):
 
     def set_session(self, session: object) -> None:
         self._session = session
+
+    def apply_tokens(self, tokens: object) -> None:
+        if tokens is None:
+            return
+        chrome = chrome_from_values(
+            window=str(getattr(tokens, "window_bg", "") or ""),
+            panel=str(getattr(tokens, "panel_bg", "") or ""),
+            text=str(getattr(tokens, "text_primary", "") or ""),
+            muted=str(getattr(tokens, "text_muted", "") or ""),
+            faint=str(getattr(tokens, "gutter_text", "") or ""),
+            border=str(getattr(tokens, "border", "") or ""),
+            accent=str(getattr(tokens, "accent", "") or ""),
+            row_hover=str(getattr(tokens, "tree_hover_bg", "") or ""),
+            input_bg=str(getattr(tokens, "input_bg", "") or ""),
+            error=str(getattr(tokens, "diag_error_color", "") or ""),
+            focus_width=int(getattr(tokens, "focus_border_width", 1) or 1),
+            selected=str(getattr(tokens, "tree_selected_bg", "") or ""),
+            is_dark=bool(getattr(tokens, "is_dark", False)),
+            is_high_contrast=bool(getattr(tokens, "is_high_contrast", False)),
+        )
+        self._chrome = chrome
+        for _column, direction in self._orders:
+            direction.apply_chrome(chrome)
+        polish_item_view(self._tables, chrome)
 
     def reload(self) -> None:
         focus = QApplication.focusWidget()
@@ -350,9 +398,7 @@ class SourceForm(QWidget):
                 found = column.findData(name)
                 if found >= 0:
                     column.setCurrentIndex(found)
-                way_index = direction.findData(way)
-                if way_index >= 0:
-                    direction.setCurrentIndex(way_index)
+                direction.set_current_index(1 if way == "desc" else 0)
             elif index:
                 column.setCurrentIndex(0)
 
@@ -362,7 +408,7 @@ class SourceForm(QWidget):
             name = column.currentData()
             if not name:
                 continue
-            pairs.append((str(name), str(direction.currentData() or "asc")))
+            pairs.append((str(name), "desc" if direction.current_index() == 1 else "asc"))
             if len(pairs) == 3:
                 break
         if not pairs and key:
@@ -373,28 +419,28 @@ class SourceForm(QWidget):
 class ConnectSheet(QDialog):
     def __init__(self, host: QWidget, session: object, tokens: object = None) -> None:
         super().__init__(host)
-        self.setObjectName("formBuilder.data.connectSheet")
-        self.setWindowTitle("Connect to a table")
         self._session = session
-        layout = QVBoxLayout(self)
-        self._form = SourceForm(self, session)
-        layout.addWidget(self._form)
-        self._error = QLabel(self)
-        self._error.setWordWrap(True)
+        build, add_button, add_stretch, primary, secondary = parts_from(host)
+        dialog = build(
+            self,
+            title="Connect to a table",
+            object_name="formBuilder.data.connectSheet",
+        )
+        self._form = SourceForm(dialog.body, session)
+        dialog.body.layout().addWidget(self._form)
+        self._error = QLabel(dialog.body)
+        self._error.setWordWrap(False)
         self._error.setProperty("fbProblem", "warning")
-        layout.addWidget(self._error)
-        row = QHBoxLayout()
-        layout.addLayout(row)
-        row.addStretch(1)
-        cancel = QPushButton("Cancel", self)
+        dialog.body.layout().addWidget(self._error)
+        add_stretch(dialog)
+        cancel = add_button(dialog, "Cancel", role=secondary)
         cancel.clicked.connect(self.reject)
-        row.addWidget(cancel)
-        self._ok = QPushButton("Connect", self)
+        self._ok = add_button(dialog, "Connect", role=primary, default=True)
         self._ok.setObjectName("formBuilder.data.connectOk")
-        self._ok.setDefault(True)
+        self._ok.setAccessibleName("Connect")
         self._ok.clicked.connect(self._commit)
-        row.addWidget(self._ok)
         self._form.load(record_source(session.document))
+        self._form.apply_tokens(tokens)
         self.resize(480, 560)
         if tokens is not None:
             apply_chrome(self, tokens)

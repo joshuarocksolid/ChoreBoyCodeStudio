@@ -24,7 +24,6 @@ from app.features.form_builder.engine.ui4.values import (
 )
 from app.features.form_builder.qtside.inspector.api import (
     MIXED_TEXT,
-    NOT_SET_TEXT,
     EditorHost,
     EditorKey,
     Mixed,
@@ -159,6 +158,7 @@ class StringEditor:
         self._translation = TranslationDisclosure()
         self._translation.set_on_change(self._change_attr)
         self._translation.set_on_toggle(self._remember_expanded)
+        self._translation.place_on(self._edit)
         self._translation.hide()
         column = QVBoxLayout(self._box)
         column.setContentsMargins(0, 0, 0, 0)
@@ -191,6 +191,10 @@ class StringEditor:
         self._summary.set_row_label(self._host.label)
         self._summary.set_summary(_first_line(self._shown) if self._shown else _placeholder(value))
         mark(self._summary, value)
+        if multiline:
+            self._translation.place_on(self._summary)
+        else:
+            self._translation.place_on(self._edit)
         self._show_translation(value)
 
     def is_dirty(self) -> bool:
@@ -824,7 +828,7 @@ def _placeholder(value: RowValue) -> str:
         default = value.default
         if isinstance(default, (StringValue, CStringValue)) and default.text:
             return default.text
-        return NOT_SET_TEXT
+        return ""
     return ""
 
 

@@ -569,7 +569,7 @@ def test_committing_a_connection_keeps_focus_inside_the_inspector(
         bar = tabs.tabBar()
         QTest.mouseClick(bar, _mouse("LeftButton"), _mods("NoModifier"), bar.tabRect(1).center())
         _settle(qapp)
-        add = next(button for button in inspector.findChildren(QPushButton) if button.text().startswith("+ When"))
+        add = inspector.findChild(QWidget, "formBuilder.events.first") or inspector.findChild(QWidget, "formBuilder.events.when")
         before = len(surface.session.document.connections())  # type: ignore[attr-defined]
         QTest.mouseClick(add, _mouse("LeftButton"))
         _settle(qapp)

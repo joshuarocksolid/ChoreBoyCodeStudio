@@ -116,8 +116,8 @@ def test_insert_pane_hides_the_piece_list_when_empty(qapp: object, tmp_path: Pat
         parent.show()
         pane.show()
         assert listed.isHidden()
-        titles = [label.text() for label in pane.findChildren(QLabel) if label.text() == "Saved pieces"]
-        assert titles == ["Saved pieces"]
+        titles = [label.text() for label in pane.findChildren(QLabel) if label.text() == "SAVED PIECES"]
+        assert titles == ["SAVED PIECES"]
         middle = session.document.by_name("middle")[0]
         session.selection.set((middle,), current=middle, source=SelectionSource.COMMAND)
         pane.save_selection(session)

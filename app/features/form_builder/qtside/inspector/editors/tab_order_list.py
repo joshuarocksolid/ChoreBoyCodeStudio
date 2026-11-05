@@ -16,6 +16,7 @@ from app.features.form_builder.engine.query.selection import SelectionSource
 from app.features.form_builder.qtside.canvas.banner import EnterButton
 from app.features.form_builder.qtside.inspector.api import GroupBody, GroupHost, Registrar, Row
 from app.features.form_builder.qtside.outline.friendly import friendly_of
+from app.features.form_builder.qtside.theme.items import polish_item_view
 from app.qt.QtCore import QModelIndex, Qt
 from app.qt.QtGui import QKeyEvent
 from app.qt.QtWidgets import QAbstractItemView, QLabel, QListWidget, QListWidgetItem, QVBoxLayout, QWidget
@@ -99,6 +100,7 @@ class TabOrderBody:
         self._empty.setVisible(not stops)
         self.list.setVisible(bool(stops))
         self.reset.setVisible(custom)
+        self._polish_list()
         if names == self._names and self.list.count() == len(names):
             return
         current = self.list.currentRow()
@@ -113,6 +115,18 @@ class TabOrderBody:
         if self.list.count():
             self.list.setCurrentRow(max(0, min(current, self.list.count() - 1)))
         self.list.setFixedHeight(self.list.sizeHintForRow(0) * self.list.count() + 6 if self.list.count() else 0)
+
+    def _polish_list(self) -> None:
+        if getattr(self, "_polished", False):
+            return
+        services = getattr(self._host, "_services", None)
+        chrome = getattr(self._host, "chrome", None)
+        if chrome is None:
+            chrome = getattr(services, "chrome", None)
+        if chrome is None:
+            return
+        polish_item_view(self.list, chrome)
+        self._polished = True
 
     def names(self) -> Tuple[str, ...]:
         return self._names

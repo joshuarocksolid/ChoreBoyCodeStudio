@@ -46,11 +46,18 @@ class ProblemPopover(QFrame):
         self.move(max(0, (parent.width() - width) // 2), max(0, parent.height() - height - 16))
 
 
-def open_layout_menu(parent: QWidget, sheet: OfferSheet, run: Callable[[object], None], at: object) -> QMenu:
+def open_layout_menu(
+    parent: QWidget,
+    sheet: OfferSheet,
+    run: Callable[[object], None],
+    at: object,
+    chrome: object = None,
+) -> QMenu:
     """A non-blocking menu of the four layouts. Disabled rows carry the reason as a tooltip."""
     menu = QMenu(parent)
     menu.setObjectName("formBuilder.layoutPopover")
     menu.setToolTipsVisible(True)
+    menu.setFixedWidth(280)
     for kind_id in SEGMENTS:
         request = ApplyKind(kind_id)
         offer = gate(sheet, request)
@@ -59,6 +66,10 @@ def open_layout_menu(parent: QWidget, sheet: OfferSheet, run: Callable[[object],
         if offer.reason:
             action.setToolTip(offer.reason)
         action.triggered.connect(lambda _checked=False, request=request: run(request))
+    if chrome is not None:
+        from app.features.form_builder.integration.context_menu import paint_menu
+
+        paint_menu(menu, chrome)  # type: ignore[arg-type]
     menu.popup(at)  # type: ignore[arg-type]
     return menu
 

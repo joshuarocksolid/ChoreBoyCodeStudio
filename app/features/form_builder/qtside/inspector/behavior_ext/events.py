@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import replace
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
+from app.features.form_builder.qtside.theme.metrics import S4, TYPE_BODY, TYPE_FINE
 from app.qt.QtCore import QEvent, QObject, Qt
 from app.qt.QtGui import QKeyEvent, QResizeEvent
 from app.qt.QtWidgets import (
@@ -79,10 +80,9 @@ class EventsBody(QWidget):
         title = section_heading(overline, "formBuilder.events.overline", "EVENTS")
         row.addWidget(title)
         row.addStretch(1)
-        self._when = QPushButton("+ When\u2026", overline)
+        self._when = title.add_action("plus", "Add event", "Add event")
         self._when.clicked.connect(self._add_event)
         self._when.installEventFilter(self)
-        row.addWidget(self._when)
         self._events = QVBoxLayout()
         self._events.setContentsMargins(0, 0, 0, 0)
         self._events.setSpacing(2)
@@ -122,19 +122,11 @@ class EventsBody(QWidget):
             "QWidget#formBuilder\\.events, QWidget#formBuilder\\.events QWidget { background: %s; color: %s; }"
             "QLabel, QWidget#formBuilder\\.events QLabel { color: %s; background: transparent; }"
             "QLabel#formBuilder\\.events\\.notice { color: %s; }"
-
-            "QPushButton { color: %s; background: %s; border: 1px solid %s; border-radius: 4px; padding: 2px 8px; }"
-            "QPushButton:focus, QToolButton:focus, QWidget:focus { border: %dpx solid %s; }"
             % (
                 panel,
                 text,
                 text,
                 warning_color(chrome),
-                text,
-                chrome.input,
-                chrome.border,
-                chrome.focus_width,
-                chrome.accent,
             )
         )
 
@@ -314,7 +306,9 @@ class EventsBody(QWidget):
                 sync()
 
     def eventFilter(self, watched: QObject, event: QEvent) -> bool:  # noqa: N802
-        if event.type() == QEvent.Type.ShortcutOverride and isinstance(watched, (_Row, _ThenButton, QPushButton)):
+        if event.type() == QEvent.Type.ShortcutOverride and (
+            watched is self._when or isinstance(watched, (_Row, _ThenButton, QPushButton))
+        ):
             if watched is self._when or isinstance(watched, (_Row, _ThenButton)):
                 if _claimed(event):  # type: ignore[arg-type]
                     event.accept()
@@ -613,7 +607,7 @@ class _Group(QWidget):
                 body,
                 event.signal,
                 step.index,
-                "%d  %s" % (step.index + 1, step.words),
+                step.words,
                 step.accessible,
                 step.readonly or event.locked,
                 False,
@@ -734,6 +728,21 @@ class _Row(QWidget):
         line.setContentsMargins(2, 0, 2, 0)
         if index >= 0:
             line.setAlignment(_TOP)
+            number = QLabel(str(index + 1), self)
+            number.setObjectName("formBuilder.events.stepNo")
+            number.setFixedWidth(S4)
+            number_font = number.font()
+            number_font.setPixelSize(TYPE_FINE)
+            number.setFont(number_font)
+            number.setAlignment(
+                getattr(getattr(Qt, "AlignmentFlag", Qt), "AlignRight")
+                | getattr(getattr(Qt, "AlignmentFlag", Qt), "AlignVCenter")
+            )
+            number.setStyleSheet(
+                "color: %s; background: transparent; font-variant-numeric: tabular-nums;"
+                % body._chrome.faint
+            )
+            line.addWidget(number)
         text_col = QVBoxLayout()
         text_col.setContentsMargins(0, 0, 0, 0)
         text_col.setSpacing(0)
@@ -750,6 +759,9 @@ class _Row(QWidget):
         self._label.setSizePolicy(fitted)
         self._label.setToolTip(head)
         self._label.setAccessibleName(accessible)
+        label_font = self._label.font()
+        label_font.setPixelSize(TYPE_BODY)
+        self._label.setFont(label_font)
         text_col.addWidget(self._label)
         if condition:
             only = QLabel(condition, self)
@@ -1043,11 +1055,15 @@ def _place_link(row: QWidget, body: "EventsBody", method: str) -> QPushButton:
     else:
         color = body._chrome.faint
     button.setStyleSheet(
-        "QPushButton { color: %s; background: transparent; border: none; padding: 0px; margin: 0px; }"
-        "QPushButton:focus { border: %dpx solid %s; }"
-        % (color, body._chrome.focus_width, body._chrome.accent)
+        "QPushButton#formBuilder\\.events\\.place { color: %s; background: transparent; border: none;"
+        " padding: 0px; margin: 0px; font-size: %dpx; text-align: right; }"
+        "QPushButton#formBuilder\\.events\\.place:focus { border: %dpx solid %s; }"
+        % (color, TYPE_FINE, body._chrome.focus_width, body._chrome.accent)
     )
     button.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+    path = _window_path(body)
+    if tone == "ok" and path and ":" in text:
+        button.setToolTip("%s:%s" % (path, text.rsplit(":", 1)[-1]))
     button.clicked.connect(lambda: body._go_code(method))
     return button
 
@@ -1205,12 +1221,17 @@ def _by_name_why() -> str:
     )
 
 
-def _window_file(widget: QWidget) -> str:
-    import os
-
+def _window_path(widget: QWidget) -> str:
     services = getattr(widget, "_services", None)
     scope = getattr(getattr(services, "session", None), "scope", None)
     path = getattr(scope, "window_path", None) or ""
+    return str(path)
+
+
+def _window_file(widget: QWidget) -> str:
+    import os
+
+    path = _window_path(widget)
     return os.path.basename(path) if path else ""
 
 

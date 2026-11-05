@@ -11,15 +11,25 @@ from app.qt.QtWidgets import QStyle, QStyledItemDelegate, QStyleOptionViewItem
 from app.features.form_builder.qtside.icons.glyphs import paint_glyph
 from app.features.form_builder.qtside.insert.rows import ENTRY, HEADER, SECTION, Row
 from app.features.form_builder.qtside.theme.chrome import FormChrome
+from app.features.form_builder.qtside.theme.metrics import (
+    CHEVRON,
+    ICON,
+    R_CONTROL,
+    ROW,
+    SECTION_HEADER,
+    TYPE_BODY,
+    TYPE_FINE,
+    TYPE_SECTION,
+)
 
 ROW_ROLE = Qt.ItemDataRole.UserRole + 1
-TILE_WIDTH = 64
-TILE_HEIGHT = 60
-ROW_HEIGHT = 24
-HEADER_HEIGHT = 24
-GLYPH_TILE = 20
-GLYPH_ROW = 16
-_RADIUS = 4.0
+TILE_WIDTH = 72
+TILE_HEIGHT = 56
+ROW_HEIGHT = ROW
+HEADER_HEIGHT = SECTION_HEADER
+GLYPH_TILE = ICON
+GLYPH_ROW = ICON
+_RADIUS = float(R_CONTROL)
 
 class EntryDelegate(QStyledItemDelegate):
     """One delegate for the Insert list and the quick-insert list."""
@@ -128,6 +138,9 @@ class EntryDelegate(QStyledItemDelegate):
             return self._layout_ink
         if name.startswith("spacer_") and self._gap_ink:
             return self._gap_ink
+        chrome = self._chrome
+        if chrome is not None and chrome.glyph:
+            return chrome.glyph
         return self._colors()[0]
 
     def _paint_header(self, painter: QPainter, option: QStyleOptionViewItem, row: Row) -> None:
@@ -138,16 +151,15 @@ class EntryDelegate(QStyledItemDelegate):
             painter.setFont(self._font(option, 10, bold=True))
             painter.drawText(rect.adjusted(8, 0, -8, 0), int(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter), row.title.upper())
             return
-        centre_y = rect.center().y()
-        chevron = QPen(QColor(faint))
-        chevron.setWidthF(1.5)
-        painter.setPen(chevron)
         left = rect.left() + 10
-        if row.expanded:
-            painter.drawPolyline(_points(((left, centre_y - 3), (left + 4, centre_y + 1), (left + 8, centre_y - 3))))
-        else:
-            painter.drawPolyline(_points(((left + 1, centre_y - 4), (left + 5, centre_y), (left + 1, centre_y + 4))))
-        painter.setFont(self._font(option, 10, bold=True))
+        mark = "chevron_down" if row.expanded else "chevron_right"
+        ratio = painter.device().devicePixelRatioF() if painter.device() is not None else 1.0
+        try:
+            pixmap = paint_glyph(mark, faint, CHEVRON, float(ratio))
+            painter.drawPixmap(left, rect.center().y() - CHEVRON // 2, pixmap)
+        except KeyError:
+            pass
+        painter.setFont(self._font(option, TYPE_SECTION, bold=True))
         painter.setPen(QColor(text))
         label_left = rect.left() + 22
         room = max(rect.width() - 22 - 44, 24)
@@ -164,23 +176,24 @@ class EntryDelegate(QStyledItemDelegate):
         text, _faint, _hover, _current, _match, _accent = self._colors()
         rect = option.rect
         self._background(painter, option, rect, _RADIUS)
-        self._glyph(painter, row.glyph, rect.center().x() - GLYPH_TILE // 2, rect.top() + 8, GLYPH_TILE)
-        font = self._font(option, 11)
+        self._glyph(painter, row.glyph, rect.center().x() - GLYPH_TILE // 2, rect.top() + 6, GLYPH_TILE)
+        font = self._font(option, TYPE_FINE)
         painter.setFont(font)
         painter.setPen(QColor(text))
         width = rect.width() - 8
-        lines = _two_lines(row.title, QFontMetrics(font), width)
-        for index, line in enumerate(lines):
-            top = rect.top() + 32 + index * 14
-            painter.drawText(QRect(rect.left() + 4, top, width, 14),
-                             int(Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignVCenter), line)
+        label = QFontMetrics(font).elidedText(row.title, Qt.TextElideMode.ElideRight, width)
+        painter.drawText(
+            QRect(rect.left() + 4, rect.top() + 26, width, 18),
+            int(Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignVCenter),
+            label,
+        )
 
     def _paint_row(self, painter: QPainter, option: QStyleOptionViewItem, row: Row) -> None:
         text, faint, _hover, _current, match_bg, _accent = self._colors()
         rect = option.rect
         self._background(painter, option, rect, _RADIUS)
         self._glyph(painter, row.glyph, rect.left() + 8, rect.top() + 4, GLYPH_ROW)
-        name_font = self._font(option, 12)
+        name_font = self._font(option, TYPE_BODY)
         caption_font = self._font(option, 11)
         left = rect.left() + 30
         right_text = _right_caption(row)

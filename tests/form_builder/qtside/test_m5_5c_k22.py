@@ -135,7 +135,7 @@ def test_k22_templates(tmp_path: Path, qapp: QApplication) -> None:
         panel = surface.widget()
         kb.check(panel.user_template_keys() == ("template:user:shop_window",), "Your templates has the card")
         groups = [w for w in panel.findChildren(type(panel.findChild(QWidget, "formBuilder.newForm.hero"))) if w.objectName().startswith("formBuilder.newForm.group.") and w.isVisible()]
-        kb.check(groups[0].text() == "Your templates", "Your templates is the first group")
+        kb.check(groups[0].text() == "YOUR TEMPLATES", "Your templates is the first group")
         kb.check(kb.focus_name() == "formBuilder.newForm.name", "the name row has focus")
         kb.type("back_office")
         card = panel.card("template:user:shop_window")

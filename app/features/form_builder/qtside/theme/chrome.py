@@ -83,6 +83,8 @@ class FormChrome:
     popup: str = ""
     popup_border: str = ""
     glyph: str = ""
+    # Shell ``icon_muted``. Empty falls back to ``muted`` so older snapshots still paint.
+    icon_muted: str = ""
     is_dark: bool = False
     is_high_contrast: bool = False
     # ov.layout and ov.gap, as ``#RRGGBB``, for layout and spacer glyphs.
@@ -108,6 +110,8 @@ class FormChrome:
             object.__setattr__(self, "popup_border", self.border)
         if not self.glyph:
             object.__setattr__(self, "glyph", self.text)
+        if not self.icon_muted:
+            object.__setattr__(self, "icon_muted", self.muted or self.glyph)
 
     @property
     def fb(self) -> "ChromeTokens":
@@ -213,7 +217,7 @@ def popover_style(object_name: str, chrome: FormChrome) -> str:
     """Frame, text, and buttons of the builder popover named ``object_name``."""
     frame = "QFrame#%s" % object_name.replace(".", "\\.")
     return (
-        "%(f)s { background: %(panel)s; color: %(text)s; border: 1px solid %(border)s; border-radius: 6px; }"
+        "%(f)s { background: %(panel)s; color: %(text)s; border: 1px solid %(border)s; border-radius: %(radius)dpx; }"
         "%(f)s QLabel { color: %(text)s; background: transparent; border: none; }"
         "%(f)s QLabel[note=\"true\"] { color: %(muted)s; }"
         "%(f)s QPushButton, %(f)s QToolButton {"
@@ -225,10 +229,11 @@ def popover_style(object_name: str, chrome: FormChrome) -> str:
         "%(f)s QPushButton:disabled, %(f)s QToolButton:disabled { color: %(muted)s; background: %(panel)s; }"
     ) % {
         "f": frame,
-        "panel": chrome.panel,
+        "panel": chrome.popup or chrome.panel,
         "text": chrome.text,
         "muted": chrome.muted,
-        "border": chrome.border,
+        "border": chrome.popup_border or chrome.border,
+        "radius": 6,
         "input": chrome.input,
         "hover": chrome.row_hover,
         "accent": chrome.accent,
@@ -501,6 +506,22 @@ def apply_level2_shadow(widget: object, chrome: FormChrome) -> None:
     widget.setGraphicsEffect(shadow)  # type: ignore[attr-defined]
 
 
+def apply_page_shadow(widget: object, *, is_dark: bool, is_high_contrast: bool) -> None:
+    """The page-card shadow. High contrast keeps the 1 px border and no shadow."""
+    from app.qt.QtGui import QColor
+    from app.qt.QtWidgets import QGraphicsDropShadowEffect
+
+    rgba = page_shadow_rgba(is_dark=is_dark, is_high_contrast=is_high_contrast)
+    if rgba is None:
+        widget.setGraphicsEffect(None)  # type: ignore[attr-defined]
+        return
+    shadow = QGraphicsDropShadowEffect(widget)  # type: ignore[arg-type]
+    shadow.setBlurRadius(16)
+    shadow.setOffset(0, 4)
+    shadow.setColor(QColor(rgba[0], rgba[1], rgba[2], rgba[3]))
+    widget.setGraphicsEffect(shadow)  # type: ignore[attr-defined]
+
+
 def chrome_from_values(
     *,
     window: str,
@@ -519,6 +540,7 @@ def chrome_from_values(
     popup: str = "",
     popup_border: str = "",
     glyph: str = "",
+    icon_muted: str = "",
     is_dark: bool = False,
     is_high_contrast: bool = False,
     layout: str = "",
@@ -550,6 +572,7 @@ def chrome_from_values(
         popup=popup,
         popup_border=popup_border,
         glyph=glyph,
+        icon_muted=icon_muted,
         is_dark=is_dark,
         is_high_contrast=is_high_contrast,
         layout=layout,

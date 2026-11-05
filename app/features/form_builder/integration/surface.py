@@ -1486,6 +1486,7 @@ class FormSurface(QWidget):
             self.layout_offers(targets),
             lambda request: self.run_layout(request, targets),
             self._chip_anchor(node),
+            chrome_for(self._tokens),
         )
 
     def open_context_menu(self, node: Optional[NodeId], at: Optional[QPoint], *, source: str = "canvas") -> None:
@@ -1638,13 +1639,15 @@ class FormSurface(QWidget):
         if tokens is None:
             return
         self._workbench.canvas.banner.apply_colors(
-            tokens.editor_bg,
-            tokens.border,
+            tokens.popup_bg,
+            tokens.popup_border,
             tokens.text_primary,
             tokens.text_muted,
             tokens.input_bg,
             tokens.accent,
             tokens.focus_border_width,
+            high_contrast=tokens.is_high_contrast,
+            is_dark=tokens.is_dark,
         )
 
     def show_widget_help(self) -> None:

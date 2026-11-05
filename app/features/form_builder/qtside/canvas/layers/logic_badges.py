@@ -15,17 +15,29 @@ from app.features.form_builder.engine.logic.events_catalog import event_words
 from app.features.form_builder.engine.style.classes import widget_chain
 from app.features.form_builder.engine.ui4.document import UiDocument
 from app.features.form_builder.engine.ui4.nodes import LayoutNode, WidgetNode
-from app.features.form_builder.qtside.canvas.core.chips import BADGE_CORNERS, ChipRequest, CornerSeat, place_chips
+from app.features.form_builder.qtside.canvas.core.chips import BADGE_CORNERS, ChipRequest, place_chips
 from app.features.form_builder.qtside.canvas.core.overlay import LayerItem, LayerOutput
 from app.features.form_builder.qtside.canvas.core.space import CanvasPoint, CanvasRect, CanvasSize
 from app.features.form_builder.qtside.canvas.layers import CanvasLayer
+from app.features.form_builder.qtside.icons.glyphs import paint_glyph
+from app.features.form_builder.qtside.theme.chrome import PAGE_TITLE_GLYPH
 from app.features.form_builder.qtside.theme.overlay import CanvasPalette
 from app.qt.QtCore import QRectF, Qt
-from app.qt.QtGui import QColor, QFont, QPainter
+from app.qt.QtGui import QColor, QFont, QPainter, QPen
 
 NAME = "logic_badges"
 BADGE = 12
 HIDE_BELOW = 0.5
+_GLYPH_PX = 7
+_INSET = 2
+_LOGIC_TAB = False
+_GLYPHS = {"\u203a": "chevron_right", "\u2713": "check"}
+
+
+def set_logic_tab(open_: bool) -> None:
+    """The Logic tab is showing, so every sender wears its badge."""
+    global _LOGIC_TAB
+    _LOGIC_TAB = bool(open_)
 
 
 def register(registry: object) -> None:
@@ -269,13 +281,14 @@ def _view_key(page: CanvasRect, viewport: CanvasRect, inputs: object) -> Hashabl
 
 
 def build(static: object, inputs: object, state: Hashable) -> LayerOutput:
-    del state
     view = getattr(static, "view", None)
     factor = float(getattr(view, "factor", 1.0) or 1.0)
     if factor < HIDE_BELOW:
         return LayerOutput()
     document = getattr(inputs, "document")
     senders, grouped = _badge_senders(document)
+    if not _show_every(state):
+        senders = _watched(document, inputs, senders)
     if not senders:
         return LayerOutput()
     page = _page(static)
@@ -315,78 +328,122 @@ def _seat_badges(
     viewport: CanvasRect,
     chips: Tuple[CanvasRect, ...],
 ) -> Tuple[Tuple[str, CanvasRect], ...]:
-    requests = []
-    widget_rect = {}
-    for sender, rect in bodies:
-        widget_rect[sender] = rect
-        others = [
-            other
-            for other in _near(basis.other_index, rect.y - basis.other_span, rect.y + rect.height + basis.other_span)
-            if other != rect
-        ]
-        requests.append(
-            ChipRequest(sender, rect, CanvasSize(BADGE, BADGE), _corners(rect, others), frozenset(), corners_only=True)
-        )
-    fixed = tuple(getattr(inputs, "chrome", ())) + chips + basis.bands
-    seats = place_chips(requests, basis.content, fixed, page, viewport, getattr(inputs, "dock", None))
-    seated = {}
-    for seat in seats:
-        if isinstance(seat, CornerSeat) and _on_own_edge(seat.rect, widget_rect.get(str(seat.key), seat.rect)):
-            seated[str(seat.key)] = seat.rect
+    del page, viewport, chips
+    blockers = [item.rect for item in basis.content]
+    chrome = tuple(getattr(inputs, "chrome", ()) or ())
     found: List[Tuple[str, CanvasRect]] = []
-    for sender, rect in widget_rect.items():
-        seat = seated.get(sender)
-        neighbours = [
-            other
-            for other in _near(basis.blocker_index, rect.y - BADGE - 4, rect.y + rect.height + BADGE + 4)
-            if other != rect
-        ]
-        occupied_near = _near(basis.occupied_index, rect.y - BADGE - 4, rect.y + rect.height + BADGE + 4)
-        if seat is None or _covers(seat, occupied_near, rect) or _hits(seat, neighbours) or _hits(seat, chips):
-            seat = _badge_fallback(rect, neighbours, chips)
-        if seat is None or _hits(seat, chips):
+    for sender, rect in bodies:
+        seat = _inset_badge(rect, blockers)
+        if seat is None:
             continue
-        others = [other for other in neighbours if not _same_rect(other, rect)]
-        if seat.intersects(rect):
-            if _hits(seat, others):
-                continue
-        elif _covers(seat, occupied_near, rect) or _hits(seat, others):
+        if any(seat.intersects(band) for band in basis.bands):
+            continue
+        if any(seat.intersects(band) for band in chrome):
             continue
         found.append((sender, seat))
     return tuple(found)
+
+
+def _inset_badge(rect: CanvasRect, blockers: Sequence[CanvasRect]) -> Optional[CanvasRect]:
+    """Top-right, 2 px in. Step left when a neighbour owns that corner."""
+    if rect.width < BADGE or rect.height < BADGE:
+        return None
+    x = rect.x + max(0, rect.width - BADGE - _INSET)
+    y = rect.y + _INSET
+    seat = CanvasRect(x, y, BADGE, BADGE)
+    for _step in range(12):
+        if not _badge_hits(seat, rect, blockers):
+            return seat
+        x -= BADGE + _INSET
+        if x < rect.x + _INSET:
+            return seat
+        seat = CanvasRect(x, y, BADGE, BADGE)
+    return seat
+
+
+def _badge_hits(seat: CanvasRect, own: CanvasRect, blockers: Sequence[CanvasRect]) -> bool:
+    for other in blockers:
+        if _same_rect(other, own):
+            continue
+        if other.width >= own.width and other.height >= own.height and _holds(other, own):
+            continue
+        if seat.intersects(other):
+            return True
+    return False
+
+
+def _holds(outer: CanvasRect, inner: CanvasRect) -> bool:
+    return (
+        outer.x <= inner.x
+        and outer.y <= inner.y
+        and outer.x + outer.width >= inner.x + inner.width
+        and outer.y + outer.height >= inner.y + inner.height
+    )
+
+
+def _show_every(state: Hashable) -> bool:
+    # None is the seat-test state. A live layer passes True and paints the
+    # hovered or selected sender, unless the Logic tab is open.
+    if state == "all" or state is None:
+        return True
+    return _LOGIC_TAB
+
+
+def _watched(document: UiDocument, inputs: object, senders: Sequence[str]) -> List[str]:
+    allowed = set(senders)
+    ids = []
+    selection = getattr(inputs, "selection", None)
+    if selection is not None:
+        current = getattr(selection, "current", None)
+        if current is not None:
+            ids.append(current)
+        extra = getattr(selection, "ids", None)
+        if extra:
+            ids.extend(extra)
+    gesture = getattr(inputs, "gesture", None)
+    hover = getattr(gesture, "hover", None) if gesture is not None else None
+    if hover is not None:
+        ids.append(hover)
+    seen = set()
+    for node_id in ids:
+        if not document.contains(node_id):
+            continue
+        name = str(getattr(document.get(node_id), "object_name", "") or "")
+        if name in allowed:
+            seen.add(name)
+    return [name for name in senders if name in seen]
 
 
 def paint(painter: QPainter, item: LayerItem, palette: CanvasPalette) -> None:
     data = item.data
     if not isinstance(data, tuple) or not data or data[0] != "badge":
         return
-    fill = _qcolor(palette.overlay.logic_badge)
-    ink = _qcolor(palette.overlay.chip_text)
+    colour = palette.overlay.problem if item.role == "problem" else PAGE_TITLE_GLYPH
     box = QRectF(item.rect.x, item.rect.y, item.rect.width, item.rect.height)
     painter.save()
     try:
-        painter.setPen(Qt.PenStyle.NoPen)
-        if float(palette.overlay.min_stroke or 1) >= 2:
-            painter.setBrush(ink)
-            painter.drawEllipse(box.adjusted(-1, -1, 1, 1))
-        painter.setBrush(fill)
-        painter.drawEllipse(box)
-        painter.setPen(ink)
-        font = QFont(painter.font())
-        font.setPixelSize(10)
-        font.setBold(True)
-        painter.setFont(font)
+        pen = QPen(QColor(colour))
+        pen.setWidthF(1.0)
+        painter.setPen(pen)
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        painter.drawEllipse(box.adjusted(0.5, 0.5, -0.5, -0.5))
         glyph = "\u203a"
-        count = 1
         if len(data) > 3 and data[3]:
             glyph = str(data[3])
-        if len(data) > 4:
-            try:
-                count = int(data[4])
-            except (TypeError, ValueError):
-                count = 1
-        label = glyph if count <= 1 else "%s%d" % (glyph, count)
-        painter.drawText(box, int(Qt.AlignmentFlag.AlignCenter), label)
+        name = _GLYPHS.get(glyph)
+        if name:
+            ratio = painter.device().devicePixelRatioF() if painter.device() is not None else 1.0
+            pixmap = paint_glyph(name, colour, _GLYPH_PX, float(ratio))
+            x = int(round(item.rect.x + (item.rect.width - _GLYPH_PX) / 2.0))
+            y = int(round(item.rect.y + (item.rect.height - _GLYPH_PX) / 2.0))
+            painter.drawPixmap(x, y, pixmap)
+        else:
+            font = QFont(painter.font())
+            font.setPixelSize(_GLYPH_PX)
+            font.setBold(False)
+            painter.setFont(font)
+            painter.setPen(QColor(colour))
+            painter.drawText(box, int(Qt.AlignmentFlag.AlignCenter), glyph)
     finally:
         painter.restore()
 

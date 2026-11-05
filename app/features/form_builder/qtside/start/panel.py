@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 from typing import Callable, Dict, List, Optional, Sequence, Tuple
 
 from app.qt.QtCore import Qt, Signal
@@ -15,7 +16,6 @@ from app.qt.QtGui import (
     QPainter,
     QPalette,
     QPen,
-    QPixmap,
 )
 from app.qt.QtWidgets import (
     QComboBox,
@@ -51,7 +51,9 @@ from app.features.form_builder.engine.project.user_templates import SCOPE_PROJEC
 from app.features.form_builder.qtside.start.cards import CARD_WIDTH, StartCard
 from app.features.form_builder.qtside.start.wizard import WIZARD_CARD, WIZARD_KEY
 
-from app.features.form_builder.qtside.theme.chrome import FormChrome
+from app.features.form_builder.qtside.theme.chrome import FormChrome, scrollbar_qss
+from app.features.form_builder.qtside.theme.metrics import CONTROL, S2, S4, S6, S8, START_MAX, TYPE_BODY
+from app.features.form_builder.qtside.theme.section_header import SectionHeader
 
 _GROUP_TITLES = (
     (GROUP_YOURS, "Your templates"),
@@ -59,8 +61,9 @@ _GROUP_TITLES = (
     (GROUP_BLANK, "Start blank"),
     (GROUP_FROM_EXISTING, "From what you have"),
 )
-_COLUMN_MAX = 960
-_CARD_GAP = 12
+_COLUMN_MAX = START_MAX
+_CARD_GAP = S4
+_WIDGET_CLASS = re.compile(r'<widget class="([^"]+)"')
 #: UX-START-002: the recent forms move to a 240 px rail at this tab width.
 RAIL_MIN_WIDTH = 1180
 RAIL_WIDTH = 240
@@ -136,32 +139,24 @@ class NewFormPanel(QWidget):
         self._chrome = chrome
         self.setStyleSheet(
             "QWidget#formBuilder\\.newForm { background: %s; color: %s; }"
-            "QLabel { color: %s; background: transparent; }"
             "QScrollArea#formBuilder\\.newForm\\.scroll { background: %s; border: none; }"
             "QScrollArea#formBuilder\\.newForm\\.scroll > QWidget > QWidget { background: %s; }"
-            "QLineEdit { background: %s; color: %s; border: 1px solid %s; padding: 4px; }"
-            "QComboBox { background: %s; color: %s; border: 1px solid %s; padding: 4px; }"
-            % (
-                chrome.window,
-                chrome.text,
-                chrome.text,
-                chrome.window,
-                chrome.window,
-                chrome.input,
-                chrome.text,
-                chrome.border,
-                chrome.input,
-                chrome.text,
-                chrome.border,
-            )
+            % (chrome.window, chrome.text, chrome.window, chrome.window)
+            + scrollbar_qss(chrome, "QScrollArea#formBuilder\\.newForm\\.scroll")
         )
-        self._caption.setStyleSheet("color: %s;" % chrome.muted)
-        self._error.setStyleSheet("color: %s;" % chrome.error)
-        self._status.setStyleSheet("color: %s;" % chrome.muted)
-        self._empty.setStyleSheet("color: %s;" % chrome.faint)
+        self._hero.setStyleSheet("color: %s; background: transparent;" % chrome.text)
+        self._name_label.setStyleSheet(
+            "color: %s; background: transparent; font-size: %dpx;" % (chrome.muted, TYPE_BODY)
+        )
+        self._in_label.setStyleSheet(
+            "color: %s; background: transparent; font-size: %dpx;" % (chrome.muted, TYPE_BODY)
+        )
+        self._error.setStyleSheet("color: %s; background: transparent;" % chrome.error)
+        self._status.setStyleSheet("color: %s; background: transparent;" % chrome.muted)
+        self._empty.setStyleSheet("color: %s; background: transparent;" % chrome.faint)
         self._fill_page(chrome.window)
-        for label in self._group_labels:
-            label.setStyleSheet("color: %s; font-weight: 600;" % chrome.text)
+        for header in self._group_labels:
+            header.apply_chrome(chrome)
         for card in self._cards:
             card.set_chrome(chrome)
         self._paint_recent_rows()
@@ -334,18 +329,17 @@ class NewFormPanel(QWidget):
             menu.deleteLater()
 
     def _add_user_card(self, info: TemplateInfo) -> None:
-        pixmap = QPixmap(info.thumbnail_path) if not info.error else None
-        tooltip = info.error if info.error else info.title + (("\n" + info.description) if info.description else "")
+        tooltip = info.error if info.error else (info.description or info.title)
         card = StartCard(
             info.card_key,
             info.title,
             info.description,
             self._chrome,
             self._grids[GROUP_YOURS],
-            thumbnail=pixmap,
             tag="This project" if info.scope == SCOPE_PROJECT else "",
             tooltip=tooltip,
             has_menu=True,
+            widgets=_widget_classes(info.form_path),
         )
         card.activated.connect(self._on_card)
         card.move_requested.connect(self.move_card)
@@ -489,7 +483,7 @@ class NewFormPanel(QWidget):
         scroll.setWidget(host)
         self._host = host
         host_layout = QHBoxLayout(host)
-        host_layout.setContentsMargins(24, 32, 24, 24)
+        host_layout.setContentsMargins(S6, S8, S6, S6)
         host_layout.addStretch(1)
         self._column = QWidget(host)
         self._column.setMaximumWidth(_COLUMN_MAX)
@@ -498,7 +492,7 @@ class NewFormPanel(QWidget):
         host_layout.addStretch(1)
         column = QVBoxLayout(self._column)
         column.setContentsMargins(0, 0, 0, 0)
-        column.setSpacing(12)
+        column.setSpacing(0)
 
         hero = QLabel("New form", self._column)
         hero.setObjectName("formBuilder.newForm.hero")
@@ -506,43 +500,52 @@ class NewFormPanel(QWidget):
         hero_font.setPixelSize(22)
         hero_font.setWeight(QFont.DemiBold)
         hero.setFont(hero_font)
+        self._hero = hero
         column.addWidget(hero)
+        column.addSpacing(S4)
 
         name_row = QHBoxLayout()
+        name_row.setSpacing(S2)
         column.addLayout(name_row)
         self._name = QLineEdit(self._column)
         self._name.setObjectName("formBuilder.newForm.name")
+        self._name.setFixedHeight(CONTROL)
         self._name.textChanged.connect(self._on_name_changed)
         name_label = QLabel("Name", self._column)
+        name_label.setObjectName("formBuilder.newForm.nameLabel")
         name_label.setBuddy(self._name)
+        name_label.setFixedHeight(CONTROL)
+        self._name_label = name_label
         name_row.addWidget(name_label)
         name_row.addWidget(self._name, 1)
-        name_row.addWidget(QLabel("in", self._column))
+        in_label = QLabel("in", self._column)
+        in_label.setObjectName("formBuilder.newForm.inLabel")
+        in_label.setFixedHeight(CONTROL)
+        self._in_label = in_label
+        name_row.addWidget(in_label)
         self._folder = QComboBox(self._column)
         self._folder.setObjectName("formBuilder.newForm.folder")
+        self._folder.setFixedHeight(CONTROL)
         self._folder.currentIndexChanged.connect(self._on_folder_changed)
         name_row.addWidget(self._folder, 1)
+        column.addSpacing(S2)
 
         self._error = QLabel("", self._column)
         self._error.setObjectName("formBuilder.newForm.nameError")
         self._error.setWordWrap(True)
         column.addWidget(self._error)
 
-        self._caption = QLabel("", self._column)
-        self._caption.setObjectName("formBuilder.newForm.caption")
-        self._caption.setWordWrap(True)
-        column.addWidget(self._caption)
-
         self._grids: Dict[str, QWidget] = {}
-        self._group_labels: List[QLabel] = []
-        self._group_label_for: Dict[str, QLabel] = {}
+        self._group_labels: List[SectionHeader] = []
+        self._group_label_for: Dict[str, SectionHeader] = {}
+        self._group_wrap: Dict[str, QWidget] = {}
         catalog = _catalog()
         for group, title in _GROUP_TITLES:
-            label = QLabel(title, self._column)
-            label.setObjectName("formBuilder.newForm.group." + group)
+            wrap, label = _group_header(self._column, title, "formBuilder.newForm.group." + group)
             self._group_labels.append(label)
             self._group_label_for[group] = label
-            column.addWidget(label)
+            self._group_wrap[group] = wrap
+            column.addWidget(wrap)
             grid_host = QWidget(self._column)
             grid_host.setObjectName("formBuilder.newForm.grid." + group)
             QVBoxLayout(grid_host)  # replaced on reflow by a fresh layout
@@ -556,10 +559,16 @@ class NewFormPanel(QWidget):
         self._recent_box = QWidget(self._column)
         self._recent_box.setObjectName("formBuilder.newForm.recentBox")
         box_layout = QVBoxLayout(self._recent_box)
-        box_layout.setContentsMargins(0, 0, 0, 0)
-        box_layout.setSpacing(12)
-        recent_title = QLabel("Recent forms", self._recent_box)
-        recent_title.setObjectName("formBuilder.newForm.recentTitle")
+        box_layout.setContentsMargins(0, S6, 0, 0)
+        box_layout.setSpacing(S2)
+        recent_title = SectionHeader(
+            self._recent_box,
+            "Recent forms",
+            object_name="formBuilder.newForm.recentTitle",
+            accessible_name="Recent forms",
+        )
+        recent_title.set_pad(0)
+        recent_title.setFocusPolicy(Qt.NoFocus)
         self._group_labels.append(recent_title)
         box_layout.addWidget(recent_title)
         self._recent_host = QWidget(self._recent_box)
@@ -627,7 +636,10 @@ class NewFormPanel(QWidget):
             host = self._grids[group]
             has_cards = any(self._group_of(card.key) == group for card in self._cards)
             host.setVisible(has_cards)
-            self._group_label_for[group].setVisible(has_cards)
+            header = self._group_label_for[group]
+            header.setVisible(has_cards)
+            header.title_label().setVisible(has_cards)
+            self._group_wrap[group].setVisible(has_cards)
             layout = host.layout()
             if not isinstance(layout, QVBoxLayout):
                 continue
@@ -697,7 +709,7 @@ class NewFormPanel(QWidget):
         reason = self.name_reason()
         self._error.setText(reason or "")
         self._error.setVisible(reason is not None)
-        self._caption.setText(creation_caption(self.folder_display(), self.stem()))
+        self._name.setToolTip(creation_caption(self.folder_display(), self.stem()))
         blocked = reason is not None
         for card in self._cards:
             spec = self._spec(card.key)
@@ -780,6 +792,28 @@ class _RecentRow(QWidget):
         painter.setBrush(Qt.NoBrush)
         painter.drawRect(width // 2, width // 2, self.width() - width, self.height() - width)
         painter.end()
+
+
+def _group_header(parent: QWidget, title: str, object_name: str) -> Tuple[QWidget, SectionHeader]:
+    wrap = QWidget(parent)
+    layout = QVBoxLayout(wrap)
+    layout.setContentsMargins(0, S6, 0, S2)
+    layout.setSpacing(0)
+    header = SectionHeader(wrap, title, object_name=object_name, accessible_name=title)
+    header.set_pad(0)
+    header.setFocusPolicy(Qt.NoFocus)
+    layout.addWidget(header)
+    return wrap, header
+
+
+def _widget_classes(path: str) -> Tuple[str, ...]:
+    """Widget classes in a saved form, for the card wireframe."""
+    try:
+        with open(path, "r", encoding="utf-8", errors="replace") as handle:
+            text = handle.read(12000)
+    except OSError:
+        return ()
+    return tuple(_WIDGET_CLASS.findall(text)[:12])
 
 
 def _display_for(project_root: str, folder: str) -> str:

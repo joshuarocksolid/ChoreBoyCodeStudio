@@ -10,8 +10,10 @@ from __future__ import annotations
 import math
 from typing import Callable, Optional, Tuple
 
-from app.qt.QtCore import QPoint, Qt
+from app.qt.QtCore import QPoint, QRectF, Qt
+from app.qt.QtGui import QColor, QFont, QPainter, QPen
 from app.qt.QtWidgets import QGraphicsItem, QGraphicsProxyWidget, QGraphicsView, QLabel, QWidget
+from app.qt.qt_compat import enum_value
 from app.qt.qt_compat import wrapper_is_valid
 
 from app.features.form_builder.engine.commands.live import PropKey
@@ -48,8 +50,11 @@ from app.features.form_builder.qtside.canvas.core.space import (
     zoom_factor,
 )
 from app.features.form_builder.qtside.canvas.core.words import page_chip_label
+from app.features.form_builder.qtside.icons.glyphs import paint_glyph
+from app.features.form_builder.qtside.outline.glyphs import glyph_for
 from app.features.form_builder.qtside.realize.api import Realizer
-from app.features.form_builder.qtside.theme.overlay import BackdropPalette
+from app.features.form_builder.qtside.theme.metrics import CHIP, R_CONTROL, TYPE_FINE
+from app.features.form_builder.qtside.theme.overlay import BackdropPalette, overlay_palette
 
 # Handle hit, chip height, and the gap, in screen pixels. The page scale lives on the proxy.
 REVEAL_PAD = 32
@@ -116,7 +121,7 @@ class Stage:
         if scene is None:
             raise RuntimeError("canvas stage requires a scene")
         scene.addItem(self._proxy)
-        self._name = _label(view, "formBuilder.name", "Form name")
+        self._name = PageNameChip(view)
         self._size = _label(view, "formBuilder.sizeReadout", "Page size")
         # The view follows the page's home scroll until the user or a reveal
         # scrolls it. Programmatic setValue does not emit actionTriggered.
@@ -289,6 +294,7 @@ class Stage:
 
     def apply_palette(self, backdrop: BackdropPalette) -> None:
         self._backdrop = backdrop
+        self._name.set_backdrop(backdrop.fill)
 
     def position_labels(self) -> None:
         if self._proxy.widget() is None:
@@ -418,6 +424,11 @@ class Stage:
         if self._name.text() != label:
             self._name.setText(label)
             self._name.setAccessibleName(label)
+        layout = self._session.document.root.layout
+        glyph = "layout_v"
+        if layout is not None:
+            glyph = glyph_for(layout.class_name, layout.object_name)
+        self._name.set_glyph(glyph)
         size = "%d × %d" % (root.width(), root.height())
         if self._size.text() != size:
             self._size.setText(size)
@@ -535,6 +546,9 @@ def _label(parent: QGraphicsView, name: str, accessible: str) -> QLabel:
 
 
 def _fit_label(label: QLabel) -> None:
+    if isinstance(label, PageNameChip):
+        label.fit()
+        return
     text = label.text()
     if label.property("cbcsFit") == text:
         return
@@ -542,3 +556,76 @@ def _fit_label(label: QLabel) -> None:
     width = label.fontMetrics().horizontalAdvance(text) + 16
     height = max(22, label.fontMetrics().height() + 8)
     label.setFixedSize(max(width, 8), height)
+
+
+class PageNameChip(QLabel):
+    """Page name above the page. Paints itself so the view sheet cannot restyle it."""
+
+    def __init__(self, parent: QGraphicsView) -> None:
+        super().__init__(parent)
+        self.setObjectName("formBuilder.name")
+        self.setAccessibleName("Form name")
+        self.setFocusPolicy(_no_focus())
+        self.setAttribute(_transparent(), True)
+        self.setAutoFillBackground(False)
+        self._glyph = "layout_v"
+        self._backdrop = ""
+
+    def set_glyph(self, name: str) -> None:
+        if name and name != self._glyph:
+            self._glyph = name
+            self.fit()
+
+    def set_backdrop(self, fill: str) -> None:
+        self._backdrop = fill
+        self.update()
+
+    def fit(self) -> None:
+        text = self.text()
+        key = (text, self._glyph)
+        if self.property("cbcsFit") == key:
+            return
+        self.setProperty("cbcsFit", key)
+        font = _chip_font()
+        self.setFont(font)
+        from app.qt.QtGui import QFontMetrics
+
+        metrics = QFontMetrics(font)
+        advance = getattr(metrics, "horizontalAdvance", None)
+        text_px = int(advance(text) if callable(advance) else metrics.width(text))
+        self.setFixedSize(max(6 + 12 + 4 + text_px + 6, CHIP), CHIP)
+
+    def paintEvent(self, event: object) -> None:  # noqa: N802
+        del event
+        view = self.parentWidget()
+        viewport = view.viewport() if view is not None and hasattr(view, "viewport") else None
+        high = bool(viewport.property("formBuilderHighContrast")) if viewport is not None else False
+        palette = overlay_palette(high)
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        painter.setBrush(QColor(palette.layout))
+        backdrop = QColor(self._backdrop[:7])
+        dark = backdrop.red() == 0 and backdrop.green() == 0 and backdrop.blue() == 0
+        if high and dark:
+            painter.setPen(QPen(QColor(255, 255, 255), 1))
+        else:
+            painter.setPen(QPen(Qt.PenStyle.NoPen))
+        painter.drawRoundedRect(QRectF(self.rect()).adjusted(0.5, 0.5, -0.5, -0.5), R_CONTROL, R_CONTROL)
+        ratio = painter.device().devicePixelRatioF() if painter.device() is not None else 1.0
+        try:
+            pixmap = paint_glyph(self._glyph, palette.chip_text, 12, float(ratio))
+        except KeyError:
+            pixmap = paint_glyph("layout_v", palette.chip_text, 12, float(ratio))
+        painter.drawPixmap(6, max(0, (self.height() - 12) // 2), pixmap)
+        painter.setPen(QColor(palette.chip_text))
+        painter.setFont(_chip_font())
+        align = enum_value(getattr(Qt, "AlignVCenter")) | enum_value(getattr(Qt, "AlignLeft"))
+        painter.drawText(QRectF(6 + 12 + 4, 0, max(self.width() - 28, 0), self.height()), align, self.text())
+        painter.end()
+
+
+def _chip_font() -> QFont:
+    font = QFont()
+    font.setPixelSize(TYPE_FINE)
+    font.setWeight(getattr(getattr(QFont, "Weight", QFont), "DemiBold"))
+    return font

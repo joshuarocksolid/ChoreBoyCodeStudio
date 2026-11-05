@@ -339,7 +339,7 @@ class _GapsRow(SettingRow):
         spin.setObjectName("formBuilder.formSetting.layoutdefault.%s" % name.lower())
         spin.setAccessibleName("Form setting: Default gaps, %s" % name.lower())
         spin.setRange(-1, 999)
-        spin.setSpecialValueText("—")
+        spin.setSpecialValueText("")
         spin.setSuffix(" px")
         spin.editingFinished.connect(self._numbers_done)
         return spin  # type: ignore[return-value]

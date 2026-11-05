@@ -10,14 +10,14 @@ from app.qt.QtGui import QKeyEvent
 from app.qt.QtWidgets import QFrame, QLabel, QLineEdit, QListWidget, QListWidgetItem, QVBoxLayout, QWidget
 from app.qt.qt_compat import enum_value
 
-from app.features.form_builder.qtside.theme.chrome import FormChrome, popover_style
+from app.features.form_builder.qtside.theme.chrome import FormChrome, apply_page_shadow, popover_style
 
 #: One row of the picker: object name, visible text (may be empty), friendly class words.
 WidgetEntry = Tuple[str, str, str]
 
-_WIDTH = 360
-_ROWS = 9
-_ROW = 30
+_WIDTH = 320
+_ROWS = 8
+_ROW = 24
 _ENTER = frozenset({enum_value(Qt.Key.Key_Return), enum_value(Qt.Key.Key_Enter)})
 _ESCAPE = enum_value(Qt.Key.Key_Escape)
 _STEPS = {enum_value(Qt.Key.Key_Up): -1, enum_value(Qt.Key.Key_Down): 1}
@@ -73,11 +73,8 @@ class GoToWidgetPicker(QFrame):
         self._on_pick = on_pick
         self._chrome = chrome
         column = QVBoxLayout(self)
-        column.setContentsMargins(10, 8, 10, 10)
-        column.setSpacing(6)
-        header = QLabel("Go to widget…", self)
-        header.setObjectName("formBuilder.goToWidgetHeader")
-        column.addWidget(header)
+        column.setContentsMargins(8, 8, 8, 8)
+        column.setSpacing(8)
         self.search = QLineEdit(self)
         self.search.setObjectName("formBuilder.goToWidgetSearch")
         self.search.setAccessibleName("Widget name or kind")
@@ -98,6 +95,8 @@ class GoToWidgetPicker(QFrame):
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self.setAutoFillBackground(True)
         self.setStyleSheet(self._style())
+        apply_page_shadow(self, is_dark=chrome.is_dark, is_high_contrast=chrome.is_high_contrast)
+        self.rows.setMaximumHeight(_ROW * _ROWS)
         self.setFixedWidth(_WIDTH)
         self._refill()
 

@@ -6,11 +6,13 @@ from typing import Optional, Protocol, Sequence
 
 from app.qt.QtCore import QEvent, QMimeData, QPoint, Qt
 from app.qt.QtGui import QDrag, QKeyEvent
-from app.qt.QtWidgets import QLabel, QListWidget, QListWidgetItem, QVBoxLayout, QWidget
+from app.qt.QtWidgets import QListWidget, QListWidgetItem, QVBoxLayout, QWidget
 
 from app.features.form_builder.engine.ids import NodeId
 from app.features.form_builder.qtside.canvas.core.palette import MIME_DESIGNER_FRAGMENT, MIME_FRAGMENT, MIME_NODE
 from app.features.form_builder.qtside.theme.chrome import FormChrome
+from app.features.form_builder.qtside.theme.items import polish_item_view
+from app.features.form_builder.qtside.theme.section_header import SectionHeader
 
 _ROW_ROLE = Qt.ItemDataRole.UserRole
 
@@ -36,8 +38,7 @@ class PieceBox(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 4, 0, 0)
         layout.setSpacing(0)
-        self.title = QLabel("Saved pieces", self)
-        self.title.setObjectName("formBuilder.sectionTitle")
+        self.title = SectionHeader(self, "Saved pieces", accessible_name="Saved pieces")
         layout.addWidget(self.title)
         self.list = PieceList(self)
         self.list.setObjectName("formBuilder.savedPieces")
@@ -60,20 +61,8 @@ class PieceBox(QWidget):
         self._fit()
 
     def apply_chrome(self, chrome: FormChrome) -> None:
-        self.list.setStyleSheet(
-            "QListWidget { background: %s; color: %s; border: 1px solid %s; }"
-            "QListWidget::item:selected { background: %s; color: %s; }"
-            "QListWidget:focus { border: %dpx solid %s; }"
-            % (
-                chrome.input,
-                chrome.text,
-                chrome.border,
-                chrome.selected,
-                chrome.text,
-                chrome.focus_width,
-                chrome.accent,
-            )
-        )
+        self.title.apply_chrome(chrome)
+        polish_item_view(self.list, chrome)
 
     def showEvent(self, event: QEvent) -> None:  # type: ignore[override]
         super().showEvent(event)

@@ -41,6 +41,8 @@ from app.features.form_builder.qtside.inspector.api import (
     Registrar,
     set_style_flag,
 )
+from app.features.form_builder.qtside.inspector.editors._segments import ChoiceSegments
+from app.features.form_builder.qtside.theme.metrics import S2
 from app.features.form_builder.qtside.sizing_live import (
     class_default_policies,
     class_phrase,
@@ -400,19 +402,21 @@ class _AxisRow:
         self._outer = outer
         self._fitting = False
         line.addWidget(self._label)
+        self._segments = ChoiceSegments(self.widget)
+        self._segments.set_items(
+            list(WORDS),
+            tooltips=[_TIPS[word] for word in WORDS],
+            names=["%s: %s" % (title, word) for word in WORDS],
+        )
+        self._segments.name_buttons(
+            ["formBuilder.size.%s.%s" % (title.lower(), word) for word in WORDS]
+        )
         self._buttons: Dict[str, QToolButton] = {}
-        for word in WORDS:
-            button = QToolButton(self.widget)
-            button.setObjectName("formBuilder.size.%s.%s" % (title.lower(), word))
-            button.setText(word)
-            button.setCheckable(True)
-            button.setProperty("fbSegment", "true")
-            button.setToolTip(_TIPS[word])
-            button.setAccessibleName("%s: %s" % (title, word))
+        for word, button in zip(WORDS, self._segments.buttons()):
             button.setFocusPolicy(_strong())
             button.clicked.connect(guard(button, lambda chosen=word: on_word(axis, chosen)))
             self._buttons[word] = button
-            line.addWidget(button)
+        line.addWidget(self._segments)
         self._pixels = QSpinBox(self.widget)
         self._pixels.setObjectName("formBuilder.size.%s.pixels" % title.lower())
         self._pixels.setRange(1, QWIDGET_SIZE_MAX - 1)
@@ -427,7 +431,7 @@ class _AxisRow:
         line.addStretch(1)
         # Fixed pixels sit under the segments; one line cannot hold both at 236 px.
         pixel_line = QHBoxLayout()
-        pixel_line.setContentsMargins(8, 0, 0, 0)
+        pixel_line.setContentsMargins(S2, 0, 0, 0)
         outer.addLayout(pixel_line)
         pixel_line.addWidget(self._pixels)
         pixel_line.addStretch(1)
@@ -439,10 +443,7 @@ class _AxisRow:
         self.widget.installEventFilter(self._fit_watch)
 
     def _controls_width(self) -> int:
-        width = self._bar.sizeHint().width() + 6
-        for button in self._buttons.values():
-            width += button.sizeHint().width() + 6
-        return width
+        return self._bar.sizeHint().width() + S2 + self._segments.sizeHint().width() + S2
 
     def paint(self, projections: Sequence[AxisProjection]) -> None:
         if not projections:
@@ -742,7 +743,7 @@ def _component(node: WidgetNode, name: str, horizontal: bool, empty: int) -> Opt
 def _blank_edit(parent: QWidget, accessible: str, object_name: str) -> QLineEdit:
     edit = QLineEdit(parent)
     edit.setObjectName(object_name)
-    edit.setPlaceholderText("—")
+    edit.setPlaceholderText("")
     edit.setValidator(QIntValidator(0, QWIDGET_SIZE_MAX, edit))
     edit.setAccessibleName(accessible)
     edit.setFocusPolicy(_strong())
@@ -815,38 +816,27 @@ def _fit_phrase(
     title: str,
     controls: int,
 ) -> None:
-    """Put the phrase on its own line when it does not fit beside the controls.
-
-    A single word is never given a width smaller than itself, so the row
-    cannot cut "Height" or "Width" in half.
-    """
+    """The phrase stays beside the control. A narrow row elides it."""
     width = widget.width()
     if width <= 0 or bool(getattr(row, "_fitting", False)):
         return
     setattr(row, "_fitting", True)
     try:
+        label.setWordWrap(False)
+        label.setToolTip(title)
+        label.setMinimumWidth(0)
+        label.setMaximumWidth(_UNBOUNDED)
+        room = max(0, width - controls - S2)
         metrics = label.fontMetrics()
-        words = title.split() or [title]
-        longest = max(metrics.horizontalAdvance(word) for word in words) + 2
-        text_w = metrics.horizontalAdvance(title) + 2
-        stack = text_w + controls > width
-        label.setText(title)
-        if stack:
-            label.setWordWrap(True)
-            label.setMinimumWidth(min(longest, width))
-            label.setMaximumWidth(_UNBOUNDED)
-            if line.indexOf(label) >= 0:
-                line.removeWidget(label)
-            if outer.indexOf(label) < 0:
-                outer.insertWidget(0, label)
+        if room > 0 and metrics.horizontalAdvance(title) > room:
+            mode = getattr(getattr(Qt, "TextElideMode", Qt), "ElideRight")
+            label.setText(metrics.elidedText(title, mode, room))
         else:
-            label.setWordWrap(False)
-            label.setMaximumWidth(_UNBOUNDED)
-            label.setMinimumWidth(text_w)
-            if outer.indexOf(label) >= 0:
-                outer.removeWidget(label)
-            if line.indexOf(label) < 0:
-                line.insertWidget(1, label)
+            label.setText(title)
+        if outer.indexOf(label) >= 0:
+            outer.removeWidget(label)
+        if line.indexOf(label) < 0:
+            line.insertWidget(1, label)
     finally:
         setattr(row, "_fitting", False)
 

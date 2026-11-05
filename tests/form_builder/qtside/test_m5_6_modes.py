@@ -152,7 +152,7 @@ def test_the_banner_names_the_overlay_and_the_page_stays_put(tmp_path: Path, qap
         assert canvas.viewport().y() == before
         after = canvas._stage.view_map().page_origin
         assert abs(after.x - origin.x) <= 1 and abs(after.y - origin.y) <= 1
-        assert [b.text() for b in banner.findChildren(QPushButton)] == ["Reset to reading order", "Done · Esc"]
+        assert [b.text() for b in banner.findChildren(QPushButton)] == ["Reset to reading order", "Esc"]
         modes.assign("phoneEdit")
         assert kb.session.document.tabstops() is not None
         reset = banner.findChild(QPushButton, "formBuilder.overlayBannerExtra")

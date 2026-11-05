@@ -15,7 +15,6 @@ from app.features.form_builder.engine.ui4.values import (
 )
 from app.features.form_builder.qtside.inspector.api import (
     MIXED_TEXT,
-    NOT_SET_TEXT,
     EditorHost,
     EditorKey,
     Mixed,
@@ -125,7 +124,7 @@ class NumberEditor:
             return
         number = _number_of(value)
         if number is None:
-            self._box.show_blank(NOT_SET_TEXT, can_reset=False)
+            self._box.show_blank("", can_reset=False)
             return
         self._box.show_number(number, can_reset=self._can_reset)
 

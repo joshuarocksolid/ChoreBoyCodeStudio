@@ -37,7 +37,7 @@ def test_ten_event_pickers_are_gone_after_they_close(qapp: QApplication) -> None
     assert [ref() for ref in refs if ref() is not None] == []
 
 
-def test_the_banner_grows_to_fit_its_sentence(qapp: QApplication) -> None:
+def test_the_banner_stays_one_line_and_keeps_the_sentence(qapp: QApplication) -> None:
     parent = QWidget()
     parent.resize(236, 400)
     banner = ModeBanner(parent)
@@ -48,11 +48,7 @@ def test_the_banner_grows_to_fit_its_sentence(qapp: QApplication) -> None:
     banner.resize(236, height)
     label = banner.findChild(QLabel, "formBuilder.overlayBannerText")
     assert label is not None
-    assert height >= label.height()
+    assert height == 32
     assert SENTENCE == banner.sentence()
-    font = banner.font()
-    font.setPointSize(max(font.pointSize(), 8) * 2)
-    banner.setFont(font)
-    label.setFont(font)
-    tall = banner.fitted_height(236)
-    assert tall >= height
+    assert label.toolTip() == SENTENCE
+    assert label.text() != SENTENCE

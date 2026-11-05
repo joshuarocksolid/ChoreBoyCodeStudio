@@ -18,6 +18,8 @@ _CACHE: Dict[Tuple[str, str, int, float], QPixmap] = {}
 def paint_glyph(name: str, color: str, logical: int, dpr: float) -> QPixmap:
     """Paint ``name`` in one colour at ``logical`` px and device pixel ratio ``dpr``."""
     ratio = round(float(dpr), 2)
+    if ratio <= 0:
+        ratio = 1.0
     strokes = _GLYPHS[name]
     key = (name, color, int(logical), ratio)
     cached = _CACHE.get(key)
@@ -164,6 +166,10 @@ _GLYPHS: Dict[str, Tuple[Stroke, ...]] = {
         ((4, 7.5), (6, 9), (10, 9), (12, 7.5)),
     ),
     "search": (_ring(7, 7, 3.2), ((9.5, 9.5), (13, 13))),
+    "copy": (
+        ((6, 3), (13, 3), (13, 10), (6, 10), (6, 3)),
+        ((3, 6), (10, 6), (10, 13), (3, 13), (3, 6)),
+    ),
     "grip": (
         ((5, 4),),
         ((11, 4),),

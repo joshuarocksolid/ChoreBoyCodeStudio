@@ -35,6 +35,7 @@ from app.features.form_builder.qtside.theme.chrome import (
     disabled_field_declaration,
     popover_style,
 )
+from app.features.form_builder.qtside.theme.metrics import R_CONTROL, TYPE_BODY, TYPE_FINE
 from app.qt.QtCore import QEvent, QObject, QTimer, Qt
 from app.qt.QtGui import QColor, QKeyEvent, QKeySequence, QPalette, QShowEvent
 from app.qt.QtWidgets import (
@@ -129,10 +130,13 @@ class InspectorPane(QWidget):
         self._pending_changes: list = []
         self._reset_scroll = False
         self.header = Header(self._services, self)
+        from app.features.form_builder.qtside.theme.tabs import configure_tab_widget
+
         self.tabs = QTabWidget(self)
         self.tabs.setObjectName("formBuilder.inspectorTabs")
         self.tabs.setAccessibleName("Inspector")
         self.tabs.tabBar().setAccessibleName("Inspector")
+        configure_tab_widget(self.tabs)
         self.properties = PropertiesPage(self._services, self._schedule, self.tabs)
         self.behavior = BehaviorPage(self._services, realizer, self.tabs)
         self.behavior.set_refresh(self._refresh_now)
@@ -210,6 +214,7 @@ class InspectorPane(QWidget):
         header_palette.setColor(QPalette.ColorRole.Text, header_ink)
         self.header.setPalette(header_palette)
         self.header.setAutoFillBackground(True)
+        self.header.apply_chrome(chrome)
         self.properties.apply_colors(
             chrome.panel,
             chrome.text,
@@ -641,20 +646,13 @@ class _TabOrderMemo:
         return self._names
 
 def _stylesheet(chrome: FormChrome) -> str:
-    width = chrome.focus_width if chrome.focus_width > 0 else 1
     return (
         "QWidget#formBuilder\\.inspector { background: %s; color: %s; }"
-        "QLineEdit, QSpinBox, QDoubleSpinBox, QComboBox, QPlainTextEdit, QKeySequenceEdit,"
-        " QListWidget, QFontComboBox {"
-        " background: %s; color: %s; border: 1px solid %s; }"
-        "QLineEdit:focus, QSpinBox:focus, QDoubleSpinBox:focus, QComboBox:focus,"
-        " QPlainTextEdit:focus, QKeySequenceEdit:focus, QListWidget:focus, QFontComboBox:focus {"
-        " border: %dpx solid %s; }"
         "QLabel { color: %s; background: transparent; }"
-        "QCheckBox { color: %s; background: transparent; }"
-        "QLabel#formBuilder\\.inspectorClass { color: %s; }"
+        "QLabel#formBuilder\\.inspectorClass { color: %s; font-size: %dpx; }"
         "QLabel#formBuilder\\.rowQtName,"
         " QWidget#formBuilder\\.inspectorGlyph { color: %s; }"
+        "QLabel#formBuilder\\.rowLabel { font-size: %dpx; }"
         "QSpinBox[fbState=\"unset\"], QDoubleSpinBox[fbState=\"unset\"], QComboBox[fbState=\"unset\"],"
         " QLineEdit[fbState=\"unset\"], QFontComboBox[fbState=\"unset\"], QCheckBox[fbState=\"unset\"],"
         " QPushButton#formBuilder\\.summary[fbState=\"unset\"]"
@@ -672,7 +670,7 @@ def _stylesheet(chrome: FormChrome) -> str:
         "QLabel[fbChanged=\"true\"], QLineEdit#formBuilder\\.inspectorName { font-weight: 600; }"
         # Segments are drawn by the sheet in every state: a native button is
         # bright on a dark panel, and the shell's checked text is unreadable.
-        "QToolButton[fbSegment=\"true\"] { background: %s; color: %s; border: 1px solid %s; }"
+        "QToolButton[fbSegment=\"true\"] { background: %s; color: %s; border: 1px solid %s; border-radius: %dpx; }"
         "QToolButton[fbSegment=\"true\"][fbOutline=\"true\"] {"
         " background: %s; color: %s; border: 1px dashed %s; }"
         "QToolButton[fbSegment=\"true\"]:disabled { background: %s; color: %s; border: none; }"
@@ -682,15 +680,11 @@ def _stylesheet(chrome: FormChrome) -> str:
         % (
             chrome.panel,
             chrome.text,
-            chrome.input,
-            chrome.text,
-            chrome.border,
-            width,
-            chrome.accent,
-            chrome.text,
-            chrome.text,
             chrome.text,
             chrome.muted,
+            TYPE_BODY,
+            chrome.muted,
+            TYPE_BODY,
             chrome.faint,
             chrome.faint,
             chrome.faint,
@@ -699,6 +693,7 @@ def _stylesheet(chrome: FormChrome) -> str:
             chrome.input,
             chrome.text,
             chrome.border,
+            R_CONTROL,
             chrome.input,
             chrome.text,
             chrome.accent,
@@ -714,20 +709,31 @@ def _stylesheet(chrome: FormChrome) -> str:
         )
     ) + (
         "QWidget#formBuilder\\.inspectorHeader { background: %s; color: %s; }"
-        "QLabel#formBuilder\\.inspectorClass, QLabel#formBuilder\\.inspectorCrumbs"
-        " { color: %s; background: transparent; }"
-        % (chrome.panel, chrome.text, chrome.text)
+        "QLabel#formBuilder\\.inspectorCrumbs { color: %s; background: transparent; font-size: %dpx; }"
+        % (chrome.panel, chrome.text, chrome.muted, TYPE_FINE)
     ) + control_qss(chrome)
 
 
 def _disabled_fields(chrome: FormChrome) -> str:
-    """High contrast disabled fields dash the border. Colour stays the muted token."""
+    """High contrast disabled fields dash the border. Colour stays the muted token.
+
+    Scoped under the inspector so the rule is not a bare control selector.
+    """
     if not chrome.is_high_contrast:
         return ""
-    kinds = (
-        "QLineEdit:disabled, QSpinBox:disabled, QDoubleSpinBox:disabled, QComboBox:disabled,"
-        " QPlainTextEdit:disabled, QKeySequenceEdit:disabled, QListWidget:disabled,"
-        " QFontComboBox:disabled"
+    root = "QWidget#formBuilder\\.inspector"
+    kinds = ", ".join(
+        "%s %s:disabled" % (root, kind)
+        for kind in (
+            "QLineEdit",
+            "QSpinBox",
+            "QDoubleSpinBox",
+            "QComboBox",
+            "QPlainTextEdit",
+            "QKeySequenceEdit",
+            "QListWidget",
+            "QFontComboBox",
+        )
     )
     return "%s { %s }" % (kinds, disabled_field_declaration(chrome))
 

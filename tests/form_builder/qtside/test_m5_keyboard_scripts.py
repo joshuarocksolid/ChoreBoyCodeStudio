@@ -1169,7 +1169,7 @@ def test_k22_templates(shop: Shop) -> None:
         for w in panel.findChildren(QLabel)
         if w.objectName().startswith("formBuilder.newForm.group.") and w.isVisible()
     ]
-    kb.check(groups[0].text() == "Your templates", "Your templates is the first group")
+    kb.check(groups[0].text() == "YOUR TEMPLATES", "Your templates is the first group")
     kb.check(kb.focus_name() == "formBuilder.newForm.name", "the name row has focus")
     kb.type("back_office")
     card = panel.card("template:user:shop_window")

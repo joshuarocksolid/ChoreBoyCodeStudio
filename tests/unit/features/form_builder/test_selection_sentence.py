@@ -114,7 +114,7 @@ def test_line_edit_in_a_form_layout_names_the_row() -> None:
     document = read_ui(_FORM, allocator=IdAllocator()).document
     email = document.by_name("email")[0]
     sentence = selection_sentence(document, email, 1)
-    assert sentence == "email · Line edit · row 2 of the form layout"
+    assert sentence == "email · Line edit · row 2"
     assert "NodeId" not in sentence
 
 
@@ -125,17 +125,17 @@ def test_several_widgets_read_as_a_count() -> None:
 
 def test_nothing_selected_names_the_page() -> None:
     document = read_ui(_FORM, allocator=IdAllocator()).document
-    assert selection_sentence(document, None, 0) == "Invoice · the form"
+    assert selection_sentence(document, None, 0) == "Invoice"
 
 
 def test_the_root_widget_names_the_page() -> None:
     document = read_ui(_FORM, allocator=IdAllocator()).document
-    assert selection_sentence(document, document.root.id, 1) == "Invoice · the form"
+    assert selection_sentence(document, document.root.id, 1) == "Invoice"
 
 
 def test_the_form_sentence_includes_the_page_size() -> None:
     document = read_ui(_SIZED, allocator=IdAllocator()).document
-    assert selection_sentence(document, None, 0) == "Invoice · the form · 640 × 480"
+    assert selection_sentence(document, None, 0) == "Invoice · 640 × 480"
 
 
 def test_a_group_box_names_the_widgets_in_its_layout() -> None:

@@ -13,6 +13,7 @@ from app.qt.qt_compat import enum_value
 from app.core.constants import UI_EDITOR_FONT_FAMILY_DEFAULT
 from app.features.form_builder.qtside.icons.glyphs import paint_glyph
 from app.features.form_builder.qtside.theme.chrome import FALLBACK_TEXT, on_accent_for
+from app.features.form_builder.qtside.theme.metrics import ROW, S2, S3, TYPE_BODY
 
 _PLAIN = getattr(getattr(Qt, "TextFormat", Qt), "PlainText")
 _FOCUS = getattr(getattr(Qt, "FocusPolicy", Qt), "StrongFocus")
@@ -56,6 +57,8 @@ class RowFace:
     warning: bool
     tooltip: str
     accessible: str
+    #: Event steps use 16. Every other row uses 12. Zero means 12.
+    indent: int = 0
 
 
 def break_opportunities(text: str) -> str:
@@ -184,6 +187,47 @@ class _ElidedLabel(QLabel):
             self.setToolTip(tip)
 
 
+class _RuleLine(QLabel):
+    """The rule on the name's row. The stored text stays whole. The paint elides it."""
+
+    def __init__(self, text: str, parent: QWidget) -> None:
+        super().__init__(parent)
+        self._full = break_opportunities(text)
+        self._color = QColor(FALLBACK_TEXT)
+        self.setMinimumWidth(0)
+        self.setFocusPolicy(_NO_FOCUS)
+        self.setAttribute(_TRANSPARENT, True)
+        names = getattr(QSizePolicy, "Policy", QSizePolicy)
+        policy = QSizePolicy(getattr(names, "Ignored"), getattr(names, "Preferred"))  # type: ignore[arg-type]
+        policy.setHeightForWidth(True)
+        self.setSizePolicy(policy)
+
+    def text(self) -> str:  # type: ignore[override]
+        return self._full
+
+    def set_color(self, color: str) -> None:
+        self._color = QColor(color)
+        self.update()
+
+    def hasHeightForWidth(self) -> bool:  # noqa: N802
+        return True
+
+    def heightForWidth(self, width: int) -> int:  # noqa: N802
+        del width
+        return self.fontMetrics().height() + 2
+
+    def paintEvent(self, event: object) -> None:  # noqa: N802
+        del event
+        painter = QPainter(self)
+        painter.setPen(self._color)
+        painter.setFont(self.font())
+        mode = getattr(getattr(Qt, "TextElideMode", Qt), "ElideRight")
+        shown = self.fontMetrics().elidedText(self._full, mode, max(self.width(), 1))
+        align = enum_value(getattr(Qt, "AlignLeft")) | enum_value(getattr(Qt, "AlignVCenter"))
+        painter.drawText(self.rect(), align, shown)
+        painter.end()
+
+
 class LogicRow(QWidget):
     """The whole row takes hover, focus, click and Enter."""
 
@@ -213,13 +257,11 @@ class LogicRow(QWidget):
         self.setAccessibleName(face.accessible)
         self.setToolTip(face.tooltip)
         self.setMouseTracking(True)
-        column = QVBoxLayout(self)
-        column.setContentsMargins(4, 4, 4, 4)
-        column.setSpacing(0)
-        line = QHBoxLayout()
-        line.setContentsMargins(0, 0, 0, 0)
-        line.setSpacing(6)
-        column.addLayout(line)
+        self.setFixedHeight(ROW)
+        left = face.indent if face.indent else S3
+        line = QHBoxLayout(self)
+        line.setContentsMargins(left, 0, 4, 0)
+        line.setSpacing(S2)
         self._glyph = QLabel(self)
         self._glyph.setFixedSize(16, 16)
         self._glyph.setFocusPolicy(_NO_FOCUS)
@@ -241,27 +283,19 @@ class LogicRow(QWidget):
         self._aside.setAttribute(_TRANSPARENT, True)
         self._aside.setMinimumWidth(0)
         self._aside.setVisible(bool(face.aside))
-        line.addWidget(self._aside, 1)
+        line.addWidget(self._aside, 0 if face.body else 1)
         self._title.setVisible(bool(face.title))
-        body_line = QHBoxLayout()
-        body_line.setContentsMargins(0, 0, 0, 0)
-        body_line.setSpacing(0)
-        column.addLayout(body_line)
-        indent = QWidget(self)
-        indent.setFixedWidth(12)
-        indent.setAttribute(_TRANSPARENT, True)
-        body_line.addWidget(indent)
-        self._body = WrapLabel(face.body, self)
+        self._body = _RuleLine(face.body, self)
         self._body.setObjectName("formBuilder.logic.formula")
         self._body.setVisible(bool(face.body))
-        body_line.addWidget(self._body, 1)
-        ignored, preferred = _policies()
-        self.setSizePolicy(ignored, preferred)  # type: ignore[arg-type]
+        line.addWidget(self._body, 1)
+        ignored, fixed = _policies()
+        self.setSizePolicy(ignored, fixed)  # type: ignore[arg-type]
 
     def face(self) -> RowFace:
         return self._face
 
-    def formula(self) -> WrapLabel:
+    def formula(self) -> _RuleLine:
         return self._body
 
     def apply_colors(
@@ -285,9 +319,13 @@ class LogicRow(QWidget):
         self._code_family = code_family or UI_EDITOR_FONT_FAMILY_DEFAULT
         self._accent = accent
         self._focus_width = focus_width if focus_width > 0 else 1
-        self._title.setStyleSheet("color: %s; background: transparent;" % text)
-        self._aside.setStyleSheet("color: %s; background: transparent;" % faint)
-        body_color = faint if not self._face.code and self._face.warning else text
+        self._title.setStyleSheet(
+            "color: %s; background: transparent; font-size: %dpx;" % (text, TYPE_BODY)
+        )
+        self._aside.setStyleSheet(
+            "color: %s; background: transparent; font-size: %dpx;" % (faint, TYPE_BODY)
+        )
+        body_color = warning if self._face.warning and warning else faint
         self._body.set_color(body_color)
         if self._face.code:
             # The editor sets this family and leaves the generic alias alone.
@@ -300,6 +338,11 @@ class LogicRow(QWidget):
                 hint = getattr(QFont, "TypeWriter")
             font.setStyleHint(hint)  # type: ignore[arg-type]
             font.setFixedPitch(True)
+            font.setPixelSize(TYPE_BODY)
+            self._body.setFont(font)
+        else:
+            font = QFont(self.font())
+            font.setPixelSize(TYPE_BODY)
             self._body.setFont(font)
         if self._face.warning and warning:
             ratio = float(getattr(self, "devicePixelRatioF", lambda: 1.0)())

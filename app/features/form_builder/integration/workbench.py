@@ -8,7 +8,7 @@ from __future__ import annotations
 import dataclasses
 import logging
 import os
-from typing import Any, Callable, Dict, FrozenSet, List, Optional, Sequence, Set, Tuple
+from typing import Any, Callable, Dict, FrozenSet, List, Optional, Sequence, Set, Tuple, cast
 
 from app.qt.QtCore import QEvent, QItemSelectionModel, QMimeData, QObject, QPoint, QRect, QSize, Qt, QTimer
 from app.qt.QtGui import QBrush, QColor, QDrag, QIcon, QPalette
@@ -97,7 +97,7 @@ from app.features.form_builder.engine.query.drop_target import (
 from app.features.form_builder.integration.insert_memory import LazyInsertMemory
 from app.features.form_builder.qtside.insert.catalog import in_sentence, load_catalog
 from app.features.form_builder.qtside.insert.delegate import ROW_ROLE, EntryDelegate
-from app.features.form_builder.qtside.insert.header import PaneHeader
+from app.features.form_builder.qtside.theme.section_header import SectionHeader
 from app.features.form_builder.qtside.insert.pane import InsertPane
 from app.features.form_builder.qtside.insert.rows import ENTRY, Row, quick_rows
 from app.features.form_builder.qtside.canvas.core.space import CanvasPoint
@@ -113,6 +113,17 @@ from app.features.form_builder.integration.pieces import (
     without_piece,
 )
 from app.features.form_builder.integration.chrome import chrome_for
+from app.features.form_builder.qtside.theme.chrome import popover_style, scrollbar_qss
+from app.features.form_builder.qtside.theme.metrics import (
+    DIVIDER,
+    ICON,
+    ICON_BUTTON,
+    ROW,
+    S1,
+    S2,
+    TOOLBAR,
+    ZOOM_READOUT,
+)
 from app.features.form_builder.qtside.canvas.controller import CanvasHost
 from app.features.form_builder.integration.layout import (
     INSPECTOR_MAX,
@@ -132,11 +143,14 @@ from app.features.form_builder.qtside.outline.delegate import (
     CAPTION,
     EXTRA,
     FAINT,
+    GLYPH,
     OWNER,
     PROBLEM,
     TONE,
     OutlineRowDelegate,
+    polish_outline_tree,
 )
+from app.features.form_builder.qtside.outline.glyphs import glyph_for
 from app.features.form_builder.qtside.outline.friendly import friendly_of
 from app.features.form_builder.qtside.outline.methods import window_methods
 from app.features.form_builder.qtside.inspector.api import GroupId
@@ -222,8 +236,11 @@ def _control_name(text: str, tip: str) -> str:
 
 
 def _name_tabs(tabs: QTabWidget, name: str) -> None:
+    from app.features.form_builder.qtside.theme.tabs import configure_tab_widget
+
     tabs.setAccessibleName(name)
     tabs.tabBar().setAccessibleName(name)
+    configure_tab_widget(tabs)
 
 
 def _button_style(name: str) -> Qt.ToolButtonStyle:
@@ -385,10 +402,10 @@ class FormToolbar(QWidget):
     ) -> None:
         super().__init__(parent)
         self.setObjectName("formBuilder.toolbar")
-        self.setFixedHeight(36)
+        self.setFixedHeight(TOOLBAR)
         row = QHBoxLayout(self)
-        row.setContentsMargins(8, 0, 8, 0)
-        row.setSpacing(4)
+        row.setContentsMargins(S2, 0, S2, 0)
+        row.setSpacing(S1)
 
         self._mode = QWidget(self)
         self._mode.setObjectName("formBuilder.modeGroup")
@@ -406,11 +423,7 @@ class FormToolbar(QWidget):
         mode_row.addWidget(self.design)
         mode_row.addWidget(self.xml)
         row.addWidget(self._mode, 0)
-        self._divider = QFrame(self)
-        self._divider.setObjectName("formBuilder.modeDivider")
-        self._divider.setFixedWidth(1)
-        self._divider.setFixedHeight(18)
-        row.addWidget(self._divider)
+        row.addWidget(_toolbar_divider(self))
 
         self.tab_order = _tool("Tab order", "formBuilder.tabOrder", "Tab order (F8)", self)
         self.tab_order.setCheckable(True)
@@ -429,6 +442,7 @@ class FormToolbar(QWidget):
             toggle.setToolButtonStyle(_button_style("ToolButtonTextBesideIcon"))
             self.overlay_toggles[kind.kind] = toggle
             row.addWidget(toggle)
+        row.addWidget(_toolbar_divider(self))
 
         self.undo = _tool("", "formBuilder.undo", "Undo (Ctrl+Z)", self)
         self.redo = _tool("", "formBuilder.redo", "Redo (Ctrl+Shift+Z)", self)
@@ -436,6 +450,7 @@ class FormToolbar(QWidget):
         self.redo.clicked.connect(on_redo)
         row.addWidget(self.undo)
         row.addWidget(self.redo)
+        row.addWidget(_toolbar_divider(self))
 
         zoom_ready = None not in (on_zoom_out, on_zoom_in, on_zoom_to, on_zoom_fit)
         self.zoom_out = _tool(
@@ -474,14 +489,16 @@ class FormToolbar(QWidget):
                 button.setEnabled(False)
         for button in (self.zoom_out, self.zoom_label, self.zoom_in):
             row.addWidget(button)
+        row.addWidget(_toolbar_divider(self))
         self.text_size = _tool("Aa", "formBuilder.textSize", "Text size is not available yet", self)
         self.two_widths = _tool("Widths", "formBuilder.twoWidths", "Two widths is not available yet", self)
         self.text_size.setEnabled(False)
         self.two_widths.setEnabled(False)
         row.addWidget(self.text_size)
         row.addWidget(self.two_widths)
+        row.addWidget(_toolbar_divider(self))
 
-        self.preview = _tool("", "formBuilder.preview", "Run the form with F5.", self)
+        self.preview = _tool("Preview", "formBuilder.preview", "Preview (Ctrl+Shift+R)", self)
         self.preview.setEnabled(False)
         row.addWidget(self.preview)
 
@@ -512,11 +529,15 @@ class FormToolbar(QWidget):
         row.addWidget(self.save_state, 0)
         self._tokens: Optional[ShellThemeTokens] = None
         icon_only = _button_style("ToolButtonIconOnly")
-        for button in (self.undo, self.redo, self.zoom_out, self.zoom_in, self.preview):
+        for button in (self.undo, self.redo, self.zoom_out, self.zoom_in, self.overflow):
             button.setToolButtonStyle(icon_only)
+            button.setFixedSize(ICON_BUTTON, ICON_BUTTON)
+        self.zoom_label.setFixedWidth(ZOOM_READOUT)
+        self.zoom_label.setFixedHeight(ICON_BUTTON)
         beside = _button_style("ToolButtonTextBesideIcon")
         self.tab_order.setToolButtonStyle(beside)
         self.buddies.setToolButtonStyle(beside)
+        self.preview.setToolButtonStyle(beside)
 
     def attach_preview(self, preview: object) -> None:
         """Turn on text size and two widths. Both stay off the document."""
@@ -582,8 +603,10 @@ class FormToolbar(QWidget):
         if menu is None:
             return
         self.preview.setEnabled(True)
+        self.preview.setText("Preview")
         self.preview.setToolTip("Preview (Ctrl+Shift+R)")
         self.preview.setAccessibleName("Preview")
+        self.preview.setToolButtonStyle(_button_style("ToolButtonTextBesideIcon"))
         self.preview.clicked.connect(lambda _checked=False: on_preview())
         if getattr(self, "_run_behavior", None) is None:
             box = QToolButton(self)
@@ -636,6 +659,15 @@ class FormToolbar(QWidget):
             button.setAccessibleName(_control_name(button.text(), button.toolTip()))
         self.tab_order.setAccessibleName(_control_name(self.tab_order.text(), self.tab_order.toolTip()))
         self.buddies.setAccessibleName(_control_name(self.buddies.text(), self.buddies.toolTip()))
+        self.preview.setText("" if compact else "Preview")
+        self.preview.setToolButtonStyle(_button_style("ToolButtonIconOnly" if compact else "ToolButtonTextBesideIcon"))
+        self.preview.setAccessibleName(_control_name(self.preview.text(), self.preview.toolTip()))
+        run = getattr(self, "_run_behavior", None)
+        if isinstance(run, QToolButton):
+            run_button = cast(QToolButton, run)
+            run_button.setText("" if compact else "Run behavior")
+            run_button.setToolButtonStyle(_button_style("ToolButtonIconOnly" if compact else "ToolButtonTextOnly"))
+            run_button.setAccessibleName(_control_name(run_button.text(), run_button.toolTip()))
         self.text_size.setVisible(not compact)
         self.two_widths.setVisible(not compact)
         self.overflow.setVisible(compact)
@@ -699,6 +731,11 @@ class FormToolbar(QWidget):
         self.setAutoFillBackground(True)
         self._paint_glyphs()
         self._paint_label_ink(tokens)
+        from app.features.form_builder.integration.context_menu import paint_menu
+
+        for menu in (self.text_size.menu(), self.two_widths.menu(), self.zoom_label.menu()):
+            if menu is not None:
+                paint_menu(menu, chrome_for(tokens))
 
     def _paint_label_ink(self, tokens: ShellThemeTokens) -> None:
         """Button text follows the tokens. A raised tool button otherwise keeps the palette ink."""
@@ -723,6 +760,20 @@ class FormToolbar(QWidget):
             button = self.overlay_toggles.get(kind.kind)
             if button is not None and kind.glyph:
                 _paint_glyph(button, kind.glyph, tokens, 16)
+
+
+def _toolbar_divider(parent: QWidget) -> QWidget:
+    """A 1 by 16 px rule with 8 px of air on each side."""
+    wrap = QWidget(parent)
+    layout = QHBoxLayout(wrap)
+    layout.setContentsMargins(S2, 0, S2, 0)
+    layout.setSpacing(0)
+    line = QFrame(wrap)
+    line.setObjectName("formBuilder.toolbarDivider")
+    line.setFixedWidth(1)
+    line.setFixedHeight(DIVIDER)
+    layout.addWidget(line)
+    return wrap
 
 
 def _splitter_qss(tokens: ShellThemeTokens) -> str:
@@ -767,8 +818,10 @@ def _toolbar_qss(tokens: ShellThemeTokens) -> str:
             "QWidget#formBuilder\\.toolbar QToolButton { color: %s; }" % tokens.text_primary,
             mode_group_qss(tokens, "formBuilder\\.modeGroup"),
             "QWidget#formBuilder\\.modeGroup QToolButton#formBuilder\\.viewXml { border-right: none; }",
-            "QFrame#formBuilder\\.modeDivider { background: %s; border: none; }" % tokens.border,
+            "QFrame#formBuilder\\.toolbarDivider { background: %s; border: none; }" % tokens.border,
             flat_tool_button_qss(tokens, selectors),
+            "%s { border-color: transparent; }\n"
+            % ",\n".join("%s:checked" % selector for selector in selectors),
             "%s { color: %s; }\n" % (disabled, quiet),
             "QLabel#formBuilder\\.saveState { color: %s; background: transparent; border: none; }" % faint,
             "QLabel#formBuilder\\.menuCaption { color: %s; background: transparent; border: none; }"
@@ -867,13 +920,28 @@ class OutlinePane(QWidget):
         self._quiet_focus = False
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(0)
-        self.header = PaneHeader("Outline", self, self._toggle)
-        self._add_button = self.header.add_extra("+", "Insert a widget")
-        self._add_button.setEnabled(True)
+        layout.setSpacing(S1)
+        self.header = SectionHeader(
+            self,
+            "Outline",
+            collapsible=True,
+            object_name="formBuilder.sectionHeader",
+            accessible_name="Outline",
+        )
+        self.header.toggled.connect(lambda expanded: self._collapse_from_header(not expanded))
+        self._add_button = self.header.add_action(
+            "plus",
+            "Insert a widget",
+            "Insert a widget",
+            "formBuilder.sectionExtra",
+        )
         self._add_button.clicked.connect(self._open_insert)
-        self._find_button = self.header.add_extra("\u2315", "Find a widget")
-        self._find_button.setEnabled(True)
+        self._find_button = self.header.add_action(
+            "search",
+            "Find a widget",
+            "Find a widget",
+            "formBuilder.sectionExtra",
+        )
         self._find_button.clicked.connect(self._open_filter)
         layout.addWidget(self.header)
         self._filter = QLineEdit(self)
@@ -909,9 +977,9 @@ class OutlinePane(QWidget):
         self.tree.setFocusPolicy(_strong())
         elide = getattr(getattr(Qt, "TextElideMode", Qt), "ElideRight")
         self.tree.setTextElideMode(elide)
-        self.tree.setIndentation(12)
         self._delegate = OutlineRowDelegate(self.tree)
         self.tree.setItemDelegate(self._delegate)
+        polish_outline_tree(self.tree, self._delegate)
         triggers = getattr(self.tree, "EditTrigger", type(self.tree))
         self.tree.setEditTriggers(getattr(triggers, "NoEditTriggers", 0))
         mode = getattr(self.tree, "SelectionMode", type(self.tree))
@@ -1447,7 +1515,10 @@ class OutlinePane(QWidget):
         self.tree.setVisible(not self._collapsed)
 
     def _toggle(self) -> None:
-        self.set_collapsed(not self._collapsed)
+        self.header.click()
+
+    def _collapse_from_header(self, collapsed: bool) -> None:
+        self.set_collapsed(collapsed)
         self._on_collapsed(self._collapsed)
 
     def _menu_requested(self, pos: QPoint) -> None:
@@ -1678,7 +1749,9 @@ class OutlinePane(QWidget):
         self._insert_pop = QFrame(self)
         self._insert_pop.setObjectName("formBuilder.outlineInsert")
         insert_layout = QVBoxLayout(self._insert_pop)
-        insert_layout.setContentsMargins(0, 0, 0, 0)
+        insert_layout.setContentsMargins(S2, S2, S2, S2)
+        insert_layout.setSpacing(S2)
+        self._insert_pop.setFixedWidth(280)
         self._insert_filter = QLineEdit(self._insert_pop)
         self._insert_filter.setObjectName("formBuilder.outlineInsertFilter")
         self._insert_filter.setAccessibleName("Search widgets")
@@ -1694,6 +1767,7 @@ class OutlinePane(QWidget):
         self._insert_list.setItemDelegate(self._quick_delegate)
         # Rows are sized to the viewport and elide. A sideways bar clips the name.
         scroll_off = getattr(getattr(Qt, "ScrollBarPolicy", Qt), "ScrollBarAlwaysOff")
+        self._insert_list.setMaximumHeight(ROW * 8)
         self._insert_list.setHorizontalScrollBarPolicy(scroll_off)
         self._insert_list.setResizeMode(QListView.ResizeMode.Adjust)
         self._insert_list.itemActivated.connect(self._activate_insert)
@@ -2010,17 +2084,31 @@ class OutlinePane(QWidget):
         note = ToastNote(text, "Undo", "Delete", len(entries), entry)
         toast.show_note(note, self._undo_toast)
 
+    def _paint_insert_search(self, color: str) -> None:
+        from app.features.form_builder.qtside.icons.glyphs import paint_glyph
+
+        for action in list(self._insert_filter.actions()):
+            self._insert_filter.removeAction(action)
+        ratio = getattr(self, "devicePixelRatioF", None)
+        dpr = float(ratio()) if callable(ratio) else 1.0
+        pixmap = paint_glyph("search", color, ICON, dpr)
+        leading = getattr(getattr(QLineEdit, "ActionPosition", QLineEdit), "LeadingPosition")
+        self._insert_filter.addAction(QIcon(pixmap), leading)
+
     def apply_colors(self, tokens: ShellThemeTokens) -> None:
         self._quick_delegate.set_chrome(chrome_for(tokens))
         self._name_color = tokens.text_primary
         self._faint_color = tokens.text_muted
         self._error_color = tokens.diag_error_color
-        self._layout_color = tokens.accent
+        chrome = chrome_for(tokens)
+        self.header.apply_chrome(chrome)
+        self._layout_color = chrome.layout
         self._delegate.update_colors(
             tokens.text_primary,
             tokens.text_muted,
             tokens.diag_error_color,
-            tokens.accent,
+            chrome.layout,
+            chrome.icon_muted,
         )
         width = tokens.focus_border_width
         self._editor.setStyleSheet(
@@ -2066,26 +2154,28 @@ class OutlinePane(QWidget):
         )
         # The delegate paints theme text. An unstyled list stays white, so dark and
         # high-contrast text disappears on it.
+        self._paint_insert_search(chrome.icon_muted or chrome.muted)
         self._insert_pop.setStyleSheet(
-            "QFrame#formBuilder\\.outlineInsert { background: %s; color: %s; border: 1px solid %s; }"
-            "QLineEdit#formBuilder\\.outlineInsertFilter { background: %s; color: %s; border: 1px solid %s; }"
-            "QLineEdit#formBuilder\\.outlineInsertFilter:focus { border: %dpx solid %s; }"
-            "QListWidget#formBuilder\\.outlineInsertList { background: %s; color: %s; border: none; }"
-            "QListWidget#formBuilder\\.outlineInsertList::item:selected { background: %s; color: %s; }"
-            % (
-                tokens.panel_bg,
-                tokens.text_primary,
-                tokens.border,
-                tokens.input_bg,
-                tokens.text_primary,
-                tokens.border,
-                width,
-                tokens.accent,
-                tokens.panel_bg,
-                tokens.text_primary,
-                tokens.tree_selected_bg,
-                tokens.text_primary,
+            popover_style("formBuilder.outlineInsert", chrome)
+            + (
+                "QLineEdit#formBuilder\\.outlineInsertFilter {"
+                " background: %s; color: %s; border: 1px solid %s; border-radius: 4px; min-height: 24px; }"
+                "QLineEdit#formBuilder\\.outlineInsertFilter:focus { border: %dpx solid %s; }"
+                "QListWidget#formBuilder\\.outlineInsertList { background: %s; color: %s; border: none; }"
+                "QListWidget#formBuilder\\.outlineInsertList::item:selected { background: %s; color: %s; }"
+                % (
+                    chrome.input,
+                    chrome.text,
+                    chrome.popup_border or chrome.border,
+                    width,
+                    chrome.accent,
+                    chrome.popup or chrome.panel,
+                    chrome.text,
+                    chrome.selected,
+                    chrome.text,
+                )
             )
+            + scrollbar_qss(chrome, "QFrame#formBuilder\\.outlineInsert")
         )
         self.tree.viewport().update()
 
@@ -2199,14 +2289,13 @@ class OutlinePane(QWidget):
         item.setData(0, CAPTION, caption)
         item.setData(0, PROBLEM, bool(row.problem))  # type: ignore[attr-defined]
         item.setData(0, TONE, row.tone)  # type: ignore[attr-defined]
+        item.setData(0, GLYPH, glyph_for(str(getattr(row, "qt_class", "") or ""), object_name))
         kind = states.get(row.node, "match")  # type: ignore[attr-defined]
         faint = kind == "ancestor" or bool(row.hidden)  # type: ignore[attr-defined]
         item.setData(0, FAINT, faint)
         item.setHidden(kind == "hidden")
         item.setToolTip(0, tip)
         color = self._faint_color if faint else self._name_color
-        if row.tone == "layout" and not faint and self._layout_color:
-            color = self._layout_color
         if color:
             item.setForeground(0, QBrush(QColor(color)))
         else:
@@ -2802,6 +2891,7 @@ class FormWorkbench(QWidget):
         self._left_tabs = QTabWidget(self._left_body)
         self._left_tabs.setObjectName("formBuilder.leftTabs")
         _name_tabs(self._left_tabs, "Outline and insert")
+        self._left_tabs.currentChanged.connect(lambda _index: self._sync_left_headers())
         self._left_tabs.hide()
         left_layout.addWidget(self._left_tabs)
         self._left_split.addWidget(self.outline)
@@ -2947,6 +3037,12 @@ class FormWorkbench(QWidget):
         self._place_under()
 
     def apply_theme(self, tokens: ShellThemeTokens) -> None:
+        from app.features.form_builder.integration.chrome import shell_dialog_parts
+
+        self.dialog_chrome = shell_dialog_parts()
+        window = self.window()
+        if window is not None:
+            setattr(window, "dialog_chrome", self.dialog_chrome)
         code_view = getattr(self, "code_view", None)
         if code_view is not None:
             code_view.apply_theme(tokens)
@@ -2966,7 +3062,7 @@ class FormWorkbench(QWidget):
             if isinstance(button, QToolButton) and spec.glyph:
                 _paint_glyph(button, spec.glyph, tokens, 20)
         width = tokens.focus_border_width
-        self.setStyleSheet(
+        sheet = (
             "QWidget#formBuilder\\.workbench, QWidget#formBuilder\\.outline,"
             " QWidget#formBuilder\\.insert, QWidget#formBuilder\\.inspector,"
             " QWidget#formBuilder\\.leftBody, QWidget#formBuilder\\.leftRail,"
@@ -3056,9 +3152,21 @@ class FormWorkbench(QWidget):
                 ),
             )
         )
-        self.insert.apply_chrome(chrome_for(tokens))
+        from app.features.form_builder.qtside.theme.items import item_view_qss
+        from app.features.form_builder.qtside.theme.tabs import tab_bar_qss
+
+        chrome = chrome_for(tokens)
+        self.setStyleSheet(
+            sheet
+            + tab_bar_qss(chrome)
+            + item_view_qss("QTreeWidget#formBuilder\\.structure", chrome)
+            + item_view_qss("QListWidget#formBuilder\\.insertBody", chrome)
+        )
+        shapes = getattr(QFrame, "Shape", QFrame)
+        self.outline.tree.setFrameShape(getattr(shapes, "NoFrame"))
+        self.insert.apply_chrome(chrome)
         self.canvas.apply_theme(tokens)
-        self.inspector.apply_chrome(chrome_for(tokens))
+        self.inspector.apply_chrome(chrome)
         self.inspector.set_link_color(problems_link_color(tokens))
 
     def dispose(self, *_args: object) -> None:
@@ -3284,6 +3392,7 @@ class FormWorkbench(QWidget):
                     self._left_tabs.insertTab(2 + position, widget, spec.title)
             self._left_split.hide()
             self._left_tabs.show()
+            self._sync_left_headers()
             return
         if self._left_split.indexOf(self.outline) < 0:
             for spec, widget in shown:
@@ -3307,6 +3416,7 @@ class FormWorkbench(QWidget):
         self._left_tabs.hide()
         self._left_scroll.show()
         self._left_split.show()
+        self._sync_left_headers()
         mins: List[int] = []
         for index in range(self._left_split.count()):
             child = self._left_split.widget(index)
@@ -3340,6 +3450,54 @@ class FormWorkbench(QWidget):
         self._left_split.setSizes(sizes)
         if self._plan is not None:
             self._size_panes(self._plan)
+
+    def _sync_left_headers(self) -> None:
+        """Tabbed mode uses the tab as the header. Stacked mode keeps one header per pane."""
+        outline_header = getattr(self.outline, "header", None)
+        insert_header = getattr(self.insert, "header", None)
+        if outline_header is None or insert_header is None:
+            return
+        if not self._stacked:
+            self._release_left_corner()
+            outline_header.show()
+            insert_header.show()
+            return
+        outline_header.hide()
+        insert_header.hide()
+        current = self._left_tabs.currentWidget()
+        self._release_left_corner()
+        source = None
+        if current is self.outline:
+            source = outline_header
+        elif current is self.insert:
+            source = insert_header
+        detach = getattr(source, "detach_actions", None)
+        if not callable(detach):
+            return
+        buttons = detach()
+        if not isinstance(buttons, (list, tuple)) or not buttons:
+            return
+        corner = QWidget(self._left_tabs)
+        corner.setObjectName("formBuilder.leftTabCorner")
+        row = QHBoxLayout(corner)
+        row.setContentsMargins(0, 0, S1, 0)
+        row.setSpacing(0)
+        for button in buttons:
+            row.addWidget(button)
+        corner_enum = getattr(getattr(Qt, "Corner", Qt), "TopRightCorner")
+        self._left_tabs.setCornerWidget(corner, corner_enum)
+
+    def _release_left_corner(self) -> None:
+        for pane in (self.outline, self.insert):
+            header = getattr(pane, "header", None)
+            reclaim = getattr(header, "reclaim_actions", None)
+            if callable(reclaim):
+                reclaim()
+        corner = self._left_tabs.cornerWidget()
+        if corner is None:
+            return
+        self._left_tabs.setCornerWidget(None)
+        corner.deleteLater()
 
     def _park_section(self, widget: QWidget) -> None:
         index = self._left_tabs.indexOf(widget)
