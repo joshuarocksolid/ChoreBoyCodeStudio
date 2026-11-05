@@ -261,10 +261,54 @@ def test_window_mode_asks_before_show(tmp_path: Path) -> None:
         tmp_path,
         {"do": "openForm", "form": "customer", "mode": "window"},
     )
-    body = _handler(source)
-    assert "self._cbcs_confirm_leave() is False:" in body
-    assert body.index("_cbcs_confirm_leave") < body.index(".show()")
-    assert ".exec()" not in body
+    shown = _run_open_handler(_handler(source), leave=None)
+    assert shown == ["show"]
+    assert _run_open_handler(_handler(source), leave=False) == []
+    assert _run_open_handler(_handler(source), leave=True) == ["show"]
+
+
+def _run_open_handler(body: str, leave: Any) -> List[str]:
+    """Run the generated handler with a stand-in window class; return what it called."""
+
+    import sys
+    import textwrap
+    import types
+
+    calls = []  # type: List[str]
+
+    class CustomerWindow:
+        def __init__(self, _parent: object) -> None:
+            pass
+
+        def show(self) -> None:
+            calls.append("show")
+
+        def exec(self) -> None:
+            calls.append("exec")
+
+    class Host:
+        _form = object()
+
+    host = Host()
+    if leave is not None:
+        setattr(host, "_cbcs_confirm_leave", lambda: leave)
+    package = types.ModuleType("forms")
+    module = types.ModuleType("forms.customer_window")
+    setattr(module, "CustomerWindow", CustomerWindow)
+    saved_modules = {name: sys.modules.get(name) for name in ("forms", "forms.customer_window")}
+    sys.modules["forms"] = package
+    sys.modules["forms.customer_window"] = module
+    try:
+        scope = {}  # type: dict
+        exec("def handler(self):\n" + textwrap.indent(textwrap.dedent(body), "    ") + "\n    pass\n", scope)
+        scope["handler"](host)
+    finally:
+        for name, old_module in saved_modules.items():
+            if old_module is None:
+                sys.modules.pop(name, None)
+            else:
+                sys.modules[name] = old_module
+    return calls
 
 
 def test_dialog_mode_does_not_ask_about_unsaved_changes(tmp_path: Path) -> None:

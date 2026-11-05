@@ -741,7 +741,14 @@ def _emit_open(step: Any, ctx: Any) -> Tuple[str, ...]:
     local = "_cbcs_%s" % stem
     lines = []  # type: List[str]
     if mode != "dialog":
-        lines.extend(("if self._cbcs_confirm_leave() is False:", "    return"))
+        # Only a form with a record source has unsaved changes to ask about.
+        lines.extend(
+            (
+                "_leave = getattr(self, %s, None)" % _quote("_cbcs_confirm_leave"),
+                "if _leave is not None and _leave() is False:",
+                "    return",
+            )
+        )
     lines.extend(
         (
             "from forms.%s_window import %s" % (stem, class_name),
