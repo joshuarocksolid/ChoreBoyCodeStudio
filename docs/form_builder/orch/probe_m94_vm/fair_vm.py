@@ -71,6 +71,10 @@ def main() -> int:
     alias = qt_alias.install()
     os.environ["CBCS_DISABLE_BACKGROUND_RUNTIME"] = "1"
     os.environ["CBCS_FB_VALIDATE"] = "0"
+    import app.features.form_builder.install as fb_install
+
+    if not fb_install.form_builder_enabled():
+        fb_install.form_builder_enabled = lambda: True
     out = HERE / "results"
     out.mkdir(parents=True, exist_ok=True)
     lines = ["alias %s load %s samples %d warmup %d" % (alias, _load(), SAMPLES, WARMUP)]
@@ -112,8 +116,14 @@ def main() -> int:
             cleanup=spec.cleanup,
         )
         lines.append("ROW\t%s\t%s\t%s\t%s" % (row.point, row.p50, row.p95, row.budget))
+    except Exception as exc:
+        lines.append("ROW\tm4 font size step\tFAILED\t%s\t" % type(exc).__name__)
+        traceback.print_exc()
     finally:
-        teardown()
+        try:
+            teardown()
+        except Exception:
+            traceback.print_exc()
 
     from tests.form_builder.perf.m6_paths import ui_group
 
@@ -133,8 +143,14 @@ def main() -> int:
             cleanup=getattr(spec, "cleanup", None),
         )
         lines.append("ROW\t%s\t%s\t%s\t%s" % (row.point, row.p50, row.p95, row.budget))
+    except Exception as exc:
+        lines.append("ROW\tm6 step commit command\tFAILED\t%s\t" % type(exc).__name__)
+        traceback.print_exc()
     finally:
-        teardown()
+        try:
+            teardown()
+        except Exception:
+            traceback.print_exc()
 
     import tests.form_builder.perf.m7_paths as m7
 

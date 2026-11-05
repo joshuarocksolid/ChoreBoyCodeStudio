@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import Callable, Hashable, List, Optional, Sequence, Tuple
 
-from app.qt.QtCore import QEvent, QMimeData, QObject, QPoint, QPointF, QRect, QRectF, Qt, QTimer
+from app.qt.QtCore import QEvent, QMimeData, QObject, QPoint, QPointF, QRect, QRectF, QSize, Qt, QTimer
 from app.qt.QtGui import QColor, QContextMenuEvent, QCursor, QDrag, QFont, QImage, QPainter, QPen, QPixmap
 from app.qt.QtWidgets import (
     QApplication,
@@ -250,13 +250,26 @@ class FormCanvas(QGraphicsView):
         self.horizontalScrollBar().valueChanged.connect(self._scroll_moved)
         self.verticalScrollBar().valueChanged.connect(self._scroll_moved)
         # A caption or a gap edit grows the scene. The view then posts a layout
-        # request even when this canvas's size did not change, and the shell
-        # lays itself out. Scrollbars still update inside the view.
-        self._layout_stamp: Optional[Tuple[int, int]] = None
+        # request even when this canvas's size did not change. Scrollbars still
+        # update inside the view. A window resize arrives as a resize event.
         self._stage.place()
         self._sync_title()
         self._position_chrome()
-        parent.installEventFilter(self)
+        # The row and the workbench splitter. The column between them is left
+        # alone so a drawer can setSizes on it. A scene growth still posts at
+        # the row and the splitter, and those do not change this allocation.
+        self._layout_walls = []
+        row = parent
+        splitter = None
+        if row is not None:
+            column = row.parentWidget()
+            if column is not None:
+                splitter = column.parentWidget()
+        for wall in (row, splitter):
+            if wall is None:
+                continue
+            wall.installEventFilter(self)
+            self._layout_walls.append(wall)
 
     @property
     def preview(self) -> FormPreview:
@@ -640,17 +653,27 @@ class FormCanvas(QGraphicsView):
         del next
         return False
 
+    def sizeHint(self) -> QSize:  # noqa: N802
+        # The scene grows with the form. Once the view is on screen, the
+        # shell's splitters keep the allocation they already gave it.
+        # Before that, the ordinary hint lets the first layout choose a size.
+        if self.isVisible() and self.width() > 1 and self.height() > 1:
+            return QSize(self.width(), self.height())
+        return super().sizeHint()
+
+    def minimumSizeHint(self) -> QSize:  # noqa: N802
+        return QSize(0, 0)
+
     def eventFilter(self, watched: QObject, event: QEvent) -> bool:  # noqa: N802
         request = getattr(getattr(QEvent, "Type", QEvent), "LayoutRequest")
-        if watched is self.parentWidget() and event.type() == request:
-            stamp = (self.width(), self.height())
-            if stamp[0] > 1 and stamp == self._layout_stamp:
+        if event.type() != request or self.width() <= 1 or self.height() <= 1:
+            return False
+        for wall in self._layout_walls:
+            if watched is wall:
                 return True
-            self._layout_stamp = stamp
         return False
 
     def resizeEvent(self, event: object) -> None:  # noqa: N802
-        self._layout_stamp = None
         super().resizeEvent(event)  # type: ignore[arg-type]
         banner = getattr(self, "_banner", None)
         if banner is not None and banner.isVisible():

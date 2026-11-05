@@ -98,6 +98,12 @@ def main():
     import qt_alias
 
     alias = qt_alias.install()
+    # FreeCAD 1.0 leaves the builder off. The speed rows open a real form
+    # tab, so the probe turns the feature on for whichever binding loaded.
+    import app.features.form_builder.install as fb_install
+
+    if not fb_install.form_builder_enabled():
+        fb_install.form_builder_enabled = lambda: True
     load, load_error = _loadavg()
     facts = {
         "python": sys.version.split()[0],

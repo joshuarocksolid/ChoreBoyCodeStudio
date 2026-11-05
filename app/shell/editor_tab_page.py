@@ -76,12 +76,16 @@ class DiskConflictInfoBar(QFrame):
 
     def set_state(self, state: Optional[str], file_path: str) -> None:
         if state not in (TAB_STATE_STALE, TAB_STATE_MISSING):
+            if self._state is None and not self.isVisible():
+                return
             self._state = None
             self.setVisible(False)
             return
         changed = state != self._state
         self._state = state
-        self._message_label.setText(info_bar_message(state, file_path))
+        message = info_bar_message(state, file_path)
+        if self._message_label.text() != message:
+            self._message_label.setText(message)
         stale = state == TAB_STATE_STALE
         self._reload_button.setVisible(stale)
         self._compare_button.setVisible(stale)

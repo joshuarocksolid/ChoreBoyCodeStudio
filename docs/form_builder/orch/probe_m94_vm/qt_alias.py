@@ -51,6 +51,7 @@ def install():
     import importlib.machinery
 
     package = types.ModuleType("PySide6")
+    package.__version__ = getattr(PySide2, "__version__", "") or PySide2.QtCore.qVersion()
     package.QtCore = PySide2.QtCore
     package.QtGui = gui
     package.QtWidgets = widgets
@@ -73,7 +74,77 @@ def install():
     sys.modules["PySide6.QtWidgets"] = widgets
     if not any(isinstance(item, _Finder) for item in sys.meta_path):
         sys.meta_path.insert(0, _Finder())
+    _install_qttest_shim()
     return "alias"
+
+
+def _install_qttest_shim() -> None:
+    """FreeCAD 1.0 ships PyQt5.QtTest and not PySide2.QtTest.
+
+    The font row sends one Up key. This shim posts that press and release
+    through the same QApplication path QTest uses, and only when the real
+    module is absent.
+    """
+
+    if "PySide2.QtTest" in sys.modules:
+        return
+    try:
+        import PySide2.QtTest  # noqa: F401
+    except ImportError:
+        pass
+    else:
+        return
+    from PySide2.QtCore import QEvent, QPoint, Qt
+    from PySide2.QtGui import QKeyEvent, QMouseEvent
+    from PySide2.QtWidgets import QApplication
+
+    def keyClick(widget, key, modifier=Qt.NoModifier, delay=-1):
+        del delay
+        text = ""
+        key_code = key
+        if isinstance(key, str):
+            text = key
+            key_code = ord(key.upper()) if len(key) == 1 else 0
+        for kind in (QEvent.KeyPress, QEvent.KeyRelease):
+            QApplication.sendEvent(widget, QKeyEvent(kind, key_code, modifier, text))
+
+    def keyClicks(widget, sequence, modifier=Qt.NoModifier, delay=-1):
+        for char in sequence:
+            keyClick(widget, char, modifier, delay)
+
+    def mousePress(widget, button, modifier=Qt.NoModifier, pos=None, delay=-1):
+        del delay
+        at = pos if pos is not None else QPoint(widget.width() // 2, widget.height() // 2)
+        QApplication.sendEvent(
+            widget,
+            QMouseEvent(QEvent.MouseButtonPress, at, button, button, modifier),
+        )
+
+    def mouseMove(widget, pos=None, delay=-1):
+        del delay
+        at = pos if pos is not None else QPoint(0, 0)
+        QApplication.sendEvent(
+            widget,
+            QMouseEvent(QEvent.MouseMove, at, Qt.NoButton, Qt.NoButton, Qt.NoModifier),
+        )
+
+    def mouseRelease(widget, button, modifier=Qt.NoModifier, pos=None, delay=-1):
+        del delay
+        at = pos if pos is not None else QPoint(widget.width() // 2, widget.height() // 2)
+        QApplication.sendEvent(
+            widget,
+            QMouseEvent(QEvent.MouseButtonRelease, at, button, Qt.NoButton, modifier),
+        )
+
+    module = types.ModuleType("PySide2.QtTest")
+    module.QTest = types.SimpleNamespace(
+        keyClick=keyClick,
+        keyClicks=keyClicks,
+        mousePress=mousePress,
+        mouseMove=mouseMove,
+        mouseRelease=mouseRelease,
+    )
+    sys.modules["PySide2.QtTest"] = module
 
 
 class _Finder:

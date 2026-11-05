@@ -253,6 +253,12 @@ def _active_form(window: Any) -> Any:
     return None
 
 
+def _assign(action: Any, **fields: Any) -> None:
+    from app.shell.action_state import assign_action
+
+    assign_action(action, **fields)
+
+
 def _sync(window: Any, menu: Any, state: _State) -> None:
     actions = state.actions
     surface = _active_form(window)
@@ -260,7 +266,7 @@ def _sync(window: Any, menu: Any, state: _State) -> None:
     sheet = surface.layout_offers() if surface is not None else None
     editable = bool(surface.can_edit_text()) if surface is not None else False
     menu_action = menu.menuAction()
-    menu_action.setVisible(visible)
+    _assign(menu_action, visible=visible)
     by_id = {command.command_id: command for command in menu_commands()}
     for command_id, action in actions.items():
         item = state.items.get(command_id)
@@ -286,11 +292,9 @@ def _sync(window: Any, menu: Any, state: _State) -> None:
         if command_id == "form.action.createWindowClass" and surface is not None:
             klass = _window_class_name(surface)
             if klass:
-                action.setEnabled(False)
-                action.setToolTip("%s is the window class." % klass)
+                _assign(action, enabled=False, tool_tip="%s is the window class." % klass)
                 continue
-        action.setEnabled(visible and available and not text_block)
-        action.setToolTip(reason)
+        _assign(action, enabled=visible and available and not text_block, tool_tip=reason)
     _tidy(menu)
     _sync_help(window, state, surface)
 
@@ -308,8 +312,7 @@ def _window_class_name(surface: Any) -> str:
 def _sync_item(action: Any, item: FormMenuItem, surface: Any) -> None:
     """A contributed item is absent, not disabled, when its runtime can't offer it."""
     offered = surface is not None and _asked(item.offered, item, surface, False)
-    action.setVisible(offered)
-    action.setEnabled(offered and _asked(item.enabled, item, surface, False))
+    _assign(action, visible=offered, enabled=offered and _asked(item.enabled, item, surface, False))
 
 
 def _asked(question: Any, item: FormMenuItem, surface: Any, otherwise: bool) -> bool:
@@ -326,16 +329,16 @@ def _tidy(menu: Any) -> bool:
     waiting = None
     for action in menu.actions():
         if action.isSeparator():
-            action.setVisible(False)
+            _assign(action, visible=False)
             waiting = action if shown else None
             continue
         submenu = action.menu()
         if submenu is not None:
-            action.setVisible(_tidy(submenu))
+            _assign(action, visible=_tidy(submenu))
         if not action.isVisible():
             continue
         if waiting is not None:
-            waiting.setVisible(True)
+            _assign(waiting, visible=True)
             waiting = None
         shown = True
     return shown
@@ -366,5 +369,8 @@ def _sync_help(window: Any, state: _State, surface: Any) -> None:
             state.help_actions[item.command_id] = action
     for item in state.help_items:
         action = state.help_actions[item.command_id]
-        action.setVisible(_asked(item.offered, item, surface, False))
-        action.setEnabled(_asked(item.enabled, item, surface, False))
+        _assign(
+            action,
+            visible=_asked(item.offered, item, surface, False),
+            enabled=_asked(item.enabled, item, surface, False),
+        )

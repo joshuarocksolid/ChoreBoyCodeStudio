@@ -170,6 +170,8 @@ def _shell_registry(window: QWidget) -> object:
 
 def _silence(window: QWidget, holder: object, action_ids: Tuple[str, ...]) -> None:
     """Force shell actions off for ``holder``. Each keeps the flag it had before the first silence."""
+    from app.shell.action_state import assign_action
+
     registry = _shell_registry(window)
     if registry is None:
         return
@@ -180,11 +182,13 @@ def _silence(window: QWidget, holder: object, action_ids: Tuple[str, ...]) -> No
             continue
         prior = held[action_id][0] if action_id in held else bool(action.isEnabled())
         held[action_id] = (prior, holder)
-        action.setEnabled(False)
+        assign_action(action, enabled=False)
 
 
 def _restore(window: QWidget, holder: object, action_ids: Tuple[str, ...]) -> None:
     """Give back the actions ``holder`` silenced. Another holder's silence stays."""
+    from app.shell.action_state import assign_action
+
     held = _silenced(window)
     registry = _shell_registry(window)
     for action_id in action_ids:
@@ -194,7 +198,7 @@ def _restore(window: QWidget, holder: object, action_ids: Tuple[str, ...]) -> No
         del held[action_id]
         action = None if registry is None else registry.action(action_id)  # type: ignore[attr-defined]
         if action is not None:
-            action.setEnabled(entry[0])
+            assign_action(action, enabled=entry[0])
 
 
 def _silenced(window: QWidget) -> Dict[str, Tuple[bool, object]]:
@@ -2264,6 +2268,8 @@ class FormSurface(QWidget):
         )
 
     def _set_shell_actions(self, undo_text: str, undo_on: bool, redo_text: str, redo_on: bool) -> None:
+        from app.shell.action_state import assign_history_action
+
         window = self.window()
         registry = _shell_registry(window)
         if registry is None:
@@ -2271,11 +2277,9 @@ class FormSurface(QWidget):
         undo = registry.action("shell.action.edit.undo")
         redo = registry.action("shell.action.edit.redo")
         if undo is not None:
-            undo.setText(undo_text)
-            undo.setEnabled(undo_on)
+            assign_history_action(undo, undo_text, undo_on)
         if redo is not None:
-            redo.setText(redo_text)
-            redo.setEnabled(redo_on)
+            assign_history_action(redo, redo_text, redo_on)
 
     def _order_focus(self) -> None:
         order = [

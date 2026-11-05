@@ -150,6 +150,13 @@ def _report(lines, label):
     lines.append("type\tclass\tobject\tcount\tms")
     for key, slot in rows[:15]:
         lines.append("%s\t%s\t%s\t%d\t%.2f" % (key[0], key[1], key[2], slot[0], slot[1] * 1000.0))
+    lines.append("named %s" % label)
+    for key, slot in rows:
+        kind = str(key[0])
+        if "LayoutRequest" in kind or "ActionChanged" in kind or "ToolTipChange" in kind:
+            lines.append(
+                "named\t%s\t%s\t%s\t%d\t%.2f" % (key[0], key[1], key[2], slot[0], slot[1] * 1000.0)
+            )
     _WATCH.buckets = {}
 
 
@@ -166,6 +173,29 @@ def _profile(fn, label, lines):
     lines.append(stream.getvalue())
 
 
+def _drain(app, lines, label):
+    """Finish deletes and timers from the window that just closed.
+
+    A later, smaller form was slower when this drain was missing. Its samples
+    included the big window coming down.
+    """
+    import gc
+
+    from app.qt.QtWidgets import QApplication
+
+    for _turn in range(40):
+        app.processEvents()
+    gc.collect()
+    app.processEvents()
+    alive = [
+        widget
+        for widget in QApplication.topLevelWidgets()
+        if type(widget).__name__ == "MainWindow"
+    ]
+    lines.append("%s mains_alive %d" % (label, len(alive)))
+    return len(alive)
+
+
 def _open(main_window, count, lines):
     import tempfile
 
@@ -177,19 +207,35 @@ def _open(main_window, count, lines):
     path = root / "speed_form.ui"
     path.write_text(form.xml, encoding="utf-8")
     window = main_window.MainWindow(state_root=str(root / "state"))
-    window._editor_tab_factory.open_file_in_editor(str(path))
+    opened_ok = window._editor_tab_factory.open_file_in_editor(str(path))
     window._center_stack.setCurrentIndex(1)
     window.resize(1400, 900)
     window.show()
     app = _WATCH.app
-    app.processEvents()
-    surface = window._tab_content_registry.surface_for_path(str(path))
+    surface = None
+    for _turn in range(40):
+        app.processEvents()
+        for candidate in (str(path), str(path.resolve())):
+            found = window._tab_content_registry.surface_for_path(candidate)
+            if found is not None and getattr(found, "_session", None) is not None:
+                surface = found
+                break
+        if surface is not None:
+            break
+    if surface is None:
+        keys = tuple(getattr(window._tab_content_registry, "_surfaces", ()))
+        raise RuntimeError(
+            "no form surface opened=%s path=%s keys=%s" % (opened_ok, path, keys)
+        )
     session = surface._session
     pane = surface._workbench.inspector
     label = session.document.by_name("label0000")[0]
     layout = session.document.by_name("identityForm")
     owner = layout[0] if layout else label
-    lines.append("opened %d widgets label %s layout %s" % (count, label, owner))
+    from app.qt.QtWidgets import QApplication
+
+    mains = sum(1 for widget in QApplication.topLevelWidgets() if type(widget).__name__ == "MainWindow")
+    lines.append("opened %d widgets label %s layout %s mains %d" % (count, label, owner, mains))
     return scratch, window, surface, session, pane, label, owner
 
 
@@ -251,8 +297,17 @@ def main():
     alias = qt_alias.install()
     os.environ["CBCS_DISABLE_BACKGROUND_RUNTIME"] = "1"
     os.environ["CBCS_FB_VALIDATE"] = "0"
+    # FreeCAD 1.0 keeps the builder off. The probe still builds the form on
+    # the binding this process already chose. Forcing PySide6 here imports
+    # shiboken6, which that image does not ship.
+    import app.features.form_builder.install as fb_install
+
+    forced = False
+    if not fb_install.form_builder_enabled():
+        fb_install.form_builder_enabled = lambda: True
+        forced = True
     _install_watch()
-    lines = ["alias %s watch %s" % (alias, _WATCH.how)]
+    lines = ["alias %s watch %s builder_forced %s" % (alias, _WATCH.how, forced)]
 
     from app.features.form_builder.engine.commands.catalog import SetProperty
     from app.features.form_builder.engine.query import selection as selection_mod
@@ -261,6 +316,15 @@ def main():
 
     main_window = importlib.import_module("app.shell.main_window")
     shutdown_mod = importlib.import_module("testing.main_window_shutdown")
+    # The small form goes first, then a drain, so its clock is not the big
+    # window being destroyed. The event trace stays on the 1000-widget form.
+    scratch60, window60, surface60, session60, pane60, label60, owner60 = _open(main_window, 60, lines)
+    app = _WATCH.app
+    _time_rows(surface60, session60, pane60, label60, owner60, lines, "widgets60")
+    shutdown_mod.shutdown_main_window_for_test(window60, app)
+    scratch60.cleanup()
+    _drain(app, lines, "after60")
+
     scratch, window, surface, session, pane, label, owner = _open(main_window, 1000, lines)
     app = _WATCH.app
     step = {"n": 0}
@@ -320,11 +384,7 @@ def main():
 
     shutdown_mod.shutdown_main_window_for_test(window, app)
     scratch.cleanup()
-
-    scratch60, window60, surface60, session60, pane60, label60, owner60 = _open(main_window, 60, lines)
-    _time_rows(surface60, session60, pane60, label60, owner60, lines, "widgets60")
-    shutdown_mod.shutdown_main_window_for_test(window60, app)
-    scratch60.cleanup()
+    _drain(app, lines, "after1000")
 
     out = HERE / "results"
     out.mkdir(parents=True, exist_ok=True)
