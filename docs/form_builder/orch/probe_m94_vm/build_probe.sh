@@ -29,6 +29,7 @@ touch "$HERE/payload/tests/__init__.py" \
   "$HERE/payload/tests/unit/features/__init__.py"
 cp "$HERE/run_probe.py" "$HERE/payload/run_probe.py"
 cp "$HERE/profile_surface.py" "$HERE/payload/profile_surface.py"
+cp "$HERE/events_probe.py" "$HERE/payload/events_probe.py"
 cp "$HERE/run_on_vm.sh" "$HERE/payload/run_on_vm.sh"
 cp "$HERE/qt_alias.py" "$HERE/payload/qt_alias.py"
 find "$HERE/payload" -name '__pycache__' -type d -prune -exec rm -rf {} + || true

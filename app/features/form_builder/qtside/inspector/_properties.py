@@ -1208,7 +1208,7 @@ class _Row(QWidget):
         self._qt_names = qt_names
         self._show_origin = show_origin
         self._match_color = match_color
-        self._label.setToolTip(_tip(view))
+        _set_tip(self._label, _tip(view))
         self._paint_label(view, match_color)
         self._paint_qt(view, match_color)
         changed = view.changed
@@ -1470,7 +1470,7 @@ class _Row(QWidget):
         if self._stacked:
             if self._label.text() != full:
                 self._label.setText(full)
-            self._label.setToolTip(_tip(view))
+            _set_tip(self._label, _tip(view))
             return
         # Measure only when the label text or its width changed.
         key = (full, width, _tip(view))
@@ -1485,9 +1485,9 @@ class _Row(QWidget):
             self._label.setText(elided)
         tip = key[2]
         if elided != full:
-            self._label.setToolTip(full if not tip or tip == full else "%s\n%s" % (full, tip))
+            _set_tip(self._label, full if not tip or tip == full else "%s\n%s" % (full, tip))
         else:
-            self._label.setToolTip(tip)
+            _set_tip(self._label, tip)
 
     def _place_caption(self) -> None:
         editor = self._editor
@@ -2034,6 +2034,11 @@ def _caption(parent: QWidget, name: str, text: str) -> QLabel:
     label.setObjectName("formBuilder.formCaption.%s" % name)
     label.setFont(_overline_font())
     return label
+
+def _set_tip(label: QLabel, text: str) -> None:
+    if label.toolTip() != text:
+        label.setToolTip(text)
+
 
 def _tip(view: Row) -> str:
     if view.qt_name and view.help:
