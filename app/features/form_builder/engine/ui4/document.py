@@ -97,6 +97,9 @@ class UiDocument:
         # (``mutate._set_property``). Caption-facing properties use ``face_revision``.
         self._structure_revision = revision
         self._face_revision = 0
+        # Buddy links and bind chips read these. A caption edit does not move them.
+        self._buddy_revision = 0
+        self._bind_revision = 0
         # ``focusPolicy`` changes who Tab visits and does not bump ``structure_revision``.
         self._focus_revision = 0
         # (face_revision, node id, property name), newest last. A caption edit
@@ -156,6 +159,16 @@ class UiDocument:
         return self._structure_revision
 
     @property
+    def buddy_revision(self) -> int:
+        """Bumps when a label's ``buddy`` property changes."""
+        return self._buddy_revision
+
+    @property
+    def bind_revision(self) -> int:
+        """Bumps when ``cbcsBind`` or ``cbcsBindMode`` changes."""
+        return self._bind_revision
+
+    @property
     def face_revision(self) -> int:
         """Bumps when a caption or formula-facing property changes.
 
@@ -180,6 +193,8 @@ class UiDocument:
     def _note_face(self, node_id: NodeId, name: str) -> None:
         """A caption or formula-facing property just changed."""
         self._face_revision += 1
+        if name == "buddy":
+            self._buddy_revision += 1
         self._face_edits.append((self._face_revision, node_id, name))
         if len(self._face_edits) > 16:
             del self._face_edits[:-16]
@@ -554,6 +569,8 @@ class UiDocument:
     def _note_logic(self, name: str, delta: int) -> None:
         if is_user_logic_key(name):
             self._logic_count += delta
+        if name in ("cbcsBind", "cbcsBindMode"):
+            self._bind_revision += 1
 
     def _rebuild_custom_index(self) -> None:
         found: Dict[str, NodeId] = {}

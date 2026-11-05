@@ -126,6 +126,7 @@ class InspectorPane(QWidget):
         self._link_color = ""
         self._inspected_ids: frozenset = frozenset()
         self._last_change: Optional[ChangeSet] = None
+        self._pending_changes: list = []
         self._reset_scroll = False
         self.header = Header(self._services, self)
         self.tabs = QTabWidget(self)
@@ -305,8 +306,10 @@ class InspectorPane(QWidget):
         self._pending = False
         self._stale = False
         self._timer.stop()
-        if self._body_quiet():
-            self._last_change = None
+        quiet = self._body_quiet()
+        self._pending_changes = []
+        self._last_change = None
+        if quiet:
             return
         reset_scroll = self._reset_scroll
         self._reset_scroll = False
@@ -440,6 +443,7 @@ class InspectorPane(QWidget):
 
     def _on_log(self, changeset: ChangeSet) -> None:
         self._memo.invalidate(changeset)
+        self._pending_changes.append(changeset)
         self._last_change = changeset
         if tabstops_only(changeset):
             self.properties.note_tab_order()
@@ -454,9 +458,11 @@ class InspectorPane(QWidget):
         for a widget a layout owns. A caption shows in the header. Anything
         else, including the root style sheet, still rebuilds the rows.
         """
-        change = self._last_change
-        if change is None or self.properties.builds_all_properties():
+        if not self._pending_changes or self.properties.builds_all_properties():
             return False
+        return all(self._change_is_quiet(change) for change in self._pending_changes)
+
+    def _change_is_quiet(self, change: ChangeSet) -> bool:
         if (
             change.added
             or change.removed
@@ -484,6 +490,7 @@ class InspectorPane(QWidget):
         return True
 
     def _on_selection(self, _change: SelectionChange) -> None:
+        self._pending_changes = []
         self._last_change = None
         document = self._services.session.document
         ids = frozenset(inspected_ids(document, self._services.session.selection.state.ids))
@@ -494,6 +501,7 @@ class InspectorPane(QWidget):
         self._schedule()
 
     def _refresh_now(self) -> None:
+        self._pending_changes = []
         self._last_change = None
         self._pending = True
         self.flush()
@@ -505,6 +513,7 @@ class InspectorPane(QWidget):
         if signature == getattr(self, "_diag_signature", None):
             return
         self._diag_signature = signature
+        self._pending_changes = []
         self._last_change = None
         self._schedule()
 

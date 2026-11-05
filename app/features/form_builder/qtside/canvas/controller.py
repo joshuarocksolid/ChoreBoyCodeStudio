@@ -1312,7 +1312,9 @@ class CanvasController:
         shown_key: Tuple[Tuple[int, int], ...] = ()
         if shown:
             shown_key = tuple(sorted((int(node), page) for node, page in shown.items()))
-        layers = tuple((layer.name, layer.state) for layer in inputs.layers)
+        layers = tuple(
+            (layer.name, layer.state, _overlay_stamp(layer.name, inputs.document)) for layer in inputs.layers
+        )
         return (
             None if static is None else id(static.placed),
             None if static is None else id(static.content),
@@ -1655,6 +1657,15 @@ class CanvasController:
         width = int(metrics.width(text) if advance is None else advance(text))
         self._chip_widths[text] = width
         return width
+
+
+def _overlay_stamp(name: str, document: object) -> int:
+    """The revision a layer reads. Other layers stay at 0 so a caption edit does not rebuild them."""
+    if name == "buddies":
+        return int(getattr(document, "buddy_revision", 0))
+    if name == "bind_chips":
+        return int(getattr(document, "bind_revision", 0))
+    return 0
 
 
 def _changed_bounds(previous: OverlayFrame, current: OverlayFrame) -> List[CanvasRect]:

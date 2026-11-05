@@ -184,9 +184,9 @@ _PAIRS: weakref.WeakKeyDictionary = weakref.WeakKeyDictionary()
 def form_row_pairs(doc: UiDocument) -> Tuple[Tuple[NodeId, str], ...]:
     """``(label id, field name)`` for each QFormLayout row of one label and one stop (UX-OVL-008).
 
-    Pairs follow the tree. Caption text is read by the caller, so a label edit reuses them.
+    Pairs follow the tree and who can take focus. Caption text is read by the caller.
     """
-    revision = doc.structure_revision
+    revision = (doc.structure_revision, doc.focus_revision)
     cached = _PAIRS.get(doc)
     if cached is not None and cached[0] == revision:
         return cached[1]

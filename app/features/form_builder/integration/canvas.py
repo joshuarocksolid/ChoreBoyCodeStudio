@@ -173,6 +173,34 @@ def _transparent() -> Qt.WidgetAttribute:
     return getattr(attrs, "WA_TransparentForMouseEvents")
 
 
+def _constraint_key(widget: QObject) -> tuple:
+    """Minimum and maximum of the widgets a layout request would resize."""
+    children = []
+    count = getattr(widget, "count", None)
+    child_at = getattr(widget, "widget", None)
+    if callable(count) and callable(child_at):
+        for index in range(count()):
+            children.append(child_at(index))
+    else:
+        layout_of = getattr(widget, "layout", None)
+        layout = layout_of() if callable(layout_of) else None
+        if layout is not None:
+            for index in range(layout.count()):
+                item = layout.itemAt(index)
+                children.append(item.widget() if item is not None else None)
+        else:
+            children.append(widget)
+    parts = []
+    for child in children:
+        if child is None:
+            parts.append(None)
+            continue
+        parts.append(
+            (child.minimumWidth(), child.maximumWidth(), child.minimumHeight(), child.maximumHeight())
+        )
+    return tuple(parts)
+
+
 class FormCanvas(QGraphicsView):
     """Dot grid, centred page, and the chrome around it."""
 
@@ -184,6 +212,8 @@ class FormCanvas(QGraphicsView):
         parent: QWidget,
     ) -> None:
         super().__init__(parent)
+        self._layout_walls: list = []
+        self._wall_constraints: dict = {}
         self._session = session
         self._realizer = realizer
         self._host = host
@@ -668,10 +698,18 @@ class FormCanvas(QGraphicsView):
         request = getattr(getattr(QEvent, "Type", QEvent), "LayoutRequest")
         if event.type() != request or self.width() <= 1 or self.height() <= 1:
             return False
-        for wall in self._layout_walls:
-            if watched is wall:
-                return True
-        return False
+        walls = getattr(self, "_layout_walls", ())
+        if not any(watched is wall for wall in walls):
+            return False
+        # A pane moving to its rail changes a minimum. That request has to
+        # reach the splitter. A form edit and a selection do not.
+        constraints = getattr(self, "_wall_constraints", None)
+        if constraints is None:
+            return False
+        key = _constraint_key(watched)
+        previous = constraints.get(id(watched))
+        constraints[id(watched)] = key
+        return previous == key
 
     def resizeEvent(self, event: object) -> None:  # noqa: N802
         super().resizeEvent(event)  # type: ignore[arg-type]

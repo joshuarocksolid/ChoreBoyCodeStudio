@@ -720,9 +720,11 @@ class FormSurface(QWidget):
     def editor_status_sentence(self) -> str:
         state = self._session.selection.state
         document = self._session.document
-        # A rule commit moves revision and leaves this key alone, so the walk does not run again.
+        # The spoken name reads captions, buddies, and who can take focus.
         key = (
             document.structure_revision,
+            document.face_revision,
+            document.focus_revision,
             state.current,
             state.ids,
             self._gesture_sentence,

@@ -147,7 +147,7 @@ def _patch_preferred(
     if not isinstance(old, tuple) or len(old) < 2:
         return None
     if old[0] != revision:
-        if not isinstance(old[0], int):
+        if not isinstance(old[0], int) or old[1] != face:
             return None
         added = doc.added_widgets_since(old[0])
         if not added:

@@ -40,6 +40,7 @@ from app.features.form_builder.engine.query.hit_index import (
 from app.features.form_builder.engine.query.tree import grid_shape
 from app.features.form_builder.engine.ui4.document import UiDocument
 from app.features.form_builder.engine.ui4.nodes import LayoutItemNode, LayoutNode, SpacerNode, WidgetNode
+from app.features.form_builder.engine.ui4.values import SizePolicyValue
 from app.features.form_builder.qtside.canvas.core.structure import (
     Free,
     LaidOut,
@@ -51,6 +52,58 @@ from app.features.form_builder.qtside.sizing_live import class_default_policies
 
 # Layouts and spacers sit under any widget that shares their container.
 _LAYOUT_Z = -1
+_STEADY_POLICY = frozenset({"Preferred", "Minimum", "Maximum", "Fixed"})
+
+
+def _redistributes(layout: LayoutNode) -> bool:
+    """True when a sample of three items can miss a sibling that moved.
+
+    A stretch, a spacer, or mixed size policies move items the sample skips.
+    """
+    for name in ("stretch", "rowstretch", "columnstretch"):
+        value = layout.field(name)
+        if isinstance(value, str) and any(part not in ("", "0") for part in value.replace(" ", "").split(",")):
+            return True
+    seen = set()
+    for item in layout.items:
+        content = item.content
+        if content is None:
+            continue
+        if not isinstance(content, WidgetNode):
+            return True
+        entry = content.prop("sizePolicy")
+        value = entry.value if entry is not None else None
+        if isinstance(value, SizePolicyValue):
+            if value.horstretch or value.verstretch:
+                return True
+            if value.hsizetype not in _STEADY_POLICY or value.vsizetype not in _STEADY_POLICY:
+                return True
+            key = (value.hsizetype, value.vsizetype)
+        else:
+            key = ("Preferred", "Preferred")
+        seen.add(key)
+        if len(seen) > 1:
+            return True
+    return False
+
+
+def _fields_share_width(pending: Sequence[Tuple[object, int, GeoEntry, int, int]]) -> bool:
+    """True when every form field can take the sampled field's width change."""
+    seen = set()
+    for content, _index, _old, _row, column in pending:
+        if column < 1 or not isinstance(content, WidgetNode):
+            continue
+        entry = content.prop("sizePolicy")
+        value = entry.value if entry is not None else None
+        if isinstance(value, SizePolicyValue):
+            if value.hsizetype in ("Fixed", "Maximum"):
+                return False
+            seen.add(value.hsizetype)
+        else:
+            seen.add("Preferred")
+        if content.prop("maximumSize") is not None:
+            return False
+    return len(seen) <= 1
 
 
 class LiveGeometrySource:
@@ -404,6 +457,8 @@ class LiveGeometrySource:
         The edited widget is left out of the sample. A short layout is measured
         in full; the skip is for the hundred-row form.
         """
+        if _redistributes(layout):
+            return False
         contents = [item.content for item in layout.items if item.content is not None and item.content.id not in dirty]
         if len(contents) < 8:
             return False
@@ -539,6 +594,8 @@ class LiveGeometrySource:
                 return None
             dx = field_rect.x - field[2].rect.x
             dw = field_rect.width - field[2].rect.width
+        if not _fields_share_width(pending):
+            return None
         planned: List[Tuple[int, GeoEntry, NodeId]] = []
         quiet: List[NodeId] = []
         for content, index, old, row, column in samples:
