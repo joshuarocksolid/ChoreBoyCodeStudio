@@ -1,3 +1,4 @@
+# pyright: reportAttributeAccessIssue=false
 """A 1000-widget form stays editable, and preview sessions do not keep widgets."""
 
 from __future__ import annotations
