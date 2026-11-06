@@ -605,12 +605,7 @@ class PageNameChip(QLabel):
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
         red, green, blue, alpha = channels(palette.layout)
         painter.setBrush(QColor(red, green, blue, alpha))
-        backdrop = QColor(self._backdrop[:7])
-        dark = backdrop.red() == 0 and backdrop.green() == 0 and backdrop.blue() == 0
-        if high and dark:
-            painter.setPen(QPen(QColor(255, 255, 255), 1))
-        else:
-            painter.setPen(QPen(Qt.PenStyle.NoPen))
+        painter.setPen(QPen(Qt.PenStyle.NoPen))
         painter.drawRoundedRect(QRectF(self.rect()).adjusted(0.5, 0.5, -0.5, -0.5), R_CONTROL, R_CONTROL)
         text_red, text_green, text_blue, text_alpha = channels(palette.chip_text)
         glyph = "#%02X%02X%02X" % (text_red, text_green, text_blue)

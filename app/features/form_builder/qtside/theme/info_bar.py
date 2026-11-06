@@ -136,13 +136,28 @@ class TabInfoBar(QFrame):
 
 
 def secondary_button_qss(chrome: FormChrome, selector: str) -> str:
-    """Host secondary button, for a bar that builds its own buttons."""
+    """The host secondary button: radius 5, 7 by 14 padding, hover and pressed."""
     focus = chrome.focus_width if chrome.focus_width > 0 else 1
     return (
-        "%s { color: %s; background: %s; border: 1px solid %s; border-radius: %dpx;"
-        " padding: 2px 8px; font-weight: 600; }"
+        "%s { color: %s; background: %s; border: 1px solid %s; border-radius: 5px;"
+        " padding: 7px 14px; font-size: 12px; font-weight: 600; }"
+        "%s:hover { background: %s; border-color: %s; }"
+        "%s:pressed { background: %s; }"
         "%s:focus { border: %dpx solid %s; }"
-        % (selector, chrome.text, chrome.input, chrome.border, R_CONTROL, selector, focus, chrome.accent)
+        % (
+            selector,
+            chrome.text,
+            chrome.input,
+            chrome.border,
+            selector,
+            chrome.row_hover,
+            chrome.accent,
+            selector,
+            chrome.selected or chrome.row_hover,
+            selector,
+            focus,
+            chrome.accent,
+        )
     )
 
 

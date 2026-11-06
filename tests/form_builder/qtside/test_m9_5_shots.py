@@ -38,7 +38,7 @@ from app.features.form_builder.engine.data.source import (  # noqa: E402
 )
 from app.features.form_builder.engine.query.drop_target import DOCK_REFUSAL  # noqa: E402
 from app.features.form_builder.engine.query.selection import SelectionSource  # noqa: E402
-from app.features.form_builder.integration.chrome import chrome_for  # noqa: E402
+from app.features.form_builder.integration.chrome import chrome_for, shell_dialog_parts  # noqa: E402
 from app.features.form_builder.qtside.dialogs.from_table import FromTableDialog  # noqa: E402
 from app.features.form_builder.qtside.inspector import TabId  # noqa: E402
 from app.features.form_builder.qtside.preview.try_log import TryLine  # noqa: E402
@@ -376,6 +376,7 @@ def _from_table(tour: _Tour, window: MainWindow, root: Path) -> None:
         date_format="yyyy-MM-dd",
         name_reason=lambda: None,
         parent=window,
+        shell_chrome=shell_dialog_parts(),
     )
     try:
         empty.resize(1100, 680)
@@ -397,6 +398,7 @@ def _from_table_filled(tour: _Tour, window: MainWindow, root: Path) -> None:
         date_format="yyyy-MM-dd",
         name_reason=lambda: None,
         parent=window,
+        shell_chrome=shell_dialog_parts(),
     )
     try:
         dialog.set_database(str(shop / "data" / "shop.db"), "shop")

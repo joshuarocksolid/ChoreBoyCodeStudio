@@ -1563,10 +1563,11 @@ class _Row(QWidget):
         width = budget if actual <= 0 else min(budget, actual)
         if width <= 0:
             return
-        if self._stacked:
+        if self._stacked or self._label_px > LABEL_MIN:
             if self._label.text() != full:
                 self._label.setText(full)
             _set_tip(self._label, _tip(view))
+            self._elided_key = None
             return
         # Measure only when the label text or its width changed.
         key = (full, width, _tip(view))
@@ -2152,7 +2153,7 @@ def _overline_font() -> QFont:
     return font
 
 def _form_header(parent: QWidget, name: str, title: str) -> SectionHeader:
-    """A form-inspector section. The shared header places the chevron at ``PANE_PAD``."""
+    """A form-inspector section. The scroll body already insets by ``PANE_PAD``."""
     header = SectionHeader(
         parent,
         title,
@@ -2160,6 +2161,7 @@ def _form_header(parent: QWidget, name: str, title: str) -> SectionHeader:
         object_name="formBuilder.formCaption.%s" % name,
         accessible_name=title,
     )
+    header.set_pad(0)
     header.setChecked(True)
     return header
 
@@ -2185,6 +2187,7 @@ def _group_header(parent: QWidget, object_name: str, title: str, expanded: bool)
         object_name=object_name,
         accessible_name="%s group" % title,
     )
+    header.set_pad(0)
     header.setChecked(expanded)
     return header
 

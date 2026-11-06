@@ -702,9 +702,6 @@ class FormToolbar(QWidget):
 
     def set_compact(self, compact: bool) -> None:
         self._compact = compact
-        self.text_size.setVisible(not compact)
-        self.two_widths.setVisible(not compact)
-        self.overflow.setVisible(compact)
         self._fit_labels()
 
     def _fold_targets(self) -> List[QToolButton]:
