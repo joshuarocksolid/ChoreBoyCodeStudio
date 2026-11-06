@@ -15,6 +15,7 @@ from app.qt.QtGui import QFont  # noqa: E402
 from app.qt.QtTest import QTest  # noqa: E402
 from app.qt.QtWidgets import (  # noqa: E402
     QApplication,
+    QCheckBox,
     QComboBox,
     QLabel,
     QLineEdit,
@@ -628,7 +629,7 @@ def test_primary_button_text_meets_contrast_on_the_accent() -> None:
         assert _contrast(accent, on_accent_for(accent)) >= 4.5
 
 
-def test_preview_stays_at_least_three_quarters_and_scrolls(tmp_path: Path, qapp: object) -> None:
+def test_preview_lays_out_at_the_column_width(tmp_path: Path, qapp: object) -> None:
     dialog = FromTableDialog(
         project_root=str(tmp_path),
         stem="customer",
@@ -644,17 +645,129 @@ def test_preview_stays_at_least_three_quarters_and_scrolls(tmp_path: Path, qapp:
         dialog.set_database(str(_database(tmp_path)), "shop")
         dialog.resize(960, 560)
         dialog.show()
-        for _ in range(3):
+        for _ in range(4):
             QApplication.processEvents()
         form = dialog._preview_widget
         view = dialog._preview_view
         assert form is not None and view is not None
-        assert view.transform().m11() >= 0.75
+        assert view.transform().m11() == 1
+        off = getattr(getattr(Qt, "ScrollBarPolicy", Qt), "ScrollBarAlwaysOff")
         needed = getattr(getattr(Qt, "ScrollBarPolicy", Qt), "ScrollBarAsNeeded")
-        assert enum_value(view.horizontalScrollBarPolicy()) == enum_value(needed)
+        assert enum_value(view.horizontalScrollBarPolicy()) == enum_value(off)
         assert enum_value(view.verticalScrollBarPolicy()) == enum_value(needed)
+        assert view.horizontalScrollBar().maximum() == 0
+        assert form.width() <= view.viewport().width()
         labels = [label for label in form.findChildren(QLabel) if label.isVisible() and label.text()]
         assert labels
+        assert min(label.height() for label in labels) >= 12
+        names = (
+            "firstButton",
+            "previousButton",
+            "positionLabel",
+            "nextButton",
+            "lastButton",
+            "newButton",
+            "saveButton",
+            "revertButton",
+            "deleteButton",
+            "findButton",
+        )
+        found = []
+        for name in names:
+            control = form.findChild(QWidget, name)
+            assert control is not None and control.text()
+            corner = control.mapTo(form, control.rect().bottomRight())
+            assert corner.x() <= form.width()
+            assert corner.y() <= form.height()
+            found.append(corner.y())
+        assert max(found) > min(found)
+        assert "First Name" in [label.text() for label in labels]
+        dialog.set_included("first_name", False)
+        for _ in range(4):
+            QApplication.processEvents()
+        form = dialog._preview_widget
+        view = dialog._preview_view
+        assert form is not None and view is not None
+        texts = [label.text() for label in form.findChildren(QLabel)]
+        assert "First Name" not in texts
+        assert "Joined" in texts
+        assert view.transform().m11() == 1
+        assert form.width() <= view.viewport().width()
+        assert view.horizontalScrollBar().maximum() == 0
+    finally:
+        dialog.close()
+    del qapp
+
+
+def _ink_chrome():
+    return chrome_from_values(
+        window="#000000",
+        panel="#000000",
+        text="#ffffff",
+        muted="#d0d0d0",
+        faint="#d0d0d0",
+        border="#ffffff",
+        accent="#7cb7ff",
+        row_hover="#222222",
+        input_bg="#1a1a1a",
+        error="#ff8080",
+        focus_width=2,
+        is_dark=True,
+        is_high_contrast=True,
+    )
+
+
+def _light_pixels(widget: QWidget, start: int) -> int:
+    image = widget.grab().toImage()
+    assert not image.isNull()
+    found = 0
+    for y in range(image.height()):
+        for x in range(start, image.width()):
+            if image.pixelColor(x, y).lightness() > 200:
+                found += 1
+    return found
+
+
+def test_checkbox_text_is_visible_on_black(tmp_path: Path, qapp: object) -> None:
+    dialog = FromTableDialog(
+        project_root=str(tmp_path),
+        stem="customer",
+        chrome=_ink_chrome(),
+        date_format="M/d/yy",
+        name_reason=lambda: None,
+    )
+    try:
+        dialog.resize(800, 600)
+        dialog.show()
+        QApplication.processEvents()
+        for name in ("formBuilder.fromTable.lines", "formBuilder.fromTable.start"):
+            box = dialog.findChild(QCheckBox, name)
+            assert box is not None and box.text()
+            assert _light_pixels(box, box.width() // 3) > 20
+    finally:
+        dialog.close()
+    del qapp
+
+
+def test_field_lists_use_the_input_color(tmp_path: Path, qapp: object) -> None:
+    dialog = FromTableDialog(
+        project_root=str(tmp_path),
+        stem="customer",
+        chrome=_ink_chrome(),
+        date_format="M/d/yy",
+        name_reason=lambda: None,
+    )
+    try:
+        dialog.resize(800, 600)
+        dialog.show()
+        QApplication.processEvents()
+        for name in ("formBuilder.fromTable.tables", "formBuilder.fromTable.mapping"):
+            listed = dialog.findChild(QWidget, name)
+            assert listed is not None
+            image = listed.viewport().grab().toImage()  # type: ignore[attr-defined]
+            assert not image.isNull()
+            color = image.pixelColor(image.width() // 2, image.height() // 2)
+            assert color.name().lower() == "#1a1a1a"
     finally:
         dialog.close()
     del qapp

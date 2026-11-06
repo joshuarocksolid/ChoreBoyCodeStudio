@@ -19,6 +19,7 @@ from app.features.form_builder.qtside.inspector.editors._editor_kit import (
     yield_form_undo_from_children,
 )
 from app.features.form_builder.qtside.theme.chrome import FormChrome, control_qss
+from app.features.form_builder.qtside.theme.segmented import SegmentedControl
 from app.features.form_builder.qtside.theme.metrics import (
     CONTROL,
     ICON,
@@ -472,6 +473,12 @@ class PropertiesPage(QWidget):
         if chrome is not None:
             for header in self.findChildren(SectionHeader):
                 header.apply_chrome(chrome)
+            for control in self.findChildren(SegmentedControl):
+                # Layout rows are ChoiceSegments. Their pane sheet is the
+                # loose-button look. Only the size track uses this control.
+                if type(control) is not SegmentedControl:
+                    continue
+                control.apply_chrome(chrome)
             self._form.apply_section_chrome(chrome)
 
     def _paint_search(self, chrome: Optional[FormChrome]) -> None:
@@ -1562,12 +1569,6 @@ class _Row(QWidget):
         actual = self._label.width()
         width = budget if actual <= 0 else min(budget, actual)
         if width <= 0:
-            return
-        if self._stacked or self._label_px > LABEL_MIN:
-            if self._label.text() != full:
-                self._label.setText(full)
-            _set_tip(self._label, _tip(view))
-            self._elided_key = None
             return
         # Measure only when the label text or its width changed.
         key = (full, width, _tip(view))

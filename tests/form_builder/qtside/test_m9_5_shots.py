@@ -363,6 +363,18 @@ def _new_form(tour: _Tour, tmp: Path) -> None:
         _shutdown(window, tour.qapp, guard)
 
 
+def _host_chrome(window: QWidget, qapp: QApplication):  # type: ignore[no-untyped-def]
+    """Chrome for the theme ``_theme`` just applied. A dialog built earlier keeps its own sheet."""
+    mode = str(getattr(window, "_theme_mode", _LIGHT))
+    return chrome_for(tokens_from_palette(qapp.palette(), force_mode=mode))
+
+
+def _rechrome_dialog(dialog: FromTableDialog, window: QWidget, qapp: QApplication) -> FromTableDialog:
+    dialog._chrome = _host_chrome(window, qapp)  # noqa: SLF001
+    dialog._apply_chrome()  # noqa: SLF001
+    return dialog
+
+
 def _from_table(tour: _Tour, window: MainWindow, root: Path) -> None:
     if tour.scale == "200":
         # The filled dialog is dense. The empty list is not.
@@ -382,7 +394,13 @@ def _from_table(tour: _Tour, window: MainWindow, root: Path) -> None:
         empty.resize(1100, 680)
         empty.show()
         _pump(tour.qapp)
-        tour.paint(window, 4, "start", "from-table-empty", lambda: empty)
+        tour.paint(
+            window,
+            4,
+            "start",
+            "from-table-empty",
+            lambda: _rechrome_dialog(empty, window, tour.qapp),
+        )
     finally:
         empty.close()
     _from_table_filled(tour, window, root)
@@ -409,27 +427,15 @@ def _from_table_filled(tour: _Tour, window: MainWindow, root: Path) -> None:
         dialog.show()
         _pump(tour.qapp)
 
-        def _rechrome(mode: str) -> None:
-            fresh = tokens_from_palette(tour.qapp.palette(), force_mode=mode)
-            dialog._chrome = chrome_for(fresh)  # noqa: SLF001
-            dialog._apply_chrome()  # noqa: SLF001
-
-        original = _theme
-
-        def themed(host: QWidget, mode: str, qapp: QApplication) -> None:
-            original(host, mode, qapp)
-            _rechrome(mode)
-
-        # Paint uses _theme from the module. Rechrome inside the target instead.
+        # The product opens this dialog with the theme that is current then.
+        # The tour builds it once and changes the window theme afterwards.
         def grab_filled() -> QWidget:
-            _rechrome(str(getattr(window, "_theme_mode", _LIGHT)))
-            return dialog
+            return _rechrome_dialog(dialog, window, tour.qapp)
 
         tour.paint(window, 5, "start", "from-table-filled", grab_filled, dense=True)
         dialog._lines.setChecked(True)  # noqa: SLF001
         _pump(tour.qapp)
         tour.paint(window, 6, "start", "from-table-lines", grab_filled, dense=True)
-        del themed
     finally:
         dialog.close()
 
@@ -1099,7 +1105,14 @@ def _preview(tour: _Tour, tmp: Path) -> None:
         )
         chrome.show()
         _pump(tour.qapp)
-        tour.paint(window, 48, "preview", "run-behavior", lambda: chrome, dense=True)
+
+        def grab_try() -> QWidget:
+            # TryChrome paints its own sheet. The form stays on the runtime
+            # palette. The toolbar and What ran follow the shell theme.
+            chrome.apply_chrome(_host_chrome(window, tour.qapp))
+            return chrome
+
+        tour.paint(window, 48, "preview", "run-behavior", grab_try, dense=True)
         chrome.hide()
         conflict = _box(
             window,
@@ -1108,16 +1121,28 @@ def _preview(tour: _Tour, tmp: Path) -> None:
         )
         conflict.show()
         _pump(tour.qapp)
-        tour.paint(window, 49, "preview", "conflict", lambda: conflict)
+        tour.paint(window, 49, "preview", "conflict", lambda: _paint_message(conflict, window, tour.qapp))
         conflict.hide()
         deleted = _box(window, "This invoice was deleted by someone else.", ("Close",))
         deleted.show()
         _pump(tour.qapp)
-        tour.paint(window, 50, "preview", "deleted", lambda: deleted)
+        tour.paint(window, 50, "preview", "deleted", lambda: _paint_message(deleted, window, tour.qapp))
         deleted.hide()
         del root
     finally:
         _shutdown(window, tour.qapp, guard)
+
+
+def _paint_message(box: QMessageBox, window: QWidget, qapp: QApplication) -> QMessageBox:
+    """A bare message box ignores the window sheet. Paint it from the shell tokens."""
+    chrome = _host_chrome(window, qapp)
+    box.setStyleSheet(
+        "QMessageBox { background: %s; color: %s; }"
+        "QLabel { color: %s; background: transparent; }"
+        "QPushButton { background: %s; color: %s; border: 1px solid %s; border-radius: 4px; padding: 4px 12px; }"
+        % (chrome.window, chrome.text, chrome.text, chrome.panel, chrome.text, chrome.border)
+    )
+    return box
 
 
 def _box(parent: QWidget, text: str, labels: Sequence[str]) -> QMessageBox:
@@ -1285,6 +1310,30 @@ def _assert_distinct_shots(folder: Path) -> None:
     assert not dupes, "identical shots:\n" + "\n".join(dupes)
 
 
+def _assert_themed_shots_differ(folder: Path) -> None:
+    """A dark or high-contrast shot must not be the light shot with a new name."""
+    by_stem = {}
+    for path in folder.glob("*.png"):
+        parts = path.stem.split("-")
+        if len(parts) < 4:
+            continue
+        scale = parts[-1]
+        theme = parts[-2]
+        stem = "-".join(parts[:-2])
+        by_stem.setdefault((stem, scale), {})[theme] = path.read_bytes()
+    same = []
+    for stem, scale in sorted(by_stem):
+        themes = by_stem[(stem, scale)]
+        light = themes.get("light")
+        if light is None:
+            continue
+        for theme in ("dark", "high_contrast_dark"):
+            other = themes.get(theme)
+            if other is not None and other == light:
+                same.append("%s-%s matches light at %s" % (stem, theme, scale))
+    assert not same, "theme shots match light:\n" + "\n".join(same)
+
+
 def _write_index(folder: Path) -> None:
     groups = {}
     for path in sorted(folder.glob("*.png")):
@@ -1379,3 +1428,4 @@ def test_m9_5_tour(qapp: QApplication, tmp_path: Path) -> None:
     assert not misses, "\n".join(misses)
     assert not child, child
     _assert_distinct_shots(folder)
+    _assert_themed_shots_differ(folder)

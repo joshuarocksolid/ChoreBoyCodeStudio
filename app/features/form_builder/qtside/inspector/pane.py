@@ -33,6 +33,7 @@ from app.features.form_builder.qtside.theme.chrome import (
     FormChrome,
     control_qss,
     disabled_field_declaration,
+    field_qss,
     popover_style,
 )
 from app.features.form_builder.qtside.theme.metrics import R_CONTROL, TYPE_BODY, TYPE_FINE
@@ -711,7 +712,7 @@ def _stylesheet(chrome: FormChrome) -> str:
         "QWidget#formBuilder\\.inspectorHeader { background: %s; color: %s; }"
         "QLabel#formBuilder\\.inspectorCrumbs { color: %s; background: transparent; font-size: %dpx; }"
         % (chrome.panel, chrome.text, chrome.muted, TYPE_FINE)
-    ) + control_qss(chrome)
+    ) + control_qss(chrome) + field_qss(chrome, "QWidget#formBuilder\\.inspector")
 
 
 def _disabled_fields(chrome: FormChrome) -> str:

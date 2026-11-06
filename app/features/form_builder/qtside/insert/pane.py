@@ -751,13 +751,18 @@ class InsertPane(QWidget):
             self.body.setViewMode(QListView.ViewMode.IconMode)
             self.body.setFlow(QListView.Flow.LeftToRight)
             self.body.setWrapping(True)
+            self.body.setResizeMode(QListView.ResizeMode.Adjust)
+            self.body.setMovement(QListView.Movement.Static)
             self.body.setSpacing(0)
             self.body.setGridSize(QSize())
+            self.body.setUniformItemSizes(False)
         else:
             self.body.setViewMode(QListView.ViewMode.ListMode)
             self.body.setFlow(QListView.Flow.TopToBottom)
             self.body.setWrapping(False)
             self.body.setSpacing(0)
+            self.body.setGridSize(QSize())
+            self.body.setUniformItemSizes(False)
         self._delegate.set_width(max(self.body.viewport().width(), ICONS_MIN_WIDTH // 2))
         self.body.doItemsLayout()
 

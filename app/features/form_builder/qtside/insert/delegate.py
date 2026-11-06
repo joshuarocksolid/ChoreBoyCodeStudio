@@ -16,6 +16,7 @@ from app.features.form_builder.qtside.theme.metrics import (
     ICON,
     R_CONTROL,
     ROW,
+    S1,
     SECTION_HEADER,
     TYPE_BODY,
     TYPE_FINE,
@@ -56,7 +57,7 @@ class EntryDelegate(QStyledItemDelegate):
     def sizeHint(self, option: QStyleOptionViewItem, index: object) -> QSize:  # noqa: N802
         row = _row(index)
         if row is not None and self._is_tile(row):
-            return QSize(TILE_WIDTH, TILE_HEIGHT)
+            return QSize(TILE_WIDTH + S1, TILE_HEIGHT + S1)
         # ResizeMode.Adjust asks again on resize. A width cached before the
         # view is shown stays at the 120 px floor and tiles sit beside headers.
         width = _viewport_width(option)
@@ -175,17 +176,18 @@ class EntryDelegate(QStyledItemDelegate):
 
     def _paint_tile(self, painter: QPainter, option: QStyleOptionViewItem, row: Row) -> None:
         text, _faint, _hover, _current, _match, _accent = self._colors()
-        rect = option.rect
+        outer = option.rect
+        rect = QRect(outer.left() + S1 // 2, outer.top() + S1 // 2, TILE_WIDTH, TILE_HEIGHT)
         self._background(painter, option, rect, _RADIUS)
-        self._glyph(painter, row.glyph, rect.center().x() - GLYPH_TILE // 2, rect.top() + 2, GLYPH_TILE)
+        self._glyph(painter, row.glyph, rect.center().x() - GLYPH_TILE // 2, rect.top() + 8, GLYPH_TILE)
         font = self._font(option, TYPE_FINE)
         painter.setFont(font)
         painter.setPen(QColor(text))
         width = rect.width() - 8
         label = row.title.split(" · ")[0]
-        lines = _tile_lines(label, QFontMetrics(font), width)
+        lines = _two_lines(label, QFontMetrics(font), width)
         line_h = 14
-        top = rect.bottom() - line_h * len(lines) - 2
+        top = rect.top() + 8 + GLYPH_TILE
         for index, line in enumerate(lines):
             painter.drawText(
                 QRect(rect.left() + 4, top + index * line_h, width, line_h),
@@ -296,25 +298,6 @@ def _right_caption(row: Row) -> str:
 
 def _points(points: tuple) -> QPolygonF:
     return QPolygonF([QPointF(x, y) for x, y in points])
-
-
-def _tile_lines(text: str, metrics: QFontMetrics, width: int) -> List[str]:
-    """One line, or two broken at a space. The words stay whole."""
-    if metrics.horizontalAdvance(text) <= width:
-        return [text]
-    words = text.split(" ")
-    first = ""
-    index = 0
-    while index < len(words):
-        candidate = (first + " " + words[index]).strip()
-        if first and metrics.horizontalAdvance(candidate) > width:
-            break
-        first = candidate
-        index += 1
-    rest = " ".join(words[index:])
-    if not rest or not first:
-        return [text]
-    return [first, rest]
 
 
 def _two_lines(text: str, metrics: QFontMetrics, width: int) -> List[str]:

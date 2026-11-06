@@ -46,6 +46,7 @@ class SegmentedControl(QWidget):
         tooltips: Sequence[str] = (),
         glyphs: Sequence[str] = (),
         names: Sequence[str] = (),
+        object_names: Sequence[str] = (),
     ) -> None:
         while self._row.count():
             item = self._row.takeAt(0)
@@ -56,7 +57,10 @@ class SegmentedControl(QWidget):
         self._glyphs = [glyph for glyph in glyphs]
         for index, label in enumerate(labels):
             button = QToolButton(self)
-            button.setObjectName("formBuilder.segment")
+            named = object_names[index] if index < len(object_names) and object_names[index] else ""
+            button.setObjectName(named or "formBuilder.segment")
+            if named:
+                button.setProperty("fbTrack", "true")
             button.setCheckable(True)
             button.setAutoRaise(True)
             tip = tooltips[index] if index < len(tooltips) and tooltips[index] else label
@@ -72,6 +76,9 @@ class SegmentedControl(QWidget):
         if self._buttons:
             self.set_current_index(min(self._index, len(self._buttons) - 1))
         self._paint()
+
+    def buttons(self) -> List[QToolButton]:
+        return list(self._buttons)
 
     def current_index(self) -> int:
         return self._index
@@ -91,26 +98,34 @@ class SegmentedControl(QWidget):
     def apply_chrome(self, chrome: FormChrome) -> None:
         self._chrome = chrome
         focus = chrome.focus_width if chrome.focus_width > 0 else 1
+        plain = _segment_selector()
+        checked = _segment_selector(":checked")
+        hover = _segment_selector(":hover")
+        focused = _segment_selector(":focus")
         self.setStyleSheet(
             "QWidget#formBuilder\\.segmented { background: %s; border: none; border-radius: %dpx; }"
-            "QToolButton#formBuilder\\.segment {"
+            "%s {"
             " background: transparent; color: %s; border: none; border-radius: %dpx;"
             " padding: 0px %dpx; font-size: %dpx; font-weight: 400; }"
-            "QToolButton#formBuilder\\.segment:checked {"
+            "%s {"
             " background: %s; color: %s; border: 1px solid %s; font-weight: 600; }"
-            "QToolButton#formBuilder\\.segment:hover { color: %s; }"
-            "QToolButton#formBuilder\\.segment:focus { border: %dpx solid %s; }"
+            "%s { color: %s; }"
+            "%s { border: %dpx solid %s; }"
             % (
                 chrome.row_hover,
                 R_CONTROL,
+                plain,
                 chrome.muted,
                 R_SEGMENT,
                 S1,
                 TYPE_BODY,
+                checked,
                 chrome.panel,
                 chrome.text,
                 chrome.border,
+                hover,
                 chrome.text,
+                focused,
                 focus,
                 chrome.accent,
             )
@@ -142,3 +157,10 @@ class SegmentedControl(QWidget):
     @staticmethod
     def _focus(name: str) -> Qt.FocusPolicy:
         return getattr(getattr(Qt, "FocusPolicy", Qt), name)
+
+
+def _segment_selector(pseudo: str = "") -> str:
+    return (
+        "QToolButton#formBuilder\\.segment%s, QToolButton[fbTrack=\"true\"]%s"
+        % (pseudo, pseudo)
+    )

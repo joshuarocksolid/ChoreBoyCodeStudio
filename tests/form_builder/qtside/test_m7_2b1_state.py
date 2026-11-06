@@ -14,7 +14,7 @@ from app.features.form_builder.engine.ui4.nodes import WidgetNode
 from app.features.form_builder.engine.ui4.values import StringValue
 from app.features.form_builder.qtside.inspector import TabId
 from app.features.form_builder.qtside.inspector.pane import InspectorPane
-from app.qt.QtWidgets import QApplication, QComboBox, QLabel, QVBoxLayout, QWidget
+from app.qt.QtWidgets import QApplication, QLabel, QMenu, QPushButton, QVBoxLayout, QWidget
 from tests.form_builder.qtside.support import form, opened
 
 pytestmark = [pytest.mark.unit, pytest.mark.usefixtures("qapp")]
@@ -165,12 +165,13 @@ def test_a_line_edit_lists_kind_through_format_and_a_button_lists_two() -> None:
         assert kind.y() < enabled.y()
         assert value_row.y() < form_row.y()
         assert _stored(session, "discountEdit", "cbcsKind") == ""
-        combo = pane.findChild(QComboBox, "formBuilder.state.kind")
-        assert combo is not None and combo.currentText() == "Text"
-        formats = pane.findChild(QComboBox, "formBuilder.state.format")
+        kind_button = pane.findChild(QPushButton, "formBuilder.state.kind")
+        assert kind_button is not None and kind_button.text() == "Text"
+        formats = pane.findChild(QPushButton, "formBuilder.state.format")
         assert formats is not None
-        money = formats.findData("money")
-        assert money >= 0 and formats.itemText(money) == "Money"
+        menu = formats.findChild(QMenu)
+        assert menu is not None
+        assert any(action.text() == "Money" for action in menu.actions())
         _select(session, pane, "okButton")
         assert _showing(pane) == ("cbcsEnabledWhen", "cbcsVisibleWhen")
 

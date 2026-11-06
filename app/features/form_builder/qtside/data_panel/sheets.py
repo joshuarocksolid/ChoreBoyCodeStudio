@@ -29,7 +29,7 @@ from app.features.form_builder.qtside.data_panel.model import (
     record_word,
 )
 from app.features.form_builder.qtside.data_panel.sql_text import sql_text
-from app.qt.QtCore import QTimer, Qt
+from app.qt.QtCore import QEvent, QTimer, Qt
 from app.qt.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -244,6 +244,7 @@ class SourceForm(QWidget):
         for _column, direction in self._orders:
             direction.apply_chrome(chrome)
         polish_item_view(self._tables, chrome)
+        _paint_list_input(self._tables, chrome)
 
     def reload(self) -> None:
         focus = QApplication.focusWidget()
@@ -467,10 +468,24 @@ class ConnectSheet(QDialog):
         self._ok.setAccessibleName("Connect")
         self._ok.clicked.connect(self._commit)
         self._form.load(record_source(session.document))
+        self._applied_tokens = tokens
         self._form.apply_tokens(tokens)
         self.resize(480, 560)
         if tokens is not None:
             apply_chrome(self, tokens)
+
+    def changeEvent(self, event: QEvent) -> None:  # noqa: N802
+        super().changeEvent(event)
+        if event.type() == _STYLE_CHANGE and hasattr(self, "_applied_tokens"):
+            self._follow_host()
+
+    def _follow_host(self) -> None:
+        tokens = _host_tokens(self)
+        if tokens is None or tokens == self._applied_tokens:
+            return
+        self._applied_tokens = tokens
+        self._form.apply_tokens(tokens)
+        apply_chrome(self, tokens)
 
     def _open_connections(self) -> None:
         host = self.parent()
@@ -669,6 +684,35 @@ class HooksDialog(QDialog):
         if not callable(go_to):
             return
         go_to(surface, method)
+
+
+def _paint_list_input(view: QListWidget, chrome: FormChrome) -> None:
+    """The table list is a chrome field. Item-view polish fills it with the panel."""
+    fill = chrome.input or chrome.panel
+    if not fill or fill == chrome.panel:
+        return
+    sheet = view.styleSheet()
+    needle = "background: %s;" % chrome.panel
+    if needle not in sheet:
+        return
+    view.setStyleSheet(sheet.replace(needle, "background: %s;" % fill, 1))
+
+
+def _host_tokens(widget: QWidget) -> object:
+    """Shell tokens from the host that owns the theme, walking past a dialog window."""
+    current: Optional[QWidget] = widget
+    seen = 0
+    while current is not None and seen < 8:
+        workflow = getattr(current, "_shell_theme_workflow", None)
+        resolve = getattr(workflow, "resolve_theme_tokens", None)
+        if callable(resolve):
+            return resolve()
+        current = current.parentWidget()
+        seen += 1
+    return None
+
+
+_STYLE_CHANGE = getattr(getattr(QEvent, "Type", QEvent), "StyleChange")
 
 
 def _item_enabled(item: QListWidgetItem) -> bool:

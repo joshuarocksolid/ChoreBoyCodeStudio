@@ -84,6 +84,7 @@ class SectionHeader(QWidget):
             button.setFocusPolicy(self._focus("StrongFocus"))
             button.setSizePolicy(getattr(policy, "Fixed"), getattr(policy, "Fixed"))
             button.setToolButtonStyle(self._text_only())
+            button.setProperty("fbSectionTitle", "true")
             if accessible_name:
                 button.setAccessibleName(accessible_name)
             button.clicked.connect(self._button_clicked)
@@ -206,13 +207,13 @@ class SectionHeader(QWidget):
         title_sel = _escape(title)
         button_sel = _escape(self._button.objectName()) if self._button is not None else ""
         focus = chrome.focus_width if chrome.focus_width > 0 else 1
-        button_rule = ""
-        if button_sel:
-            button_rule = (
-                "QToolButton#%s { color: %s; background: transparent; border: none;"
+        if self._button is not None and button_sel:
+            # The button's own sheet beats a parent rule that paints every QWidget.
+            self._button.setStyleSheet(
+                "QToolButton#%s[fbSectionTitle=\"true\"] { color: %s; background: transparent; border: none;"
                 " padding: 0px; text-align: left; font-size: %dpx; font-weight: 700;"
                 " letter-spacing: %spx; }"
-                "QToolButton#%s:focus { border: %dpx solid %s; }"
+                "QToolButton#%s[fbSectionTitle=\"true\"]:focus { border: %dpx solid %s; }"
                 % (button_sel, chrome.muted, TYPE_SECTION, LETTER_SECTION, button_sel, focus, chrome.accent)
             )
         self.setStyleSheet(
@@ -226,7 +227,6 @@ class SectionHeader(QWidget):
             "%s:pressed { background: %s; }"
             "%s:focus { border: %dpx solid %s; }"
             "%s { image: none; width: 0px; }"
-            "%s"
             % (
                 _escape(self.objectName()),
                 title_sel,
@@ -245,7 +245,6 @@ class SectionHeader(QWidget):
                 focus,
                 chrome.accent,
                 _action_selector(self._actions, "::menu-indicator"),
-                button_rule,
             )
         )
         self._fit_title()

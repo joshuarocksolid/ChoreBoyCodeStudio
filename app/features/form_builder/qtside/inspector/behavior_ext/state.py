@@ -6,13 +6,13 @@ from dataclasses import dataclass
 from types import SimpleNamespace
 from typing import Dict, Optional, Tuple
 
-from app.qt.QtCore import Qt, Signal
+from app.qt.QtCore import QEvent, QPoint, Qt, Signal
 from app.features.form_builder.qtside.inspector.behavior_ext.value_button import ValueButton
 from app.features.form_builder.qtside.theme.metrics import INSPECTOR_ROW, S2
 from app.qt.QtWidgets import (
-    QComboBox,
     QHBoxLayout,
     QLabel,
+    QMenu,
     QSizePolicy,
     QSpinBox,
     QVBoxLayout,
@@ -58,6 +58,10 @@ _FORMATS = (
     ("Proper case", "text:proper"),
 )
 _SPEAK = {"condition": "condition", "value": "value", "default": "value"}
+_FORMAT_DEFAULT = "Default"
+_KEY = getattr(getattr(QEvent, "Type", QEvent), "KeyPress")
+_UP = enum_value(Qt.Key.Key_Up)
+_DOWN = enum_value(Qt.Key.Key_Down)
 
 
 @dataclass(frozen=True)
@@ -88,13 +92,19 @@ class _Row(QWidget):
         super().__init__(body)
         self.spec = spec
         self._full = ""
+        self.choice = ""
+        self.menu: Optional[QMenu] = None
         self.setObjectName("formBuilder.state.row.%s" % spec.key)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self.setMinimumWidth(0)
         self.words = QLabel(spec.words, self)
         self.words.setMinimumWidth(0)
         self.value = ValueButton(self)
-        self.value.setObjectName("formBuilder.state.value.%s" % spec.key)
+        if spec.slot in ("kind", "format"):
+            self.value.setObjectName("formBuilder.state.%s" % spec.slot)
+            self.value.installEventFilter(self)
+        else:
+            self.value.setObjectName("formBuilder.state.value.%s" % spec.key)
         self.value.setMinimumWidth(0)
         self.value.clicked.connect(lambda: self._body.open_row(self.spec.key))
         chrome = getattr(getattr(body, "_services", None), "chrome", None)
@@ -105,7 +115,6 @@ class _Row(QWidget):
         self.now.setMinimumWidth(0)
         self.now.setAlignment(_RIGHT | _VCENTER)
         self.now.hide()
-        self.combo: Optional[QComboBox] = None
         self.places: Optional[QSpinBox] = None
         self.column = QVBoxLayout(self)
         self.column.setContentsMargins(0, 0, 0, 0)
@@ -129,6 +138,17 @@ class _Row(QWidget):
         self._full = text
         self._tip = tip
         self._elide()
+
+    def eventFilter(self, watched: object, event: object) -> bool:  # noqa: N802
+        if watched is self.value and getattr(event, "type", lambda: None)() == _KEY:
+            key = enum_value(event.key())  # type: ignore[attr-defined]
+            if key == _UP:
+                self._body.step_choice(self.spec.key, -1)
+                return True
+            if key == _DOWN:
+                self._body.step_choice(self.spec.key, 1)
+                return True
+        return super().eventFilter(watched, event)  # type: ignore[arg-type]
 
     def _elide(self) -> None:
         """Keep the whole sentence. ``now:`` sits on the next line, so the rule is not cut."""
@@ -295,8 +315,7 @@ class StateBody(QWidget):
         if spec is None or row is None or row.isHidden():
             return
         if spec.slot in ("kind", "format"):
-            if row.combo is not None:
-                row.combo.setFocus()
+            self._open_choices(key)
             return
         if self._open_key and self._open_key != key:
             if self._editor is not None and self._editor.has_error():
@@ -395,7 +414,7 @@ class StateBody(QWidget):
             row = self._rows.get(spec.key)
             if row is None or row.isHidden() or previous is None:
                 continue
-            target = row.combo if spec.slot in ("kind", "format") and row.combo is not None else row
+            target = row.value if spec.slot in ("kind", "format") else row
             QWidget.setTabOrder(previous, target)
             previous = target
 
@@ -403,14 +422,7 @@ class StateBody(QWidget):
         row = _Row(self, spec)
         if spec.slot not in ("kind", "format"):
             return row
-        row.value.hide()
         row.now.hide()
-        combo = QComboBox(row)
-        combo.setObjectName("formBuilder.state.%s" % spec.slot)
-        combo.setMinimumWidth(0)
-        items = _KINDS if spec.slot == "kind" else _FORMATS
-        for label, code in items:
-            combo.addItem(label, code)
         spin = QSpinBox(row)
         spin.setRange(0, 6)
         spin.setObjectName(
@@ -419,35 +431,91 @@ class StateBody(QWidget):
         if spec.slot == "kind":
             spin.setAccessibleName("Decimal places")
         spin.hide()
-        row.combo = combo
         row.places = spin
-        row.line.addWidget(combo, 1)
         row.line.addWidget(spin)
-        row.line_host.setFixedHeight(max(24, combo.sizeHint().height()))
-        combo.currentIndexChanged.connect(lambda _index, key=spec.key: self._plain_changed(key))
         spin.valueChanged.connect(lambda _value, key=spec.key: self._plain_changed(key))
         return row
 
     def _plain_changed(self, key: str) -> None:
         if self._filling:
             return
-        spec = self._by_key.get(key)
         row = self._rows.get(key)
-        if spec is None or row is None or row.combo is None:
+        if row is None:
             return
-        code = row.combo.currentData()
-        if not isinstance(code, str):
-            code = ""
+        self._apply_choice(row, write=True)
+
+    def _open_choices(self, key: str) -> None:
+        row = self._rows.get(key)
+        if row is None or row.isHidden():
+            return
+        menu = self._ensure_menu(row)
+        menu.popup(row.value.mapToGlobal(QPoint(0, row.value.height())))
+
+    def step_choice(self, key: str, direction: int) -> None:
+        row = self._rows.get(key)
+        if row is None or row.isHidden() or self._filling:
+            return
+        codes = [code for _label, code in _choices(row.spec.slot, self._widget_class())]
+        if row.choice not in codes or not codes:
+            return
+        index = codes.index(row.choice) + direction
+        if index < 0 or index >= len(codes):
+            return
+        row.choice = codes[index]
+        self._apply_choice(row, write=True)
+
+    def _ensure_menu(self, row: _Row) -> QMenu:
+        menu = row.menu
+        if menu is None:
+            menu = QMenu(row.value)
+            menu.setObjectName("formBuilder.state.menu.%s" % row.spec.slot)
+            menu.triggered.connect(lambda action, key=row.spec.key: self._picked(key, action))
+            row.menu = menu
+        menu.clear()
+        for label, code in _choices(row.spec.slot, self._widget_class()):
+            action = menu.addAction(label or _FORMAT_DEFAULT)
+            action.setData(code)
+        if not menu.actions():
+            return menu
+        menu.setActiveAction(menu.actions()[0])
+        return menu
+
+    def _picked(self, key: str, action: object) -> None:
+        if self._filling:
+            return
+        row = self._rows.get(key)
+        data = getattr(action, "data", None)
+        code = data() if callable(data) else None
+        if row is None or not isinstance(code, str):
+            return
+        row.choice = code
+        self._apply_choice(row, write=True)
+
+    def _apply_choice(self, row: _Row, *, write: bool) -> None:
+        spec = row.spec
+        code = row.choice
         places = row.places
+        shown = code
         if code in ("number", "percent") and places is not None and spec.slot == "format":
             places.show()
-            code = "%s:%d" % (code, places.value())
+            shown = "%s:%d" % (code, places.value())
         elif code == "number" and places is not None and spec.slot == "kind":
             places.show()
-            code = "number:%d" % places.value()
+            shown = "number:%d" % places.value()
         elif places is not None:
             places.hide()
-        self._write(spec.key, spec.words, code, formula=False)
+        label = _choice_label(_choices(spec.slot, self._widget_class()), code, spec.slot)
+        row.value.set_value(label)
+        _ink(row.value, muted=_choice_is_default(spec.slot, code))
+        row.setAccessibleName("%s  %s" % (spec.words, label))
+        if write:
+            self._write(spec.key, spec.words, shown, formula=False)
+
+    def _widget_class(self) -> str:
+        node = self._node
+        if node is None:
+            return ""
+        return (node.class_name or "").rsplit(".", 1)[-1]
 
     def _touch(self, specs: Tuple[StateRowSpec, ...]) -> None:
         """A rule commit changes one stored formula. Rewrite that row only."""
@@ -465,7 +533,7 @@ class StateBody(QWidget):
                 if row is None:
                     continue
                 if spec.slot in ("kind", "format"):
-                    self._fill_combo(row, stored)
+                    self._fill_choice(row, stored)
                 else:
                     self._paint_formula(row, spec, stored, node, env)
                 self._stored_text[spec.key] = stored
@@ -487,7 +555,7 @@ class StateBody(QWidget):
                 stored = _stored(node, spec.key)
                 remembered[spec.key] = stored
                 if spec.slot in ("kind", "format"):
-                    self._fill_combo(row, stored)
+                    self._fill_choice(row, stored)
                     continue
                 self._paint_formula(row, spec, stored, node, env)
             self._stored_text = remembered
@@ -519,28 +587,20 @@ class StateBody(QWidget):
             line = "%s  %s" % (spec.words, spec.empty) if spec.empty else spec.words
         row.setAccessibleName(line)
 
-    def _fill_combo(self, row: _Row, stored: str) -> None:
-        combo = row.combo
-        places = row.places
-        if combo is None:
-            return
+    def _fill_choice(self, row: _Row, stored: str) -> None:
         head, count = _split_places(stored)
-        index = combo.findData(head)
-        if index < 0:
-            index = 0 if row.spec.slot == "kind" else combo.findData("")
-        combo.blockSignals(True)
-        combo.setCurrentIndex(max(0, index))
-        combo.blockSignals(False)
-        if places is None:
-            return
-        show = head in ("number", "percent") and (row.spec.slot == "format" or head == "number")
-        if row.spec.slot == "kind":
-            show = head == "number"
-        places.blockSignals(True)
-        if count is not None:
-            places.setValue(max(0, min(6, count)))
-        places.blockSignals(False)
-        places.setVisible(show)
+        codes = [code for _label, code in _choices(row.spec.slot, self._widget_class())]
+        if head not in codes:
+            head = codes[0] if codes else ""
+        row.choice = head
+        places = row.places
+        if places is not None:
+            places.blockSignals(True)
+            if count is not None:
+                places.setValue(max(0, min(6, count)))
+            places.blockSignals(False)
+        self._ensure_menu(row)
+        self._apply_choice(row, write=False)
 
     def _sync_columns(self) -> None:
         if not self._rows:
@@ -709,6 +769,8 @@ def _visible(node: WidgetNode, classes: QtClassTable) -> Tuple[StateRowSpec, ...
             continue
         if row.slot == "format" and not (has_value and names.intersection(_FORMAT_CLASSES)):
             continue
+        if row.slot == "format" and _only_default(_choices("format", class_name)):
+            continue
         found.append(row)
     del matched
     return tuple(found)
@@ -773,6 +835,38 @@ def _stored(node: WidgetNode, key: str) -> str:
     if isinstance(value, StringValue):
         return value.text
     return ""
+
+
+def _choices(slot: str, class_name: str) -> Tuple[Tuple[str, str], ...]:
+    if slot == "kind":
+        return _KINDS
+    found = []
+    for label, code in _FORMATS:
+        if code.startswith("text:") and class_name != "QLineEdit":
+            continue
+        found.append((label, code))
+    return tuple(found)
+
+
+def _only_default(choices: Tuple[Tuple[str, str], ...]) -> bool:
+    return not any(code for _label, code in choices)
+
+
+def _choice_label(choices: Tuple[Tuple[str, str], ...], code: str, slot: str) -> str:
+    for label, item in choices:
+        if item == code:
+            return label or _FORMAT_DEFAULT
+    if slot == "format":
+        return _FORMAT_DEFAULT
+    return code
+
+
+def _choice_is_default(slot: str, code: str) -> bool:
+    if slot == "format":
+        return code == ""
+    if slot == "kind":
+        return code in ("", "text")
+    return False
 
 
 def _split_places(stored: str) -> Tuple[str, Optional[int]]:

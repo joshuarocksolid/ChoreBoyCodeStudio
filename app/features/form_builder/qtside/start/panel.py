@@ -51,7 +51,7 @@ from app.features.form_builder.engine.project.user_templates import SCOPE_PROJEC
 from app.features.form_builder.qtside.start.cards import CARD_WIDTH, StartCard
 from app.features.form_builder.qtside.start.wizard import WIZARD_CARD, WIZARD_KEY
 
-from app.features.form_builder.qtside.theme.chrome import FormChrome, scrollbar_qss
+from app.features.form_builder.qtside.theme.chrome import FormChrome, field_qss, scrollbar_qss
 from app.features.form_builder.qtside.theme.metrics import CONTROL, S2, S4, S6, S8, START_MAX, TYPE_BODY
 from app.features.form_builder.qtside.theme.section_header import SectionHeader
 
@@ -143,6 +143,7 @@ class NewFormPanel(QWidget):
             "QScrollArea#formBuilder\\.newForm\\.scroll > QWidget > QWidget { background: %s; }"
             % (chrome.window, chrome.text, chrome.window, chrome.window)
             + scrollbar_qss(chrome, "QScrollArea#formBuilder\\.newForm\\.scroll")
+            + field_qss(chrome, "QWidget#formBuilder\\.newForm")
         )
         self._hero.setStyleSheet("color: %s; background: transparent;" % chrome.text)
         self._name_label.setStyleSheet(

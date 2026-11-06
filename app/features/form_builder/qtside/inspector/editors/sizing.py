@@ -41,8 +41,9 @@ from app.features.form_builder.qtside.inspector.api import (
     Registrar,
     set_style_flag,
 )
-from app.features.form_builder.qtside.inspector.editors._segments import ChoiceSegments
+from app.features.form_builder.qtside.theme.chrome import FormChrome
 from app.features.form_builder.qtside.theme.metrics import S2
+from app.features.form_builder.qtside.theme.segmented import SegmentedControl
 from app.features.form_builder.qtside.sizing_live import (
     class_default_policies,
     class_phrase,
@@ -104,6 +105,10 @@ class SizeBody:
         layout.addWidget(self._reset)
         layout.addWidget(self._why)
         self._root.setMinimumWidth(0)
+        chrome = getattr(host, "chrome", None)
+        if isinstance(chrome, FormChrome):
+            self._width.apply_chrome(chrome)
+            self._height.apply_chrome(chrome)
 
     @property
     def widget(self) -> QWidget:
@@ -402,14 +407,12 @@ class _AxisRow:
         self._outer = outer
         self._fitting = False
         line.addWidget(self._label)
-        self._segments = ChoiceSegments(self.widget)
+        self._segments = SegmentedControl(self.widget)
         self._segments.set_items(
             list(WORDS),
             tooltips=[_TIPS[word] for word in WORDS],
             names=["%s: %s" % (title, word) for word in WORDS],
-        )
-        self._segments.name_buttons(
-            ["formBuilder.size.%s.%s" % (title.lower(), word) for word in WORDS]
+            object_names=["formBuilder.size.%s.%s" % (title.lower(), word) for word in WORDS],
         )
         self._buttons: Dict[str, QToolButton] = {}
         for word, button in zip(WORDS, self._segments.buttons()):
@@ -476,14 +479,24 @@ class _AxisRow:
             self._pixels.blockSignals(True)
             self._pixels.setValue(int(first.pixels))
             self._pixels.blockSignals(False)
+        default_tip = ""
         if mixed:
             self._caption.setText("Mixed")
+        elif first.caption.startswith("Default for"):
+            self._caption.setText("")
+            default_tip = first.caption
         elif first.caption:
             self._caption.setText(first.caption)
         else:
             self._caption.setText("")
         # An empty wrapped label still takes a line at narrow widths.
         self._caption.setVisible(bool(self._caption.text()))
+        self._segments.setToolTip(default_tip)
+        for word, button in self._buttons.items():
+            button.setToolTip(default_tip or _TIPS[word])
+
+    def apply_chrome(self, chrome: FormChrome) -> None:
+        self._segments.apply_chrome(chrome)
 
     def _fit_label(self) -> None:
         _fit_phrase(self, self.widget, self._outer, self._line, self._label, self._title, self._controls_width())

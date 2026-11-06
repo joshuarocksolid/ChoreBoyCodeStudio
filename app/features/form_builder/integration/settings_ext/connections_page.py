@@ -454,8 +454,18 @@ class ConnectionsPage(QWidget):
 
     def showEvent(self, event: object) -> None:  # noqa: N802
         super().showEvent(event)  # type: ignore[arg-type]
-        window = self.window()
-        self.apply_theme(getattr(window, "_tokens", None) or tokens_from_palette(self.palette()))
+        self._follow_host()
+
+    def changeEvent(self, event: QEvent) -> None:  # noqa: N802
+        super().changeEvent(event)
+        if event.type() == _STYLE_CHANGE:
+            self._follow_host()
+
+    def _follow_host(self) -> None:
+        tokens = _host_tokens(self)
+        if tokens is None or tokens == self._tokens:
+            return
+        self.apply_theme(tokens)
 
     def hideEvent(self, event: object) -> None:  # noqa: N802
         self._drop_filter()
@@ -930,6 +940,29 @@ class ConnectionsPage(QWidget):
     def _show_refusal(self, sentence: str) -> None:
         self._refusal.setText(sentence)
         self._refusal.show()
+
+
+def _host_tokens(widget: QWidget) -> object:
+    """Tokens from the themed host. A dialog's ``window()`` is itself, so walk parents."""
+    current: Optional[QWidget] = widget
+    seen = 0
+    while current is not None and seen < 8:
+        workflow = getattr(current, "_shell_theme_workflow", None)
+        resolve = getattr(workflow, "resolve_theme_tokens", None)
+        if callable(resolve):
+            found = resolve()
+            if found is not None:
+                return found
+        current = current.parentWidget()
+        seen += 1
+    window = widget.window()
+    found = getattr(window, "_tokens", None)
+    if found is not None:
+        return found
+    return tokens_from_palette(widget.palette())
+
+
+_STYLE_CHANGE = getattr(getattr(QEvent, "Type", QEvent), "StyleChange")
 
 
 def _format_probe(result: object) -> str:

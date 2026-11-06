@@ -12,7 +12,7 @@ import sqlite3
 from typing import Callable, Dict, List, Optional, Tuple
 
 from app.qt.QtCore import QBuffer, QEvent, QIODevice, QLocale, QSize, QTimer, Qt, Signal
-from app.qt.QtGui import QBrush, QColor, QFont, QIcon
+from app.qt.QtGui import QBrush, QColor, QFont, QIcon, QPalette
 from app.qt.QtUiTools import QUiLoader
 from app.qt.QtWidgets import (
     QCheckBox,
@@ -30,6 +30,7 @@ from app.qt.QtWidgets import (
     QListWidgetItem,
     QPushButton,
     QSizePolicy,
+    QTableView,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
@@ -116,8 +117,9 @@ _CLASS_GLYPH = {
 _TABLE_COLUMN = 180
 _PREVIEW_COLUMN = 320
 _INCLUDE_WIDTH = 64
-_PREVIEW_MIN_SCALE = 0.75
 _DISABLED_OPACITY = 0.5
+_WIDGET_MAX = 16777215
+_BAR_NAMES = ("recordBar", "listButtons", "lineButtons")
 
 
 def locale_date_format() -> str:
@@ -168,6 +170,7 @@ class FromTableDialog(QDialog):
         self._schema_tokens: Dict[str, Tuple[object, ...]] = {}
         self._preview_widget: Optional[QWidget] = None
         self._preview_view: Optional[QGraphicsView] = None
+        self._fitting_preview = False
         self._main_kind = "missing"
         self._replaces = ""
         self._build()
@@ -447,6 +450,7 @@ class FromTableDialog(QDialog):
     def showEvent(self, event: object) -> None:  # type: ignore[override]
         super().showEvent(event)  # type: ignore[arg-type]
         QTimer.singleShot(0, self._fit_columns)
+        QTimer.singleShot(0, self._fit_preview)
 
     def _apply_chrome(self) -> None:
         chrome = self._chrome
@@ -456,6 +460,8 @@ class FromTableDialog(QDialog):
             "QLabel#formBuilder\\.fromTable\\.databaseLabel,"
             "QLabel#formBuilder\\.fromTable\\.makeLabel,"
             "QLabel#formBuilder\\.fromTable\\.linkLabel { color: %s; background: transparent; }"
+            "QLabel { color: %s; background: transparent; }"
+            "QCheckBox { color: %s; background: transparent; }"
             "QLabel#formBuilder\\.fromTable\\.reason,"
             "QLabel#formBuilder\\.fromTable\\.startNote { color: %s; background: transparent; }"
             "QWidget#formBuilder\\.fromTable\\.preview { background: %s; }"
@@ -496,7 +502,9 @@ class FromTableDialog(QDialog):
                 chrome.window,
                 chrome.text,
                 chrome.text,
-                chrome.muted,
+                chrome.text,
+                chrome.text,
+                chrome.text,
                 chrome.window,
                 chrome.panel,
                 chrome.border,
@@ -533,8 +541,8 @@ class FromTableDialog(QDialog):
                 chrome.text,
                 focus,
                 chrome.accent,
-                chrome.panel,
-                chrome.muted,
+                chrome.input,
+                chrome.text,
                 chrome.border,
                 TYPE_FINE,
             )
@@ -544,8 +552,9 @@ class FromTableDialog(QDialog):
         )
         for header in self._headers:
             header.apply_chrome(chrome)
-        polish_item_view(self._tables, chrome)
-        polish_item_view(self._mapping, chrome)
+        self._paint_dialog_ink()
+        self._paint_field_view(self._tables)
+        self._paint_field_view(self._mapping)
         self._mapping.setStyleSheet(
             self._mapping.styleSheet()
             + _indicator_qss("QTableWidget#formBuilder\\.fromTable\\.mapping", chrome)
@@ -1163,21 +1172,25 @@ class FromTableDialog(QDialog):
         # A proxy in its own scene: the app style sheet cannot reach it (UX-ISO-001).
         view = host_form(widget)
         self._paint_preview(widget, view)
-        # Top-left and fitted to the pane width, so the form reflows like the app would.
         view.setAlignment(Qt.AlignLeft | Qt.AlignTop)
-        view.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        view.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         view.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         view.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         view.viewport().setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        view.setMinimumWidth(0)
+        view.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Expanding)
         widget.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         for child in widget.findChildren(QWidget):
             child.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         view.viewport().installEventFilter(self)
         self._preview_view = view
         self._swap_preview(view, widget)
+        self._fit_preview()
         QTimer.singleShot(0, self._fit_preview)
 
     def _fit_preview(self) -> None:
+        if self._fitting_preview:
+            return
         view = self._preview_view
         form = self._preview_widget
         if view is None or form is None:
@@ -1185,18 +1198,19 @@ class FromTableDialog(QDialog):
         proxy = form.graphicsProxyWidget()
         if proxy is None:
             return
-        hint = form.sizeHint()
-        width = max(form.minimumSizeHint().width(), hint.width(), 1)
-        height = max(form.minimumSizeHint().height(), hint.height(), 1)
-        proxy.resize(width, height)
-        view.setSceneRect(0, 0, width, height)
-        avail_w = max(view.viewport().width(), 1)
-        fitted = min(1.0, avail_w / float(width))
-        scale = max(_PREVIEW_MIN_SCALE, fitted)
-        view.resetTransform()
-        view.scale(scale, scale)
-        view.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
-        view.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self._fitting_preview = True
+        try:
+            view.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+            view.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+            width = self._preview_width(view)
+            self._place_form(form, proxy, view, width)
+            extent = view.verticalScrollBar().sizeHint().width()
+            if extent <= 0:
+                extent = 16
+            if form.height() > view.viewport().height() and width - extent >= 48:
+                self._place_form(form, proxy, view, width - extent)
+        finally:
+            self._fitting_preview = False
 
     def _show_preview_message(self, text: str) -> None:
         # "Choose a connection" lives on the disabled Create button.
@@ -1230,6 +1244,240 @@ class FromTableDialog(QDialog):
         scene = view.scene()
         if scene is not None:
             scene.setBackgroundBrush(QColor(self._chrome.panel))
+
+    def _paint_dialog_ink(self) -> None:
+        self._paint_ink(self)
+        for label in self.findChildren(QLabel):
+            name = label.objectName()
+            if name.startswith("formBuilder.fromTable.") or name.startswith("shell.dialogChrome."):
+                self._paint_ink(label)
+        for box in self.findChildren(QCheckBox):
+            if box.objectName().startswith("formBuilder.fromTable."):
+                self._paint_ink(box)
+
+    def _paint_ink(self, widget: QWidget) -> None:
+        palette = widget.palette()
+        role = getattr(QPalette, "ColorRole", QPalette)
+        ink = QColor(self._chrome.text)
+        palette.setColor(getattr(role, "WindowText"), ink)
+        palette.setColor(getattr(role, "Text"), ink)
+        palette.setColor(getattr(role, "ButtonText"), ink)
+        widget.setPalette(palette)
+
+    def _paint_field_view(self, view: QWidget) -> None:
+        chrome = self._chrome
+        polish_item_view(view, chrome)
+        name = view.objectName().replace(".", "\\.")
+        kind = view.metaObject().className()
+        fill = chrome.input or chrome.panel
+        ink = chrome.text
+        view.setStyleSheet(
+            view.styleSheet()
+            + "%s#%s { background: %s; color: %s; }" % (kind, name, fill, ink)
+            + "%s#%s::item { color: %s; }" % (kind, name, ink)
+        )
+        viewport = view.viewport()
+        viewport.setStyleSheet("background: %s; color: %s;" % (fill, ink))
+        palette = view.palette()
+        role = getattr(QPalette, "ColorRole", QPalette)
+        qfill = QColor(fill)
+        qink = QColor(ink)
+        palette.setColor(getattr(role, "Base"), qfill)
+        palette.setColor(getattr(role, "Window"), qfill)
+        palette.setColor(getattr(role, "Text"), qink)
+        palette.setColor(getattr(role, "WindowText"), qink)
+        view.setPalette(palette)
+        viewport.setAutoFillBackground(True)
+        viewport.setPalette(palette)
+
+    def _preview_width(self, view: QGraphicsView) -> int:
+        frame = self._page.frameWidth() * 2
+        page = self._page.width()
+        if page < 48:
+            page = _PREVIEW_COLUMN
+        cap = max(48, page - frame - (PREVIEW_INSET * 2))
+        live = view.width()
+        if 48 <= live <= cap:
+            return live
+        return cap
+
+    def _place_form(self, form: QWidget, proxy: QWidget, view: QGraphicsView, width: int) -> None:
+        inner = _layout_inner(form, width)
+        for name in _BAR_NAMES:
+            _reflow_bar(form, name, inner)
+        _fit_tables(form)
+        form.setMinimumWidth(0)
+        form.setFixedWidth(width)
+        layout = form.layout()
+        if layout is not None:
+            layout.invalidate()
+            layout.activate()
+        height = form.sizeHint().height()
+        if form.hasHeightForWidth():
+            height = max(height, form.heightForWidth(width))
+        height = max(int(height), form.minimumSizeHint().height(), 1)
+        form.setFixedHeight(height)
+        proxy.setMinimumWidth(0)  # type: ignore[attr-defined]
+        proxy.setMinimumHeight(0)  # type: ignore[attr-defined]
+        proxy.resize(width, height)  # type: ignore[attr-defined]
+        view.resetTransform()
+        view.setSceneRect(0, 0, width, height)
+        view.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        view.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+
+
+def _layout_inner(form: QWidget, width: int) -> int:
+    layout = form.layout()
+    if layout is None:
+        return width
+    margins = layout.contentsMargins()
+    return max(48, width - margins.left() - margins.right())
+
+
+def _fit_tables(form: QWidget) -> None:
+    resize = getattr(QHeaderView, "ResizeMode", QHeaderView)
+    stretch = getattr(resize, "Stretch")
+    off = Qt.ScrollBarAlwaysOff
+    for view in form.findChildren(QTableView):
+        view.setMinimumWidth(0)
+        view.setHorizontalScrollBarPolicy(off)
+        header = view.horizontalHeader()
+        count = header.count()
+        if count:
+            for index in range(count):
+                header.setSectionResizeMode(index, stretch)
+        header.setStretchLastSection(True)
+
+
+def _reflow_bar(form: QWidget, name: str, width: int) -> None:
+    host_name = "formBuilder.fromTable.bar." + name
+    host = form.findChild(QWidget, host_name)
+    bar = form.findChild(QHBoxLayout, name)
+    if host is None:
+        if bar is None or not _bar_overflows(bar, width):
+            return
+        widgets = _take_bar(bar)
+        if not widgets:
+            return
+        host = QWidget(form)
+        host.setObjectName(host_name)
+        host.setMinimumWidth(0)
+        host.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+        column = QVBoxLayout(host)
+        column.setContentsMargins(0, 0, 0, 0)
+        column.setSpacing(S2)
+        bar.addWidget(host)
+    else:
+        widgets = _take_host(host)
+        laid = host.layout()
+        if not isinstance(laid, QVBoxLayout):
+            return
+        column = laid
+    if not widgets:
+        return
+    host.setMaximumWidth(max(width, 1))
+    _pack(column, widgets, width)
+
+
+def _bar_overflows(bar: QHBoxLayout, width: int) -> bool:
+    total = 0
+    spaces = 0
+    for index in range(bar.count()):
+        item = bar.itemAt(index)
+        if item is None:
+            continue
+        total += item.sizeHint().width()
+        spaces += 1
+    if spaces > 1:
+        total += max(bar.spacing(), 0) * (spaces - 1)
+    return total > width
+
+
+def _take_bar(bar: QHBoxLayout) -> List[QWidget]:
+    widgets = []
+    while bar.count():
+        item = bar.takeAt(0)
+        if item is None:
+            continue
+        widget = item.widget()
+        if widget is not None:
+            widgets.append(widget)
+    return widgets
+
+
+def _take_host(host: QWidget) -> List[QWidget]:
+    widgets: List[QWidget] = []
+    column = host.layout()
+    if column is None:
+        return widgets
+    rows = []
+    while column.count():
+        item = column.takeAt(0)
+        if item is None:
+            continue
+        row = item.layout()
+        if row is not None:
+            rows.append(row)
+    for row in rows:
+        while row.count():
+            child = row.takeAt(0)
+            if child is None:
+                continue
+            widget = child.widget()
+            if widget is not None:
+                widgets.append(widget)
+        row.deleteLater()
+    return widgets
+
+
+def _pack(column: QVBoxLayout, widgets: List[QWidget], width: int) -> None:
+    row = None
+    used = 0
+    gap = S2
+    for widget in widgets:
+        hint = _control_width(widget, width)
+        if row is not None and used + gap + hint > width:
+            row.addStretch(1)
+            row = None
+            used = 0
+        if row is None:
+            row = QHBoxLayout()
+            row.setContentsMargins(0, 0, 0, 0)
+            row.setSpacing(gap)
+            column.addLayout(row)
+        elif used:
+            used += gap
+        row.addWidget(widget)
+        used += hint
+    if row is not None:
+        row.addStretch(1)
+
+
+def _control_width(widget: QWidget, limit: int) -> int:
+    if isinstance(widget, (QLabel, QPushButton)):
+        full = widget.property("cbcsFullText")
+        if not isinstance(full, str) or not full:
+            full = widget.text()
+            widget.setProperty("cbcsFullText", full)
+        widget.setText(full)
+        widget.setMaximumWidth(_WIDGET_MAX)
+        hint = max(widget.sizeHint().width(), 1)
+        if hint <= limit:
+            return hint
+        shown = widget.fontMetrics().elidedText(
+            full,
+            Qt.TextElideMode.ElideRight,  # type: ignore[attr-defined]
+            max(8, limit - 8),
+        )
+        widget.setText(shown)
+        widget.setToolTip(full)
+        widget.setMaximumWidth(limit)
+        return limit
+    hint = max(widget.sizeHint().width(), 1)
+    if hint > limit:
+        widget.setMaximumWidth(limit)
+        return limit
+    return hint
 
 
 def _tick_url(chrome: FormChrome) -> str:
