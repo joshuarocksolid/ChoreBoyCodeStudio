@@ -280,6 +280,21 @@ def _header_names(inspector: QWidget) -> Sequence[str]:
     return names
 
 
+def _group_owning(header: QWidget) -> Optional[QWidget]:
+    """The group that holds the rows.
+
+    A checkable title is a button inside the section header, so the focused
+    stop's parent is the header, and the group is one step further up.
+    """
+    widget: Optional[QWidget] = header
+    while widget is not None:
+        parent = widget.parentWidget()
+        if parent is not None and parent.objectName() == "formBuilder.inspectorContent":
+            return widget
+        widget = parent
+    return header.parentWidget()
+
+
 def _assert_group_tabs(inspector: QWidget, sequence: Sequence[QWidget]) -> None:
     headers = [widget for widget in sequence if widget.objectName().startswith("formBuilder.group.")]
     assert [widget.objectName() for widget in headers] == list(_header_names(inspector))
@@ -287,7 +302,7 @@ def _assert_group_tabs(inspector: QWidget, sequence: Sequence[QWidget]) -> None:
     assert "formBuilder.group.content" in names
     assert names.index("formBuilder.group.content") < names.index("formBuilder.group.appearance")
     for index, header in enumerate(headers):
-        group = header.parentWidget()
+        group = _group_owning(header)
         assert group is not None
         start = sequence.index(header)
         end = sequence.index(headers[index + 1]) if index + 1 < len(headers) else len(sequence)
@@ -569,7 +584,7 @@ def test_committing_a_connection_keeps_focus_inside_the_inspector(
         bar = tabs.tabBar()
         QTest.mouseClick(bar, _mouse("LeftButton"), _mods("NoModifier"), bar.tabRect(1).center())
         _settle(qapp)
-        add = next(button for button in inspector.findChildren(QPushButton) if button.text().startswith("+ When"))
+        add = inspector.findChild(QWidget, "formBuilder.events.first") or inspector.findChild(QWidget, "formBuilder.events.when")
         before = len(surface.session.document.connections())  # type: ignore[attr-defined]
         QTest.mouseClick(add, _mouse("LeftButton"))
         _settle(qapp)

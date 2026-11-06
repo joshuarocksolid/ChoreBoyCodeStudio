@@ -12,7 +12,6 @@ from app.features.form_builder.engine.ui4.values import (
 )
 from app.features.form_builder.qtside.inspector.api import (
     MIXED_TEXT,
-    NOT_SET_TEXT,
     EditorHost,
     EditorKey,
     Mixed,
@@ -182,7 +181,7 @@ def _placeholder(value: RowValue) -> str:
     if isinstance(value, Unset):
         if isinstance(value.default, (StringValue, CStringValue)) and value.default.text:
             return value.default.text
-        return NOT_SET_TEXT
+        return ""
     return ""
 
 

@@ -31,8 +31,43 @@ def no_match_message(selector: str) -> str:
     return "This rule matches nothing on the form: %s." % " ".join(selector.split())
 
 
+_SELECTOR = '*[cbcsInvalid="true"]'
+_OUTLINE_MESSAGE = "Fields that fail a check get no outline yet."
+
+
+def _outline_missing(document: UiDocument) -> Optional[FormDiagnostic]:
+    """A form with a check and no invalid-field rule."""
+    has_check = False
+    for node in document.iter_widgets():
+        value = node.value("cbcsValidate")
+        text = getattr(value, "text", "")
+        if isinstance(text, str) and text.strip():
+            has_check = True
+            break
+    if not has_check:
+        return None
+    root = document.root
+    if not isinstance(root, WidgetNode):
+        return None
+    sheet = root.value("styleSheet")
+    current = getattr(sheet, "text", "")
+    if isinstance(current, str) and _SELECTOR in current:
+        return None
+    return FormDiagnostic(
+        "FB038",
+        Severity.INFO,
+        _OUTLINE_MESSAGE,
+        DiagnosticLocation(node_id=root.id, object_name=root.object_name, property="styleSheet"),
+        SOURCE,
+    )
+
+
 def style_diagnostics(document: UiDocument) -> Tuple[FormDiagnostic, ...]:
     """One FB033 for each unreadable sheet and one FB034 for each rule with no match."""
+    found: List[FormDiagnostic] = []
+    missing = _outline_missing(document)
+    if missing is not None:
+        found.append(missing)
     owners: List[Tuple[WidgetNode, str]] = []
     for node in document.iter_widgets():
         entry = node.prop("styleSheet")
@@ -40,8 +75,7 @@ def style_diagnostics(document: UiDocument) -> Tuple[FormDiagnostic, ...]:
         if isinstance(text, str) and text.strip():
             owners.append((node, text))
     if not owners:
-        return ()
-    found: List[FormDiagnostic] = []
+        return tuple(found)
     index: Optional[StyleIndex] = None
     for node, text in owners:
         name = node.object_name or "widget"

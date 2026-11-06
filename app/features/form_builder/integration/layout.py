@@ -15,7 +15,8 @@ LEFT_DEFAULT = 232
 INSPECTOR_MIN = 264
 INSPECTOR_MAX = 420
 INSPECTOR_DEFAULT = 300
-COMPACT_LEFT = 200
+# Wide enough that "Discount rate" and its object name share the outline row.
+COMPACT_LEFT = 232
 COMPACT_INSPECTOR = 272
 RAIL_WIDTH = 36
 DRAWER_WIDTH = 240
@@ -61,7 +62,9 @@ class LayoutPlan:
 
     ``density`` is ``wide``, ``compact``, ``rail`` or ``drawer``.
     ``left_docked`` and ``inspector_docked`` are false when that pane is a rail.
-    ``stack_left`` is the H < 560 tabs mode. ``toolbar_compact`` folds labels.
+    ``stack_left`` is true when the tab is shorter than 560 px. The workbench
+    keeps Outline, Insert and Logic as tabs at every height.
+    ``toolbar_compact`` is the width < 1000 flag.
     """
 
     density: str

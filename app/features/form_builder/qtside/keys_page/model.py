@@ -99,7 +99,7 @@ DESIGNER_MOVES: Tuple[Tuple[str, str, str], ...] = (
     ("209", "F1 help for the widget", "F1"),
     ("210", "Ctrl+? Designer help", "Help > Form designer keys"),
     ("211", "F3 or Esc widget mode", "F3 or Esc leaves an overlay"),
-    ("212", "F4 signals and slots", "F4 (Connections overlay from M6; until then the status says “Connections are in the Behavior tab. Alt+4 goes there.”)"),
+    ("212", "F4 signals and slots", "F4 opens the Connections overlay. Drag from a widget to the widget it should act on."),
     ("213", "F2 edit text", "Enter (F2 renames)"),
     ("214", "Ctrl+F find in object inspector", "Ctrl+F"),
     ("215", "Ctrl+1 … Ctrl+6 layouts", "same"),

@@ -33,7 +33,6 @@ from app.qt.QtWidgets import (
 
 STOP_USING = "Stop using in this form"
 USE_ANOTHER = "Use another pictures file…"
-NONE_YET = "This form uses no pictures file."
 
 
 def count_text(count: int) -> str:
@@ -65,10 +64,7 @@ class FilesBody:
         self._layout.setContentsMargins(0, 0, 0, 0)
         self._layout.setSpacing(4)
         self._rows: List[QWidget] = []
-        self._empty = QLabel(NONE_YET, self._root)
-        self._empty.setObjectName("formBuilder.picturesFilesNone")
-        self._empty.setWordWrap(True)
-        self._layout.addWidget(self._empty)
+        self.force_closed = True
         self._another = QPushButton(USE_ANOTHER, self._root)
         self._another.setObjectName("formBuilder.picturesFilesUse")
         self._another.setAccessibleName("Pictures: use another pictures file")
@@ -89,7 +85,7 @@ class FilesBody:
         document = self._host.document
         ui_path, root = self._where()
         locations = resource_locations(document)
-        self._empty.setVisible(not locations)
+        self.force_closed = not locations
         for index, location in enumerate(locations):
             row = self._file_row(document, ui_path, root, location)
             self._layout.insertWidget(index + 1, row)

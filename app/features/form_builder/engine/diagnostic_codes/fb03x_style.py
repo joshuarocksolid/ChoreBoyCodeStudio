@@ -6,3 +6,4 @@ from app.features.form_builder.engine.diagnostics import Severity, declare
 
 declare("FB033", Severity.WARNING, "A style sheet can't be read, so Qt ignores all of it.")
 declare("FB034", Severity.INFO, "A style rule matches nothing on the form.")
+declare("FB038", Severity.INFO, "A check has no red outline.")

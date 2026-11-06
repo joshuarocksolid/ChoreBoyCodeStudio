@@ -70,6 +70,8 @@ class _Binding(QWidget):
             for name in names:
                 self._column.addItem(name, name)
         current = bind_text(node) if node is not None else ""
+        if current and self._column.findData(current) < 0:
+            self._column.addItem(current, current)
         found = self._column.findData(current)
         self._column.setCurrentIndex(found if found >= 0 else 0)
         self._column_label.setText("Column" if current else "Not bound")

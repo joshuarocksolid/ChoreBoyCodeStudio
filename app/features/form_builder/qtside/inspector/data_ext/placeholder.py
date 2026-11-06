@@ -41,6 +41,8 @@ def _unbound(class_name: str) -> bool:
 def _not_bound(class_name: str) -> bool:
     if not class_name or class_name == "@form" or class_name in FIELD_CLASSES:
         return False
+    if class_name == "QTableView":
+        return False
     return not _unbound(class_name)
 
 

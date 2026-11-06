@@ -16,11 +16,12 @@ from app.features.form_builder.engine.query.selection import SelectionSource
 from app.features.form_builder.qtside.canvas.banner import EnterButton
 from app.features.form_builder.qtside.inspector.api import GroupBody, GroupHost, Registrar, Row
 from app.features.form_builder.qtside.outline.friendly import friendly_of
+from app.features.form_builder.qtside.theme.chrome import FormChrome
+from app.features.form_builder.qtside.theme.items import polish_item_view
 from app.qt.QtCore import QModelIndex, Qt
-from app.qt.QtGui import QKeyEvent
+from app.qt.QtGui import QColor, QKeyEvent, QPalette
 from app.qt.QtWidgets import QAbstractItemView, QLabel, QListWidget, QListWidgetItem, QVBoxLayout, QWidget
 
-FOLLOWS = "Follows reading order: top to bottom, left to right."
 CUSTOM = "Custom order. New fields join it where they sit on the form."
 EMPTY = "No fields to visit yet. Inputs join the order as you add them."
 USE_READING = "Use reading order"
@@ -95,10 +96,12 @@ class TabOrderBody:
         stops = q.stops(document)
         names = tuple(stop.name for stop in stops)
         custom = document.tabstops() is not None
-        self._caption.setText(CUSTOM if custom else FOLLOWS)
+        self._caption.setVisible(custom)
+        self._caption.setText(CUSTOM if custom else "")
         self._empty.setVisible(not stops)
         self.list.setVisible(bool(stops))
         self.reset.setVisible(custom)
+        self.apply_chrome(self._chrome())
         if names == self._names and self.list.count() == len(names):
             return
         current = self.list.currentRow()
@@ -113,6 +116,35 @@ class TabOrderBody:
         if self.list.count():
             self.list.setCurrentRow(max(0, min(current, self.list.count() - 1)))
         self.list.setFixedHeight(self.list.sizeHintForRow(0) * self.list.count() + 6 if self.list.count() else 0)
+
+    def _chrome(self) -> Optional[FormChrome]:
+        chrome = getattr(self._host, "chrome", None)
+        if chrome is None:
+            services = getattr(self._host, "_services", None)
+            chrome = getattr(services, "chrome", None)
+        return chrome if isinstance(chrome, FormChrome) else None
+
+    def apply_chrome(self, chrome: Optional[FormChrome]) -> None:
+        """Panel fill and primary text. The viewport otherwise stays the platform white."""
+        if chrome is None:
+            return
+        fill = chrome.input or chrome.panel
+        ink = chrome.text
+        chosen = chrome.selected or chrome.row_hover
+        polish_item_view(self.list, chrome)
+        viewport = self.list.viewport()
+        viewport.setStyleSheet("background: %s; color: %s;" % (fill, ink))
+        # A stylesheet resets the palette, so the roles are written after it.
+        palette = self.list.palette()
+        role = QPalette.ColorRole
+        palette.setColor(role.Base, QColor(fill))
+        palette.setColor(role.Window, QColor(fill))
+        palette.setColor(role.Text, QColor(ink))
+        palette.setColor(role.Highlight, QColor(chosen))
+        palette.setColor(role.HighlightedText, QColor(ink))
+        self.list.setPalette(palette)
+        viewport.setAutoFillBackground(True)
+        viewport.setPalette(palette)
 
     def names(self) -> Tuple[str, ...]:
         return self._names

@@ -8,6 +8,11 @@ from app.features.form_builder.engine.commands.base import CommandRejected
 from app.features.form_builder.engine.data.schema import schema_for
 from app.features.form_builder.engine.data.source import RecordSource, singular
 from app.features.form_builder.qtside.data_panel.chrome import apply_chrome
+from app.features.form_builder.qtside.theme.chrome import FormChrome, chrome_from_values
+from app.features.form_builder.qtside.theme.items import polish_item_view
+from app.features.form_builder.qtside.theme.metrics import CONTROL, ORDER_SEGMENT, S1, S2, TABLE_LIST
+from app.features.form_builder.qtside.theme.dialog_body import parts_from
+from app.features.form_builder.qtside.theme.segmented import SegmentedControl
 from app.features.form_builder.qtside.data_panel.edits import (
     assign_hook,
     bind_named,
@@ -24,11 +29,12 @@ from app.features.form_builder.qtside.data_panel.model import (
     record_word,
 )
 from app.features.form_builder.qtside.data_panel.sql_text import sql_text
-from app.qt.QtCore import QTimer, Qt
+from app.qt.QtCore import QEvent, QTimer, Qt
 from app.qt.QtWidgets import (
     QCheckBox,
     QComboBox,
     QDialog,
+    QGridLayout,
     QHBoxLayout,
     QLabel,
     QLineEdit,
@@ -43,13 +49,14 @@ from app.qt.QtWidgets import (
 )
 from app.qt.qt_compat import enum_value, exec_qt
 
+_ADD_CONNECTION = "add-connection"
+
 _OPENS = (
     ("First", "first"),
     ("Last", "last"),
     ("A new record", "new"),
     ("Nothing", "none"),
 )
-_DIRECTIONS = (("Ascending", "asc"), ("Descending", "desc"))
 
 
 def open_connect_sheet(host: Any, tokens: object = None) -> None:
@@ -120,18 +127,23 @@ class SourceForm(QWidget):
         self._session = session
         self._word_edited = False
         self._loading = False
-        layout = QVBoxLayout(self)
+        layout = QGridLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
+        layout.setHorizontalSpacing(S2)
+        layout.setVerticalSpacing(S1)
+        layout.setColumnStretch(1, 1)
         self._connection = QComboBox(self)
         self._connection.setObjectName("formBuilder.data.connection")
+        self._connection.setFixedHeight(CONTROL)
         self._filter = QLineEdit(self)
         self._filter.setPlaceholderText("Filter tables")
         self._filter.setObjectName("formBuilder.data.tableFilter")
         self._filter.setAccessibleName("Filter tables")
+        self._filter.setFixedHeight(CONTROL)
         self._tables = QListWidget(self)
         self._tables.setObjectName("formBuilder.data.tables")
         self._tables.setAccessibleName("Tables")
-        self._tables.setFixedHeight(8 * 24)
+        self._tables.setFixedHeight(TABLE_LIST)
         self._tables.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self._keep = QCheckBox("Let people keep their version on a conflict", self)
         self._keep.setObjectName("formBuilder.data.allowOverwrite")
@@ -139,33 +151,43 @@ class SourceForm(QWidget):
         self._key = QLabel(self)
         self._key.setObjectName("formBuilder.data.key")
         self._notice = QLabel(self)
-        self._notice.setWordWrap(True)
+        self._notice.setWordWrap(False)
         self._notice.setProperty("fbFaint", True)
         self._notice.setObjectName("formBuilder.data.keyNotice")
         self._orders = []
         order_box = QWidget(self)
         order_layout = QVBoxLayout(order_box)
         order_layout.setContentsMargins(0, 0, 0, 0)
+        order_layout.setSpacing(S1)
         for index in range(3):
             row = QHBoxLayout()
+            row.setSpacing(S2)
             order_layout.addLayout(row)
             column = QComboBox(order_box)
             column.setObjectName("formBuilder.data.orderColumn%d" % index)
             column.setAccessibleName("Order by, choice %d" % (index + 1))
-            direction = QComboBox(order_box)
+            column.setFixedHeight(CONTROL)
+            direction = SegmentedControl(order_box)
             direction.setObjectName("formBuilder.data.orderDirection%d" % index)
             direction.setAccessibleName("Order direction, choice %d" % (index + 1))
-            for label, value in _DIRECTIONS:
-                direction.addItem(label, value)
+            direction.setFixedWidth(ORDER_SEGMENT)
+            direction.set_items(
+                ("\u2191", "\u2193"),
+                tooltips=("Ascending", "Descending"),
+                names=("Ascending", "Descending"),
+            )
             row.addWidget(column, 1)
             row.addWidget(direction)
             self._orders.append((column, direction))
         self._opens = QComboBox(self)
         self._opens.setObjectName("formBuilder.data.opensAt")
+        self._opens.setFixedHeight(CONTROL)
         for label, value in _OPENS:
             self._opens.addItem(label, value)
         self._word = QLineEdit(self)
         self._word.setObjectName("formBuilder.data.recordWord")
+        self._word.setFixedHeight(CONTROL)
+        row_index = 0
         for title, widget in (
             ("Connection", self._connection),
             ("Table", self._filter),
@@ -182,9 +204,15 @@ class SourceForm(QWidget):
                 label.setBuddy(widget)
                 if not (widget.accessibleName() or "").strip():
                     widget.setAccessibleName(title)
-                layout.addWidget(label)
-            layout.addWidget(widget)
-        self._connection.currentIndexChanged.connect(self._reload_tables)
+                layout.addWidget(label, row_index, 0)
+                layout.addWidget(widget, row_index, 1)
+            else:
+                layout.addWidget(widget, row_index, 0, 1, 2)
+            row_index += 1
+        self._chrome: Optional[FormChrome] = None
+        self._add_connection: Optional[Any] = None
+        self._kept_connection = 0
+        self._connection.currentIndexChanged.connect(self._on_connection)
         self._filter.textChanged.connect(self._apply_filter)
         self._tables.currentItemChanged.connect(lambda _cur, _prev: self._on_table())
         self._word.textEdited.connect(self._on_word)
@@ -193,6 +221,31 @@ class SourceForm(QWidget):
     def set_session(self, session: object) -> None:
         self._session = session
 
+    def apply_tokens(self, tokens: object) -> None:
+        if tokens is None:
+            return
+        chrome = chrome_from_values(
+            window=str(getattr(tokens, "window_bg", "") or ""),
+            panel=str(getattr(tokens, "panel_bg", "") or ""),
+            text=str(getattr(tokens, "text_primary", "") or ""),
+            muted=str(getattr(tokens, "text_muted", "") or ""),
+            faint=str(getattr(tokens, "gutter_text", "") or ""),
+            border=str(getattr(tokens, "border", "") or ""),
+            accent=str(getattr(tokens, "accent", "") or ""),
+            row_hover=str(getattr(tokens, "tree_hover_bg", "") or ""),
+            input_bg=str(getattr(tokens, "input_bg", "") or ""),
+            error=str(getattr(tokens, "diag_error_color", "") or ""),
+            focus_width=int(getattr(tokens, "focus_border_width", 1) or 1),
+            selected=str(getattr(tokens, "tree_selected_bg", "") or ""),
+            is_dark=bool(getattr(tokens, "is_dark", False)),
+            is_high_contrast=bool(getattr(tokens, "is_high_contrast", False)),
+        )
+        self._chrome = chrome
+        for _column, direction in self._orders:
+            direction.apply_chrome(chrome)
+        polish_item_view(self._tables, chrome)
+        _paint_list_input(self._tables, chrome)
+
     def reload(self) -> None:
         focus = QApplication.focusWidget()
         self._loading = True
@@ -200,6 +253,8 @@ class SourceForm(QWidget):
         self._connection.clear()
         for item in connections_of(self._session, self):
             self._connection.addItem(item.title or item.name, item.name)
+        if self._add_connection is not None:
+            self._connection.addItem("Add a connection\u2026", _ADD_CONNECTION)
         self._connection.blockSignals(False)
         self._reload_tables()
         self._loading = False
@@ -235,6 +290,8 @@ class SourceForm(QWidget):
         if item is None or not _item_enabled(item):
             return None
         connection = self._connection.currentData()
+        if connection == _ADD_CONNECTION:
+            return None
         table = item.data(int(enum_value(Qt.ItemDataRole.UserRole)))
         key = item.data(int(enum_value(Qt.ItemDataRole.UserRole)) + 1)
         if not connection or not table or not key:
@@ -252,6 +309,24 @@ class SourceForm(QWidget):
             open_at=None if open_at in (None, "", "first") else str(open_at),
             allow_overwrite=self._keep.isChecked(),
         )
+
+    def offer_add_connection(self, callback: Any) -> None:
+        self._add_connection = callback
+
+    def _on_connection(self, index: int) -> None:
+        if self._connection.itemData(index) == _ADD_CONNECTION:
+            self._connection.blockSignals(True)
+            keep = self._kept_connection
+            if keep < 0 or keep >= self._connection.count() or self._connection.itemData(keep) == _ADD_CONNECTION:
+                keep = 0
+            self._connection.setCurrentIndex(keep)
+            self._connection.blockSignals(False)
+            callback = self._add_connection
+            if callable(callback):
+                callback()
+            return
+        self._kept_connection = index
+        self._reload_tables()
 
     def _reload_tables(self) -> None:
         chosen = self._tables.currentItem()
@@ -308,13 +383,13 @@ class SourceForm(QWidget):
         item = self._tables.currentItem()
         role = int(enum_value(Qt.ItemDataRole.UserRole))
         if item is None or not _item_enabled(item):
-            self._key.setText("Key")
+            self._key.setText("")
             self._notice.setText("")
             self._fill_columns(())
             return
         table = str(item.data(role) or "")
         key = str(item.data(role + 1) or "")
-        self._key.setText(key or "Key")
+        self._key.setText(key)
         if not key:
             self._notice.setText("%s has no single key column. Record forms need one." % table)
         else:
@@ -331,8 +406,7 @@ class SourceForm(QWidget):
         for index, (column, _direction) in enumerate(self._orders):
             column.blockSignals(True)
             column.clear()
-            if index:
-                column.addItem("(none)", "")
+            column.addItem("(none)", "")
             for name in names:
                 column.addItem(name, name)
             if index == 0 and key:
@@ -351,9 +425,7 @@ class SourceForm(QWidget):
                 found = column.findData(name)
                 if found >= 0:
                     column.setCurrentIndex(found)
-                way_index = direction.findData(way)
-                if way_index >= 0:
-                    direction.setCurrentIndex(way_index)
+                direction.set_current_index(1 if way == "desc" else 0)
             elif index:
                 column.setCurrentIndex(0)
 
@@ -363,7 +435,7 @@ class SourceForm(QWidget):
             name = column.currentData()
             if not name:
                 continue
-            pairs.append((str(name), str(direction.currentData() or "asc")))
+            pairs.append((str(name), "desc" if direction.current_index() == 1 else "asc"))
             if len(pairs) == 3:
                 break
         if not pairs and key:
@@ -374,31 +446,54 @@ class SourceForm(QWidget):
 class ConnectSheet(QDialog):
     def __init__(self, host: QWidget, session: object, tokens: object = None) -> None:
         super().__init__(host)
-        self.setObjectName("formBuilder.data.connectSheet")
-        self.setWindowTitle("Connect to a table")
         self._session = session
-        layout = QVBoxLayout(self)
-        self._form = SourceForm(self, session)
-        layout.addWidget(self._form)
-        self._error = QLabel(self)
-        self._error.setWordWrap(True)
+        build, add_button, add_stretch, primary, secondary = parts_from(host)
+        dialog = build(
+            self,
+            title="Connect to a table",
+            object_name="formBuilder.data.connectSheet",
+        )
+        self._form = SourceForm(dialog.body, session)
+        self._form.offer_add_connection(self._open_connections)
+        dialog.body.layout().addWidget(self._form)
+        self._error = QLabel(dialog.body)
+        self._error.setWordWrap(False)
         self._error.setProperty("fbProblem", "warning")
-        layout.addWidget(self._error)
-        row = QHBoxLayout()
-        layout.addLayout(row)
-        row.addStretch(1)
-        cancel = QPushButton("Cancel", self)
+        dialog.body.layout().addWidget(self._error)
+        add_stretch(dialog)
+        cancel = add_button(dialog, "Cancel", role=secondary)
         cancel.clicked.connect(self.reject)
-        row.addWidget(cancel)
-        self._ok = QPushButton("Connect", self)
+        self._ok = add_button(dialog, "Connect", role=primary, default=True)
         self._ok.setObjectName("formBuilder.data.connectOk")
-        self._ok.setDefault(True)
+        self._ok.setAccessibleName("Connect")
         self._ok.clicked.connect(self._commit)
-        row.addWidget(self._ok)
         self._form.load(record_source(session.document))
+        self._applied_tokens = tokens
+        self._form.apply_tokens(tokens)
         self.resize(480, 560)
         if tokens is not None:
             apply_chrome(self, tokens)
+
+    def changeEvent(self, event: QEvent) -> None:  # noqa: N802
+        super().changeEvent(event)
+        if event.type() == _STYLE_CHANGE and hasattr(self, "_applied_tokens"):
+            self._follow_host()
+
+    def _follow_host(self) -> None:
+        tokens = _host_tokens(self)
+        if tokens is None or tokens == self._applied_tokens:
+            return
+        self._applied_tokens = tokens
+        self._form.apply_tokens(tokens)
+        apply_chrome(self, tokens)
+
+    def _open_connections(self) -> None:
+        host = self.parent()
+        signal = getattr(host, "add_connection_requested", None)
+        emit = getattr(signal, "emit", None)
+        if callable(emit):
+            emit()
+        self._form.reload()
 
     def _commit(self) -> None:
         source = self._form.source()
@@ -589,6 +684,35 @@ class HooksDialog(QDialog):
         if not callable(go_to):
             return
         go_to(surface, method)
+
+
+def _paint_list_input(view: QListWidget, chrome: FormChrome) -> None:
+    """The table list is a chrome field. Item-view polish fills it with the panel."""
+    fill = chrome.input or chrome.panel
+    if not fill or fill == chrome.panel:
+        return
+    sheet = view.styleSheet()
+    needle = "background: %s;" % chrome.panel
+    if needle not in sheet:
+        return
+    view.setStyleSheet(sheet.replace(needle, "background: %s;" % fill, 1))
+
+
+def _host_tokens(widget: QWidget) -> object:
+    """Shell tokens from the host that owns the theme, walking past a dialog window."""
+    current: Optional[QWidget] = widget
+    seen = 0
+    while current is not None and seen < 8:
+        workflow = getattr(current, "_shell_theme_workflow", None)
+        resolve = getattr(workflow, "resolve_theme_tokens", None)
+        if callable(resolve):
+            return resolve()
+        current = current.parentWidget()
+        seen += 1
+    return None
+
+
+_STYLE_CHANGE = getattr(getattr(QEvent, "Type", QEvent), "StyleChange")
 
 
 def _item_enabled(item: QListWidgetItem) -> bool:

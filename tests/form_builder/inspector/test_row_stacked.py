@@ -82,24 +82,19 @@ def _row(qapp: QApplication, width: int, stacks: bool):  # type: ignore[no-untyp
     return session, container, row
 
 
-def _lowest_label_edge(row: _Row) -> int:
-    return row._label_col.mapTo(row, row._label_col.rect().bottomLeft()).y()
-
-
-def test_a_stacking_editor_puts_its_label_above_it_at_236_px(qapp: QApplication) -> None:
+def test_a_wide_editor_stays_beside_its_label_at_236_px(qapp: QApplication) -> None:
     session, container, row = _row(qapp, 236, stacks=True)
     try:
         editor = row._editor.widget  # type: ignore[union-attr]
-        assert row._stacked is True
-        assert _lowest_label_edge(row) <= editor.mapTo(row, editor.rect().topLeft()).y()
-        assert editor.width() >= row.width() - 4
-        assert row.minimumSizeHint().width() <= 236
+        assert row._stacked is False
+        assert row._label_col.geometry().right() < editor.mapTo(row, editor.rect().topLeft()).x()
+        assert editor.mapTo(row, editor.rect().topLeft()).x() == row._label_px + 8
     finally:
         container.close()
         session.dispose()
 
 
-def test_a_stacking_editor_sits_beside_its_label_at_320_px(qapp: QApplication) -> None:
+def test_a_wide_editor_stays_beside_its_label_at_320_px(qapp: QApplication) -> None:
     session, container, row = _row(qapp, 320, stacks=True)
     try:
         editor = row._editor.widget  # type: ignore[union-attr]
@@ -123,9 +118,10 @@ def test_an_editor_that_never_stacks_keeps_the_side_by_side_row(qapp: QApplicati
         session.dispose()
 
 
-def test_the_row_restacks_when_it_is_widened(qapp: QApplication) -> None:
+def test_the_row_stays_side_by_side_when_it_is_resized(qapp: QApplication) -> None:
     session, container, row = _row(qapp, 236, stacks=True)
     try:
+        assert row._stacked is False
         container.resize(320, 120)
         for _ in range(4):
             qapp.processEvents()
@@ -133,7 +129,7 @@ def test_the_row_restacks_when_it_is_widened(qapp: QApplication) -> None:
         container.resize(236, 120)
         for _ in range(4):
             qapp.processEvents()
-        assert row._stacked is True
+        assert row._stacked is False
     finally:
         container.close()
         session.dispose()

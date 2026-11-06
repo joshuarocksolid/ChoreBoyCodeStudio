@@ -55,6 +55,32 @@ class DataPanel(QWidget):
             if callable(refresh):
                 refresh()
         self._pin_footer()
+        self._ask_arrange()
+
+    def section_need(self) -> int:
+        """The sentences and buttons. A stretch must not count as content."""
+
+        height = self._layout.contentsMargins().top() + self._layout.contentsMargins().bottom()
+        width = max(self.width(), 184)
+        for widget in self._built.values():
+            if widget.isHidden():
+                continue
+            if widget.hasHeightForWidth():
+                height += widget.heightForWidth(width)
+            else:
+                height += max(widget.minimumSizeHint().height(), widget.sizeHint().height())
+            height += self._layout.spacing()
+        return height
+
+    def _ask_arrange(self) -> None:
+        if self.minimumHeight() >= self.section_need():
+            return
+        workbench = self._workbench
+        if getattr(workbench, "_arranging_left", False):
+            return
+        arrange = getattr(workbench, "_arrange_left", None)
+        if callable(arrange):
+            arrange()
 
     def _pin_footer(self) -> None:
         """Sections stay at their height. Spare space sits above the footer."""

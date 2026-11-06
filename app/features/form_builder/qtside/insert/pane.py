@@ -12,6 +12,7 @@ from app.qt.QtCore import QEvent, QMimeData, QSize, Qt
 from app.qt.QtGui import QAction, QActionGroup, QDrag, QIcon, QKeyEvent, QMouseEvent
 from app.qt.QtWidgets import (
     QApplication,
+    QFrame,
     QInputDialog,
     QLabel,
     QLineEdit,
@@ -35,18 +36,21 @@ from app.features.form_builder.qtside.insert.catalog import in_sentence, load_ca
 from app.features.form_builder.qtside.insert.catalog._custom import custom_entries
 from app.features.form_builder.qtside.insert.catalog._model import CATEGORY_ORDER, Entry
 from app.features.form_builder.qtside.insert.delegate import ROW_ROLE, EntryDelegate
-from app.features.form_builder.qtside.insert.header import PaneHeader
+from app.features.form_builder.qtside.theme.section_header import SectionHeader
 from app.features.form_builder.qtside.insert.pieces_box import PieceBox
 from app.features.form_builder.qtside.insert.ports import InsertMemoryPort, PieceOps
 from app.features.form_builder.qtside.insert.rows import ENTRY, HEADER, Row, browse_rows, search_rows
 from app.features.form_builder.qtside.insert.catalog.search import search
 from app.features.form_builder.qtside.theme.chrome import FormChrome, scrollbar_qss
 
-ICONS_MIN_WIDTH = 216
+from app.features.form_builder.qtside.theme.metrics import S1, S6, TILE_PANE, TYPE_BODY
+from app.features.form_builder.qtside.theme.search_field import paint_search_glyph, search_line
+
+ICONS_MIN_WIDTH = TILE_PANE
 _KEY_ROW = Qt.ItemDataRole.UserRole
 _ACCESSIBLE = Qt.ItemDataRole.AccessibleTextRole
-_EMPTY_TEXT = "Nothing called “%s”. Try text, list or date."
-_NOTHING_TO_INSERT = "Nothing to insert. Change the search or press Esc."
+_EMPTY_TEXT = "Nothing called “%s”."
+_NOTHING_TO_INSERT = "Nothing to insert."
 FREECAD_TIP = (
     "These widgets come from FreeCAD. In an app that runs without FreeCAD's window, "
     "each one is the plain Qt widget it is based on."
@@ -126,24 +130,6 @@ class InsertList(QListWidget):
         self._pane.drag_finished(str(key), action == Qt.DropAction.CopyAction)
 
 
-class _FilterEdit(QLineEdit):
-    def __init__(self, pane: "InsertPane") -> None:
-        super().__init__(pane)
-        self._pane = pane
-
-    def keyPressEvent(self, event: QKeyEvent) -> None:  # type: ignore[override]
-        if event.key() == Qt.Key.Key_Escape:
-            self._pane.escape()
-            return
-        if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
-            self._pane.activate_current()
-            return
-        if event.key() == Qt.Key.Key_Down:
-            self._pane.focus_first()
-            return
-        super().keyPressEvent(event)
-
-
 class InsertPane(QWidget):
     def __init__(
         self,
@@ -181,20 +167,34 @@ class InsertPane(QWidget):
         self.setObjectName("formBuilder.insert")
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(0)
-        self.header = PaneHeader("Insert", self, self._toggle)
-        self.search_button = self.header.add_extra("", "Search widgets", "formBuilder.insertSearch", True)
+        layout.setSpacing(S1)
+        self.header = SectionHeader(
+            self,
+            "Insert",
+            collapsible=True,
+            object_name="formBuilder.sectionHeader",
+            accessible_name="Insert",
+        )
+        self.header.toggled.connect(lambda expanded: self._collapse_from_header(not expanded))
+        self.search_button = self.header.add_action(
+            "search",
+            "Search widgets",
+            "Search widgets",
+            "formBuilder.insertSearch",
+        )
         self.search_button.clicked.connect(self._focus_filter)
-        self.more_button = self.header.add_extra("", "More insert options", "formBuilder.insertMore", True)
+        self.more_button = self.header.add_action(
+            "more",
+            "More insert options",
+            "More insert options",
+            "formBuilder.insertMore",
+        )
         self.more_button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
         self.more_button.setMenu(self._build_menu())
-        self._paint_header_glyphs()
         layout.addWidget(self.header)
-        self.filter = _FilterEdit(self)
-        self.filter.setObjectName("formBuilder.insertFilter")
-        self.filter.setAccessibleName("Search widgets")
-        self.filter.setPlaceholderText("Search widgets")
+        self.filter = search_line(self, "Search widgets", "formBuilder.insertFilter")
         self.filter.textChanged.connect(self._filter_changed)
+        self.filter.installEventFilter(self)
         layout.addWidget(self.filter)
         self.caption = QLabel(self)
         self.caption.setObjectName("formBuilder.insertCaption")
@@ -203,9 +203,10 @@ class InsertPane(QWidget):
         self.empty = QWidget(self)
         self.empty.setObjectName("formBuilder.insertEmpty")
         empty_layout = QVBoxLayout(self.empty)
-        empty_layout.setContentsMargins(12, 12, 12, 12)
+        empty_layout.setContentsMargins(12, S6, 12, 12)
         self.empty_text = QLabel(self.empty)
-        self.empty_text.setWordWrap(True)
+        self.empty_text.setWordWrap(False)
+        self.empty_text.setAlignment(Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignTop)
         empty_layout.addWidget(self.empty_text)
         self.clear_link = QPushButton("Clear", self.empty)
         self.clear_link.setObjectName("formBuilder.insertClear")
@@ -275,21 +276,21 @@ class InsertPane(QWidget):
         self._chrome = chrome
         self._delegate.set_chrome(chrome)
         self._piece_box.apply_chrome(chrome)
-        self._paint_header_glyphs()
+        self.header.apply_chrome(chrome)
         self.caption.setStyleSheet(
             "color: %s; background: transparent;" % chrome.text
         )
+        self.empty_text.setStyleSheet(
+            "color: %s; background: transparent; font-size: %dpx;" % (chrome.muted, TYPE_BODY)
+        )
+        from app.features.form_builder.qtside.theme.items import item_view_qss
+
+        shapes = getattr(QFrame, "Shape", QFrame)
+        self.body.setFrameShape(getattr(shapes, "NoFrame"))
         self.body.setStyleSheet(
-            "QListWidget { background: %s; color: %s; border: 1px solid %s; }"
-            "QListWidget::item:selected { background: %s; color: %s; }"
-            % (chrome.input, chrome.text, chrome.border, chrome.selected, chrome.text)
-            + scrollbar_qss(chrome)
+            item_view_qss("QListWidget#formBuilder\\.insertBody", chrome) + scrollbar_qss(chrome)
         )
-        self.filter.setStyleSheet(
-            "QLineEdit { background: %s; color: %s; border: 1px solid %s; }"
-            "QLineEdit:focus { border: %dpx solid %s; }"
-            % (chrome.input, chrome.text, chrome.border, chrome.focus_width, chrome.accent)
-        )
+        paint_search_glyph(self.filter, chrome.icon_muted or chrome.glyph or chrome.muted, chrome)
         self.body.viewport().update()
 
     def _paint_header_glyphs(self) -> None:
@@ -459,7 +460,10 @@ class InsertPane(QWidget):
         self._refresh_pieces()
 
     def _toggle(self) -> None:
-        self.set_collapsed(not self._collapsed)
+        self.header.click()
+
+    def _collapse_from_header(self, collapsed: bool) -> None:
+        self.set_collapsed(collapsed)
         self._on_collapsed(self._collapsed)
 
     def focus_filter(self) -> None:
@@ -652,11 +656,29 @@ class InsertPane(QWidget):
         if empty:
             self.empty_text.setText(_EMPTY_TEXT % self._query)
 
+    def section_need(self) -> int:
+        """Header, search, one category, one widget, and the Saved pieces title."""
+
+        from app.features.form_builder.qtside.insert.delegate import HEADER_HEIGHT, ROW_HEIGHT
+
+        title = self._piece_box.title.sizeHint().height()
+        return (
+            self.header.sizeHint().height()
+            + self.filter.sizeHint().height()
+            + HEADER_HEIGHT
+            + ROW_HEIGHT
+            + title
+            + 16
+        )
+
     def _tooltip(self, row: Row) -> str:
         faint = self._chrome.faint if self._chrome is not None else ""
         qt_class = row.qt_class
         span = '<span style="color:%s">%s</span>' % (faint, qt_class) if faint else qt_class
-        return "<b>%s</b><br>%s<br>%s" % (row.title, span, row.description)
+        detail = row.description
+        if row.category and row.category not in detail:
+            detail = ("%s. %s" % (row.category, detail)).strip() if detail else row.category
+        return "<b>%s</b><br>%s<br>%s" % (row.title, span, detail)
 
     # View ----------------------------------------------------------------------------
 
@@ -697,11 +719,24 @@ class InsertPane(QWidget):
         self._memory.clear_recent()
         self._refill()
 
+    def eventFilter(self, watched: object, event: QEvent) -> bool:  # type: ignore[override]
+        if watched is self.filter and event.type() == QEvent.Type.KeyPress:
+            key_event = event
+            if isinstance(key_event, QKeyEvent):
+                key = key_event.key()
+                if key == Qt.Key.Key_Escape:
+                    self.escape()
+                    return True
+                if key in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
+                    self.activate_current()
+                    return True
+                if key == Qt.Key.Key_Down:
+                    self.focus_first()
+                    return True
+        return super().eventFilter(watched, event)
+
     def _auto_icons(self) -> bool:
-        stored = self._memory.view()
-        if stored == "icons":
-            return True
-        if stored == "list":
+        if self._memory.view() == "list":
             return False
         return self.width() >= ICONS_MIN_WIDTH
 
@@ -716,13 +751,18 @@ class InsertPane(QWidget):
             self.body.setViewMode(QListView.ViewMode.IconMode)
             self.body.setFlow(QListView.Flow.LeftToRight)
             self.body.setWrapping(True)
+            self.body.setResizeMode(QListView.ResizeMode.Adjust)
+            self.body.setMovement(QListView.Movement.Static)
             self.body.setSpacing(0)
             self.body.setGridSize(QSize())
+            self.body.setUniformItemSizes(False)
         else:
             self.body.setViewMode(QListView.ViewMode.ListMode)
             self.body.setFlow(QListView.Flow.TopToBottom)
             self.body.setWrapping(False)
             self.body.setSpacing(0)
+            self.body.setGridSize(QSize())
+            self.body.setUniformItemSizes(False)
         self._delegate.set_width(max(self.body.viewport().width(), ICONS_MIN_WIDTH // 2))
         self.body.doItemsLayout()
 

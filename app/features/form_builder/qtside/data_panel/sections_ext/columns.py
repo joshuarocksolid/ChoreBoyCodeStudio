@@ -176,6 +176,13 @@ class _Row(QWidget):
                 insert_column_field(session, self._column)
         except CommandRejected as exc:
             narrate(self, str(exc))
+            return
+        # The row is rebuilt after the insert. Leave focus on the canvas,
+        # which survives, instead of letting it fall out of the form.
+        canvas = canvas_of(self._section)
+        focus = getattr(canvas, "setFocus", None)
+        if callable(focus):
+            focus()
 
 
 class _Columns(QWidget):

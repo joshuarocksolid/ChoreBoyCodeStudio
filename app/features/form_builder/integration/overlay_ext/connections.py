@@ -25,10 +25,8 @@ from app.features.form_builder.integration.overlay_ext import LinkGesture, LinkV
 from app.features.form_builder.qtside.canvas.layers.connections import LINK, LinkMark
 
 KIND = "connections"
-BANNER = (
-    "Drag from a widget to the widget it should act on. "
-    "Drop on the form's background to act on the form."
-)
+BANNER = "Drag from a widget to the one it acts on."
+BANNER_DETAIL = "Drop on the form's background to act on the form."
 CHOOSE = "Choose the widget for %s to act on, then press Enter. Home picks the form."
 
 Picker = Callable[..., None]
@@ -40,6 +38,7 @@ def register(registry: Any) -> None:
             kind=KIND,
             title="Connections",
             banner_text=BANNER,
+            banner_detail=BANNER_DETAIL,
             glyph="connections",
             layer=LINK,
             state=_mark,

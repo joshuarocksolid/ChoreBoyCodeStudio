@@ -163,7 +163,7 @@ def test_a_filter_with_no_match_says_so_and_offers_clear(tmp_path: Path, qapp: Q
     pane.filter.setText("zzqq")
     QApplication.processEvents()
     assert not pane.empty.isHidden()
-    assert pane.empty_text.text() == "Nothing called “zzqq”. Try text, list or date."
+    assert pane.empty_text.text() == "Nothing called “zzqq”."
     assert pane.body.isHidden()
     pane.clear_link.click()
     assert pane.filter.text() == ""
@@ -186,7 +186,7 @@ def test_enter_after_a_query_with_no_match_inserts_nothing(qapp: QApplication) -
     QApplication.processEvents()
     pane.activate_current()
     assert placed == ["QDateEdit"]
-    assert said == ["Nothing to insert. Change the search or press Esc."]
+    assert said == ["Nothing to insert."]
 
 
 def test_your_widgets_follow_the_document(qapp: QApplication) -> None:
@@ -256,6 +256,60 @@ def test_a_236_px_row_shows_the_friendly_name_in_full(qapp: QApplication) -> Non
         shown, _caption = fitted_label(title, "Layouts and spacers", width, name_font, caption_font)
         assert shown == title, title
     listing.close()
+
+
+def test_icon_tiles_use_two_columns_at_232_and_three_at_260(qapp: QApplication) -> None:
+    """Each tile is a 72 by 56 face in a 76 by 60 cell. Headers span the pane. 232 px is two columns and 260 px is three."""
+    memory = InMemoryInsertMemory()
+    memory.set_view("icons")
+    parent = QWidget()
+    pane = _pane(parent, memory)
+
+    def columns(width: int) -> tuple:
+        parent.resize(width, 640)
+        pane.resize(width, 640)
+        parent.show()
+        qapp.processEvents()
+        rows = _rows(pane)
+        header = next(index for index, row in enumerate(rows) if row.kind == HEADER)
+        header_rect = pane.body.visualItemRect(pane.body.item(header))
+        assert header_rect.x() <= 2
+        assert header_rect.width() == pane.body.viewport().width()
+        rects = []
+        for index in range(header + 1, len(rows)):
+            if rows[index].kind != ENTRY:
+                break
+            rects.append(pane.body.visualItemRect(pane.body.item(index)))
+        assert rects
+        assert all(rect.width() == 76 and rect.height() == 60 for rect in rects)
+        for earlier, later in zip(rects, rects[1:]):
+            shared = earlier.intersected(later)
+            assert shared.width() <= 0 or shared.height() <= 0
+        first_y = rects[0].y()
+        same_row = [rect for rect in rects if rect.y() == first_y]
+        assert rects[0].x() <= 2
+        return same_row, rects
+
+    same, rects = columns(232)
+    assert len(same) == 2
+    assert same[1].x() - same[0].x() == 76
+    nxt = next(rect for rect in rects if rect.y() != same[0].y())
+    assert nxt.y() - same[0].y() == 60
+    assert nxt.x() <= 2
+
+    same, _rects = columns(260)
+    assert len(same) == 3
+    xs = [rect.x() for rect in same]
+    assert xs[1] - xs[0] == 76 and xs[2] - xs[1] == 76
+
+    pane._choose_view("list")  # noqa: SLF001
+    qapp.processEvents()
+    assert memory.view() == "list"
+    listed = next(index for index, row in enumerate(_rows(pane)) if row.kind == ENTRY)
+    row_rect = pane.body.visualItemRect(pane.body.item(listed))
+    assert row_rect.x() <= 2 and row_rect.height() == 24 and row_rect.width() > 72
+    pane.close()
+    parent.close()
 
 
 def test_icon_headers_and_the_next_tile_start_the_row_when_resized_before_show(qapp: QApplication) -> None:

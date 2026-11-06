@@ -85,18 +85,11 @@ def generated_banner(path: str, text: str = "") -> Optional[GeneratedBanner]:
     else:
         source_path = os.path.join(folder, source_name) if folder else source_name
     if source_name.endswith(".qrc"):
-        message = (
-            "Generated from %s. Code Studio rewrites this file every time the resources change."
-            % os.path.basename(source_path)
-        )
+        message = "Generated from %s. Saving the resources overwrites this file." % os.path.basename(source_path)
         return GeneratedBanner(message=message, source_path=source_path, logic_path="")
     logic_name = os.path.splitext(os.path.basename(source_path))[0] + "_window.py"
     logic_path = os.path.join(os.path.dirname(source_path) or folder, logic_name)
-    message = (
-        "Generated from %s. Code Studio rewrites this file every time the form is saved. "
-        "Put your code in %s."
-        % (os.path.basename(source_path), os.path.basename(logic_path))
-    )
+    message = "Generated from %s. Saving the form overwrites this file." % os.path.basename(source_path)
     return GeneratedBanner(message=message, source_path=source_path, logic_path=logic_path)
 
 

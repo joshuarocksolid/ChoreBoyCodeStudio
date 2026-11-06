@@ -8,7 +8,7 @@ from app.features.form_builder.engine.ui4.values import Value
 from app.features.form_builder.qtside.inspector.api import EditorHost, Mixed, RowValue, Unset, Written
 from app.qt.QtCore import QEvent, QLocale, QObject, Qt
 from app.qt.QtGui import QColor, QKeySequence
-from app.qt.QtWidgets import QGridLayout, QLabel, QLineEdit, QWidget
+from app.qt.QtWidgets import QApplication, QGridLayout, QLabel, QLineEdit, QWidget
 
 MINUS = "\u2212"
 
@@ -126,6 +126,29 @@ class _YieldUndo(QObject):
 
 def yield_form_undo(widget: QWidget) -> None:
     widget.installEventFilter(_YieldUndo(widget))
+
+
+class _YieldChildUndo(QObject):
+    """Undo on a child reaches the form. The widget still handles it while focused."""
+
+    def eventFilter(self, watched: QObject, event: QEvent) -> bool:  # noqa: N802
+        if event.type() != event_type("ShortcutOverride"):
+            return False
+        if QApplication.focusWidget() is watched:
+            return False
+        matches = getattr(event, "matches", None)
+        if not callable(matches):
+            return False
+        standard = getattr(QKeySequence, "StandardKey", QKeySequence)
+        if matches(getattr(standard, "Undo")) or matches(getattr(standard, "Redo")):
+            event.ignore()  # type: ignore[attr-defined]
+            return True
+        return False
+
+
+def yield_form_undo_from_children(widget: QWidget) -> None:
+    """A field must not take Undo while a button parked on it has focus."""
+    widget.installEventFilter(_YieldChildUndo(widget))
 
 
 class PairColumn(QWidget):

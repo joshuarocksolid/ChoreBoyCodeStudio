@@ -101,6 +101,19 @@ def overlay_palette(high_contrast: bool) -> OverlayPalette:
     return OVERLAY
 
 
+def channels(raw: str) -> Tuple[int, int, int, int]:
+    """``#RRGGBBAA`` as red, green, blue, alpha.
+
+    Qt's ``QColor`` reads eight hex digits as ``#AARRGGBB``.
+    """
+    text = raw[1:] if raw.startswith("#") else raw
+    red = int(text[0:2], 16)
+    green = int(text[2:4], 16)
+    blue = int(text[4:6], 16)
+    alpha = int(text[6:8], 16) if len(text) >= 8 else 255
+    return red, green, blue, alpha
+
+
 @dataclass(frozen=True)
 class BackdropPalette:
     fill: str

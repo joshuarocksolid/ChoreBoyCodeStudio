@@ -224,7 +224,8 @@ class _Canvas:
         self.banner: Optional[tuple] = None
         self.claimer: Any = None
 
-    def show_banner(self, glyph, name, sentence, extra, on_extra, on_done):  # type: ignore[no-untyped-def]
+    def show_banner(self, glyph, name, sentence, extra, on_extra, on_done, detail=""):  # type: ignore[no-untyped-def]
+        del detail
         self.banner = (glyph, name, sentence, extra)
 
     def hide_banner(self) -> None:

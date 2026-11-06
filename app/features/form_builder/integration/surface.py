@@ -22,6 +22,7 @@ from app.qt.QtWidgets import (
     QPushButton,
     QTreeWidget,
     QShortcut,
+    QSizePolicy,
     QStackedWidget,
     QTabWidget,
     QVBoxLayout,
@@ -360,6 +361,7 @@ class FormSurface(QWidget):
         source: FormContentSource,
     ) -> None:
         super().__init__(request.parent)
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self._request = request
         self._session = session
         self._source = source
@@ -631,9 +633,12 @@ class FormSurface(QWidget):
             theme(tokens)
         self._paint_banner()
         self.style_banner()
+        notice = self._source.save_notice
+        full = getattr(self._toolbar, "_save_full", "") or self._toolbar.save_state.text()
+        withheld = full.startswith("Saved") or notice.text.startswith("Saved")
         self._toolbar.set_save(
-            self._toolbar.save_state.text(),
-            error=self._source.save_notice.error and not self._source.is_dirty(),
+            full,
+            error=bool(notice.error) and not self._source.is_dirty() and not withheld,
             tokens=tokens,
         )
         editor = self._editor
@@ -1047,6 +1052,7 @@ class FormSurface(QWidget):
     def showEvent(self, event: object) -> None:  # noqa: N802
         super().showEvent(event)  # type: ignore[arg-type]
         self._apply_responsive()
+        self._order_focus()
         self._attach_tab_watch()
         self._arm_window_prewarm()
 
@@ -1481,6 +1487,7 @@ class FormSurface(QWidget):
             self.layout_offers(targets),
             lambda request: self.run_layout(request, targets),
             self._chip_anchor(node),
+            chrome_for(self._tokens),
         )
 
     def open_context_menu(self, node: Optional[NodeId], at: Optional[QPoint], *, source: str = "canvas") -> None:
@@ -1633,13 +1640,15 @@ class FormSurface(QWidget):
         if tokens is None:
             return
         self._workbench.canvas.banner.apply_colors(
-            tokens.editor_bg,
-            tokens.border,
+            tokens.popup_bg,
+            tokens.popup_border,
             tokens.text_primary,
             tokens.text_muted,
             tokens.input_bg,
             tokens.accent,
             tokens.focus_border_width,
+            high_contrast=tokens.is_high_contrast,
+            is_dark=tokens.is_dark,
         )
 
     def show_widget_help(self) -> None:
@@ -1664,10 +1673,6 @@ class FormSurface(QWidget):
         inspector.flush()
         inspector.focus_tab(TabId.PROPERTIES)
         inspector.properties.focus_tab_order()
-
-    def about_connections(self) -> None:
-        """F4 until the Connections overlay arrives with M6 (R3 212)."""
-        self.narrate("Connections are in the Behavior tab. Alt+4 goes there.")
 
     def _insert_from_canvas(self) -> None:
         if self._source.mode != "visual":
@@ -1747,11 +1752,30 @@ class FormSurface(QWidget):
         self._toolbar.set_undo(design and log.can_undo(), "%s (Ctrl+Z)" % undo_tip)
         self._toolbar.set_redo(design and log.can_redo(), "%s (Ctrl+Shift+Z)" % redo_tip)
 
+    def _sync_missing_connection(self, notice: object) -> None:
+        """FB510 on a new form whose connection is missing. The files appear once it works."""
+        diagnostics = getattr(notice, "diagnostics", ()) or ()
+        codes = {str(getattr(item, "code", "") or "") for item in diagnostics}
+        sentence = "Generated files appear once the connection works."
+        if bool(getattr(notice, "error", False)) and "FB510" in codes and "FB301" in codes:
+
+            def open_connections() -> None:
+                from app.features.form_builder.integration.workbench_ext.data import open_connections_settings
+
+                open_connections_settings(self._workbench)
+
+            self._notice.show_choices(sentence, (("Connections", open_connections),))
+            return
+        label = self._notice.findChild(QLabel, "formBuilder.noticeText")
+        if label is not None and label.text() == sentence:
+            self._notice.dismiss()
+
     def _refresh_save_state(self) -> None:
         notice = self._source.save_notice
         if notice.kind == "hold":
             self._show_hold(notice.text)
             return
+        self._sync_missing_connection(notice)
         timer = self._saved_timer
         if self._source.is_dirty():
             self._saved_timer.stop()
@@ -1764,7 +1788,8 @@ class FormSurface(QWidget):
             return
         if notice.error:
             self._saved_timer.stop()
-            self._toolbar.set_save(notice.text, error=True, tokens=self._tokens)
+            withheld = notice.text.startswith("Saved")
+            self._toolbar.set_save(notice.text, error=not withheld, tokens=self._tokens)
             return
         if notice.kind in ("saved", "generated") and notice.text and not self._save_faded:
             self._toolbar.set_save(notice.text, error=False, tokens=self._tokens)
@@ -2284,6 +2309,9 @@ class FormSurface(QWidget):
             assign_history_action(redo, redo_text, redo_on)
 
     def _order_focus(self) -> None:
+        # The form keeps its own cycle. Splicing it after the editor tab bar
+        # made Tab from a property row land on the canvas, which keeps Tab
+        # and changes the selection, so the next property was never reached.
         order = [
             self._toolbar.design,
             self._toolbar.xml,

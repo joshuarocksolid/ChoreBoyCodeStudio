@@ -36,9 +36,9 @@ def _shoot(qapp: QApplication, folder: Path, scale: str) -> None:
             tokens = tokens_from_palette(qapp.palette(), force_mode=mode)
             surface.apply_theme(tokens)  # type: ignore[attr-defined]
             _pump(qapp)
-            checks = panel.findChild(QWidget, "formBuilder.logic.chip.checks")
-            assert checks is not None
-            checks.setChecked(False)  # type: ignore[attr-defined]
+            segments = panel.findChild(QWidget, "formBuilder.logic.segments")
+            assert segments is not None
+            segments.set_current_index(1)  # type: ignore[attr-defined]
             _pump(qapp)
             panel.setFixedWidth(320)
             panel.setFixedHeight(860)

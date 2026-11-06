@@ -327,24 +327,45 @@ class FormCanvas(QGraphicsView):
         extra: str,
         on_extra: Optional[Callable[[], None]],
         on_done: Callable[[], None],
+        detail: str = "",
     ) -> None:
-        """The overlay banner over the top gutter. Only a wrap past that gutter moves the page."""
-        self._banner.show_mode(glyph, name, sentence, extra, on_extra, on_done)
+        """A floating pill 12 px under the top edge. The page does not move."""
+        self._banner.show_mode(glyph, name, sentence, extra, on_extra, on_done, detail)
+        self._banner.set_glyph_ink(self._mode_ink(glyph))
         self._fit_banner()
         self._banner.raise_()
         self._position_chrome()
+
+    def _mode_ink(self, glyph: str) -> str:
+        overlay = self._palette.overlay
+        raw = ""
+        if glyph in ("tab_order", "tab"):
+            raw = overlay.tab
+        elif glyph in ("buddy", "buddies"):
+            from app.features.form_builder.qtside.theme.modes import BUDDY, BUDDY_HIGH_CONTRAST
+
+            raw = BUDDY_HIGH_CONTRAST if overlay.min_stroke >= 2 else BUDDY
+        elif glyph in ("connections", "connect"):
+            raw = overlay.connect
+        elif glyph == "warning":
+            raw = overlay.problem
+        if raw.startswith("#") and len(raw) >= 7:
+            return raw[:7]
+        return ""
 
     def _fit_banner(self) -> None:
         banner = self._banner
         if not banner.isVisible():
             return
-        height = banner.fitted_height(max(self.width(), 1))
-        banner.setGeometry(0, 0, self.width(), height)
-        from app.features.form_builder.qtside.canvas.core.space import GUTTERS
-
-        excess = max(0, height - GUTTERS.top)
-        if self.viewportMargins().top() != excess:
-            self.setViewportMargins(0, excess, 0, 0)
+        side = 12
+        width = banner.preferred_width(self.width())
+        if width < 1:
+            return
+        banner.fitted_height(width)
+        banner.setGeometry(max(0, (self.width() - width) // 2), side, width, 32)
+        margins = self.viewportMargins()
+        if margins.top() or margins.bottom() or margins.left() or margins.right():
+            self.setViewportMargins(0, 0, 0, 0)
 
     def hide_banner(self) -> None:
         self._banner.hide()
@@ -847,6 +868,22 @@ class FormCanvas(QGraphicsView):
             self._toast.move(toast_x, self.height() - self._toast.height() - 16)
 
 
+def _mix(edge: str, base: str, alpha: float) -> str:
+    """``edge`` at ``alpha`` over ``base``. Both are ``#RRGGBB``. ``QColor`` misreads eight digits."""
+
+    def _channel(text: str, index: int) -> int:
+        return int(text[index : index + 2], 16)
+
+    def _blend(left: int, right: int) -> int:
+        return int(round(left * alpha + right * (1.0 - alpha)))
+
+    return "#%02X%02X%02X" % (
+        _blend(_channel(edge, 1), _channel(base, 1)),
+        _blend(_channel(edge, 3), _channel(base, 3)),
+        _blend(_channel(edge, 5), _channel(base, 5)),
+    )
+
+
 def _palette(tokens: Optional[ShellThemeTokens]) -> CanvasPalette:
     if tokens is None:
         fill, dot = backdrop_colors(is_dark=False, is_high_contrast=False)
@@ -865,6 +902,9 @@ def _palette(tokens: Optional[ShellThemeTokens]) -> CanvasPalette:
             ),
         )
     fill, dot = backdrop_colors(is_dark=tokens.is_dark, is_high_contrast=tokens.is_high_contrast)
+    if tokens.is_dark and not tokens.is_high_contrast and len(tokens.border) == 7 and len(fill) == 7:
+        # #262B31 on #16191D is about 1.3:1. Blend the border at 50% over the fill.
+        dot = _mix(tokens.border, fill, 0.5)
     return CanvasPalette(
         overlay=overlay_palette(tokens.is_high_contrast),
         backdrop=BackdropPalette(

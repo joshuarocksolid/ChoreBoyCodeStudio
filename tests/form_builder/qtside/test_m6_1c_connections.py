@@ -453,7 +453,8 @@ def test_badges_stay_off_neighbours_and_the_title_band() -> None:
     )
     assert overlap >= badges["phoneEdit"].width / 2
     assert not badges["buttonBox"].intersects(boxes["cancelButton"])
-    assert badges["buttonBox"].x <= boxes["buttonBox"].x + 4
+    box = boxes["buttonBox"]
+    assert badges["buttonBox"].x >= box.x + box.width / 2
 
 
 def test_an_unknown_glyph_falls_back_instead_of_raising(qapp: QApplication) -> None:

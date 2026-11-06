@@ -94,7 +94,12 @@ def test_the_toolbar_side_is_four_segments_that_write_the_attribute(qapp) -> Non
         pane.flush()
         qapp.processEvents()
         row = pane.findChild(QWidget, "formBuilder.row.toolbarSide")
-        segments = {b.text(): b for b in row.findChildren(QToolButton) if b.text() != "\u21ba"}
+        # The reset mark is an icon now. It is not one of the four side segments.
+        segments = {
+            b.text(): b
+            for b in row.findChildren(QToolButton)
+            if b.objectName() != "formBuilder.rowReset" and b.text() not in ("", "\u21ba")
+        }
         assert list(segments) == ["Top", "Bottom", "Left", "Right"] and segments["Top"].isChecked()
         segments["Left"].click()
         assert "Qt::LeftToolBarArea" in write_ui(doc).text

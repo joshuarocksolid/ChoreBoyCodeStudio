@@ -297,6 +297,17 @@ def test_long_property_names_elide_and_the_menu_hides_its_arrow(qapp: QApplicati
         _expand_all(qapp, pane)
         row = pane.findChild(QWidget, "formBuilder.row.inputMethodHints")
         assert row is not None
+        from app.features.form_builder.qtside.theme.metrics import LABEL_MIN
+
+        # The name fits in a 112 px column. It elides only at the 88 px floor.
+        width = window.width()
+        for _attempt in range(40):
+            if row._label_px <= LABEL_MIN:
+                break
+            width -= 12
+            window.resize(width, 760)
+            _settle(qapp, pane)
+        assert row._label_px == LABEL_MIN
         label = next(item for item in row.findChildren(QLabel) if "inputMethodHints" in (item.toolTip() or item.text()))
         assert "inputMethodHints" in label.toolTip()
         assert "\u2026" in label.text()

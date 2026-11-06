@@ -55,7 +55,7 @@ def _assert_section(window: QWidget) -> None:
 
 
 def _open_required(window: QWidget, qapp: QApplication) -> None:
-    add = window.findChild(QPushButton, "formBuilder.checks.add")
+    add = window.findChild(QWidget, "formBuilder.checks.add")
     assert add is not None
     add.click()
     _pump(qapp)
@@ -93,7 +93,9 @@ def _assert_width(width: int) -> None:
         _set_inspector_width(window, width, qapp)
         _assert_section(window)
         when = window.findChild(QLabel, "formBuilder.checks.when")
-        assert when is not None and when.text() == "Checked when: leaving the field"
+        value = window.findChild(QWidget, "formBuilder.checks.whenValue")
+        assert when is not None and when.text() == "Checked when"
+        assert value is not None and value.text() == "Leaving the field"
         commit = window.findChild(QPushButton, "formBuilder.checks.commit")
         assert commit is not None and commit.isEnabled()
         commit.click()
@@ -109,12 +111,9 @@ def _assert_width(width: int) -> None:
         skip.click()
         _pump(qapp)
         _set_inspector_width(window, width, qapp)
-        outline = window.findChild(QWidget, "formBuilder.checks.outlineLine")
-        assert outline is not None and outline.isVisible()
-        words = window.findChild(QLabel, "formBuilder.checks.outlineWords")
-        assert words is not None and words.text() == "Fields that fail a check get no outline yet."
+        assert window.findChild(QWidget, "formBuilder.checks.outlineLine") is None
         _assert_section(window)
-        add = window.findChild(QPushButton, "formBuilder.checks.add")
+        add = window.findChild(QWidget, "formBuilder.checks.add")
         assert add is not None
         add.click()
         _pump(qapp)

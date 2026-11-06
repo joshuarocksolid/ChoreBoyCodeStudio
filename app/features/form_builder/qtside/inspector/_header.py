@@ -8,9 +8,21 @@ from app.features.form_builder.engine.ids import NodeId
 from app.features.form_builder.engine.query.selection import SelectionSource
 from app.features.form_builder.qtside.inspector._services import Rejected, Services, rejection_text
 from app.features.form_builder.qtside.inspector.model import Crumb, HeaderView, ManyHeader, OneHeader
+from app.features.form_builder.qtside.theme.chrome import FormChrome
+from app.features.form_builder.qtside.theme.metrics import (
+    BREADCRUMB,
+    ICON,
+    INSPECTOR_ROW,
+    PANE_PAD,
+    R_CONTROL,
+    S2,
+    TYPE_BODY,
+    TYPE_EMPHASIS,
+    TYPE_FINE,
+)
 from app.qt.QtCore import QEvent, Qt
 from app.qt.QtGui import QFont, QPainter, QPen, QResizeEvent
-from app.qt.QtWidgets import QHBoxLayout, QLabel, QLineEdit, QSizePolicy, QVBoxLayout, QWidget
+from app.qt.QtWidgets import QLabel, QLineEdit, QSizePolicy, QVBoxLayout, QWidget
 from app.qt.qt_compat import enum_value
 
 
@@ -48,6 +60,10 @@ class Header(QWidget):
         self._class_full = ""
         self._class_short = ""
         self._link_color = ""
+        self._muted = ""
+        self._faint = ""
+        self._accent = ""
+        self._hover_href = ""
         self._glyph = _ClassGlyph(self)
         self._name = QLineEdit(self)
         self._name.setObjectName("formBuilder.inspectorName")
@@ -58,13 +74,17 @@ class Header(QWidget):
         # The class line and the crumbs change text on every select. Each sits
         # alone in a layout-less slot, so its updateGeometry stops at the slot
         # instead of re-laying out every parent up to the MainWindow.
-        self._class_slot = _Slot(self, self._show_class)
+        self._class_slot = _Slot(self, self._show_class, INSPECTOR_ROW)
         self._class = QLabel(self._class_slot)
         self._class_slot.hold(self._class)
         self._class.setObjectName("formBuilder.inspectorClass")
         self._class.setWordWrap(False)
         self._class.setTextFormat(Qt.PlainText)
-        self._crumbs_slot = _Slot(self, self._render_crumbs)
+        self._class.setAlignment(
+            getattr(getattr(Qt, "AlignmentFlag", Qt), "AlignLeft")
+            | getattr(getattr(Qt, "AlignmentFlag", Qt), "AlignVCenter")
+        )
+        self._crumbs_slot = _Slot(self, self._render_crumbs, BREADCRUMB)
         self._crumbs = _CrumbLabel(self._crumbs_slot)
         self._crumbs_slot.hold(self._crumbs)
         self._crumbs.setObjectName("formBuilder.inspectorCrumbs")
@@ -78,6 +98,9 @@ class Header(QWidget):
         self._crumbs.setSizePolicy(_ignored(), _preferred())
         self._crumbs.setMinimumWidth(0)
         self._crumbs.linkActivated.connect(self._on_crumb)
+        hovered = getattr(self._crumbs, "linkHovered", None)
+        if hovered is not None:
+            hovered.connect(self._on_crumb_hover)
         self._error = QLabel(self)
         self._error.setObjectName("formBuilder.inspectorNameError")
         self._error.setWordWrap(True)
@@ -85,31 +108,55 @@ class Header(QWidget):
         self._crumbs_slot.hide()
 
         self._layout = QVBoxLayout(self)
-        self._layout.setContentsMargins(0, 0, 0, 6)
-        self._layout.setSpacing(2)
-        self._identity = QHBoxLayout()
-        self._identity.setContentsMargins(8, 6, 8, 0)
-        self._identity.setSpacing(6)
-        self._layout.addLayout(self._identity)
-        self._identity.addWidget(self._glyph, 0)
-        self._identity.addWidget(self._name, 1)
-        self._class_line = QWidget(self)
-        self._class_row = QHBoxLayout(self._class_line)
-        self._class_row.setContentsMargins(8, 0, 8, 0)
-        self._class_row.addWidget(self._class_slot, 1)
-        self._layout.addWidget(self._class_line)
+        self._layout.setContentsMargins(PANE_PAD, 0, PANE_PAD, S2)
+        self._layout.setSpacing(0)
+        self._identity = _Identity(self._glyph, self._name, self._class_slot, self._class, self)
+        self._layout.addWidget(self._identity)
         self._layout.addWidget(self._crumbs_slot)
         self._layout.addWidget(self._error)
         self.setFocusProxy(self._name)
 
+    def apply_chrome(self, chrome: FormChrome) -> None:
+        """Name border, class ink, and crumb colours. The sheet sits on each control."""
+        self._muted = chrome.muted
+        self._faint = chrome.faint
+        self._accent = chrome.accent
+        focus = chrome.focus_width if chrome.focus_width > 0 else 1
+        # 1 px is the resting hover edge. Focus uses the chrome width.
+        self._name.setStyleSheet(
+            "QLineEdit#formBuilder\\.inspectorName {"
+            " background: transparent; color: %s; border: 1px solid transparent;"
+            " border-radius: %dpx; font-size: %dpx; font-weight: 600; padding: 0px; }"
+            "QLineEdit#formBuilder\\.inspectorName:hover { border: 1px solid %s; }"
+            "QLineEdit#formBuilder\\.inspectorName:focus { border: %dpx solid %s; }"
+            % (chrome.text, R_CONTROL, TYPE_EMPHASIS, chrome.border, focus, chrome.accent)
+        )
+        class_font = self._class.font()
+        class_font.setPixelSize(TYPE_BODY)
+        self._class.setFont(class_font)
+        self._class.setStyleSheet(
+            "QLabel#formBuilder\\.inspectorClass { color: %s; background: transparent; font-size: %dpx; }"
+            % (chrome.muted, TYPE_BODY)
+        )
+        crumb_font = self._crumbs.font()
+        crumb_font.setPixelSize(TYPE_FINE)
+        self._crumbs.setFont(crumb_font)
+        self._crumbs.setStyleSheet(
+            "QLabel#formBuilder\\.inspectorCrumbs { color: %s; background: transparent; font-size: %dpx; }"
+            % (chrome.muted, TYPE_FINE)
+        )
+        self._render_crumbs()
+        self._identity.place()
+
     def set_link_color(self, color: str) -> None:
         self._link_color = color
+        if not self._muted:
+            self._muted = color
+        if not self._accent:
+            self._accent = color
         self._render_crumbs()
 
     def paint(self, view: HeaderView, short: bool) -> None:
-        # A theme sheet can change the label fonts after construction. O(1).
-        self._class_slot.fit()
-        self._crumbs_slot.fit()
         with self._services.painting():
             self._apply_short(short)
             if isinstance(view, ManyHeader):
@@ -172,6 +219,7 @@ class Header(QWidget):
         self._used_in = None
         self._crumbs_slot.hide()
         self._error.hide()
+        self._identity.place()
 
     def _paint_one(self, view: OneHeader) -> None:
         if self._node != view.node:
@@ -193,6 +241,7 @@ class Header(QWidget):
             else:
                 self._fit_name()
             self._error.hide()
+        self._identity.place()
         self._crumbs_data = view.crumbs
         self._used_in = view.used_in
         self._render_crumbs()
@@ -216,19 +265,14 @@ class Header(QWidget):
         tip = "" if fits else self._saved_name
         if self._name.toolTip() != tip:
             self._name.setToolTip(tip)
+        self._identity.place()
 
     def _apply_short(self, short: bool) -> None:
+        """Short mode hides the path. The class stays on the name row."""
         if short == self._short:
             return
         self._short = short
-        if short:
-            self._class_line.hide()
-            self._identity.addWidget(self._class_slot, 1)
-            return
-        self._identity.removeWidget(self._class_slot)
-        self._class_slot.setParent(self._class_line)
-        self._class_row.addWidget(self._class_slot, 1)
-        self._class_line.show()
+        self._render_crumbs()
 
     def _set_class_text(self, text: str, short: str, tip: str = "") -> None:
         self._class_full = text
@@ -274,6 +318,12 @@ class Header(QWidget):
         self._error.hide()
         self._error.clear()
 
+    def _on_crumb_hover(self, link: str) -> None:
+        if link == self._hover_href:
+            return
+        self._hover_href = link
+        self._render_crumbs()
+
     def _on_crumb(self, link: str) -> None:
         self._services.session.selection.set(
             (NodeId(int(link)),),
@@ -297,6 +347,9 @@ class Header(QWidget):
         self._crumbs_slot.show()
 
     def _render_crumbs(self) -> None:
+        if self._short:
+            self._crumbs_slot.hide()
+            return
         if self._used_in is not None:
             self._render_used_in(self._used_in)
             return
@@ -308,25 +361,28 @@ class Header(QWidget):
         self._crumbs.setToolTip(" \u203a ".join(labels))
         width = self._crumbs.width()
         if width < 40:
-            width = self.width() - 16 if self.width() > 40 else 240
+            width = self.width() - (PANE_PAD * 2) if self.width() > 40 else 240
         shown = list(crumbs)
         while len(shown) > 2 and _plain_width(self._crumbs, shown) > width:
             shown = shown[1:]
         parts = []
         if len(shown) < len(crumbs):
-            parts.append("\u2026")
+            parts.append(_crumb_span("\u2026", self._faint or self._muted, False))
         for crumb in shown[:-1]:
-            style = ""
-            if self._link_color:
-                style = ' style="color:%s"' % self._link_color
-            parts.append(
-                '<a href="%d"%s>%s</a>' % (int(crumb.node), style, _escape(crumb.label))
-            )
-        parts.append(_escape(shown[-1].label))
-        text = _ink(self._link_color, " \u203a ".join(parts))
+            hot = self._hover_href == str(int(crumb.node))
+            parts.append(self._crumb_link(crumb, hot))
+        parts.append(_crumb_span(_escape(shown[-1].label), self._muted or self._link_color, False))
+        text = _join_crumbs(parts, self._faint or self._muted)
         if self._crumbs.text() != text:
             self._crumbs.setText(text)
         self._crumbs_slot.show()
+
+    def _crumb_link(self, crumb: Crumb, hovered: bool) -> str:
+        color = self._accent if hovered and self._accent else (self._muted or self._link_color)
+        return (
+            '<a href="%d" style="color:%s;text-decoration:%s">%s</a>'
+            % (int(crumb.node), color, "underline" if hovered else "none", _escape(crumb.label))
+        )
 
 def _plain_width(label: QLabel, crumbs: list) -> int:
     text = " \u203a ".join(crumb.label for crumb in crumbs)
@@ -335,6 +391,18 @@ def _plain_width(label: QLabel, crumbs: list) -> int:
     if callable(advance):
         return int(advance(text))
     return int(metrics.width(text))
+
+def _join_crumbs(parts: list, faint: str) -> str:
+    sep = _crumb_span(" \u203a ", faint, False)
+    return sep.join(parts)
+
+
+def _crumb_span(text: str, color: str, underline: bool) -> str:
+    deco = "underline" if underline else "none"
+    if not color:
+        return '<span style="text-decoration:%s">%s</span>' % (deco, text)
+    return '<span style="color:%s;text-decoration:%s">%s</span>' % (color, deco, text)
+
 
 def _ink(color: str, text: str) -> str:
     """Rich text otherwise paints black, which disappears on a dark panel."""
@@ -426,17 +494,24 @@ class _Slot(QWidget):
     size never follows the text: ignored width, one line of height.
     """
 
-    def __init__(self, parent: QWidget, on_resize: "object") -> None:
+    def __init__(self, parent: QWidget, on_resize: "object", height: int = 0) -> None:
         super().__init__(parent)
         self._child: Optional[QWidget] = None
         self._on_resize = on_resize
+        self._locked = height
         self.setSizePolicy(_ignored(), getattr(getattr(QSizePolicy, "Policy", QSizePolicy), "Fixed"))
+        if height:
+            self.setFixedHeight(height)
 
     def hold(self, child: QWidget) -> None:
         self._child = child
         self.fit()
 
     def fit(self) -> None:
+        if self._locked:
+            if self.maximumHeight() != self._locked:
+                self.setFixedHeight(self._locked)
+            return
         child = self._child
         if child is None:
             return
@@ -462,3 +537,47 @@ class _Slot(QWidget):
 
 _FONT_CHANGE = getattr(getattr(QEvent, "Type", QEvent), "FontChange")
 _STYLE_CHANGE = getattr(getattr(QEvent, "Type", QEvent), "StyleChange")
+
+
+class _Identity(QWidget):
+    """Glyph, name, and class on one 28 px row. No layout, so a rename does not reflow the header."""
+
+    def __init__(
+        self,
+        glyph: QWidget,
+        name: QLineEdit,
+        class_slot: QWidget,
+        class_label: QLabel,
+        parent: QWidget,
+    ) -> None:
+        super().__init__(parent)
+        self._glyph = glyph
+        self._name = name
+        self._class_slot = class_slot
+        self._class_label = class_label
+        glyph.setParent(self)
+        name.setParent(self)
+        class_slot.setParent(self)
+        self.setFixedHeight(INSPECTOR_ROW)
+        policy = getattr(QSizePolicy, "Policy", QSizePolicy)
+        self.setSizePolicy(getattr(policy, "Expanding"), getattr(policy, "Fixed"))
+
+    def resizeEvent(self, event: QResizeEvent) -> None:  # noqa: N802
+        super().resizeEvent(event)
+        self.place()
+
+    def place(self) -> None:
+        width = self.width()
+        height = self.height() or INSPECTOR_ROW
+        if width <= 0:
+            return
+        glyph = ICON
+        self._glyph.setGeometry(0, max(0, (height - glyph) // 2), glyph, glyph)
+        start = glyph + S2
+        room = max(0, width - start)
+        label = self._class_label
+        class_w = label.fontMetrics().horizontalAdvance(label.text()) + S2
+        class_w = min(class_w, max(0, room // 2))
+        name_w = max(0, room - S2 - class_w)
+        self._name.setGeometry(start, 0, name_w, height)
+        self._class_slot.setGeometry(start + name_w + S2, 0, max(0, class_w), height)

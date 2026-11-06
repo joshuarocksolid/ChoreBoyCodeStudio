@@ -75,7 +75,8 @@ def test_toolbar_and_rails_show_glyphs_and_keep_tooltips(tmp_path: Path, qapp: Q
 
         preview = _button(surface, "formBuilder.preview")
         overflow = _button(surface, "formBuilder.overflow")
-        assert preview.text() == "" and not preview.icon().isNull()
+        assert preview.text() == "Preview" and not preview.icon().isNull()
+        assert preview.toolTip() == "Preview (Ctrl+Shift+R)"
         assert overflow.text() == "" and overflow.toolTip() == "More" and not overflow.icon().isNull()
         assert overflow.accessibleName() == "More"
 

@@ -43,7 +43,7 @@ from app.features.form_builder.qtside.inspector.api import (
 from app.features.form_builder.qtside.inspector.editors._editor_kit import warning_color
 from app.features.form_builder.qtside.style import gateway
 from app.features.form_builder.qtside.style.verdict import summary_text
-from app.features.form_builder.qtside.visual.color_picker import ColorPicker, Swatch, colour_summary
+from app.features.form_builder.qtside.visual.color_picker import ColorPicker, colour_summary
 from app.features.form_builder.qtside.visual.common import RowSummary, begin_popover, owner_name, refit
 from app.qt.QtCore import Qt
 from app.qt.QtGui import QColor, QPalette
@@ -187,6 +187,8 @@ class StyleSheetEditor:
         self._button.clicked.connect(self._open)
         layout.addWidget(self._summary, 1)
         layout.addWidget(self._button, 0)
+        self._root.apply_theme = self._paint_button  # type: ignore[attr-defined]
+        self._paint_button()
 
     @property
     def widget(self) -> QWidget:
@@ -209,6 +211,14 @@ class StyleSheetEditor:
         self._button.setAccessibleName("%s: edit" % label)
         owners = self._host.owner_ids()
         self._button.setEnabled(len(owners) == 1)
+        self._paint_button()
+
+    def _paint_button(self) -> None:
+        from app.features.form_builder.qtside.theme.info_bar import secondary_button_qss
+
+        self._button.setStyleSheet(
+            secondary_button_qss(self._host.chrome, "QPushButton#formBuilder\\.styleEdit")
+        )
 
     def _open(self) -> None:
         owners = self._host.owner_ids()
@@ -236,20 +246,18 @@ class _ColourRow:
         self._root.setObjectName(self.object_name)
         layout = QHBoxLayout(self._root)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(6)
-        self._swatch = Swatch(self._root, 16)
-        self._swatch.set_tokens(host.chrome)
+        layout.setSpacing(0)
         self._proxy = _Proxy(host, self._write_from_picker, self._reset_all)
         self._summary = RowSummary(host.label or self.row_label, self._root)
         self._summary.set_opener(self._open)
         self._summary.set_summary("Default")
+        self._summary.set_swatch(None, hollow=True)
         self._reset_button = QToolButton(self._root)
         self._reset_button.setText("↺")
         self._reset_button.setAutoRaise(True)
         self._reset_button.setAccessibleName("Reset %s" % self.row_label.lower())
         self._reset_button.clicked.connect(self._reset_all)
         self._reset_button.hide()
-        layout.addWidget(self._swatch)
         layout.addWidget(self._summary, 1)
         layout.addWidget(self._reset_button)
         self._caption = _faint_label(self._root, host.chrome.muted)
@@ -304,7 +312,10 @@ class _ColourRow:
         else:
             summary = "Default"
         self._summary.set_summary(summary)
-        self._swatch.set_color(color, hollow=color is None and not mixed, mixed=mixed)
+        if color is None:
+            self._summary.set_swatch(None, hollow=True)
+        else:
+            self._summary.set_swatch((color.red, color.green, color.blue))
         shown = Written(color) if (color is not None and self._written) else Unset()
         self._summary.show_state(Mixed() if mixed else shown, self._host.chrome.faint)
         any_written = any(item[1] for item in reads)
@@ -385,7 +396,7 @@ class _ColourRow:
         if self._run(commands, session):
             self._color = value
             self._written = True
-            self._swatch.set_color(value)
+            self._summary.set_swatch((value.red, value.green, value.blue))
             self._summary.set_summary(colour_summary(value, mixed=False, unset=False))
 
     def _reset_all(self) -> None:

@@ -1,6 +1,6 @@
 # Preview and Try
 
-Preview shows the form in its own window. Try is Preview with `Run behavior` turned on. On a database form, Try rolls the data changes back.
+Press `Ctrl+Shift+R` to open Preview. Run behavior starts checked. When the form has checks, steps, or rules, Preview runs them and undoes database changes. Uncheck Run behavior to see the layout only. Try is that checked state, not a second command.
 
 ## To preview
 
@@ -14,8 +14,7 @@ Preview uses the form as it is now, including unsaved edits.
 
 ## To try the behavior
 
-1. Tick `Run behavior` on the Preview toolbar. The tooltip is `Run the form's behavior`.
-2. Press `Ctrl+Shift+R`.
+`Run behavior` is already checked. Press `Ctrl+Shift+R`. Uncheck it to see the layout only. The tooltip says checks, steps, and rules run, and database changes are undone.
 
 The preview window shows `What ran` under the form. Clicks, checks, and record steps run there.
 

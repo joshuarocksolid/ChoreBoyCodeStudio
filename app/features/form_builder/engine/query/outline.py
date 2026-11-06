@@ -929,13 +929,16 @@ def layout_row(
     caption_px: int = 0,
     name_px: int = 0,
     caption_elides: bool = False,
+    caption_min_px: int = 0,
 ) -> RowBoxes:
     """24 px row. Glyph 16. Gaps 4. Problem glyph 16 at the right.
 
-    The caption is shown only when the whole name, the gap and the whole
-    caption fit (UX-OUT-002). Otherwise the caption goes first and the name
-    takes the row; the name elides at the end only when it alone does not
-    fit. Without both measurements there is no caption, so nothing is clipped.
+    The display name keeps the row. The caption (the object name, when the
+    row has an owner's word) is shown whole when it fits beside that name.
+    When it must shrink, it keeps the remainder only if that remainder is at
+    least ``caption_min_px`` (the width of eight characters). A shorter
+    remainder is omitted. The display name then uses the row and elides at
+    the end. Without both measurements there is no caption.
     """
     width = max(int(item_width), 0)
     glyph_w = min(_GLYPH, width)
@@ -956,10 +959,13 @@ def layout_row(
     if has_caption and measured > 0 and named > 0 and named + _GAP + measured <= room:
         name_w = named
         caption = (left + named + _GAP, 4, measured, _GLYPH)
-    elif caption_elides and has_caption and named > 0 and named + _GAP + 8 <= room:
-        # The owner's word stays whole. The object name, in the caption slot, takes the rest.
-        name_w = named
-        caption = (left + named + _GAP, 4, room - named - _GAP, _GLYPH)
+    elif caption_elides and has_caption and named > 0 and named + _GAP < room:
+        # Eight characters of the object name, or nothing. The tooltip has the rest.
+        rest = room - named - _GAP
+        floor = max(int(caption_min_px), 1)
+        if rest >= floor:
+            name_w = named
+            caption = (left + named + _GAP, 4, rest, _GLYPH)
     name = (left, 4, name_w, _GLYPH)
     return RowBoxes(glyph, name, caption, problem, named > name_w)
 

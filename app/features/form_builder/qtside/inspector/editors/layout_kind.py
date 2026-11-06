@@ -36,9 +36,10 @@ from app.features.form_builder.qtside.inspector.api import (
     Row,
     RowSpec,
 )
+from app.features.form_builder.qtside.inspector.editors._segments import ChoiceSegments
 from app.features.form_builder.qtside.layout_gestures import ask, measure, perform
+from app.features.form_builder.qtside.theme.metrics import S2
 from app.qt.QtCore import QPoint, QRect, QSize, Qt
-from app.qt.QtGui import QPainter, QPaintEvent, QPalette
 from app.qt.qt_compat import delete_now
 from app.qt.QtWidgets import QHBoxLayout, QLabel, QSizePolicy, QToolButton, QVBoxLayout, QWidget
 
@@ -114,7 +115,7 @@ class LayoutBody:
         self._column.setContentsMargins(0, 0, 0, 0)
         self._column.setSpacing(2)
         self._edges = _EdgeCaption(_FOLLOWS_WINDOW, self._root)
-        self._kind = _KindRow(self._root, self._pick)
+        self._kind = _KindRow(self._root, self._pick, getattr(host, "chrome", None))
         self._column.addWidget(self._edges)
         self._edges.hide()
         self._column.addWidget(self._kind.widget)
@@ -265,38 +266,47 @@ class _EdgeCaption(QLabel):
         return int(self.heightForWidth(width))
 
 
+_KIND_GLYPH = {
+    VERTICAL: "layout_v",
+    HORIZONTAL: "layout_h",
+    GRID: "layout_grid",
+    FORM: "layout_form",
+}
+
+
 class _KindRow:
-    def __init__(self, parent: QWidget, on_pick: Callable[[str], None]) -> None:
+    def __init__(self, parent: QWidget, on_pick: Callable[[str], None], chrome: object = None) -> None:
         self.widget = QWidget(parent)
         self.widget.setObjectName("formBuilder.layout.kind")
         self.widget.setMinimumWidth(0)
         outer = QVBoxLayout(self.widget)
-        outer.setContentsMargins(0, 2, 0, 2)
-        outer.setSpacing(2)
+        outer.setContentsMargins(0, S2, 0, S2)
+        outer.setSpacing(S2)
         line = QHBoxLayout()
         line.setContentsMargins(_BAR_SLOT, 0, 0, 0)
-        line.setSpacing(6)
+        line.setSpacing(S2)
         outer.addLayout(line)
         label = _Caption("Kind", self.widget)
         label.setMaximumWidth(_LABEL)
         label.setToolTip("How the layout arranges what is inside it.")
         line.addWidget(label, 0)
-        strip = QHBoxLayout()
-        strip.setContentsMargins(0, 0, 0, 0)
-        strip.setSpacing(2)
-        line.addLayout(strip, 1)
+        self._segments = ChoiceSegments(self.widget)
+        labels = [KINDS[kind_id].label for kind_id in SEGMENTS]
+        self._segments.set_items(
+            [""] * len(SEGMENTS),
+            tooltips=["%s layout" % label for label in labels],
+            glyphs=[_KIND_GLYPH[kind_id] for kind_id in SEGMENTS],
+            names=["Kind: %s" % label for label in labels],
+        )
+        self._segments.name_buttons(["formBuilder.layout.kind.%s" % kind_id for kind_id in SEGMENTS])
+        if chrome is not None:
+            self._segments.apply_chrome(chrome)  # type: ignore[arg-type]
         self._buttons: Dict[str, QToolButton] = {}
-        for kind_id in SEGMENTS:
-            button = _KindButton(kind_id, self.widget)
-            button.setObjectName("formBuilder.layout.kind.%s" % kind_id)
-            button.setAccessibleName("Kind: %s" % KINDS[kind_id].label)
-            button.setCheckable(True)
-            button.setProperty("fbSegment", "true")
+        for kind_id, button in zip(SEGMENTS, self._segments.buttons()):
             button.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
-            button.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
             button.clicked.connect(lambda _checked=False, chosen=kind_id: on_pick(chosen))
             self._buttons[kind_id] = button
-            strip.addWidget(button, 1)
+        line.addWidget(self._segments, 0)
         self._error = QLabel(self.widget)
         self._error.setObjectName("formBuilder.rowError")
         self._error.setWordWrap(True)
@@ -329,44 +339,3 @@ class _Caption(QLabel):
 
     def sizeHint(self) -> QSize:  # noqa: N802
         return QSize(_LABEL, super().sizeHint().height())
-
-
-class _KindButton(QToolButton):
-    """A segment that draws its layout as a small picture in the text color."""
-
-    def __init__(self, kind_id: str, parent: QWidget) -> None:
-        super().__init__(parent)
-        self._kind_id = kind_id
-
-    def sizeHint(self) -> QSize:  # noqa: N802
-        return QSize(30, 22)
-
-    def minimumSizeHint(self) -> QSize:  # noqa: N802
-        return QSize(18, 22)
-
-    def paintEvent(self, event: QPaintEvent) -> None:  # noqa: N802
-        super().paintEvent(event)
-        painter = QPainter(self)
-        try:
-            if not self.isEnabled():
-                painter.setOpacity(0.4)
-            color = self.palette().color(QPalette.ColorRole.ButtonText)
-            for rect in _glyph(self._kind_id, self.rect().center()):
-                painter.fillRect(rect, color)
-        finally:
-            painter.end()
-
-
-_GLYPHS: Dict[str, Tuple[Tuple[int, int, int, int], ...]] = {
-    VERTICAL: ((0, 0, 13, 3), (0, 4, 13, 3), (0, 8, 13, 3)),
-    HORIZONTAL: ((0, 0, 3, 11), (5, 0, 3, 11), (10, 0, 3, 11)),
-    GRID: ((0, 0, 6, 5), (7, 0, 6, 5), (0, 6, 6, 5), (7, 6, 6, 5)),
-    FORM: ((0, 0, 4, 3), (6, 0, 7, 3), (0, 4, 4, 3), (6, 4, 7, 3), (0, 8, 4, 3), (6, 8, 7, 3)),
-}
-
-
-def _glyph(kind_id: str, center: QPoint) -> List[QRect]:
-    """Bars of a 13 by 11 picture of ``kind_id`` centered on ``center``."""
-    left = center.x() - 6
-    top = center.y() - 5
-    return [QRect(left + x, top + y, width, height) for x, y, width, height in _GLYPHS.get(kind_id, ())]

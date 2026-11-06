@@ -180,6 +180,7 @@ class OverlayModes:
                 action[0] if action else "",
                 (lambda: action[1](self._surface)) if action else None,
                 self.close,
+                spec.banner_detail,
             )
         elif kind == TAB_ORDER:
             document = self._session.document

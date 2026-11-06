@@ -6,11 +6,13 @@ from dataclasses import dataclass
 from types import SimpleNamespace
 from typing import Dict, Optional, Tuple
 
-from app.qt.QtCore import QSize, Qt, Signal
+from app.qt.QtCore import QEvent, QPoint, Qt, Signal
+from app.features.form_builder.qtside.inspector.behavior_ext.value_button import ValueButton
+from app.features.form_builder.qtside.theme.metrics import INSPECTOR_ROW, S2
 from app.qt.QtWidgets import (
-    QComboBox,
     QHBoxLayout,
     QLabel,
+    QMenu,
     QSizePolicy,
     QSpinBox,
     QVBoxLayout,
@@ -56,6 +58,10 @@ _FORMATS = (
     ("Proper case", "text:proper"),
 )
 _SPEAK = {"condition": "condition", "value": "value", "default": "value"}
+_FORMAT_DEFAULT = "Default"
+_KEY = getattr(getattr(QEvent, "Type", QEvent), "KeyPress")
+_UP = enum_value(Qt.Key.Key_Up)
+_DOWN = enum_value(Qt.Key.Key_Down)
 
 
 @dataclass(frozen=True)
@@ -86,50 +92,43 @@ class _Row(QWidget):
         super().__init__(body)
         self.spec = spec
         self._full = ""
+        self.choice = ""
+        self.menu: Optional[QMenu] = None
         self.setObjectName("formBuilder.state.row.%s" % spec.key)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self.setMinimumWidth(0)
         self.words = QLabel(spec.words, self)
         self.words.setMinimumWidth(0)
-        self.value = QLabel(self)
-        self.value.setObjectName("formBuilder.state.value.%s" % spec.key)
-        self.value.setWordWrap(True)
+        self.value = ValueButton(self)
+        if spec.slot in ("kind", "format"):
+            self.value.setObjectName("formBuilder.state.%s" % spec.slot)
+            self.value.installEventFilter(self)
+        else:
+            self.value.setObjectName("formBuilder.state.value.%s" % spec.key)
         self.value.setMinimumWidth(0)
-        value_policy = self.value.sizePolicy()
-        value_policy.setHeightForWidth(True)
-        self.value.setSizePolicy(value_policy)
+        self.value.clicked.connect(lambda: self._body.open_row(self.spec.key))
+        chrome = getattr(getattr(body, "_services", None), "chrome", None)
+        if chrome is not None:
+            self.value.apply_chrome(chrome)
         self.now = QLabel(self)
         self.now.setObjectName("formBuilder.state.now.%s" % spec.key)
         self.now.setMinimumWidth(0)
         self.now.setAlignment(_RIGHT | _VCENTER)
-        self.combo: Optional[QComboBox] = None
+        self.now.hide()
         self.places: Optional[QSpinBox] = None
         self.column = QVBoxLayout(self)
         self.column.setContentsMargins(0, 0, 0, 0)
         self.column.setSpacing(0)
         self.line_host = QWidget(self)
-        self.line_host.setMinimumHeight(22)
+        self.line_host.setMinimumHeight(INSPECTOR_ROW)
         self.line = QHBoxLayout(self.line_host)
         self.line.setContentsMargins(0, 0, 0, 0)
-        self.line.setSpacing(8)
+        self.line.setSpacing(S2)
         self.line.addWidget(self.words)
         self.line.addWidget(self.value, 1)
         self.column.addWidget(self.line_host)
         self.column.addWidget(self.now)
         self._body = body
-
-    def hasHeightForWidth(self) -> bool:  # noqa: N802
-        return True
-
-    def heightForWidth(self, width: int) -> int:  # noqa: N802
-        return self.column.heightForWidth(width)
-
-    def sizeHint(self) -> QSize:  # noqa: N802
-        hint = super().sizeHint()
-        laid_out = self.height()
-        if laid_out > hint.height():
-            hint.setHeight(laid_out)
-        return hint
 
     def resizeEvent(self, event: object) -> None:  # noqa: N802
         super().resizeEvent(event)  # type: ignore[arg-type]
@@ -140,13 +139,22 @@ class _Row(QWidget):
         self._tip = tip
         self._elide()
 
+    def eventFilter(self, watched: object, event: object) -> bool:  # noqa: N802
+        if watched is self.value and getattr(event, "type", lambda: None)() == _KEY:
+            key = enum_value(event.key())  # type: ignore[attr-defined]
+            if key == _UP:
+                self._body.step_choice(self.spec.key, -1)
+                return True
+            if key == _DOWN:
+                self._body.step_choice(self.spec.key, 1)
+                return True
+        return super().eventFilter(watched, event)  # type: ignore[arg-type]
+
     def _elide(self) -> None:
         """Keep the whole sentence. ``now:`` sits on the next line, so the rule is not cut."""
         if self.spec.slot in ("kind", "format"):
             return
-        full = self._full
-        if self.value.text() != full:
-            self.value.setText(full)
+        self.value.set_value(self._full)
         self._set_tip(getattr(self, "_tip", "") or "")
 
     def _set_tip(self, elided: str) -> None:
@@ -197,10 +205,11 @@ class StateBody(QWidget):
         heading = QHBoxLayout(overline)
         heading.setContentsMargins(0, 0, 0, 0)
         heading.setSpacing(0)
-        title = QLabel("STATE", overline)
-        title.setObjectName("formBuilder.state.title")
+        from app.features.form_builder.qtside.inspector.behavior_ext.heading import section_heading
+
+        title = section_heading(overline, "formBuilder.state.title", "STATE")
+        self._title = title
         heading.addWidget(title)
-        heading.addStretch(1)
         self._column = QVBoxLayout(self)
         self._column.setContentsMargins(0, 4, 0, 4)
         self._column.setSpacing(4)
@@ -220,6 +229,7 @@ class StateBody(QWidget):
         self._fixes = None
         chrome = self._services.chrome
         self._install_sheet(chrome.panel, chrome.text)
+        self._title.apply_chrome(chrome)
 
     def set_refresh(self, refresh: object) -> None:
         self._refresh = refresh
@@ -229,6 +239,9 @@ class StateBody(QWidget):
         # One sheet for the section. A row's muted or body ink is a property,
         # polished on that label, so a rule commit does not restyle the tree.
         self._install_sheet(panel, text)
+        self._title.apply_chrome(chrome)
+        for row in self._rows.values():
+            row.value.apply_chrome(chrome)
         if self._editor is not None:
             self._editor.set_chrome(chrome)
         self._sync_columns()
@@ -239,8 +252,7 @@ class StateBody(QWidget):
             "QWidget#formBuilder\\.state { background: %s; color: %s; }"
             "QLabel { color: %s; background: transparent; }"
             "QLabel[stateInk=\"muted\"] { color: %s; background: transparent; }"
-            "QComboBox, QSpinBox { color: %s; background: %s; }"
-            % (panel, text, text, chrome.muted, text, chrome.input)
+            % (panel, text, text, chrome.muted)
         )
 
     def paint(self, inputs: SectionInputs) -> None:
@@ -303,8 +315,7 @@ class StateBody(QWidget):
         if spec is None or row is None or row.isHidden():
             return
         if spec.slot in ("kind", "format"):
-            if row.combo is not None:
-                row.combo.setFocus()
+            self._open_choices(key)
             return
         if self._open_key and self._open_key != key:
             if self._editor is not None and self._editor.has_error():
@@ -403,7 +414,7 @@ class StateBody(QWidget):
             row = self._rows.get(spec.key)
             if row is None or row.isHidden() or previous is None:
                 continue
-            target = row.combo if spec.slot in ("kind", "format") and row.combo is not None else row
+            target = row.value if spec.slot in ("kind", "format") else row
             QWidget.setTabOrder(previous, target)
             previous = target
 
@@ -411,14 +422,7 @@ class StateBody(QWidget):
         row = _Row(self, spec)
         if spec.slot not in ("kind", "format"):
             return row
-        row.value.hide()
         row.now.hide()
-        combo = QComboBox(row)
-        combo.setObjectName("formBuilder.state.%s" % spec.slot)
-        combo.setMinimumWidth(0)
-        items = _KINDS if spec.slot == "kind" else _FORMATS
-        for label, code in items:
-            combo.addItem(label, code)
         spin = QSpinBox(row)
         spin.setRange(0, 6)
         spin.setObjectName(
@@ -427,35 +431,91 @@ class StateBody(QWidget):
         if spec.slot == "kind":
             spin.setAccessibleName("Decimal places")
         spin.hide()
-        row.combo = combo
         row.places = spin
-        row.line.addWidget(combo, 1)
         row.line.addWidget(spin)
-        row.line_host.setFixedHeight(max(24, combo.sizeHint().height()))
-        combo.currentIndexChanged.connect(lambda _index, key=spec.key: self._plain_changed(key))
         spin.valueChanged.connect(lambda _value, key=spec.key: self._plain_changed(key))
         return row
 
     def _plain_changed(self, key: str) -> None:
         if self._filling:
             return
-        spec = self._by_key.get(key)
         row = self._rows.get(key)
-        if spec is None or row is None or row.combo is None:
+        if row is None:
             return
-        code = row.combo.currentData()
-        if not isinstance(code, str):
-            code = ""
+        self._apply_choice(row, write=True)
+
+    def _open_choices(self, key: str) -> None:
+        row = self._rows.get(key)
+        if row is None or row.isHidden():
+            return
+        menu = self._ensure_menu(row)
+        menu.popup(row.value.mapToGlobal(QPoint(0, row.value.height())))
+
+    def step_choice(self, key: str, direction: int) -> None:
+        row = self._rows.get(key)
+        if row is None or row.isHidden() or self._filling:
+            return
+        codes = [code for _label, code in _choices(row.spec.slot, self._widget_class())]
+        if row.choice not in codes or not codes:
+            return
+        index = codes.index(row.choice) + direction
+        if index < 0 or index >= len(codes):
+            return
+        row.choice = codes[index]
+        self._apply_choice(row, write=True)
+
+    def _ensure_menu(self, row: _Row) -> QMenu:
+        menu = row.menu
+        if menu is None:
+            menu = QMenu(row.value)
+            menu.setObjectName("formBuilder.state.menu.%s" % row.spec.slot)
+            menu.triggered.connect(lambda action, key=row.spec.key: self._picked(key, action))
+            row.menu = menu
+        menu.clear()
+        for label, code in _choices(row.spec.slot, self._widget_class()):
+            action = menu.addAction(label or _FORMAT_DEFAULT)
+            action.setData(code)
+        if not menu.actions():
+            return menu
+        menu.setActiveAction(menu.actions()[0])
+        return menu
+
+    def _picked(self, key: str, action: object) -> None:
+        if self._filling:
+            return
+        row = self._rows.get(key)
+        data = getattr(action, "data", None)
+        code = data() if callable(data) else None
+        if row is None or not isinstance(code, str):
+            return
+        row.choice = code
+        self._apply_choice(row, write=True)
+
+    def _apply_choice(self, row: _Row, *, write: bool) -> None:
+        spec = row.spec
+        code = row.choice
         places = row.places
+        shown = code
         if code in ("number", "percent") and places is not None and spec.slot == "format":
             places.show()
-            code = "%s:%d" % (code, places.value())
+            shown = "%s:%d" % (code, places.value())
         elif code == "number" and places is not None and spec.slot == "kind":
             places.show()
-            code = "number:%d" % places.value()
+            shown = "number:%d" % places.value()
         elif places is not None:
             places.hide()
-        self._write(spec.key, spec.words, code, formula=False)
+        label = _choice_label(_choices(spec.slot, self._widget_class()), code, spec.slot)
+        row.value.set_value(label)
+        _ink(row.value, muted=_choice_is_default(spec.slot, code))
+        row.setAccessibleName("%s  %s" % (spec.words, label))
+        if write:
+            self._write(spec.key, spec.words, shown, formula=False)
+
+    def _widget_class(self) -> str:
+        node = self._node
+        if node is None:
+            return ""
+        return (node.class_name or "").rsplit(".", 1)[-1]
 
     def _touch(self, specs: Tuple[StateRowSpec, ...]) -> None:
         """A rule commit changes one stored formula. Rewrite that row only."""
@@ -473,7 +533,7 @@ class StateBody(QWidget):
                 if row is None:
                     continue
                 if spec.slot in ("kind", "format"):
-                    self._fill_combo(row, stored)
+                    self._fill_choice(row, stored)
                 else:
                     self._paint_formula(row, spec, stored, node, env)
                 self._stored_text[spec.key] = stored
@@ -495,7 +555,7 @@ class StateBody(QWidget):
                 stored = _stored(node, spec.key)
                 remembered[spec.key] = stored
                 if spec.slot in ("kind", "format"):
-                    self._fill_combo(row, stored)
+                    self._fill_choice(row, stored)
                     continue
                 self._paint_formula(row, spec, stored, node, env)
             self._stored_text = remembered
@@ -527,28 +587,20 @@ class StateBody(QWidget):
             line = "%s  %s" % (spec.words, spec.empty) if spec.empty else spec.words
         row.setAccessibleName(line)
 
-    def _fill_combo(self, row: _Row, stored: str) -> None:
-        combo = row.combo
-        places = row.places
-        if combo is None:
-            return
+    def _fill_choice(self, row: _Row, stored: str) -> None:
         head, count = _split_places(stored)
-        index = combo.findData(head)
-        if index < 0:
-            index = 0 if row.spec.slot == "kind" else combo.findData("")
-        combo.blockSignals(True)
-        combo.setCurrentIndex(max(0, index))
-        combo.blockSignals(False)
-        if places is None:
-            return
-        show = head in ("number", "percent") and (row.spec.slot == "format" or head == "number")
-        if row.spec.slot == "kind":
-            show = head == "number"
-        places.blockSignals(True)
-        if count is not None:
-            places.setValue(max(0, min(6, count)))
-        places.blockSignals(False)
-        places.setVisible(show)
+        codes = [code for _label, code in _choices(row.spec.slot, self._widget_class())]
+        if head not in codes:
+            head = codes[0] if codes else ""
+        row.choice = head
+        places = row.places
+        if places is not None:
+            places.blockSignals(True)
+            if count is not None:
+                places.setValue(max(0, min(6, count)))
+            places.blockSignals(False)
+        self._ensure_menu(row)
+        self._apply_choice(row, write=False)
 
     def _sync_columns(self) -> None:
         if not self._rows:
@@ -717,6 +769,8 @@ def _visible(node: WidgetNode, classes: QtClassTable) -> Tuple[StateRowSpec, ...
             continue
         if row.slot == "format" and not (has_value and names.intersection(_FORMAT_CLASSES)):
             continue
+        if row.slot == "format" and _only_default(_choices("format", class_name)):
+            continue
         found.append(row)
     del matched
     return tuple(found)
@@ -747,9 +801,15 @@ def _slot(spec: StateRowSpec, env: object, node: WidgetNode) -> SlotKind:
     return SlotKind.value(target)
 
 
-def _ink(label: QLabel, muted: bool) -> None:
-    """Mark one label muted or body-colored. The sheet itself is set once."""
+def _ink(label: QWidget, muted: bool) -> None:
+    """Mark one value muted or body-colored."""
     role = "muted" if muted else "text"
+    setter = getattr(label, "set_muted", None)
+    if callable(setter):
+        if label.property("stateInk") != role:
+            label.setProperty("stateInk", role)
+        setter(muted)
+        return
     if label.property("stateInk") == role:
         return
     label.setProperty("stateInk", role)
@@ -775,6 +835,38 @@ def _stored(node: WidgetNode, key: str) -> str:
     if isinstance(value, StringValue):
         return value.text
     return ""
+
+
+def _choices(slot: str, class_name: str) -> Tuple[Tuple[str, str], ...]:
+    if slot == "kind":
+        return _KINDS
+    found = []
+    for label, code in _FORMATS:
+        if code.startswith("text:") and class_name != "QLineEdit":
+            continue
+        found.append((label, code))
+    return tuple(found)
+
+
+def _only_default(choices: Tuple[Tuple[str, str], ...]) -> bool:
+    return not any(code for _label, code in choices)
+
+
+def _choice_label(choices: Tuple[Tuple[str, str], ...], code: str, slot: str) -> str:
+    for label, item in choices:
+        if item == code:
+            return label or _FORMAT_DEFAULT
+    if slot == "format":
+        return _FORMAT_DEFAULT
+    return code
+
+
+def _choice_is_default(slot: str, code: str) -> bool:
+    if slot == "format":
+        return code == ""
+    if slot == "kind":
+        return code in ("", "text")
+    return False
 
 
 def _split_places(stored: str) -> Tuple[str, Optional[int]]:

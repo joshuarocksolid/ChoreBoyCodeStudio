@@ -242,7 +242,8 @@ def test_summary_opens_on_enter_and_alt_down_and_elides_with_the_full_text_in_th
     try:
         _settle(qapp)
         assert summary.toolTip() == "Sans Serif, 12 pt, Bold, Italic, Underline"
-        assert summary.text().endswith("▾") and "…" in summary.text()
+        assert "…" in summary.text()
+        assert not summary.text().endswith("▾")
         assert summary.accessibleName() == "Font: Sans Serif, 12 pt, Bold, Italic, Underline"
         summary.setFocus()
         QTest.keyClick(summary, _key("Key_Return"))

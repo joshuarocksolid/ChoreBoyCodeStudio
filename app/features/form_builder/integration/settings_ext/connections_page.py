@@ -6,7 +6,8 @@ import os
 from dataclasses import replace
 from typing import Any, Dict, List, Optional
 
-from app.qt.QtCore import QEvent, QThread, Qt, QTimer
+from app.qt.QtCore import QEvent, QSize, QThread, Qt, QTimer
+from app.qt.QtGui import QFont, QIcon
 from app.qt.QtWidgets import (
     QCheckBox,
     QApplication,
@@ -21,14 +22,36 @@ from app.qt.QtWidgets import (
     QListWidgetItem,
     QMenu,
     QPushButton,
+    QSizePolicy,
     QSpinBox,
     QVBoxLayout,
     QWidget,
 )
 from app.qt.qt_compat import enum_value, exec_qt
+from app.shell.dialog_chrome import (
+    FOOTER_ROLE_PRIMARY,
+    FOOTER_ROLE_SECONDARY,
+    add_footer_button,
+    build_dialog_chrome,
+)
 from app.shell.settings_pages import SCOPE_PROJECT, SettingsPage, SettingsRefusal, register_settings_page
 from app.shell.style_sheet_sections_controls import shell_section_checkbox_indicators
 from app.shell.theme_tokens import ShellThemeTokens, tokens_from_palette
+
+from app.features.form_builder.qtside.icons.glyphs import paint_glyph
+from app.features.form_builder.qtside.theme.chrome import chrome_from_values
+from app.features.form_builder.qtside.theme.items import polish_item_view
+from app.features.form_builder.qtside.theme.metrics import (
+    CONNECTION_ROW,
+    S2,
+    ICON,
+    ICON_BUTTON,
+    INSPECTOR_ROW,
+    LABEL_MAX,
+    LABEL_MIN,
+    TYPE_BODY,
+    TYPE_FINE,
+)
 
 from app.features.form_builder.engine.data.connections import (
     ILLEGAL_NAME_SENTENCE,
@@ -112,26 +135,26 @@ def rename_sentence(count: int, name: str) -> str:
 
 def build_rename_question(parent: Optional[QWidget], sentence: str) -> QDialog:
     dialog = QDialog(parent)
-    dialog.setObjectName("formBuilder.connections.renameQuestion")
     dialog.setWindowTitle("Update connection name")
-    layout = QVBoxLayout(dialog)
-    label = QLabel(sentence, dialog)
+    chrome = build_dialog_chrome(
+        dialog,
+        title="Update connection name",
+        object_name="formBuilder.connections.renameQuestion",
+    )
+    label = QLabel(sentence, chrome.body)
     label.setWordWrap(True)
     label.setObjectName("formBuilder.connections.renameText")
-    layout.addWidget(label)
-    row = QHBoxLayout()
-    layout.addLayout(row)
-    row.addStretch(1)
-    update = QPushButton("Update", dialog)
+    body = chrome.body.layout()
+    assert isinstance(body, QVBoxLayout)
+    body.addWidget(label)
+    chrome.footer_layout.addStretch(1)
+    update = add_footer_button(chrome, "Update", role=FOOTER_ROLE_PRIMARY, default=True)
     update.setObjectName("formBuilder.connections.renameUpdate")
-    update.setDefault(True)
-    cancel = QPushButton("Cancel", dialog)
+    cancel = add_footer_button(chrome, "Cancel", role=FOOTER_ROLE_SECONDARY)
     cancel.setObjectName("formBuilder.connections.renameCancel")
     update.clicked.connect(dialog.accept)
     cancel.clicked.connect(dialog.reject)
-    row.addWidget(update)
-    row.addWidget(cancel)
-    dialog.resize(440, 160)
+    dialog.resize(440, 180)
     return dialog
 
 
@@ -155,14 +178,53 @@ class _Worker(QThread):
 class _Row(QWidget):
     def __init__(self, title: str, engine: str, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
+        self._title = title
+        self._engine = engine
+        self.setFixedHeight(CONNECTION_ROW)
+        self.setMinimumWidth(0)
+        self.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Fixed)
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(6, 4, 6, 4)
+        layout.setContentsMargins(8, 2, 8, 2)
         layout.setSpacing(0)
         self.title_label = QLabel(title, self)
+        title_font = QFont(self.title_label.font())
+        title_font.setPixelSize(TYPE_BODY)
+        self.title_label.setFont(title_font)
         self.engine_label = QLabel(engine, self)
         self.engine_label.setObjectName("formBuilder.connections.engine")
+        engine_font = QFont(self.engine_label.font())
+        engine_font.setPixelSize(TYPE_FINE)
+        self.engine_label.setFont(engine_font)
+        for label in (self.title_label, self.engine_label):
+            label.setMinimumWidth(0)
+            label.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
         layout.addWidget(self.title_label)
         layout.addWidget(self.engine_label)
+
+    def set_texts(self, title: str, engine: str) -> None:
+        self._title = title
+        self._engine = engine
+        self._elide()
+
+    def resizeEvent(self, event: QEvent) -> None:  # noqa: N802
+        super().resizeEvent(event)  # type: ignore[arg-type]
+        self._elide()
+
+    def showEvent(self, event: QEvent) -> None:  # noqa: N802
+        super().showEvent(event)  # type: ignore[arg-type]
+        self._elide()
+
+    def _elide(self) -> None:
+        room = max(0, self.width() - 16)
+        if room < 8:
+            self.title_label.setText(self._title)
+            self.engine_label.setText(self._engine)
+            return
+        elide = getattr(getattr(Qt, "TextElideMode", Qt), "ElideRight")
+        for label, full in ((self.title_label, self._title), (self.engine_label, self._engine)):
+            shown = label.fontMetrics().elidedText(full, elide, room)
+            if label.text() != shown:
+                label.setText(shown)
 
 
 class ConnectionsPage(QWidget):
@@ -219,24 +281,28 @@ class ConnectionsPage(QWidget):
 
         body = QHBoxLayout()
         column.addLayout(body, 1)
-        left = QVBoxLayout()
-        body.addLayout(left, 1)
-        self._list = QListWidget(self)
+        left = QWidget(self)
+        left.setFixedWidth(220)
+        left_layout = QVBoxLayout(left)
+        left_layout.setContentsMargins(0, 0, 0, 0)
+        left_layout.setSpacing(S2)
+        body.addWidget(left)
+        self._list = QListWidget(left)
         self._list.setObjectName("formBuilder.connections.list")
+        scroll_off = getattr(getattr(Qt, "ScrollBarPolicy", Qt), "ScrollBarAlwaysOff")
+        self._list.setHorizontalScrollBarPolicy(scroll_off)
+        self._list.setTextElideMode(getattr(getattr(Qt, "TextElideMode", Qt), "ElideRight"))
         self._list.currentRowChanged.connect(self._on_row)
-        left.addWidget(self._list, 1)
+        left_layout.addWidget(self._list, 1)
         actions = QHBoxLayout()
-        left.addLayout(actions)
-        self._add = QPushButton("+ Add", self)
-        self._add.setObjectName("formBuilder.connections.add")
+        left_layout.addLayout(actions)
+        self._add = self._icon_button("formBuilder.connections.add", "plus", "Add")
         menu = QMenu(self._add)
         menu.addAction("SQLite file", lambda: self._add_connection("sqlite"))
         menu.addAction("PostgreSQL", lambda: self._add_connection("postgres"))
         self._add.setMenu(menu)
-        self._duplicate = QPushButton("Duplicate", self)
-        self._duplicate.setObjectName("formBuilder.connections.duplicate")
-        self._remove = QPushButton("Remove", self)
-        self._remove.setObjectName("formBuilder.connections.remove")
+        self._duplicate = self._icon_button("formBuilder.connections.duplicate", "stacked_widget", "Duplicate")
+        self._remove = self._icon_button("formBuilder.connections.remove", "close", "Remove")
         self._duplicate.clicked.connect(self._duplicate_current)
         self._remove.clicked.connect(self._remove_current)
         actions.addWidget(self._add)
@@ -309,20 +375,37 @@ class ConnectionsPage(QWidget):
         )
 
         # One label column width for both engines, so every field starts at the same x.
-        label_width = max(
+        measured = max(
             self.fontMetrics().horizontalAdvance(text) for text in ("Name", "Code", "File", "Host", "Port", "Database", "User", "Schema", "Password", "Setup")
         )
+        label_width = max(LABEL_MIN, min(LABEL_MAX, measured))
+        for editor in (
+            self._title,
+            self._code,
+            self._file,
+            self._choose,
+            self._host,
+            self._port,
+            self._database,
+            self._user,
+            self._schema,
+            self._password,
+        ):
+            editor.setFixedHeight(INSPECTOR_ROW)
         for field in (self._title, self._code, self._file_row, self._host, self._port, self._database, self._user, self._schema, self._password):
             label = form.labelForField(field)
             if label is not None:
-                label.setMinimumWidth(label_width)
+                label.setFixedWidth(label_width)
+                label.setFixedHeight(INSPECTOR_ROW)
 
         setup_row = QHBoxLayout()
         form.addRow("Setup", setup_row)
-        self._setup = QLabel("none", self._editor)
+        self._setup = QLabel("", self._editor)
         self._setup.setObjectName("formBuilder.connections.setup")
+        self._setup.hide()
         self._create_setup_button = QPushButton("Create setup function", self._editor)
         self._create_setup_button.setObjectName("formBuilder.connections.createSetup")
+        self._create_setup_button.setFixedHeight(INSPECTOR_ROW)
         self._create_setup_button.clicked.connect(self._create_setup)
         setup_row.addWidget(self._setup)
         setup_row.addWidget(self._create_setup_button)
@@ -337,19 +420,52 @@ class ConnectionsPage(QWidget):
         form.addRow("", test_row)
         self._test_button = QPushButton("Test", self._editor)
         self._test_button.setObjectName("formBuilder.connections.test")
+        self._test_button.setFixedHeight(INSPECTOR_ROW)
         self._test_button.clicked.connect(self._test)
         self._result = QLabel(self._editor)
         self._result.setObjectName("formBuilder.connections.result")
         self._result.setWordWrap(True)
         test_row.addWidget(self._test_button)
         test_row.addWidget(self._result, 1)
-        body.addWidget(self._editor, 2)
+        body.addWidget(self._editor, 1)
         self._load()
+
+    def _icon_button(self, object_name: str, glyph: str, label: str) -> QPushButton:
+        button = QPushButton(self)
+        button.setObjectName(object_name)
+        button.setToolTip(label)
+        button.setAccessibleName(label)
+        button.setFixedSize(ICON_BUTTON, ICON_BUTTON)
+        button.setProperty("fbGlyph", glyph)
+        return button
+
+    def _paint_icons(self) -> None:
+        tokens = self._tokens
+        color = "black"
+        if tokens is not None:
+            color = str(getattr(tokens, "icon_primary", "") or getattr(tokens, "text_primary", "") or color)
+        dpr = float(self.devicePixelRatioF()) if hasattr(self, "devicePixelRatioF") else 1.0
+        for button in (self._add, self._duplicate, self._remove):
+            glyph = str(button.property("fbGlyph") or "")
+            if not glyph:
+                continue
+            button.setIcon(QIcon(paint_glyph(glyph, color, ICON, dpr)))
+            button.setIconSize(QSize(ICON, ICON))
 
     def showEvent(self, event: object) -> None:  # noqa: N802
         super().showEvent(event)  # type: ignore[arg-type]
-        window = self.window()
-        self.apply_theme(getattr(window, "_tokens", None) or tokens_from_palette(self.palette()))
+        self._follow_host()
+
+    def changeEvent(self, event: QEvent) -> None:  # noqa: N802
+        super().changeEvent(event)
+        if event.type() == _STYLE_CHANGE:
+            self._follow_host()
+
+    def _follow_host(self) -> None:
+        tokens = _host_tokens(self)
+        if tokens is None or tokens == self._tokens:
+            return
+        self.apply_theme(tokens)
 
     def hideEvent(self, event: object) -> None:  # noqa: N802
         self._drop_filter()
@@ -378,7 +494,14 @@ class ConnectionsPage(QWidget):
         sheet = _style(tokens)
         if isinstance(tokens, ShellThemeTokens):
             sheet += shell_section_checkbox_indicators(tokens)
+            polish_item_view(self._list, _chrome_for(tokens))
+            current = self._list.styleSheet()
+            border = tokens.border
+            self._list.setStyleSheet(
+                current.replace("border: none;", "border: none; border-right: 1px solid %s;" % border, 1)
+            )
         self.setStyleSheet(sheet)
+        self._paint_icons()
 
     def commit(self, project_root: str) -> Optional[SettingsRefusal]:
         self._pull(commit_code=True)
@@ -417,13 +540,14 @@ class ConnectionsPage(QWidget):
             self._list.clear()
             for connection in self._items:
                 title = connection.title or connection.name
-                item = QListWidgetItem(title)
+                # The row widget paints the title. Item text would draw it again.
+                item = QListWidgetItem("")
                 role = getattr(getattr(Qt, "ItemDataRole", Qt), "AccessibleTextRole", None)
                 if role is not None:
                     item.setData(role, title)
                 row = _Row(connection.title, engine_line(connection), self._list)
                 row.setAccessibleName(title)
-                item.setSizeHint(row.sizeHint())
+                item.setSizeHint(QSize(1, CONNECTION_ROW))
                 self._list.addItem(item)
                 self._list.setItemWidget(item, row)
             if 0 <= self._index < self._list.count():
@@ -605,8 +729,7 @@ class ConnectionsPage(QWidget):
         if not isinstance(widget, _Row):
             return
         connection = self._items[index]
-        widget.title_label.setText(connection.title)
-        widget.engine_label.setText(engine_line(connection))
+        widget.set_texts(connection.title, engine_line(connection))
 
     def _add_connection(self, engine: str) -> None:
         if self._items:
@@ -719,9 +842,11 @@ class ConnectionsPage(QWidget):
     def _show_setup(self, setup: Optional[str]) -> None:
         if setup:
             self._setup.setText(setup)
+            self._setup.show()
             self._create_setup_button.hide()
             return
-        self._setup.setText("none")
+        self._setup.hide()
+        self._setup.setText("")
         self._create_setup_button.show()
 
     def _test(self) -> None:
@@ -817,6 +942,29 @@ class ConnectionsPage(QWidget):
         self._refusal.show()
 
 
+def _host_tokens(widget: QWidget) -> object:
+    """Tokens from the themed host. A dialog's ``window()`` is itself, so walk parents."""
+    current: Optional[QWidget] = widget
+    seen = 0
+    while current is not None and seen < 8:
+        workflow = getattr(current, "_shell_theme_workflow", None)
+        resolve = getattr(workflow, "resolve_theme_tokens", None)
+        if callable(resolve):
+            found = resolve()
+            if found is not None:
+                return found
+        current = current.parentWidget()
+        seen += 1
+    window = widget.window()
+    found = getattr(window, "_tokens", None)
+    if found is not None:
+        return found
+    return tokens_from_palette(widget.palette())
+
+
+_STYLE_CHANGE = getattr(getattr(QEvent, "Type", QEvent), "StyleChange")
+
+
 def _format_probe(result: object) -> str:
     if not isinstance(result, dict):
         return str(result)
@@ -834,49 +982,95 @@ def _format_probe(result: object) -> str:
 
 def _style(tokens: object) -> str:
     width = int(getattr(tokens, "focus_border_width", 1) or 1)
+    page = "QWidget#formBuilder\\.connections\\.page"
     return (
-        "QWidget#formBuilder\\.connections\\.page { background: %s; color: %s; }"
-        "QLabel { color: %s; background: transparent; }"
+        "%s { background: %s; color: %s; }"
+        "%s QLabel { color: %s; background: transparent; }"
         "QLabel#formBuilder\\.connections\\.engine, QLineEdit#formBuilder\\.connections\\.code { color: %s; }"
         "QLabel#formBuilder\\.connections\\.refusal, QLabel#formBuilder\\.connections\\.machineWarning { color: %s; }"
-        "QLineEdit, QComboBox, QSpinBox, QListWidget { color: %s; background: %s; border: 1px solid %s; padding: 2px 4px; }"
-        "QPushButton { color: %s; background: %s; border: 1px solid %s; padding: 4px 8px; }"
-        "QCheckBox { color: %s; background: transparent; spacing: 6px; }"
-        "QLineEdit:focus, QComboBox:focus, QSpinBox:focus, QListWidget:focus, QPushButton:focus, QCheckBox:focus {"
-        " border: %dpx solid %s; }"
+        "%s QLineEdit, %s QComboBox, %s QSpinBox { color: %s; background: %s; border: 1px solid %s; padding: 2px 4px; }"
+        "%s QPushButton { color: %s; background: %s; border: 1px solid %s; padding: 4px 8px; }"
+        "%s QPushButton#formBuilder\\.connections\\.add, %s QPushButton#formBuilder\\.connections\\.duplicate,"
+        " %s QPushButton#formBuilder\\.connections\\.remove { background: transparent; border: none; padding: 0px; }"
+        "%s QPushButton#formBuilder\\.connections\\.add::menu-indicator { image: none; width: 0px; }"
+        "%s QCheckBox { color: %s; background: transparent; spacing: 6px; }"
+        "%s QLineEdit:focus, %s QComboBox:focus, %s QSpinBox:focus, %s QListWidget:focus,"
+        " %s QPushButton:focus, %s QCheckBox:focus { border: %dpx solid %s; }"
         % (
+            page,
             tokens.panel_bg,  # type: ignore[attr-defined]
             tokens.text_primary,  # type: ignore[attr-defined]
+            page,
             tokens.text_primary,  # type: ignore[attr-defined]
             tokens.text_muted,  # type: ignore[attr-defined]
             tokens.diag_warning_color,  # type: ignore[attr-defined]
+            page,
+            page,
+            page,
             tokens.text_primary,  # type: ignore[attr-defined]
             tokens.input_bg,  # type: ignore[attr-defined]
             tokens.border,  # type: ignore[attr-defined]
+            page,
             tokens.text_primary,  # type: ignore[attr-defined]
             tokens.input_bg,  # type: ignore[attr-defined]
             tokens.border,  # type: ignore[attr-defined]
+            page,
+            page,
+            page,
+            page,
+            page,
             tokens.text_primary,  # type: ignore[attr-defined]
+            page,
+            page,
+            page,
+            page,
+            page,
+            page,
             width,
             tokens.accent,  # type: ignore[attr-defined]
         )
     )
 
 
+def _chrome_for(tokens: ShellThemeTokens):  # type: ignore[no-untyped-def]
+    return chrome_from_values(
+        window=tokens.window_bg,
+        panel=tokens.panel_bg,
+        text=tokens.text_primary,
+        muted=tokens.text_muted,
+        faint=tokens.text_muted,
+        border=tokens.border,
+        accent=tokens.accent,
+        row_hover=tokens.tree_hover_bg or tokens.line_highlight,
+        input_bg=tokens.input_bg or tokens.editor_bg,
+        error=tokens.diag_error_color or tokens.accent,
+        focus_width=int(tokens.focus_border_width or 1),
+        selected=tokens.tree_selected_bg or "",
+        is_dark=tokens.is_dark,
+        is_high_contrast=tokens.is_high_contrast,
+        icon_muted=tokens.icon_muted,
+    )
+
+
 def _dialog_style(tokens: object) -> str:
     width = int(getattr(tokens, "focus_border_width", 1) or 1)
+    dialog = "QDialog#formBuilder\\.connections\\.renameQuestion"
     return (
-        "QDialog { background: %s; color: %s; }"
-        "QLabel { color: %s; }"
-        "QPushButton { color: %s; background: %s; border: 1px solid %s; padding: 4px 10px; }"
-        "QPushButton:focus { border: %dpx solid %s; }"
+        "%s { background: %s; color: %s; }"
+        "%s QLabel { color: %s; }"
+        "%s QPushButton { color: %s; background: %s; border: 1px solid %s; padding: 4px 10px; }"
+        "%s QPushButton:focus { border: %dpx solid %s; }"
         % (
+            dialog,
             tokens.panel_bg,  # type: ignore[attr-defined]
             tokens.text_primary,  # type: ignore[attr-defined]
+            dialog,
             tokens.text_primary,  # type: ignore[attr-defined]
+            dialog,
             tokens.text_primary,  # type: ignore[attr-defined]
             tokens.input_bg,  # type: ignore[attr-defined]
             tokens.border,  # type: ignore[attr-defined]
+            dialog,
             width,
             tokens.accent,  # type: ignore[attr-defined]
         )

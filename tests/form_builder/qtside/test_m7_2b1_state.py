@@ -14,7 +14,7 @@ from app.features.form_builder.engine.ui4.nodes import WidgetNode
 from app.features.form_builder.engine.ui4.values import StringValue
 from app.features.form_builder.qtside.inspector import TabId
 from app.features.form_builder.qtside.inspector.pane import InspectorPane
-from app.qt.QtWidgets import QApplication, QComboBox, QLabel, QVBoxLayout, QWidget
+from app.qt.QtWidgets import QApplication, QLabel, QMenu, QPushButton, QVBoxLayout, QWidget
 from tests.form_builder.qtside.support import form, opened
 
 pytestmark = [pytest.mark.unit, pytest.mark.usefixtures("qapp")]
@@ -153,9 +153,9 @@ def test_a_line_edit_lists_kind_through_format_and_a_button_lists_two() -> None:
         _select(session, pane, "discountEdit")
         assert _showing(pane) == _LINE
         enabled = _row(pane, "cbcsEnabledWhen")
-        value = enabled.findChild(QLabel, "formBuilder.state.value.cbcsEnabledWhen")
+        value = enabled.findChild(QWidget, "formBuilder.state.value.cbcsEnabledWhen")
         assert value is not None
-        assert value.text() == "always"
+        assert value.text() == "Always"
         assert value.property("stateInk") == "muted"
         assert pane._services.chrome.muted in state.styleSheet()  # type: ignore[attr-defined]
         assert enabled.accessibleName() == "Enabled when  always"
@@ -165,12 +165,13 @@ def test_a_line_edit_lists_kind_through_format_and_a_button_lists_two() -> None:
         assert kind.y() < enabled.y()
         assert value_row.y() < form_row.y()
         assert _stored(session, "discountEdit", "cbcsKind") == ""
-        combo = pane.findChild(QComboBox, "formBuilder.state.kind")
-        assert combo is not None and combo.currentText() == "Text"
-        formats = pane.findChild(QComboBox, "formBuilder.state.format")
+        kind_button = pane.findChild(QPushButton, "formBuilder.state.kind")
+        assert kind_button is not None and kind_button.text() == "Text"
+        formats = pane.findChild(QPushButton, "formBuilder.state.format")
         assert formats is not None
-        money = formats.findData("money")
-        assert money >= 0 and formats.itemText(money) == "Money"
+        menu = formats.findChild(QMenu)
+        assert menu is not None
+        assert any(action.text() == "Money" for action in menu.actions())
         _select(session, pane, "okButton")
         assert _showing(pane) == ("cbcsEnabledWhen", "cbcsVisibleWhen")
 
@@ -188,7 +189,7 @@ def test_a_filled_enabled_when_row_shows_the_formula_and_now_no(qapp: QApplicati
         try:
             _select(session, pane, "discountEdit")
             row = _row(pane, "cbcsEnabledWhen")
-            formula = row.findChild(QLabel, "formBuilder.state.value.cbcsEnabledWhen")
+            formula = row.findChild(QWidget, "formBuilder.state.value.cbcsEnabledWhen")
             now = row.findChild(QLabel, "formBuilder.state.now.cbcsEnabledWhen")
             assert formula is not None and formula.text() == "Discount is checked"
             assert formula.toolTip() == "discountCheck"

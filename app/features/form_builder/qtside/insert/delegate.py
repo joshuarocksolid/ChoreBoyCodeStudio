@@ -11,17 +11,26 @@ from app.qt.QtWidgets import QStyle, QStyledItemDelegate, QStyleOptionViewItem
 from app.features.form_builder.qtside.icons.glyphs import paint_glyph
 from app.features.form_builder.qtside.insert.rows import ENTRY, HEADER, SECTION, Row
 from app.features.form_builder.qtside.theme.chrome import FormChrome
+from app.features.form_builder.qtside.theme.metrics import (
+    CHEVRON,
+    ICON,
+    R_CONTROL,
+    ROW,
+    S1,
+    SECTION_HEADER,
+    TYPE_BODY,
+    TYPE_FINE,
+    TYPE_SECTION,
+)
 
 ROW_ROLE = Qt.ItemDataRole.UserRole + 1
-TILE_WIDTH = 64
-TILE_HEIGHT = 60
-ROW_HEIGHT = 24
-HEADER_HEIGHT = 24
-GLYPH_TILE = 20
-GLYPH_ROW = 16
-_RADIUS = 4.0
-_DESCRIPTION_ROOM = 12
-
+TILE_WIDTH = 72
+TILE_HEIGHT = 56
+ROW_HEIGHT = ROW
+HEADER_HEIGHT = SECTION_HEADER
+GLYPH_TILE = ICON
+GLYPH_ROW = ICON
+_RADIUS = float(R_CONTROL)
 
 class EntryDelegate(QStyledItemDelegate):
     """One delegate for the Insert list and the quick-insert list."""
@@ -48,14 +57,21 @@ class EntryDelegate(QStyledItemDelegate):
     def sizeHint(self, option: QStyleOptionViewItem, index: object) -> QSize:  # noqa: N802
         row = _row(index)
         if row is not None and self._is_tile(row):
-            return QSize(TILE_WIDTH, TILE_HEIGHT)
+            return QSize(TILE_WIDTH + S1, TILE_HEIGHT + S1)
         # ResizeMode.Adjust asks again on resize. A width cached before the
         # view is shown stays at the 120 px floor and tiles sit beside headers.
         width = _viewport_width(option)
         if width <= 0:
             width = self._width
-        if row is None or row.kind in (SECTION, HEADER):
+        if row is None or row.kind == SECTION:
             return QSize(width, HEADER_HEIGHT)
+        if row.kind == HEADER:
+            room = max(width - 22 - 44, 24)
+            font = QFont(option.font)
+            font.setPixelSize(10)
+            font.setBold(True)
+            lines = _wrap_header(row.title.upper(), QFontMetrics(font), room)
+            return QSize(width, max(HEADER_HEIGHT, 14 * len(lines) + 6))
         return QSize(width, ROW_HEIGHT)
 
     def paint(self, painter: QPainter, option: QStyleOptionViewItem, index: object) -> None:  # type: ignore[override]
@@ -123,57 +139,68 @@ class EntryDelegate(QStyledItemDelegate):
             return self._layout_ink
         if name.startswith("spacer_") and self._gap_ink:
             return self._gap_ink
+        chrome = self._chrome
+        if chrome is not None and chrome.glyph:
+            return chrome.glyph
         return self._colors()[0]
 
     def _paint_header(self, painter: QPainter, option: QStyleOptionViewItem, row: Row) -> None:
-        text, faint, _hover, _current, _match, _accent = self._colors()
+        _text, faint, _hover, _current, _match, _accent = self._colors()
+        title_ink = self._chrome.muted if self._chrome is not None and self._chrome.muted else faint
         rect = option.rect
         if row.kind == SECTION:
-            painter.setPen(QColor(faint))
+            painter.setPen(QColor(title_ink))
             painter.setFont(self._font(option, 10, bold=True))
             painter.drawText(rect.adjusted(8, 0, -8, 0), int(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter), row.title.upper())
             return
-        centre_y = rect.center().y()
-        chevron = QPen(QColor(faint))
-        chevron.setWidthF(1.5)
-        painter.setPen(chevron)
         left = rect.left() + 10
-        if row.expanded:
-            painter.drawPolyline(_points(((left, centre_y - 3), (left + 4, centre_y + 1), (left + 8, centre_y - 3))))
-        else:
-            painter.drawPolyline(_points(((left + 1, centre_y - 4), (left + 5, centre_y), (left + 1, centre_y + 4))))
-        painter.setFont(self._font(option, 10, bold=True))
-        painter.setPen(QColor(text))
+        mark = "chevron_down" if row.expanded else "chevron_right"
+        ratio = painter.device().devicePixelRatioF() if painter.device() is not None else 1.0
+        try:
+            pixmap = paint_glyph(mark, faint, CHEVRON, float(ratio))
+            painter.drawPixmap(left, rect.center().y() - CHEVRON // 2, pixmap)
+        except KeyError:
+            pass
+        painter.setFont(self._font(option, TYPE_SECTION, bold=True))
+        painter.setPen(QColor(title_ink))
         label_left = rect.left() + 22
-        room = rect.width() - 22 - 44
-        name = QFontMetrics(painter.font()).elidedText(row.title.upper(), Qt.TextElideMode.ElideRight, max(room, 24))
-        painter.drawText(label_left, rect.top(), max(room, 24), rect.height(),
-                         int(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter), name)
+        room = max(rect.width() - 22 - 44, 24)
+        lines = _wrap_header(row.title.upper(), QFontMetrics(painter.font()), room)
+        line_h = max(rect.height() // max(len(lines), 1), 12)
+        for index, line in enumerate(lines):
+            painter.drawText(label_left, rect.top() + index * line_h, room, line_h,
+                             int(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter), line)
         painter.setPen(QColor(faint))
         painter.setFont(self._font(option, 11))
         painter.drawText(rect.adjusted(0, 0, -10, 0), int(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter), str(row.count))
 
     def _paint_tile(self, painter: QPainter, option: QStyleOptionViewItem, row: Row) -> None:
         text, _faint, _hover, _current, _match, _accent = self._colors()
-        rect = option.rect
+        outer = option.rect
+        rect = QRect(outer.left() + S1 // 2, outer.top() + S1 // 2, TILE_WIDTH, TILE_HEIGHT)
         self._background(painter, option, rect, _RADIUS)
         self._glyph(painter, row.glyph, rect.center().x() - GLYPH_TILE // 2, rect.top() + 8, GLYPH_TILE)
-        font = self._font(option, 11)
+        font = self._font(option, TYPE_FINE)
         painter.setFont(font)
         painter.setPen(QColor(text))
         width = rect.width() - 8
-        lines = _two_lines(row.title, QFontMetrics(font), width)
+        label = row.title.split(" · ")[0]
+        lines = _two_lines(label, QFontMetrics(font), width)
+        line_h = 14
+        top = rect.top() + 8 + GLYPH_TILE
         for index, line in enumerate(lines):
-            top = rect.top() + 32 + index * 14
-            painter.drawText(QRect(rect.left() + 4, top, width, 14),
-                             int(Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignVCenter), line)
+            painter.drawText(
+                QRect(rect.left() + 4, top + index * line_h, width, line_h),
+                int(Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignVCenter),
+                line,
+            )
 
     def _paint_row(self, painter: QPainter, option: QStyleOptionViewItem, row: Row) -> None:
         text, faint, _hover, _current, match_bg, _accent = self._colors()
         rect = option.rect
         self._background(painter, option, rect, _RADIUS)
         self._glyph(painter, row.glyph, rect.left() + 8, rect.top() + 4, GLYPH_ROW)
-        name_font = self._font(option, 12)
+        name_font = self._font(option, TYPE_BODY)
         caption_font = self._font(option, 11)
         left = rect.left() + 30
         right_text = _right_caption(row)
@@ -190,20 +217,32 @@ class EntryDelegate(QStyledItemDelegate):
         name_width = name_metrics.horizontalAdvance(name)
         painter.drawText(QRect(left, rect.top(), name_width + 2, rect.height()),
                          int(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter), name)
-        caption_metrics = QFontMetrics(caption_font)
-        room = rect.width() - 30 - name_width - 8 - 8
-        if row.description and not row.search and room >= _DESCRIPTION_ROOM * caption_metrics.averageCharWidth():
-            painter.setFont(caption_font)
-            painter.setPen(QColor(faint))
-            description = caption_metrics.elidedText(row.description, Qt.TextElideMode.ElideRight, room)
-            painter.drawText(QRect(left + name_width + 8, rect.top(), room, rect.height()),
-                             int(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter), description)
         if right_text:
             painter.setFont(caption_font)
             painter.setPen(QColor(faint))
+            caption_metrics = QFontMetrics(caption_font)
             right_width = caption_metrics.horizontalAdvance(right_text) + 12
             painter.drawText(QRect(rect.right() - right_width, rect.top(), right_width - 8, rect.height()),
                              int(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter), right_text)
+
+
+def _wrap_header(text: str, metrics: QFontMetrics, room: int) -> List[str]:
+    """Two lines at most. A short header stays one line and is not cut off."""
+
+    if metrics.horizontalAdvance(text) <= room:
+        return [text]
+    words = text.split()
+    if len(words) < 2:
+        return [text]
+    best = 1
+    for index in range(1, len(words)):
+        if metrics.horizontalAdvance(" ".join(words[:index])) <= room:
+            best = index
+    first = " ".join(words[:best])
+    second = " ".join(words[best:])
+    if metrics.horizontalAdvance(second) > room:
+        second = metrics.elidedText(second, Qt.TextElideMode.ElideRight, room)
+    return [first, second]
 
 
 def fitted_label(
@@ -250,10 +289,10 @@ def _row(index: object) -> Optional[Row]:
 
 
 def _right_caption(row: Row) -> str:
-    if row.search:
-        if row.via:
-            return "“%s”" % row.via
-        return "" if row.window else row.category
+    """A synonym match stays. The category and the description live in the tooltip."""
+
+    if row.search and row.via:
+        return "“%s”" % row.via
     return ""
 
 

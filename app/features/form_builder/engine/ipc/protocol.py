@@ -55,6 +55,9 @@ class Appearance:
     font_point_size: Optional[float] = None
     screen_width: Optional[int] = None
     screen_height: Optional[int] = None
+    # Shell chrome roles the Preview window paints (window, panel, text, …).
+    # Empty keeps the light fallback. An older frame omits the field.
+    chrome: Tuple[Tuple[str, str], ...] = ()
 
 
 @dataclass(frozen=True)

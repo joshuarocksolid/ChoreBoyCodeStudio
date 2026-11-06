@@ -100,7 +100,7 @@ def test_editor_page_shows_live_defaults_and_the_form_size(tmp_path: Path, qapp:
         size = surface.findChild(QLabel, "formBuilder.formDesignSize")
         caption = surface.findChild(QLabel, "formBuilder.formCaption.window")
         assert size is not None and size.text().endswith(" px")
-        assert caption is not None and caption.text() == "Window"
+        assert caption is not None and caption.text() == "WINDOW"
         email = session.document.by_name("email")[0]
         session.selection.set((email,), source=SelectionSource.PROGRAM)
         pane.set_group_expanded(GroupId.ALL, True)
@@ -245,8 +245,9 @@ def test_alignment_segments_show_the_value(tmp_path: Path, qapp: QApplication) -
     try:
         _show(surface, qapp, "email")
         row = _row(surface, "alignment")
-        buttons = {button.toolTip(): button for button in row.findChildren(QToolButton) if button.toolTip()}
-        left, right = buttons["AlignLeft"], buttons["AlignRight"]
+        left = row.findChild(QToolButton, "formBuilder.align.AlignLeft")
+        right = row.findChild(QToolButton, "formBuilder.align.AlignRight")
+        assert left is not None and right is not None
         assert left.isChecked() and not right.isChecked()
         # The checked segment looks different from the unchecked one under the shell style.
         on = left.grab().toImage()
@@ -256,8 +257,10 @@ def test_alignment_segments_show_the_value(tmp_path: Path, qapp: QApplication) -
         surface._workbench.inspector.flush()  # noqa: SLF001
         qapp.processEvents()
         row = _row(surface, "alignment")
-        buttons = {button.toolTip(): button for button in row.findChildren(QToolButton) if button.toolTip()}
-        assert buttons["AlignRight"].isChecked() and not buttons["AlignLeft"].isChecked()
+        left = row.findChild(QToolButton, "formBuilder.align.AlignLeft")
+        right = row.findChild(QToolButton, "formBuilder.align.AlignRight")
+        assert left is not None and right is not None
+        assert right.isChecked() and not left.isChecked()
         session = surface._session  # noqa: SLF001
         written = session.document.node(session.document.by_name("email")[0]).prop("alignment")
         assert written is not None and "AlignRight" in str(written)
@@ -345,7 +348,7 @@ def test_adding_a_connection_keeps_the_sender_selected(tmp_path: Path, qapp: QAp
         tabs.setCurrentIndex(behavior)
         pane.flush()
         qapp.processEvents()
-        add = next(button for button in pane.findChildren(QPushButton) if button.text().startswith("+ When"))
+        add = pane.findChild(QWidget, "formBuilder.events.first") or pane.findChild(QWidget, "formBuilder.events.when")
         add.click()
         qapp.processEvents()
         search = surface.findChild(QLineEdit, "formBuilder.eventPickerSearch")

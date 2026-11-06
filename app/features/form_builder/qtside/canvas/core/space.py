@@ -112,8 +112,8 @@ ZOOM_STEPS: Tuple[float, ...] = (
     0.25, 0.33, 0.5, 0.67, 0.75, 0.9, 1.0, 1.1, 1.25, 1.5, 1.75, 2.0, 2.5, 3.0, 4.0,
 )
 FIT_CAP = 1.0
-# A new tab opens at Fit and never below 75%. A tighter page scrolls.
-FIT_FLOOR = 0.75
+# Fit never goes below the zoom menu's smallest step. A tighter page scrolls.
+FIT_FLOOR = 0.5
 # UX-ZOOM-004: 96 px beside the page. A wider chip sits beside its widget or
 # in the dock strip instead (chips.py), so the gutter does not grow with it.
 SIDE_GUTTER = 96

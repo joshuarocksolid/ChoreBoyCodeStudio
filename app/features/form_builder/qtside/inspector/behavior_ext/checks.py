@@ -5,7 +5,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 from typing import List, Optional, Tuple
 
-from app.qt.QtCore import QEvent, QPoint, Qt, QTimer
+from app.qt.QtCore import QEvent, QObject, QPoint, Qt
 from app.qt.QtWidgets import (
     QAction,
     QHBoxLayout,
@@ -27,7 +27,6 @@ from app.features.form_builder.engine.query.selection import SelectionSource
 from app.features.form_builder.engine.ui4.nodes import WidgetNode
 from app.features.form_builder.engine.ui4.values import StringValue
 from app.features.form_builder.qtside.checks import CheckOffer, CheckPage
-from app.features.form_builder.qtside.checks.offer import _EnterButton
 from app.features.form_builder.qtside.checks.catalog import (
     offered_kinds,
     words_of,
@@ -37,19 +36,14 @@ from app.features.form_builder.qtside.checks.catalog import (
 from app.features.form_builder.qtside.inspector._services import Dropped, Rejected
 from app.features.form_builder.qtside.inspector.behavior_ext import BehaviorSection, SectionHost, SectionInputs
 from app.features.form_builder.qtside.inspector.model import OneBehavior
-from app.features.form_builder.qtside.theme.chrome import edge_on, link_ink
-
+_OUTLINE = '*[cbcsInvalid="true"] { border: 1px solid #c62828; }'
+_SELECTOR = '*[cbcsInvalid="true"]'
 _ENTER = frozenset({enum_value(Qt.Key.Key_Return), enum_value(Qt.Key.Key_Enter)})
 _UP = enum_value(Qt.Key.Key_Up)
 _DOWN = enum_value(Qt.Key.Key_Down)
 _DELETE = enum_value(Qt.Key.Key_Delete)
 _ALT = enum_value(Qt.KeyboardModifier.AltModifier)
 _OVERRIDE = enum_value(getattr(getattr(QEvent, "Type", QEvent), "ShortcutOverride"))
-_KEY_PRESS = enum_value(getattr(getattr(QEvent, "Type", QEvent), "KeyPress"))
-# User content for the form, the same red the check manual names. The hex
-# check allows this one sentence and nothing else.
-_OUTLINE = '*[cbcsInvalid="true"] { border: 1px solid #c62828; }'
-_SELECTOR = '*[cbcsInvalid="true"]'
 _ROW_WORDS = (
     "Required",
     "Between",
@@ -214,92 +208,6 @@ class _CheckRow(QWidget):
             self.message.setToolTip("")
 
 
-_LEFT = getattr(getattr(Qt, "AlignmentFlag", Qt), "AlignLeft")
-_TOP = getattr(getattr(Qt, "AlignmentFlag", Qt), "AlignTop")
-
-
-class _SentenceLink(QWidget):
-    """A sentence with a link at its end. They stack when the row is narrow."""
-
-    def __init__(self, sentence: str, link: str, parent: QWidget) -> None:
-        super().__init__(parent)
-        self.setMinimumWidth(0)
-        self.words = QLabel(sentence, self)
-        self.words.setWordWrap(False)
-        self.words.setMinimumWidth(0)
-        self.link = _EnterButton(link, self)
-        self.link.setFlat(True)
-        self.link.setAutoDefault(False)
-        self.link.setCursor(getattr(getattr(Qt, "CursorShape", Qt), "PointingHandCursor"))
-        names = getattr(QSizePolicy, "Policy", QSizePolicy)
-        self.link.setSizePolicy(getattr(names, "Maximum"), getattr(names, "Fixed"))
-        self._wide: Optional[bool] = None
-        self._queued = False
-        self._box = QVBoxLayout(self)
-        self._box.setContentsMargins(0, 0, 0, 0)
-        self._box.setSpacing(0)
-        self._place(True)
-
-    def resizeEvent(self, event: QEvent) -> None:  # noqa: N802
-        super().resizeEvent(event)  # type: ignore[arg-type]
-        self._queue()
-
-    def showEvent(self, event: QEvent) -> None:  # noqa: N802
-        super().showEvent(event)  # type: ignore[arg-type]
-        self._queue()
-
-    def _queue(self) -> None:
-        if self._queued:
-            return
-        self._queued = True
-        # The context object cancels this if the section is already gone.
-        QTimer.singleShot(0, self, self._apply)
-
-    def _apply(self) -> None:
-        self._queued = False
-        try:
-            self.words.setWordWrap(False)
-        except RuntimeError:
-            return
-        self.words.setMaximumWidth(16777215)
-        needed = self.words.sizeHint().width() + self.link.sizeHint().width() + 8
-        wide = self.width() <= 1 or needed <= self.width()
-        if wide != self._wide:
-            self._place(wide)
-            return
-        if not wide and self.width() > 1:
-            self.words.setMaximumWidth(self.width())
-            self.words.setWordWrap(True)
-
-    def _place(self, wide: bool) -> None:
-        self._wide = wide
-        self.words.setWordWrap(not wide)
-        # A word-wrapped label keeps its one-line width unless something
-        # caps it, so a 236px column clips the last word.
-        cap = 16777215 if wide or self.width() <= 1 else self.width()
-        self.words.setMaximumWidth(cap)
-        while self._box.count():
-            item = self._box.takeAt(0)
-            nested = item.layout() if item is not None else None
-            if nested is not None:
-                while nested.count():
-                    nested.takeAt(0)
-        if wide:
-            row = QHBoxLayout()
-            row.setContentsMargins(0, 0, 0, 0)
-            row.setSpacing(8)
-            self._box.setSpacing(0)
-            self._box.addLayout(row)
-            row.addWidget(self.words, 0, _TOP)
-            row.addWidget(self.link, 0, _TOP)
-            row.addStretch(1)
-        else:
-            self._box.setSpacing(2)
-            self._box.addWidget(self.words)
-            self._box.addWidget(self.link, 0, _LEFT)
-        self.updateGeometry()
-
-
 def _run_order(checks: Tuple[Check, ...]) -> List[int]:
     """Required first, then the rest. That is the order ``plan`` runs."""
     required = [index for index, check in enumerate(checks) if isinstance(check, Required)]
@@ -330,76 +238,54 @@ class ChecksBody(QWidget):
         heading = QHBoxLayout(overline)
         heading.setContentsMargins(0, 0, 0, 0)
         heading.setSpacing(0)
-        title = QLabel("CHECKS", overline)
-        title.setObjectName("formBuilder.checks.title")
+        from app.features.form_builder.qtside.inspector.behavior_ext.heading import section_heading
+        from app.features.form_builder.qtside.inspector.behavior_ext.value_button import ValueButton
+        from app.features.form_builder.qtside.theme.metrics import S2
+
+        title = section_heading(overline, "formBuilder.checks.title", "CHECKS")
+        self._title = title
+        title.setToolTip("Checks run when the person leaves the field.")
         heading.addWidget(title)
-        heading.addStretch(1)
+        self._add = title.add_action("plus", "Add check", "Add check")
+        self._add.setObjectName("formBuilder.checks.add")
+        self._add.installEventFilter(self)
         self._rows_host = QWidget(self)
         self._rows_host.setObjectName("formBuilder.checks.rows")
         self._rows_host.setMinimumWidth(0)
         self._rows_layout = QVBoxLayout(self._rows_host)
         self._rows_layout.setContentsMargins(0, 0, 0, 0)
-        self._rows_layout.setSpacing(4)
-        self._add = _AddButton("+ Add check \u25be", self)
-        self._add.setObjectName("formBuilder.checks.add")
-        self._add.setAutoDefault(False)
-        names = getattr(QSizePolicy, "Policy", QSizePolicy)
-        self._add.setSizePolicy(getattr(names, "Maximum"), getattr(names, "Fixed"))
+        self._rows_layout.setSpacing(S2)
         self._menu: Optional[QMenu] = None
         self._page: Optional[CheckPage] = None
         self._offer = CheckOffer(self)
-        self._prompt = QWidget(self)
-        self._prompt.setObjectName("formBuilder.checks.prompt")
-        self._prompt.setMinimumWidth(0)
-        self._prompt_text = QLabel(self._prompt)
-        self._prompt_text.setObjectName("formBuilder.checks.promptText")
-        _wrap(self._prompt_text)
-        self._prompt_add = _EnterButton("Add label", self._prompt)
-        self._prompt_add.setObjectName("formBuilder.checks.promptAdd")
-        self._prompt_add.setAutoDefault(False)
-        prompt_column = QVBoxLayout(self._prompt)
-        prompt_column.setContentsMargins(0, 0, 0, 0)
-        prompt_column.setSpacing(4)
-        prompt_column.addWidget(self._prompt_text)
-        prompt_column.addWidget(self._prompt_add, 0)
-        self._when_line = _SentenceLink("Checked when: leaving the field", "How checks run", self)
-        self._when_line.setObjectName("formBuilder.checks.whenLine")
-        self._when = self._when_line.words
+        self._when_row = QWidget(self)
+        when_line = QHBoxLayout(self._when_row)
+        when_line.setContentsMargins(0, 0, 0, 0)
+        when_line.setSpacing(S2)
+        self._when = QLabel("Checked when", self._when_row)
         self._when.setObjectName("formBuilder.checks.when")
-        self._manual = self._when_line.link
-        self._manual.setObjectName("formBuilder.checks.manual")
-        self._manual.clicked.connect(self._open_manual)
-        self._outline_line = _SentenceLink(
-            "Fields that fail a check get no outline yet.",
-            "Add the red outline style",
-            self,
-        )
-        self._outline_line.setObjectName("formBuilder.checks.outlineLine")
-        self._outline_line.words.setObjectName("formBuilder.checks.outlineWords")
-        self._outline = self._outline_line.link
-        self._outline.setObjectName("formBuilder.checks.outline")
+        self._when_value = ValueButton(self._when_row)
+        self._when_value.setObjectName("formBuilder.checks.whenValue")
+        self._when_value.set_value("leaving the field")
+        self._when_value.setAccessibleName("Checked when")
+        self._when_value.setToolTip("Checks run when the person leaves the field.")
+        self._when_value.clicked.connect(self._open_manual)
+        when_line.addWidget(self._when, 0)
+        when_line.addWidget(self._when_value, 1)
         column = QVBoxLayout(self)
         self._column = column
         column.setContentsMargins(0, 4, 0, 4)
         column.setSpacing(4)
         column.addWidget(overline)
         column.addWidget(self._rows_host)
-        column.addWidget(self._add, 0, _LEFT)
         column.addWidget(self._offer)
-        column.addWidget(self._prompt)
-        column.addWidget(self._when_line)
-        column.addWidget(self._outline_line)
+        column.addWidget(self._when_row)
         self._rows_host.hide()
         self._offer.hide()
-        self._prompt.hide()
-        self._outline_line.hide()
-        self._outline_revision = -1
-        self._outline_show = False
         self._painted_id: object = None
         self._offer.set_handlers(self._accept_label, self._skip_label)
         self._add.clicked.connect(self._open_menu)
-        self._prompt_add.clicked.connect(self._add_label_only)
-        self._outline.clicked.connect(self._add_outline)
+        title.apply_chrome(self._services.chrome)
         # A focusable child, shown while Behavior is not the current tab, pulls
         # focus off the outline. A timer then lands on the canvas. Stay out of
         # the focus chain until this section is actually on screen.
@@ -408,31 +294,13 @@ class ChecksBody(QWidget):
     def apply_colors(self, panel: str, text: str) -> None:
         chrome = self._services.chrome
         self._accent = chrome.accent or text
-        edge = edge_on(chrome, panel)
-        focus = chrome.focus_width if chrome.focus_width else 1
-        ink = link_ink(chrome)
+        self._title.apply_chrome(chrome)
         self.setStyleSheet(
             "QWidget#formBuilder\\.checks { background: %s; color: %s; }"
             "QLabel { color: %s; background: transparent; }"
             % (panel, text, text)
         )
-        # Same action chrome as the summary and "+ Then…" buttons: a left-aligned
-        # control that hugs its words, not a bar across the section.
-        self._add.setStyleSheet(
-            "QPushButton { color: %s; background: %s; border: 1px solid %s;"
-            " border-radius: 4px; padding: 2px 8px; text-align: left; }"
-            "QPushButton:focus { border: %dpx solid %s; }"
-            % (text, chrome.input, edge, focus, chrome.accent)
-        )
-        link = (
-            "QPushButton { color: %s; background: transparent; border: none; padding: 0; text-align: left;"
-            " text-decoration: underline; }"
-            "QPushButton:focus { border: %dpx solid %s; }"
-            % (ink, focus, chrome.accent)
-        )
-        self._manual.setStyleSheet(link)
-        self._outline.setStyleSheet(link)
-        self._outline_line.words.setStyleSheet("color: %s; background: transparent;" % chrome.muted)
+        self._when_value.apply_chrome(chrome)
         if self._page is not None:
             self._page.set_chrome(chrome)
         self._paint_tags()
@@ -443,8 +311,6 @@ class ChecksBody(QWidget):
             self.discard_draft()
             self._checks = ()
             self._fill_rows()
-            self._prompt.hide()
-            self._sync_outline()
             self._arm_keys()
             return
         document = inputs.session.document
@@ -452,7 +318,6 @@ class ChecksBody(QWidget):
             self._env = env_for(document, _window_facts(self), QtClassTable.shared())
             self._env_revision = document.revision
         if self._drafting():
-            self._sync_outline()
             self._arm_keys()
             return
         stored = _stored(self._node)
@@ -466,7 +331,6 @@ class ChecksBody(QWidget):
             self._painted_id = getattr(self._node, "id", None)
             self._fill_rows()
         self._sync_prompt()
-        self._sync_outline()
         self._arm_keys()
 
     def has_draft(self) -> bool:
@@ -512,7 +376,7 @@ class ChecksBody(QWidget):
     def _arm_keys(self) -> None:
         if not self.isVisible():
             return
-        for widget in (self._add, self._manual, self._outline, self._prompt_add):
+        for widget in (self._add, self._when_value):
             _tab_stop(widget)
         offer = self._offer
         for name in ("formBuilder.checks.addLabel", "formBuilder.checks.notNow"):
@@ -611,7 +475,6 @@ class ChecksBody(QWidget):
             if page is not None:
                 page.hide()
             self._editing = None
-            self._prompt.hide()
             self._offer.show()
             self._offer.focus_add()
             return
@@ -682,7 +545,8 @@ class ChecksBody(QWidget):
         self._node = self._live() or node
         self._sync_prompt()
 
-    def _add_outline(self) -> None:
+    def add_outline_style(self) -> None:
+        """One undo step. The checks pane does not show the sentence."""
         root = self._services.session.document.root
         if not isinstance(root, WidgetNode):
             return
@@ -715,7 +579,6 @@ class ChecksBody(QWidget):
         self._checks = _stored(self._node)
         self._fill_rows()
         self._sync_prompt()
-        self._sync_outline()
         self._arm_keys()
         return True
 
@@ -738,7 +601,7 @@ class ChecksBody(QWidget):
         total = len(order)
         width = _words_width(self) if total else 0
         chrome = self._services.chrome
-        muted = "color: %s; background: transparent;" % chrome.muted
+        muted = "color: %s; background: transparent; border: none;" % chrome.text
         for place, stored in enumerate(order):
             check = self._checks[stored]
             row = self._row_widgets[place]
@@ -766,38 +629,17 @@ class ChecksBody(QWidget):
         if 0 <= index < len(self._row_widgets):
             self._row_widgets[index].setFocus()
 
-    def _sync_outline(self) -> None:
-        # The line depends on every field, so a big form must not be walked on
-        # every selection. A check edit moves the document revision.
-        document = self._services.session.document
-        revision = document.revision
-        if revision != self._outline_revision:
-            self._outline_revision = revision
-            self._outline_show = self._form_has_check() and not self._has_outline()
-        if self._outline_line.isVisible() != self._outline_show:
-            self._outline_line.setVisible(self._outline_show)
-
-    def _form_has_check(self) -> bool:
-        for node in self._services.session.document.iter_widgets():
-            value = node.value("cbcsValidate")
-            if isinstance(value, StringValue) and value.text.strip():
-                return True
-        return False
-
-    def _has_outline(self) -> bool:
-        root = self._services.session.document.root
-        if not isinstance(root, WidgetNode):
-            return False
-        value = root.value("styleSheet")
-        return isinstance(value, StringValue) and _SELECTOR in value.text
-
     def _sync_prompt(self) -> None:
-        show = bool(self._checks) and not self._has_label() and self._pending is None and not self._offer.isVisible()
-        self._prompt.setVisible(show)
-        if show:
-            self._prompt_text.setText(
-                "%s's messages show only as a tooltip. Add a label under the field?" % self._display()
-            )
+        return
+
+    def eventFilter(self, watched: QObject, event: QEvent) -> bool:  # noqa: N802
+        if watched is self._add and event.type() == QEvent.Type.KeyPress:
+            key = enum_value(event.key())  # type: ignore[attr-defined]
+            if key == _DOWN or key in _ENTER:
+                self._add.click()
+                event.accept()
+                return True
+        return super().eventFilter(watched, event)
 
     def _paint_tags(self) -> None:
         if not self._accent:

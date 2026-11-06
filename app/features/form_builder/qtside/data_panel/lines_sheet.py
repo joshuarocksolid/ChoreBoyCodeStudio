@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import List, Optional, Sequence, Tuple
 
 from app.features.form_builder.engine.commands.base import CommandRejected
+from app.features.form_builder.engine.diagnostics import CODES
 from app.features.form_builder.engine.commands.catalog import InsertFragment, SetLogic
 from app.features.form_builder.engine.commands.catalog_ext.events import SetEventSteps
 from app.features.form_builder.engine.data.schema import schema_for
@@ -94,6 +95,10 @@ def add_lines(session: object, rows: Rows, view_name: str = "") -> str:
     """Insert the grid, or bind the selected table view, plus the two buttons."""
 
     document = session.document
+    if lines_on(document):
+        import app.features.form_builder.engine.diagnostic_codes.fb3xx_data  # noqa: F401
+
+        raise CommandRejected(CODES["FB320"].title, code="FB320")
     layout = document.root.layout
     if layout is None or not isinstance(layout, LayoutNode):
         raise CommandRejected("This form has no layout to put the lines in.")

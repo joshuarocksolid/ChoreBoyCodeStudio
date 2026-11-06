@@ -362,7 +362,7 @@ The shell table in `app/shell/shortcut_preferences.py` is authoritative. A form 
 | Shift+F2 | any | Stop (shell). Not used for rename in the form (the spike and LOGIC_DESIGN §2.12 used it) | shell |
 | Ctrl+Shift+F | any | Find in Files (shell), which gains a "Forms" result group (M7.8) | shell |
 
-**UX-KEY-005** `M6.0` `[A]` LOGIC_DESIGN §2.12 keys are adopted with three changes forced by the shell table: Try mode is Ctrl+Shift+R (not Ctrl+R); "search this form's logic" is Ctrl+F in the form tab (not Ctrl+Shift+F); rename is F2 (not Shift+F2). Ctrl+Shift+E, Ctrl+Shift+L, Ctrl+Space, Ctrl+., Ctrl+Enter, F12 and Shift+F12 are adopted unchanged (none collide). Alt+B (focus Behavior tab) is adopted only if no shell menu title uses the mnemonic B; otherwise it becomes Alt+4 then B. *Resolved in v4 (13.3.1 D22):* no shell menu uses B, so Alt+B is adopted; Shift+F12 waits for M7.8; Ctrl+Space and Ctrl+Enter belong to M7's formula editor; Ctrl+. also runs a row's first fix in the Events list.
+**UX-KEY-005** `M6.0` `[A]` LOGIC_DESIGN §2.12 keys are adopted with three changes forced by the shell table: Preview is Ctrl+Shift+R (not Ctrl+R), and Run behavior starts checked so that key is also Try; "search this form's logic" is Ctrl+F in the form tab (not Ctrl+Shift+F); rename is F2 (not Shift+F2). Ctrl+Shift+E, Ctrl+Shift+L, Ctrl+Space, Ctrl+., Ctrl+Enter, F12 and Shift+F12 are adopted unchanged (none collide). Alt+B (focus Behavior tab) is adopted only if no shell menu title uses the mnemonic B; otherwise it becomes Alt+4 then B. *Resolved in v4 (13.3.1 D22):* no shell menu uses B, so Alt+B is adopted; Shift+F12 waits for M7.8; Ctrl+Space and Ctrl+Enter belong to M7's formula editor; Ctrl+. also runs a row's first fix in the Events list.
 
 **UX-KEY-006** `M3.1` `[S]` The canvas's first focus in a session shows a one-time status sentence: "Tab moves between widgets. Alt+4 goes to the inspector, Alt+1 to the outline."
 
@@ -380,9 +380,9 @@ The shell table in `app/shell/shortcut_preferences.py` is authoritative. A form 
 
 **UX-START-001** `M2.2` `[S]` Start is not a home screen of the builder; it is the **New form** tab. It opens from File > New Form…, from the project tree context menu ("New Form…" on any folder, defaulting to `forms/`), and from the Welcome page. Opening an existing `.ui` never shows Start.
 
-**UX-START-002** `M5.5c` `[S]` Layout: a centred column, max 960 px wide, 32 px top padding. Top: Hero "New form", then one sentence in `fb.muted`: "Every starting point is already laid out, so it resizes with the window." Then the name row (UX-START-003). Then three card groups. A right rail (240 px) with recent forms appears when the tab is at least 1180 px wide; below that, recent forms are a list under the cards.
+**UX-START-002** `M5.5c` `[S]` Layout: a centred column, max 960 px wide, 32 px top padding. Top: Hero "New form", then the name row (UX-START-003). The cards already say each starting point is laid out. Then three card groups. A right rail (240 px) with recent forms appears when the tab is at least 1180 px wide; below that, recent forms are a list under the cards.
 
-**UX-START-003** `M2.2` `[S T]` The name row is first and focused on open: "Name [new_form] in [forms/ ▾]" and a live caption "Creates forms/new_form.ui, ui_new_form.py and new_form_window.py." The default name is unique in the folder. Invalid names show an inline message under the field and disable creation: "Use letters, digits and _, starting with a letter."
+**UX-START-003** `M2.2` `[S T]` The name row is first and focused on open: "Name [new_form] in [forms/ ▾]". The live caption "Creates forms/new_form.ui, ui_new_form.py and new_form_window.py." is the name field tooltip. The default name is unique in the folder. Invalid names show an inline message under the field and disable creation: "Use letters, digits and _, starting with a letter."
 
 **UX-START-004** `M2.2` `[S K]` Card groups, each card a whole click target (no inner buttons):
 - **Templates**: Data entry form; List and detail; Table with search; Dialog with OK and Cancel.
@@ -432,7 +432,7 @@ Clicking a card, or pressing Enter on a focused card, creates the files with the
 
 **UX-WB-001** `M2.2` `[S]` Three panes in a horizontal splitter: left pane (Outline over Insert), canvas, inspector. Default widths at a 1280 px wide tab: left 232, inspector 300, canvas the rest. Limits: left 184–360, inspector 264–420, canvas at least 360. The splitter handles are 1 px lines with a 6 px hit area, and they drag (the spike's handles do not). Widths persist per user, not per file.
 
-**UX-WB-002** `M2.2` `[S]` The left pane is a vertical splitter, Outline above Insert (default 45 / 55), each with an Overline header, a header button row (Outline: + insert, ⌕ filter; Insert: ⌕ filter) and its own scroll. Either can be collapsed to its header by clicking the header; collapsed state persists.
+**UX-WB-002** `M2.2` `[S]` The left pane is always the tab bar Outline | Insert | Logic. Each tab fills the pane. Outline's + and filter, and Logic's Read as text, sit in the tab corner as 20 px icon buttons. Insert uses a one-column list below 232 px and the 72 by 56 tile grid at or above that. Saved pieces is a section inside Insert, shown only when a piece exists.
 
 **UX-WB-003** `M2.2` `[S]` Tab toolbar contents, left to right: **Design | XML** segments; a 1 px divider; overlay toggles **Tab order** and **Buddies** (toggle buttons, not a segmented "mode" control; text plus glyph; checked state uses `fb.row_selected` fill); Undo and Redo icon buttons (disabled state uses `fb.faint`, enabled `icon_primary`; the spike's always-faint arrows read as disabled); zoom group **− [100%] +** where the percentage is a menu button (Fit, 50, 75, 100, 150, 200 %); **Aa ▾** preview options (UX-SCALE); **⇆** two widths toggle (UX-WIDTHS); **Preview** button (secondary style with play glyph); the save-state text (UX-SHELL-005). Every icon-only button has a tooltip that includes its shortcut.
 
@@ -446,7 +446,7 @@ Clicking a card, or pressing Enter on a focused card, creates the files with the
 
 Every empty surface says what it is and what to do next, in one or two sentences, with at most one button.
 
-**UX-EMPTY-001** `M3.1` `[S]` Empty form (root layout with no items): the drop zone fills the root layout's whole interior (the spike's only fills a 160 px band at the top, `empty-form.png`). Centre text: "Drop a widget here" (Strong) and "or press / to search for one." (Caption), and under it three key hints in Caption: "/ insert · Ctrl+Shift+G wrap · F2 rename".
+**UX-EMPTY-001** `M3.1` `[S]` Empty form (root layout with no items): the drop zone fills the root layout's whole interior (the spike's only fills a 160 px band at the top, `empty-form.png`). Centre text: "Drop a widget here" (Strong) and "or press / to search for one." (Caption). The shortcut hints live on the keys page.
 
 **UX-EMPTY-002** `M3.1` `[S]` Empty nested layout or empty container: drawn at least 32 px tall and 48 px wide with a dashed `ov.layout_faint` outline and centred Caption "Drop widgets here" when the area is at least 120 px wide, else a 12 px plus glyph. This minimum is a canvas-only size and is never saved (pain 4).
 
@@ -476,7 +476,7 @@ ChoreBoy screens may be 1366 × 768. Inside CBCS (project tree, menu, toolbar, t
 
 **UX-RESP-004** `M2.2` `[S T]` W < 720: the inspector also collapses to a right rail with its three tab icons; opening it shows a 288 px drawer. Selecting a widget does not auto-open it.
 
-**UX-RESP-005** `M2.2` `[S]` H < 560: Outline and Insert stop splitting vertically and become two tabs in one left pane ("Outline | Insert"). The inspector header compresses to one line (glyph, name, class) and the breadcrumb moves into the name field's tooltip.
+**UX-RESP-005** `M2.2` `[S]` The left pane stays Outline | Insert | Logic at every height, including H < 560. There is no stacked column. The inspector header compresses to one line (glyph, name, class) and the breadcrumb moves into the name field's tooltip.
 
 **UX-RESP-006** `M2.2` `[S]` The tab toolbar at W < 1000 hides the overlay toggle labels (glyph only, with tooltips) and folds Aa and ⇆ into a ⋯ menu. Nothing in the toolbar wraps or clips.
 

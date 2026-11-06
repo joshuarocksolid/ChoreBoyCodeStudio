@@ -11,19 +11,26 @@ import os
 import sqlite3
 from typing import Callable, Dict, List, Optional, Tuple
 
-from app.qt.QtCore import QBuffer, QEvent, QIODevice, QLocale, QTimer, Qt, Signal
+from app.qt.QtCore import QBuffer, QEvent, QIODevice, QLocale, QSize, QTimer, Qt, Signal
+from app.qt.QtGui import QBrush, QColor, QFont, QIcon, QPalette
 from app.qt.QtUiTools import QUiLoader
 from app.qt.QtWidgets import (
     QCheckBox,
     QComboBox,
     QDialog,
+    QFrame,
+    QGraphicsOpacityEffect,
     QGraphicsView,
+    QGridLayout,
     QHBoxLayout,
     QHeaderView,
     QLabel,
+    QLineEdit,
     QListWidget,
+    QListWidgetItem,
     QPushButton,
     QSizePolicy,
+    QTableView,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
@@ -58,9 +65,26 @@ from app.features.form_builder.engine.project.table_form import (
     build_table_form_ui,
     four_digit_year_format,
 )
+from app.features.form_builder.qtside.icons.glyphs import paint_glyph
 from app.features.form_builder.qtside.schema_prompt import ask_connection_secret
-from app.features.form_builder.qtside.theme.chrome import FormChrome
-from app.features.form_builder.qtside.theme.runtime import host_form
+from app.features.form_builder.qtside.theme.chrome import FormChrome, apply_page_shadow, control_qss, edge_on
+from app.features.form_builder.qtside.theme.items import polish_item_view
+from app.features.form_builder.qtside.theme.metrics import (
+    CONTROL,
+    ICON,
+    LABEL_MIN,
+    MAPPING_ROW,
+    PREVIEW_INSET,
+    PRIMARY_BUTTON,
+    R_CARD,
+    S2,
+    S4,
+    TYPE_BODY,
+    TYPE_FINE,
+)
+from app.features.form_builder.qtside.theme.runtime import host_form, pin_runtime_look
+from app.features.form_builder.qtside.theme.dialog_body import parts_from
+from app.features.form_builder.qtside.theme.section_header import SectionHeader
 
 _INCLUDE_REASON = "Include at least one column"
 _CHOOSE_CONNECTION = "Choose a connection"
@@ -80,6 +104,22 @@ _MAKES = (
     ("list", "List screen"),
     ("both", "List screen and record form"),
 )
+_CLASS_GLYPH = {
+    "QLineEdit": "line_edit",
+    "QPlainTextEdit": "plain_text_edit",
+    "QSpinBox": "spin_box",
+    "QDoubleSpinBox": "double_spin_box",
+    "QCheckBox": "check_box",
+    "QDateEdit": "date_edit",
+    "QDateTimeEdit": "date_time_edit",
+    "QComboBox": "combo_box",
+}
+_TABLE_COLUMN = 180
+_PREVIEW_COLUMN = 320
+_INCLUDE_WIDTH = 64
+_DISABLED_OPACITY = 0.5
+_WIDGET_MAX = 16777215
+_BAR_NAMES = ("recordBar", "listButtons", "lineButtons")
 
 
 def locale_date_format() -> str:
@@ -103,17 +143,19 @@ class FromTableDialog(QDialog):
         name_reason: Callable[[], Optional[str]],
         parent: Optional[QWidget] = None,
         add_connection: Optional[Callable[[], None]] = None,
+        shell_chrome: Optional[tuple] = None,
     ) -> None:
         super().__init__(parent)
         self.setObjectName("formBuilder.fromTable")
         self.setWindowTitle("Build a form from a table")
-        self.resize(960, 560)
+        self.resize(1100, 680)
         self._project_root = os.path.abspath(project_root)
         self._stem = stem
         self._chrome = chrome
         self._date_format = four_digit_year_format(date_format)
         self._name_reason = name_reason
         self._add_connection = add_connection
+        self._shell_chrome = shell_chrome
         self._database = ""
         self._connection_name = ""
         self._connections: Dict[str, Connection] = {}
@@ -128,6 +170,7 @@ class FromTableDialog(QDialog):
         self._schema_tokens: Dict[str, Tuple[object, ...]] = {}
         self._preview_widget: Optional[QWidget] = None
         self._preview_view: Optional[QGraphicsView] = None
+        self._fitting_preview = False
         self._main_kind = "missing"
         self._replaces = ""
         self._build()
@@ -205,6 +248,10 @@ class FromTableDialog(QDialog):
 
     def set_label(self, column: str, label: str) -> None:
         row = self._row_for(column)
+        editor = self._mapping.cellWidget(row, 4)
+        if isinstance(editor, QLineEdit):
+            editor.setText(label)
+            return
         item = self._mapping.item(row, 4)
         if item is not None:
             item.setText(label)
@@ -219,10 +266,10 @@ class FromTableDialog(QDialog):
         return self._create
 
     def database_label(self) -> str:
-        return self._path.text()
+        return self._path_text
 
     def database_tooltip(self) -> str:
-        return self._path.toolTip()
+        return self._path_tip
 
     def built_form(self) -> BuiltTableForm:
         return build_table_form_ui(
@@ -232,168 +279,291 @@ class FromTableDialog(QDialog):
         )
 
     def _build(self) -> None:
-        root = QVBoxLayout(self)
-        path_row = QHBoxLayout()
-        root.addLayout(path_row)
-        database = QLabel("Connection", self)
-        database.setObjectName("formBuilder.fromTable.databaseLabel")
-        path_row.addWidget(database)
+        self._path_text = ""
+        self._path_tip = ""
+        self._headers: List[SectionHeader] = []
+        build, add_button, _stretch, primary, secondary = self._shell_chrome or parts_from(self)
+        chrome = build(
+            self,
+            title="Build a form from a table",
+            object_name="formBuilder.fromTable",
+            body_margins=True,
+        )
+        self._chrome_parts = chrome
+        root = chrome.body.layout()
+        assert isinstance(root, QVBoxLayout)
+        root.setSpacing(S4)
+
+        options = QGridLayout()
+        options.setHorizontalSpacing(S2)
+        options.setVerticalSpacing(S2)
+        options.setColumnMinimumWidth(0, LABEL_MIN)
+        options.setColumnStretch(1, 1)
+        root.addLayout(options)
+
         self._connection = QComboBox(self)
         self._connection.setObjectName("formBuilder.fromTable.connection")
         self._connection.setAccessibleName("Connection")
-        database.setBuddy(self._connection)
+        self._connection.setFixedHeight(CONTROL)
         self._connection.currentIndexChanged.connect(self._on_connection)
-        path_row.addWidget(self._connection, 1)
+        database = _field_label("Connection", self._connection, self)
+        database.setObjectName("formBuilder.fromTable.databaseLabel")
+        options.addWidget(database, 0, 0)
+        options.addWidget(self._connection, 0, 1)
         add = QPushButton("Add connection…", self)
         add.setObjectName("formBuilder.fromTable.addConnection")
         add.setAccessibleName("Add connection")
+        add.setFixedHeight(CONTROL)
         add.clicked.connect(self._on_add_connection)
-        path_row.addWidget(add)
-        self._path = QLabel("", self)
-        self._path.setObjectName("formBuilder.fromTable.path")
-        path_row.addWidget(self._path)
+        options.addWidget(add, 0, 2)
 
-        options = QHBoxLayout()
-        root.addLayout(options)
-        make_label = QLabel("Make", self)
-        make_label.setObjectName("formBuilder.fromTable.makeLabel")
-        options.addWidget(make_label)
         self._make = QComboBox(self)
         self._make.setObjectName("formBuilder.fromTable.make")
         self._make.setAccessibleName("Make")
-        make_label.setBuddy(self._make)
+        self._make.setFixedHeight(CONTROL)
         for key, label in _MAKES:
             self._make.addItem(label, key)
         self._make.currentIndexChanged.connect(lambda _index: self._on_make())
-        options.addWidget(self._make)
+        make_label = _field_label("Make", self._make, self)
+        make_label.setObjectName("formBuilder.fromTable.makeLabel")
+        options.addWidget(make_label, 1, 0)
+        options.addWidget(self._make, 1, 1)
+        lines = QHBoxLayout()
+        lines.setSpacing(S2)
         self._lines = QCheckBox("Include lines from", self)
         self._lines.setObjectName("formBuilder.fromTable.lines")
         self._lines.setAccessibleName("Include lines from")
         self._lines.toggled.connect(lambda _checked: self._on_lines_toggled())
-        options.addWidget(self._lines)
+        lines.addWidget(self._lines)
         self._lines_table = QComboBox(self)
         self._lines_table.setObjectName("formBuilder.fromTable.linesTable")
         self._lines_table.setAccessibleName("Line item table")
+        self._lines_table.setFixedHeight(CONTROL)
         self._lines_table.currentIndexChanged.connect(lambda _index: self._on_lines_table())
-        options.addWidget(self._lines_table)
+        lines.addWidget(self._lines_table, 1)
         self._link_label = QLabel("Lines linked by", self)
         self._link_label.setObjectName("formBuilder.fromTable.linkLabel")
-        options.addWidget(self._link_label)
+        lines.addWidget(self._link_label)
         self._lines_link = QComboBox(self)
         self._lines_link.setObjectName("formBuilder.fromTable.linesLink")
         self._lines_link.setAccessibleName("Lines linked by")
+        self._lines_link.setFixedHeight(CONTROL)
         self._link_label.setBuddy(self._lines_link)
         self._lines_link.currentIndexChanged.connect(lambda _index: self._sync_button())
-        options.addWidget(self._lines_link)
-        options.addStretch(1)
+        lines.addWidget(self._lines_link, 1)
+        options.addLayout(lines, 1, 2)
 
         body = QHBoxLayout()
+        body.setSpacing(S4)
         root.addLayout(body, 1)
-        self._tables = QListWidget(self)
+
+        tables_col = QWidget(self)
+        tables_col.setFixedWidth(_TABLE_COLUMN)
+        tables_layout = QVBoxLayout(tables_col)
+        tables_layout.setContentsMargins(0, 0, 0, 0)
+        tables_layout.setSpacing(S2)
+        tables_layout.addWidget(self._section("TABLE", "formBuilder.fromTable.tablesHeader"))
+        self._tables = QListWidget(tables_col)
         self._tables.setObjectName("formBuilder.fromTable.tables")
         self._tables.setAccessibleName("Tables")
+        self._tables.setIconSize(QSize(ICON, ICON))
         self._tables.currentTextChanged.connect(self._on_table)
-        body.addWidget(self._tables, 1)
+        tables_layout.addWidget(self._tables, 1)
+        body.addWidget(tables_col)
 
-        self._mapping = QTableWidget(0, len(_HEADERS), self)
+        columns_col = QWidget(self)
+        columns_layout = QVBoxLayout(columns_col)
+        columns_layout.setContentsMargins(0, 0, 0, 0)
+        columns_layout.setSpacing(S2)
+        columns_layout.addWidget(self._section("COLUMNS", "formBuilder.fromTable.columnsHeader"))
+        self._mapping = QTableWidget(0, len(_HEADERS), columns_col)
         self._mapping.setObjectName("formBuilder.fromTable.mapping")
         self._mapping.setAccessibleName("Columns")
         self._mapping.setHorizontalHeaderLabels(list(_HEADERS))
         self._mapping.setTabKeyNavigation(False)
+        self._mapping.verticalHeader().setVisible(False)
+        self._mapping.verticalHeader().setDefaultSectionSize(MAPPING_ROW)
+        self._mapping.setShowGrid(False)
         self._mapping.itemChanged.connect(self._on_item_changed)
         self._mapping.installEventFilter(self)
         self._mapping.viewport().installEventFilter(self)
         self._fitting_columns = False
-        body.addWidget(self._mapping, 3)
+        columns_layout.addWidget(self._mapping, 1)
+        body.addWidget(columns_col, 1)
 
-        self._preview = QVBoxLayout()
         preview_host = QWidget(self)
         preview_host.setObjectName("formBuilder.fromTable.preview")
-        preview_host.setLayout(self._preview)
-        body.addWidget(preview_host, 2)
+        preview_host.setFixedWidth(_PREVIEW_COLUMN)
+        preview_layout = QVBoxLayout(preview_host)
+        preview_layout.setContentsMargins(0, 0, 0, 0)
+        preview_layout.setSpacing(S2)
+        preview_layout.addWidget(self._section("PREVIEW", "formBuilder.fromTable.previewHeader"))
+        self._page = QFrame(preview_host)
+        self._page.setObjectName("formBuilder.fromTable.page")
+        self._preview = QVBoxLayout(self._page)
+        self._preview.setContentsMargins(PREVIEW_INSET, PREVIEW_INSET, PREVIEW_INSET, PREVIEW_INSET)
+        self._preview.setSpacing(0)
+        preview_layout.addWidget(self._page, 1)
+        body.addWidget(preview_host)
 
-        footer = QHBoxLayout()
-        root.addLayout(footer)
-        start_box = QVBoxLayout()
-        footer.addLayout(start_box, 1)
-        self._start = QCheckBox("Open this screen when the app starts", self)
+        start_box = QWidget(chrome.footer)
+        start_layout = QVBoxLayout(start_box)
+        start_layout.setContentsMargins(0, 0, 0, 0)
+        start_layout.setSpacing(0)
+        self._start = QCheckBox("Open this screen when the app starts", start_box)
         self._start.setObjectName("formBuilder.fromTable.start")
         self._start.setAccessibleName("Open this screen when the app starts")
         self._start_user = False
         self._start.toggled.connect(self._on_start_toggled)
-        self._start_note = QLabel("", self)
+        self._start_note = QLabel("", start_box)
         self._start_note.setObjectName("formBuilder.fromTable.startNote")
         self._start_note.setWordWrap(True)
-        start_box.addWidget(self._start)
-        start_box.addWidget(self._start_note)
-        self._reason = QLabel("", self)
+        self._start_note.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+        start_layout.addWidget(self._start)
+        start_layout.addWidget(self._start_note)
+        self._reason = QLabel("", start_box)
         self._reason.setObjectName("formBuilder.fromTable.reason")
-        footer.addWidget(self._reason, 1)
-        footer.addStretch(1)
-        self._cancel = QPushButton("Cancel", self)
+        self._reason.setWordWrap(True)
+        self._reason.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+        start_layout.addWidget(self._reason)
+        chrome.footer_layout.addWidget(start_box, 1)
+        self._cancel = add_button(chrome, "Cancel", role=secondary)
         self._cancel.setObjectName("formBuilder.fromTable.cancel")
         self._cancel.setAccessibleName("Cancel")
-        self._cancel.setFixedHeight(24)
+        self._cancel.setFixedHeight(PRIMARY_BUTTON)
         self._cancel.clicked.connect(self.reject)
-        footer.addWidget(self._cancel)
-        self._create = QPushButton(self)
+        self._create = add_button(chrome, "Create", role=primary, default=True)
         self._create.setObjectName("formBuilder.fromTable.create")
         self._create.setAccessibleName("Create the form")
-        self._create.setFixedHeight(28)
+        self._create.setFixedHeight(PRIMARY_BUTTON)
         self._create.clicked.connect(self.create_requested.emit)
-        footer.addWidget(self._create)
         self._chain_tabs()
         self._fit_columns()
+
+    def _section(self, title: str, object_name: str) -> SectionHeader:
+        header = SectionHeader(self, title, object_name=object_name, accessible_name=title)
+        header.set_pad(0)
+        header.setFocusPolicy(Qt.NoFocus)
+        self._headers.append(header)
+        return header
 
     def showEvent(self, event: object) -> None:  # type: ignore[override]
         super().showEvent(event)  # type: ignore[arg-type]
         QTimer.singleShot(0, self._fit_columns)
+        QTimer.singleShot(0, self._fit_preview)
 
     def _apply_chrome(self) -> None:
         chrome = self._chrome
         focus = max(1, int(getattr(chrome, "focus_width", 1) or 1))
         self.setStyleSheet(
             "QDialog#formBuilder\\.fromTable { background: %s; color: %s; }"
-            "QDialog#formBuilder\\.fromTable QLabel { color: %s; background: transparent; }"
-            "QLabel#formBuilder\\.fromTable\\.path,"
-            "QLabel#formBuilder\\.fromTable\\.reason { color: %s; }"
-            "QDialog#formBuilder\\.fromTable QCheckBox { color: %s; background: transparent; }"
-            "QDialog#formBuilder\\.fromTable QLineEdit,"
-            "QDialog#formBuilder\\.fromTable QComboBox,"
-            "QListWidget#formBuilder\\.fromTable\\.tables,"
-            "QTableWidget#formBuilder\\.fromTable\\.mapping"
-            " { background: %s; color: %s; border: 1px solid %s; }"
-            "QDialog#formBuilder\\.fromTable QLineEdit:focus,"
-            "QDialog#formBuilder\\.fromTable QComboBox:focus,"
-            "QListWidget#formBuilder\\.fromTable\\.tables:focus,"
-            "QTableWidget#formBuilder\\.fromTable\\.mapping:focus,"
+            "QLabel#formBuilder\\.fromTable\\.databaseLabel,"
+            "QLabel#formBuilder\\.fromTable\\.makeLabel,"
+            "QLabel#formBuilder\\.fromTable\\.linkLabel { color: %s; background: transparent; }"
+            "QLabel { color: %s; background: transparent; }"
+            "QCheckBox { color: %s; background: transparent; }"
+            "QLabel#formBuilder\\.fromTable\\.reason,"
+            "QLabel#formBuilder\\.fromTable\\.startNote { color: %s; background: transparent; }"
+            "QWidget#formBuilder\\.fromTable\\.preview { background: %s; }"
+            "QFrame#formBuilder\\.fromTable\\.page { background: %s; border: 1px solid %s; border-radius: %dpx; }"
+            "QPushButton#formBuilder\\.fromTable\\.cancel {"
+            " background: %s; color: %s; border: 1px solid %s; border-radius: %dpx; padding: 0 12px; }"
+            "QPushButton#formBuilder\\.fromTable\\.create {"
+            " background: %s; color: %s; border: none; border-radius: %dpx; padding: 0 12px;"
+            " font-weight: 600; min-height: %dpx; max-height: %dpx; }"
+            "QPushButton#formBuilder\\.fromTable\\.create:disabled {"
+            " background: %s; color: %s; border: none; border-radius: %dpx;"
+            " min-height: %dpx; max-height: %dpx; }"
+            "QPushButton#formBuilder\\.fromTable\\.addConnection {"
+            " background: %s; color: %s; border: 1px solid %s; border-radius: %dpx; padding: 0 12px; }"
+            "QComboBox#formBuilder\\.fromTable\\.connection,"
+            "QComboBox#formBuilder\\.fromTable\\.make,"
+            "QComboBox#formBuilder\\.fromTable\\.linesTable,"
+            "QComboBox#formBuilder\\.fromTable\\.linesLink,"
+            "QComboBox#formBuilder\\.fromTable\\.showsAs,"
+            "QLineEdit#formBuilder\\.fromTable\\.labelEdit {"
+            " background: %s; color: %s; border: 1px solid %s; border-radius: 4px; padding: 0 8px; }"
+            "QLabel#shell\\.dialogChrome\\.title { color: %s; background: transparent;"
+            " font-size: 17px; font-weight: 700; }"
+            "QWidget#shell\\.dialogChrome\\.header { background: %s; color: %s;"
+            " border-bottom: 1px solid %s; }"
+            "QWidget#shell\\.dialogChrome\\.footer { background: %s; color: %s;"
+            " border-top: 1px solid %s; }"
+            "QWidget#shell\\.dialogChrome\\.body { background: %s; color: %s; }"
             "QPushButton#formBuilder\\.fromTable\\.addConnection:focus,"
             "QPushButton#formBuilder\\.fromTable\\.cancel:focus,"
             "QPushButton#formBuilder\\.fromTable\\.create:focus,"
             "QCheckBox#formBuilder\\.fromTable\\.lines:focus,"
             "QCheckBox#formBuilder\\.fromTable\\.start:focus"
             " { border: %dpx solid %s; }"
-            "QWidget#formBuilder\\.fromTable\\.preview { background: %s; color: %s; }"
-            "QPushButton#formBuilder\\.fromTable\\.create"
-            " { background: %s; color: %s; border: 0; padding: 0 12px;"
-            " min-height: 28px; max-height: 28px; }"
+            "QHeaderView::section { background: %s; color: %s; border: none;"
+            " border-bottom: 1px solid %s; padding: 0 4px; font-size: %dpx; font-weight: 600; }"
             % (
                 chrome.window,
                 chrome.text,
                 chrome.text,
-                chrome.muted,
                 chrome.text,
+                chrome.text,
+                chrome.text,
+                chrome.window,
+                chrome.panel,
+                chrome.border,
+                R_CARD,
                 chrome.input,
                 chrome.text,
                 chrome.border,
-                focus,
-                chrome.accent,
-                chrome.panel,
-                chrome.text,
+                R_CARD,
                 chrome.accent,
                 chrome.on_accent,
+                R_CARD,
+                PRIMARY_BUTTON,
+                PRIMARY_BUTTON,
+                chrome.accent,
+                chrome.on_accent,
+                R_CARD,
+                PRIMARY_BUTTON,
+                PRIMARY_BUTTON,
+                chrome.input,
+                chrome.text,
+                chrome.border,
+                R_CARD,
+                chrome.input,
+                chrome.text,
+                edge_on(chrome, chrome.input or chrome.panel),
+                chrome.text,
+                chrome.panel,
+                chrome.text,
+                chrome.border,
+                chrome.panel,
+                chrome.text,
+                chrome.border,
+                chrome.window,
+                chrome.text,
+                focus,
+                chrome.accent,
+                chrome.input,
+                chrome.text,
+                chrome.border,
+                TYPE_FINE,
             )
+            + _indicator_qss("QCheckBox#formBuilder\\.fromTable\\.lines", chrome)
+            + _indicator_qss("QCheckBox#formBuilder\\.fromTable\\.start", chrome)
+            + _indicator_qss("QTableWidget#formBuilder\\.fromTable\\.mapping", chrome)
         )
+        for header in self._headers:
+            header.apply_chrome(chrome)
+        self._paint_dialog_ink()
+        self._paint_field_view(self._tables)
+        self._paint_field_view(self._mapping)
+        self._mapping.setStyleSheet(
+            self._mapping.styleSheet()
+            + _indicator_qss("QTableWidget#formBuilder\\.fromTable\\.mapping", chrome)
+        )
+        apply_page_shadow(self._page, is_dark=chrome.is_dark, is_high_contrast=chrome.is_high_contrast)
+        view = self._preview_view
+        form = self._preview_widget
+        if view is not None and form is not None:
+            self._paint_preview(form, view)
 
     def _on_add_connection(self) -> None:
         if self._add_connection is None:
@@ -469,8 +639,7 @@ class FromTableDialog(QDialog):
             self._show_path(self._database)
         else:
             self._database = name
-            self._path.setText("")
-            self._path.setToolTip(connection.title or name)
+            self._remember_path("", connection.title or name)
         self._use_schema(outcome.schema)
 
     def _use_schema(self, schema: Schema) -> None:
@@ -495,8 +664,11 @@ class FromTableDialog(QDialog):
             self._show_preview_message("This database has no tables.")
             self._sync_button()
             return
+        ink = self._chrome.glyph or self._chrome.text
+        icon = QIcon(paint_glyph("table_widget", ink, ICON, 1.0))
         for table in schema.tables:
-            self._tables.addItem(table.name)
+            item = QListWidgetItem(icon, table.name)
+            self._tables.addItem(item)
             self._mappings[table.name] = [_mapping_row(table, column, schema.engine) for column in table.columns]
         self._tables.setCurrentRow(0)
 
@@ -506,8 +678,12 @@ class FromTableDialog(QDialog):
             shown = path
         else:
             shown = relative
-        self._path.setText(shown)
-        self._path.setToolTip(os.path.abspath(path))
+        self._remember_path(shown, os.path.abspath(path))
+
+    def _remember_path(self, shown: str, tip: str) -> None:
+        self._path_text = shown
+        self._path_tip = tip
+        self._connection.setToolTip(tip)
 
     def _on_table(self, name: str) -> None:
         if not name:
@@ -534,7 +710,7 @@ class FromTableDialog(QDialog):
             for column in range(table.columnCount()):
                 if table.cellWidget(row, column) is not None:
                     table.removeCellWidget(row, column)
-        for child in list(table.findChildren(QComboBox)):
+        for child in list(table.findChildren(QComboBox)) + list(table.findChildren(QLineEdit)):
             child.hide()
             child.setParent(None)
             child.deleteLater()
@@ -550,18 +726,30 @@ class FromTableDialog(QDialog):
             self._mapping.setItem(row, 0, include)
             name_item = QTableWidgetItem(column.name)
             name_item.setFlags(Qt.ItemIsEnabled | Qt.ItemIsSelectable)
+            name_font = QFont(name_item.font())
+            name_font.setPixelSize(TYPE_BODY)
+            name_item.setFont(name_font)
+            name_item.setForeground(QBrush(QColor(self._chrome.text)))
             self._mapping.setItem(row, 1, name_item)
-            type_item = QTableWidgetItem(column.sql_type or "untyped")
+            type_item = QTableWidgetItem((column.sql_type or "untyped").upper())
             type_item.setFlags(Qt.ItemIsEnabled | Qt.ItemIsSelectable)
+            type_font = QFont(type_item.font())
+            type_font.setPixelSize(TYPE_FINE)
+            type_item.setFont(type_font)
+            type_item.setForeground(QBrush(QColor(self._chrome.faint)))
             self._mapping.setItem(row, 2, type_item)
             combo = self._shows_as_combo(column.widget_class())
+            combo.setObjectName("formBuilder.fromTable.showsAs")
             combo.currentIndexChanged.connect(
                 lambda _index, row_index=row, box=combo: self._on_shows_as_changed(row_index, box)
             )
             self._mapping.setCellWidget(row, 3, combo)
-            label = QTableWidgetItem(column.field_label())
-            label.setFlags(Qt.ItemIsEnabled | Qt.ItemIsSelectable | Qt.ItemIsEditable)
-            self._mapping.setItem(row, 4, label)
+            label = QLineEdit(column.field_label(), self._mapping)
+            label.setObjectName("formBuilder.fromTable.labelEdit")
+            label.setFixedHeight(CONTROL)
+            label.setAccessibleName("Label for %s" % column.name)
+            label.editingFinished.connect(lambda row_index=row, box=label: self._on_label_edited(row_index, box))
+            self._mapping.setCellWidget(row, 4, label)
         self._loading = False
         self._fit_columns()
         self._refresh_preview()
@@ -585,16 +773,28 @@ class FromTableDialog(QDialog):
                 shows_as=current.shows_as,
                 label=current.label,
             )
-        elif item.column() == 4:
-            columns[item.row()] = TableColumn(
-                current.name,
-                current.sql_type,
-                include=current.include,
-                shows_as=current.shows_as,
-                label=item.text(),
-            )
         else:
             return
+        self._refresh_preview()
+        self._sync_button()
+
+    def _on_label_edited(self, row: int, box: QLineEdit) -> None:
+        if self._loading:
+            return
+        table = self._tables.currentItem()
+        if table is None:
+            return
+        columns = self._mappings.get(table.text())
+        if not columns or row >= len(columns):
+            return
+        current = columns[row]
+        columns[row] = TableColumn(
+            current.name,
+            current.sql_type,
+            include=current.include,
+            shows_as=current.shows_as,
+            label=box.text(),
+        )
         self._refresh_preview()
         self._sync_button()
 
@@ -633,9 +833,13 @@ class FromTableDialog(QDialog):
     def _shows_as_combo(self, widget_class: str) -> QComboBox:
         combo = QComboBox()
         combo.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Fixed)
+        combo.setFixedHeight(CONTROL)
+        combo.setIconSize(QSize(ICON, ICON))
+        ink = self._chrome.glyph or self._chrome.text
         chosen = 0
         for index, (qt_name, word) in enumerate(_SHOWS_AS_WORDS):
-            combo.addItem(word, qt_name)
+            glyph = _CLASS_GLYPH.get(qt_name, "widget")
+            combo.addItem(QIcon(paint_glyph(glyph, ink, ICON, 1.0)), word, qt_name)
             combo.setItemData(index, qt_name, Qt.ToolTipRole)
             if qt_name == widget_class:
                 chosen = index
@@ -700,7 +904,8 @@ class FromTableDialog(QDialog):
             self._start.setChecked(False)
             self._start_note.setText(made.sentence)
         self._start.blockSignals(False)
-        self._start_note.setVisible(not made.enabled)
+        self._start.setToolTip(self._start_note.text())
+        self._start_note.setVisible(False)
 
     def _chain_tabs(self) -> None:
         """Tables, the grid, then Make and the buttons. Tab must leave the grid."""
@@ -783,7 +988,8 @@ class FromTableDialog(QDialog):
             editor = table.cellWidget(row, 3)
             if editor is not None:
                 measured[3] = max(measured[3], editor.sizeHint().width())
-        include, column, type_width, shows = measured[:4]
+        _include, column, type_width, shows = measured[:4]
+        include = _INCLUDE_WIDTH
         column = max(48, column)
         spare = viewport - include - type_width - shows - column
         if spare < 64:
@@ -800,6 +1006,16 @@ class FromTableDialog(QDialog):
                 continue
             rect = table.visualRect(table.model().index(row, 3))
             editor.setFixedWidth(max(rect.width(), 1))
+
+    def _fade_create(self, enabled: bool) -> None:
+        if enabled:
+            self._create.setGraphicsEffect(None)
+            return
+        effect = self._create.graphicsEffect()
+        if not isinstance(effect, QGraphicsOpacityEffect):
+            effect = QGraphicsOpacityEffect(self._create)
+            self._create.setGraphicsEffect(effect)
+        effect.setOpacity(_DISABLED_OPACITY)
 
     def _sync_button(self) -> None:
         self._sync_start()
@@ -823,9 +1039,12 @@ class FromTableDialog(QDialog):
         self._disabled = reason or ""
         self._create.setEnabled(not self._disabled)
         shown = self._disabled or self._footer
+        if shown == _CHOOSE_CONNECTION:
+            shown = ""
         self._reason.setText(shown)
         self._reason.setVisible(bool(shown))
         self._create.setToolTip(self._disabled or "")
+        self._fade_create(not self._disabled)
 
     def _on_make(self) -> None:
         self._sync_lines_and_button()
@@ -947,28 +1166,31 @@ class FromTableDialog(QDialog):
             clear()
         widget = loader.load(buffer)
         error = loader.errorString()
-        if widget is not None:
-            widget.setStyleSheet(self._preview_sheet())
         if widget is None:
             self._show_preview_message(error or "The preview could not be built.")
             return
         # A proxy in its own scene: the app style sheet cannot reach it (UX-ISO-001).
         view = host_form(widget)
         self._paint_preview(widget, view)
-        # Top-left and fitted to the pane width, so the form reflows like the app would.
         view.setAlignment(Qt.AlignLeft | Qt.AlignTop)
         view.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        view.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         view.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         view.viewport().setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        view.setMinimumWidth(0)
+        view.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Expanding)
         widget.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         for child in widget.findChildren(QWidget):
             child.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         view.viewport().installEventFilter(self)
         self._preview_view = view
         self._swap_preview(view, widget)
+        self._fit_preview()
         QTimer.singleShot(0, self._fit_preview)
 
     def _fit_preview(self) -> None:
+        if self._fitting_preview:
+            return
         view = self._preview_view
         form = self._preview_widget
         if view is None or form is None:
@@ -976,19 +1198,26 @@ class FromTableDialog(QDialog):
         proxy = form.graphicsProxyWidget()
         if proxy is None:
             return
-        hint = form.sizeHint()
-        width = max(form.minimumSizeHint().width(), hint.width(), 1)
-        height = max(form.minimumSizeHint().height(), hint.height(), 1)
-        proxy.resize(width, height)
-        view.setSceneRect(0, 0, width, height)
-        avail_w = max(view.viewport().width(), 1)
-        avail_h = max(view.viewport().height(), 1)
-        scale = min(1.0, avail_w / float(width), avail_h / float(height))
-        view.resetTransform()
-        view.scale(scale, scale)
-        view.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self._fitting_preview = True
+        try:
+            view.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+            view.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+            width = self._preview_width(view)
+            self._place_form(form, proxy, view, width)
+            extent = view.verticalScrollBar().sizeHint().width()
+            if extent <= 0:
+                extent = 16
+            if form.height() > view.viewport().height() and width - extent >= 48:
+                self._place_form(form, proxy, view, width - extent)
+        finally:
+            self._fitting_preview = False
 
     def _show_preview_message(self, text: str) -> None:
+        # "Choose a connection" lives on the disabled Create button.
+        if text == _CHOOSE_CONNECTION:
+            self._preview_view = None
+            self._swap_preview(QWidget(self), None)
+            return
         label = QLabel(text, self)
         label.setWordWrap(True)
         label.setObjectName("formBuilder.fromTable.previewMessage")
@@ -1009,51 +1238,283 @@ class FromTableDialog(QDialog):
 
 
     def _paint_preview(self, widget: QWidget, view: QGraphicsView) -> None:
-        from app.qt.QtGui import QColor, QPalette
+        """The page card is chrome. The form itself stays the runtime Fusion look."""
+        pin_runtime_look(widget)
+        view.setBackgroundBrush(QColor(self._chrome.panel))
+        scene = view.scene()
+        if scene is not None:
+            scene.setBackgroundBrush(QColor(self._chrome.panel))
 
-        chrome = self._chrome
-        panel = QColor(chrome.panel)
-        ink = QColor(chrome.text)
-        field = QColor(chrome.input)
-        palette = QPalette(widget.palette())
-        palette.setColor(QPalette.ColorRole.Window, panel)
-        palette.setColor(QPalette.ColorRole.WindowText, ink)
-        palette.setColor(QPalette.ColorRole.Base, field)
-        palette.setColor(QPalette.ColorRole.Text, ink)
-        palette.setColor(QPalette.ColorRole.Button, field)
-        palette.setColor(QPalette.ColorRole.ButtonText, ink)
+    def _paint_dialog_ink(self) -> None:
+        self._paint_ink(self)
+        for label in self.findChildren(QLabel):
+            name = label.objectName()
+            if name.startswith("formBuilder.fromTable.") or name.startswith("shell.dialogChrome."):
+                self._paint_ink(label)
+        for box in self.findChildren(QCheckBox):
+            if box.objectName().startswith("formBuilder.fromTable."):
+                self._paint_ink(box)
+
+    def _paint_ink(self, widget: QWidget) -> None:
+        palette = widget.palette()
+        role = getattr(QPalette, "ColorRole", QPalette)
+        ink = QColor(self._chrome.text)
+        palette.setColor(getattr(role, "WindowText"), ink)
+        palette.setColor(getattr(role, "Text"), ink)
+        palette.setColor(getattr(role, "ButtonText"), ink)
         widget.setPalette(palette)
-        widget.setAutoFillBackground(True)
-        widget.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
-        widget.setStyleSheet(self._preview_sheet())
-        view.setStyleSheet("QGraphicsView { background: %s; border: none; }" % chrome.panel)
-        for child in widget.findChildren(QWidget):
-            child.setPalette(palette)
-            if child.inherits("QLabel"):
-                child.setAutoFillBackground(True)
-        view.setBackgroundBrush(panel)
 
-    def _preview_sheet(self) -> str:
+    def _paint_field_view(self, view: QWidget) -> None:
         chrome = self._chrome
-        return (
-            "QWidget { background: %s; color: %s; }"
-            "QLabel { color: %s; background: %s; }"
-            "QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox, QDateEdit, QDateTimeEdit, QTableView"
-            " { color: %s; background: %s; border: 1px solid %s; }"
-            "QPushButton { color: %s; background: %s; border: 1px solid %s; }"
-            % (
-                chrome.panel,
-                chrome.text,
-                chrome.text,
-                chrome.panel,
-                chrome.text,
-                chrome.input,
-                chrome.border,
-                chrome.text,
-                chrome.input,
-                chrome.border,
-            )
+        polish_item_view(view, chrome)
+        name = view.objectName().replace(".", "\\.")
+        kind = view.metaObject().className()
+        fill = chrome.input or chrome.panel
+        ink = chrome.text
+        view.setStyleSheet(
+            view.styleSheet()
+            + "%s#%s { background: %s; color: %s; }" % (kind, name, fill, ink)
+            + "%s#%s::item { color: %s; }" % (kind, name, ink)
         )
+        viewport = view.viewport()
+        viewport.setStyleSheet("background: %s; color: %s;" % (fill, ink))
+        palette = view.palette()
+        role = getattr(QPalette, "ColorRole", QPalette)
+        qfill = QColor(fill)
+        qink = QColor(ink)
+        palette.setColor(getattr(role, "Base"), qfill)
+        palette.setColor(getattr(role, "Window"), qfill)
+        palette.setColor(getattr(role, "Text"), qink)
+        palette.setColor(getattr(role, "WindowText"), qink)
+        view.setPalette(palette)
+        viewport.setAutoFillBackground(True)
+        viewport.setPalette(palette)
+
+    def _preview_width(self, view: QGraphicsView) -> int:
+        frame = self._page.frameWidth() * 2
+        page = self._page.width()
+        if page < 48:
+            page = _PREVIEW_COLUMN
+        cap = max(48, page - frame - (PREVIEW_INSET * 2))
+        live = view.width()
+        if 48 <= live <= cap:
+            return live
+        return cap
+
+    def _place_form(self, form: QWidget, proxy: QWidget, view: QGraphicsView, width: int) -> None:
+        inner = _layout_inner(form, width)
+        for name in _BAR_NAMES:
+            _reflow_bar(form, name, inner)
+        _fit_tables(form)
+        form.setMinimumWidth(0)
+        form.setFixedWidth(width)
+        layout = form.layout()
+        if layout is not None:
+            layout.invalidate()
+            layout.activate()
+        height = form.sizeHint().height()
+        if form.hasHeightForWidth():
+            height = max(height, form.heightForWidth(width))
+        height = max(int(height), form.minimumSizeHint().height(), 1)
+        form.setFixedHeight(height)
+        proxy.setMinimumWidth(0)  # type: ignore[attr-defined]
+        proxy.setMinimumHeight(0)  # type: ignore[attr-defined]
+        proxy.resize(width, height)  # type: ignore[attr-defined]
+        view.resetTransform()
+        view.setSceneRect(0, 0, width, height)
+        view.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        view.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+
+
+def _layout_inner(form: QWidget, width: int) -> int:
+    layout = form.layout()
+    if layout is None:
+        return width
+    margins = layout.contentsMargins()
+    return max(48, width - margins.left() - margins.right())
+
+
+def _fit_tables(form: QWidget) -> None:
+    resize = getattr(QHeaderView, "ResizeMode", QHeaderView)
+    stretch = getattr(resize, "Stretch")
+    off = Qt.ScrollBarAlwaysOff
+    for view in form.findChildren(QTableView):
+        view.setMinimumWidth(0)
+        view.setHorizontalScrollBarPolicy(off)
+        header = view.horizontalHeader()
+        count = header.count()
+        if count:
+            for index in range(count):
+                header.setSectionResizeMode(index, stretch)
+        header.setStretchLastSection(True)
+
+
+def _reflow_bar(form: QWidget, name: str, width: int) -> None:
+    host_name = "formBuilder.fromTable.bar." + name
+    host = form.findChild(QWidget, host_name)
+    bar = form.findChild(QHBoxLayout, name)
+    if host is None:
+        if bar is None or not _bar_overflows(bar, width):
+            return
+        widgets = _take_bar(bar)
+        if not widgets:
+            return
+        host = QWidget(form)
+        host.setObjectName(host_name)
+        host.setMinimumWidth(0)
+        host.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+        column = QVBoxLayout(host)
+        column.setContentsMargins(0, 0, 0, 0)
+        column.setSpacing(S2)
+        bar.addWidget(host)
+    else:
+        widgets = _take_host(host)
+        laid = host.layout()
+        if not isinstance(laid, QVBoxLayout):
+            return
+        column = laid
+    if not widgets:
+        return
+    host.setMaximumWidth(max(width, 1))
+    _pack(column, widgets, width)
+
+
+def _bar_overflows(bar: QHBoxLayout, width: int) -> bool:
+    total = 0
+    spaces = 0
+    for index in range(bar.count()):
+        item = bar.itemAt(index)
+        if item is None:
+            continue
+        total += item.sizeHint().width()
+        spaces += 1
+    if spaces > 1:
+        total += max(bar.spacing(), 0) * (spaces - 1)
+    return total > width
+
+
+def _take_bar(bar: QHBoxLayout) -> List[QWidget]:
+    widgets = []
+    while bar.count():
+        item = bar.takeAt(0)
+        if item is None:
+            continue
+        widget = item.widget()
+        if widget is not None:
+            widgets.append(widget)
+    return widgets
+
+
+def _take_host(host: QWidget) -> List[QWidget]:
+    widgets: List[QWidget] = []
+    column = host.layout()
+    if column is None:
+        return widgets
+    rows = []
+    while column.count():
+        item = column.takeAt(0)
+        if item is None:
+            continue
+        row = item.layout()
+        if row is not None:
+            rows.append(row)
+    for row in rows:
+        while row.count():
+            child = row.takeAt(0)
+            if child is None:
+                continue
+            widget = child.widget()
+            if widget is not None:
+                widgets.append(widget)
+        row.deleteLater()
+    return widgets
+
+
+def _pack(column: QVBoxLayout, widgets: List[QWidget], width: int) -> None:
+    row = None
+    used = 0
+    gap = S2
+    for widget in widgets:
+        hint = _control_width(widget, width)
+        if row is not None and used + gap + hint > width:
+            row.addStretch(1)
+            row = None
+            used = 0
+        if row is None:
+            row = QHBoxLayout()
+            row.setContentsMargins(0, 0, 0, 0)
+            row.setSpacing(gap)
+            column.addLayout(row)
+        elif used:
+            used += gap
+        row.addWidget(widget)
+        used += hint
+    if row is not None:
+        row.addStretch(1)
+
+
+def _control_width(widget: QWidget, limit: int) -> int:
+    if isinstance(widget, (QLabel, QPushButton)):
+        full = widget.property("cbcsFullText")
+        if not isinstance(full, str) or not full:
+            full = widget.text()
+            widget.setProperty("cbcsFullText", full)
+        widget.setText(full)
+        widget.setMaximumWidth(_WIDGET_MAX)
+        hint = max(widget.sizeHint().width(), 1)
+        if hint <= limit:
+            return hint
+        shown = widget.fontMetrics().elidedText(
+            full,
+            Qt.TextElideMode.ElideRight,  # type: ignore[attr-defined]
+            max(8, limit - 8),
+        )
+        widget.setText(shown)
+        widget.setToolTip(full)
+        widget.setMaximumWidth(limit)
+        return limit
+    hint = max(widget.sizeHint().width(), 1)
+    if hint > limit:
+        widget.setMaximumWidth(limit)
+        return limit
+    return hint
+
+
+def _tick_url(chrome: FormChrome) -> str:
+    rules = control_qss(chrome)
+    mark = "image: url("
+    start = rules.find(mark)
+    if start < 0:
+        return "none"
+    start += len(mark)
+    end = rules.find(")", start)
+    return rules[start:end] if end > start else "none"
+
+
+def _indicator_qss(selector: str, chrome: FormChrome) -> str:
+    edge = edge_on(chrome, chrome.panel)
+    image = _tick_url(chrome)
+    fill = chrome.input or chrome.panel
+    return (
+        "%s::indicator { width: 14px; height: 14px; border: 1px solid %s;"
+        " border-radius: 3px; background: %s; image: none; }"
+        "%s::indicator:checked { border: 1px solid %s; background: %s; image: url(%s); }"
+        "%s::indicator:disabled { border: 1px solid %s; background: %s; image: none; }"
+        "%s::indicator:checked:disabled { border: 1px solid %s; background: %s; image: url(%s); }"
+        % (
+            selector, edge, fill,
+            selector, chrome.accent, chrome.accent, image,
+            selector, edge, fill,
+            selector, chrome.accent, chrome.accent, image,
+        )
+    )
+
+
+def _field_label(text: str, buddy: QWidget, parent: QWidget) -> QLabel:
+    label = QLabel(text, parent)
+    label.setBuddy(buddy)
+    label.setMinimumWidth(LABEL_MIN)
+    return label
 
 
 def _template_main_bytes(project_root: str) -> Optional[bytes]:

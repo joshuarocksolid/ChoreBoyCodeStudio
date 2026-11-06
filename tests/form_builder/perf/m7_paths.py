@@ -646,7 +646,7 @@ def _behavior_save_commit(rows: Dict[str, Any], app: Any, kb: Any) -> None:
         stored = document.node(owner).value("cbcsVisibleWhen")
         if getattr(stored, "text", "") != text:
             raise RuntimeError("stored text was %r" % getattr(stored, "text", None))
-        label = inspector.findChild(QLabel, "formBuilder.state.value.cbcsVisibleWhen")
+        label = inspector.findChild(QWidget, "formBuilder.state.value.cbcsVisibleWhen")
         shown = "" if label is None else label.text()
         if text not in shown:
             raise RuntimeError("inspector showed %r" % shown)

@@ -6,44 +6,26 @@ from app.features.form_builder.qtside.checkbox_qss import checkbox_indicators
 
 
 def chrome_qss(tokens: object, root_name: str) -> str:
-    width = int(getattr(tokens, "focus_border_width", 1) or 1)
     name = root_name.replace(".", "\\.")
+    root = "QWidget#%s" % name
     sheet = (
-        "QWidget#%s { background: %s; color: %s; }"
-        "QLabel { color: %s; background: transparent; }"
-        "QLabel[fbFaint=\"true\"] { color: %s; }"
-        "QLabel[fbProblem=\"warning\"] { color: %s; }"
-        "QLabel[fbProblem=\"error\"] { color: %s; }"
-        "QLineEdit, QPlainTextEdit, QComboBox, QSpinBox, QListWidget { color: %s; background: %s; border: 1px solid %s; }"
-        "QLineEdit:focus, QPlainTextEdit:focus, QComboBox:focus, QSpinBox:focus, QListWidget:focus { border: %dpx solid %s; }"
-        "QPushButton, QToolButton { color: %s; background: %s; border: 1px solid %s; padding: 4px 8px; }"
-        "QPushButton:disabled, QToolButton:disabled { color: %s; }"
-        "QPushButton:focus, QToolButton:focus { border: %dpx solid %s; }"
-        "QCheckBox { color: %s; background: transparent; }"
-        "QLabel[fbLink=\"true\"] { color: %s; }"
-        "QMessageBox QLabel, QLabel#qt_msgbox_label { color: %s; background: transparent; }"
+        "%s { background: %s; color: %s; }"
+        "%s QLabel[fbFaint=\"true\"] { color: %s; }"
+        "%s QLabel[fbProblem=\"warning\"] { color: %s; }"
+        "%s QLabel[fbProblem=\"error\"] { color: %s; }"
+        "%s QLabel[fbLink=\"true\"] { color: %s; }"
     ) % (
-        name,
+        root,
         tokens.panel_bg,  # type: ignore[attr-defined]
         tokens.text_primary,  # type: ignore[attr-defined]
-        tokens.text_primary,  # type: ignore[attr-defined]
+        root,
         tokens.text_muted,  # type: ignore[attr-defined]
+        root,
         tokens.diag_warning_color,  # type: ignore[attr-defined]
+        root,
         tokens.diag_error_color,  # type: ignore[attr-defined]
-        tokens.text_primary,  # type: ignore[attr-defined]
-        tokens.input_bg,  # type: ignore[attr-defined]
-        tokens.border,  # type: ignore[attr-defined]
-        width,
+        root,
         tokens.accent,  # type: ignore[attr-defined]
-        tokens.text_primary,  # type: ignore[attr-defined]
-        tokens.input_bg,  # type: ignore[attr-defined]
-        tokens.border,  # type: ignore[attr-defined]
-        tokens.text_muted,  # type: ignore[attr-defined]
-        width,
-        tokens.accent,  # type: ignore[attr-defined]
-        tokens.text_primary,  # type: ignore[attr-defined]
-        tokens.accent,  # type: ignore[attr-defined]
-        tokens.text_primary,  # type: ignore[attr-defined]
     )
     return sheet + checkbox_indicators(tokens)
 

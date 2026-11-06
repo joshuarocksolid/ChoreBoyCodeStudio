@@ -14,7 +14,6 @@ from app.features.form_builder.qtside.inspector.api import (
     ALIGNMENT,
     Choice,
     MIXED_TEXT,
-    NOT_SET_TEXT,
     EditorHost,
     EditorKey,
     Mixed,
@@ -25,30 +24,25 @@ from app.features.form_builder.qtside.inspector.api import (
     Written,
     mark,
 )
-from app.qt.QtCore import QSize, Qt
 from app.features.form_builder.qtside.inspector.editors._editor_kit import name_part, qt_key
 from app.features.form_builder.qtside.inspector.editors._enum_words import friendly
+from app.features.form_builder.qtside.inspector.editors._segments import ChoiceSegments
+from app.features.form_builder.qtside.theme.metrics import ICON, S1
+from app.qt.QtCore import QSize, Qt
+from app.qt.QtGui import QColor, QIcon, QPainter, QPen, QPixmap
 from app.qt.QtWidgets import (
-    QButtonGroup,
     QComboBox,
-    QGridLayout,
     QLabel,
-    QSizePolicy,
-    QStyle,
-    QStyleOptionComboBox,
     QToolButton,
     QVBoxLayout,
     QWidget,
 )
 from app.qt.qt_compat import enum_value
 
+_ALIGN_CELL = 24
 _HORIZONTAL = ("AlignLeft", "AlignHCenter", "AlignRight", "AlignJustify")
 _VERTICAL = ("AlignTop", "AlignVCenter", "AlignBottom")
 _ALIGN_ALIASES = {"AlignLeading": "AlignLeft", "AlignTrailing": "AlignRight"}
-_SHORT_ALIGN = {
-    "AlignHCenter": "Center",
-    "AlignVCenter": "Middle",
-}
 _ALIGN_TAILS = {
     "AlignLeft": "Left",
     "AlignHCenter": "Center",
@@ -99,20 +93,6 @@ _CURSORS = (
     "ClosedHandCursor",
 )
 
-# UX-PED-002: label 96 px and an 8 px gap before the editor column.
-_LABEL_AND_GAP = 104
-
-
-def _combo_need(combo: QComboBox) -> int:
-    """The width that shows the longest item beside the arrow, from the style."""
-    metrics = combo.fontMetrics()
-    longest = max((metrics.horizontalAdvance(combo.itemText(index)) for index in range(combo.count())), default=0)
-    option = QStyleOptionComboBox()
-    combo.initStyleOption(option)
-    contents = QSize(longest, metrics.height())
-    kind = getattr(getattr(QStyle, "ContentsType", QStyle), "CT_ComboBox")
-    return int(combo.style().sizeFromContents(kind, option, contents, combo).width())
-
 
 class _EnumBox(QComboBox):
     """Space opens the list. Up and Down on the closed list change the choice."""
@@ -162,11 +142,8 @@ class EnumEditor:
         return self._box
 
     def wants_stacked(self, width: int) -> bool:
-        """UX-PED-002: a drop-down whose longest name does not fit the column goes under its label."""
-        combo = self._box
-        if not isinstance(combo, QComboBox):
-            return False
-        return _combo_need(combo) > int(width) - _LABEL_AND_GAP
+        del width
+        return False
 
     def show(self, value: RowValue) -> None:
         if self._choices:
@@ -186,7 +163,7 @@ class EnumEditor:
             combo.blockSignals(True)
             combo.setCurrentIndex(index)
             combo.setPlaceholderText(
-                MIXED_TEXT if isinstance(value, Mixed) else ("" if index >= 0 else NOT_SET_TEXT)
+                MIXED_TEXT if isinstance(value, Mixed) else ""
             )
             combo.blockSignals(False)
             return
@@ -200,7 +177,7 @@ class EnumEditor:
             elif text:
                 label.setText(text)
             else:
-                label.setText(NOT_SET_TEXT)
+                label.setText("")
             return
         combo = self._box
         assert isinstance(combo, QComboBox)
@@ -221,7 +198,7 @@ class EnumEditor:
             index = 0
         combo.setCurrentIndex(index)
         if index < 0:
-            combo.setPlaceholderText(MIXED_TEXT if isinstance(value, Mixed) else NOT_SET_TEXT)
+            combo.setPlaceholderText(MIXED_TEXT if isinstance(value, Mixed) else "")
         else:
             combo.setPlaceholderText("")
         combo.blockSignals(False)
@@ -258,51 +235,115 @@ class AlignmentEditor:
         self._root = QWidget(parent)
         layout = QVBoxLayout(self._root)
         layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(S1)
         self._buttons: List[Tuple[str, QToolButton]] = []
-        layout.addWidget(self._row(_HORIZONTAL))
-        layout.addWidget(self._row(_VERTICAL))
+        self._horizontal = self._segments(_HORIZONTAL)
+        self._vertical = self._segments(_VERTICAL)
+        layout.addWidget(self._horizontal, 0, Qt.AlignmentFlag.AlignLeft)
+        layout.addWidget(self._vertical, 0, Qt.AlignmentFlag.AlignLeft)
+        self._root.apply_theme = self._paint_icons  # type: ignore[attr-defined]
+        self._paint_icons()
 
     @property
     def widget(self) -> QWidget:
         return self._root
 
+    def wants_stacked(self, width: int) -> bool:
+        del width
+        return False
+
     def show(self, value: RowValue) -> None:
         mark(self._root, value)
-        # Qt names 1 AlignLeading and 2 AlignTrailing when it turns a value
-        # into keys, so a live default reads Leading, not Left.
         chosen = {_ALIGN_ALIASES.get(name, name) for name in _flag_tails(_set_text(value))}
-        for name, button in self._buttons:
-            button.blockSignals(True)
-            button.setChecked(name in chosen)
-            button.blockSignals(False)
+        self._show_axis(self._horizontal, _HORIZONTAL, chosen)
+        self._show_axis(self._vertical, _VERTICAL, chosen)
+        self._paint_icons()
 
-    def _row(self, names: Tuple[str, ...]) -> QWidget:
-        row = QWidget(self._root)
-        layout = QGridLayout(row)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setHorizontalSpacing(2)
-        layout.setVerticalSpacing(2)
-        group = QButtonGroup(row)
-        group.setExclusive(True)
-        for index, name in enumerate(names):
-            button = QToolButton(row)
-            button.setText(_SHORT_ALIGN.get(name, name.replace("Align", "")))
-            button.setAccessibleName(_align_name(self._host, name, button.text()))
-            button.setToolTip(name)
-            button.setCheckable(True)
-            button.setProperty("fbSegment", "true")
-            button.setSizePolicy(_size_policy("Expanding"), _size_policy("Fixed"))
-            # clicked, not toggled: the exclusive group also untoggles the old
-            # segment, which would commit a half-made value first.
+    def _segments(self, names: Tuple[str, ...]) -> ChoiceSegments:
+        tips = [_ALIGN_TAILS.get(name, name) for name in names]
+        access = [_align_name(self._host, name, tip) for name, tip in zip(names, tips)]
+        row = ChoiceSegments(self._root)
+        row.set_items([""] * len(names), tooltips=tips, names=access)
+        row.name_buttons(["formBuilder.align.%s" % name for name in names])
+        row.show_index(-1)
+        box = row.layout()
+        if box is not None:
+            box.setContentsMargins(0, 0, 0, 0)
+            box.setSpacing(0)
+        row.setFixedSize(_ALIGN_CELL * len(names), _ALIGN_CELL)
+        for button in row.buttons():
+            button.setText("")
+            button.setFixedSize(_ALIGN_CELL, _ALIGN_CELL)
+        for name, button in zip(names, row.buttons()):
             button.clicked.connect(self._commit)
-            group.addButton(button)
-            layout.addWidget(button, index // 2, index % 2)
             self._buttons.append((name, button))
         return row
 
-    def _commit(self, _checked: bool) -> None:
+    def _show_axis(self, row: ChoiceSegments, names: Tuple[str, ...], chosen: set) -> None:
+        index = -1
+        for slot, name in enumerate(names):
+            if name in chosen:
+                index = slot
+                break
+        row.show_index(index)
+
+    def _commit(self, _checked: bool = False) -> None:
         names = ["Qt::" + name for name, button in self._buttons if button.isChecked()]
         self._host.commit(SetValue("|".join(names)))
+
+    def _paint_icons(self) -> None:
+        chrome = self._host.chrome
+        idle = chrome.glyph or chrome.text
+        chosen = chrome.text
+        dpr = float(self._root.devicePixelRatioF()) if hasattr(self._root, "devicePixelRatioF") else 1.0
+        self._paint_axis(self._horizontal, _HORIZONTAL, idle, chosen, dpr)
+        self._paint_axis(self._vertical, _VERTICAL, idle, chosen, dpr)
+        for row, names in ((self._horizontal, _HORIZONTAL), (self._vertical, _VERTICAL)):
+            row.setFixedSize(_ALIGN_CELL * len(names), _ALIGN_CELL)
+            for button in row.buttons():
+                button.setText("")
+                button.setFixedSize(_ALIGN_CELL, _ALIGN_CELL)
+                button.setIconSize(QSize(ICON, ICON))
+
+    def _paint_axis(self, row: ChoiceSegments, names: Tuple[str, ...], idle: str, chosen: str, dpr: float) -> None:
+        icons = []
+        for name, button in zip(names, row.buttons()):
+            icons.append(_align_icon(name, chosen if button.isChecked() else idle, dpr))
+        row.set_icons(icons)
+
+
+def _align_icon(name: str, color: str, dpr: float) -> QIcon:
+    """A 16 px alignment mark. The glyph catalog has no align names."""
+    ratio = round(float(dpr), 2) or 1.0
+    device = max(1, int(round(ICON * ratio)))
+    pixmap = QPixmap(device, device)
+    pixmap.fill(QColor(0, 0, 0, 0))
+    painter = QPainter(pixmap)
+    try:
+        painter.setRenderHint(getattr(getattr(QPainter, "RenderHint", QPainter), "Antialiasing"), True)
+        pen = QPen(QColor(color))
+        pen.setWidthF(max(1.0, ratio))
+        painter.setPen(pen)
+        scale = ratio
+        bars = _ALIGN_BARS.get(name, ((2, 4, 12),))
+        for top, left, width in bars:
+            painter.drawLine(int(left * scale), int(top * scale), int((left + width) * scale), int(top * scale))
+    finally:
+        painter.end()
+    pixmap.setDevicePixelRatio(ratio)
+    return QIcon(pixmap)
+
+
+_ALIGN_BARS = {
+    "AlignLeft": ((4, 2, 8), (8, 2, 12), (12, 2, 6)),
+    "AlignHCenter": ((4, 4, 8), (8, 2, 12), (12, 5, 6)),
+    "AlignRight": ((4, 6, 8), (8, 2, 12), (12, 8, 6)),
+    "AlignJustify": ((4, 2, 12), (8, 2, 12), (12, 2, 12)),
+    "AlignTop": ((3, 2, 12), (6, 4, 8), (9, 5, 6)),
+    "AlignVCenter": ((4, 4, 8), (8, 2, 12), (12, 4, 8)),
+    "AlignBottom": ((5, 5, 6), (8, 4, 8), (12, 2, 12)),
+}
+
 
 class CursorEditor:
 
@@ -357,9 +398,6 @@ def _set_text(value: RowValue) -> str:
     if isinstance(found, SetValue):
         return found.text
     return ""
-
-def _size_policy(name: str) -> QSizePolicy.Policy:
-    return getattr(getattr(QSizePolicy, "Policy", QSizePolicy), name)
 
 def _payload(value: RowValue) -> object:
     if isinstance(value, Written):

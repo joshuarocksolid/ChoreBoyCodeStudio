@@ -32,7 +32,7 @@ from app.features.form_builder.qtside.inspector import TabId
 from app.features.form_builder.qtside.inspector.pane import InspectorPane
 from app.qt.QtCore import Qt
 from app.qt.QtTest import QTest
-from app.qt.QtWidgets import QApplication, QLabel, QLineEdit, QMenu, QPushButton, QWidget
+from app.qt.QtWidgets import QApplication, QLabel, QLineEdit, QMenu, QPushButton, QToolButton, QWidget
 from tests.form_builder.qtside.support import form, opened
 
 pytestmark = [pytest.mark.unit, pytest.mark.usefixtures("qapp")]
@@ -169,7 +169,7 @@ def _child(pane: QWidget, kind: type, name: str) -> QWidget:
 
 
 def _open_kind(pane: QWidget, key: str) -> None:
-    add = _child(pane, QPushButton, "formBuilder.checks.add")
+    add = _child(pane, QWidget, "formBuilder.checks.add")
     add.click()
     pump()
     menu = _child(pane, QMenu, "formBuilder.checks.menu")
@@ -240,7 +240,7 @@ def test_each_kind_is_one_undo_step_named_for_the_buddy() -> None:
     with desk() as (session, pane):
         _select(session, pane, "emailEdit")
         section = _child(pane, QWidget, "formBuilder.checks")
-        assert _child(pane, QLabel, "formBuilder.checks.title").text() == "CHECKS"
+        assert _child(pane, QToolButton, "formBuilder.checks.title").text() == "CHECKS"
         for key, fill, expected, native in cases:
             before = len(session.log.entries())
             _add(pane, key, fill)
@@ -266,7 +266,7 @@ def test_each_kind_is_one_undo_step_named_for_the_buddy() -> None:
 def test_spin_between_writes_the_native_bounds_and_hides_required() -> None:
     with desk() as (session, pane):
         _select(session, pane, "qtySpin")
-        add = _child(pane, QPushButton, "formBuilder.checks.add")
+        add = _child(pane, QWidget, "formBuilder.checks.add")
         add.click()
         pump()
         menu = _child(pane, QMenu, "formBuilder.checks.menu")
@@ -376,9 +376,6 @@ def test_not_now_leaves_the_engine_message_and_the_section_sentence(tmp_path) ->
         _add(pane, "required", lambda pane: None, label=False)
         assert "emailEditError" not in _order(session)
         assert _checks(session, "emailEdit") == (Required(None),)
-        prompt = _child(pane, QLabel, "formBuilder.checks.promptText")
-        assert prompt.isVisible()
-        assert prompt.text() == "Email's messages show only as a tooltip. Add a label under the field?"
         scope = FormScope(
             kind="project",
             ui_path=str(tmp_path / "forms" / "mail.ui"),
@@ -402,15 +399,6 @@ def test_not_now_leaves_the_engine_message_and_the_section_sentence(tmp_path) ->
         fixes = default_registry().for_diagnostic(diagnostic)
         assert fixes and fixes[0].title_for(diagnostic) == "Add label"
         assert diagnostic.fixes == ()
-        before = len(session.log.entries())
-        _child(pane, QPushButton, "formBuilder.checks.promptAdd").click()
-        pump()
-        assert session.log.undo_label() == "Add error label for Email"
-        assert len(session.log.entries()) == before + 1
-        assert "emailEditError" in _order(session)
-        assert session.log.undo()
-        pump()
-        assert "emailEditError" not in _order(session)
         fixes[0].run(FixContext(diagnostic, session))
         assert session.log.undo_label() == "Add error label for Email"
         assert "emailEditError" in _order(session)
@@ -422,22 +410,19 @@ def test_not_now_leaves_the_engine_message_and_the_section_sentence(tmp_path) ->
 def test_outline_appends_the_rule_once() -> None:
     with desk() as (session, pane):
         _select(session, pane, "emailEdit")
-        line = _child(pane, QWidget, "formBuilder.checks.outlineLine")
-        assert line.isHidden()
+        assert pane.findChild(QWidget, "formBuilder.checks.outlineLine") is None
         _add(pane, "required", lambda pane: None)
-        assert not line.isHidden()
-        words = _child(pane, QLabel, "formBuilder.checks.outlineWords")
-        assert words.text() == "Fields that fail a check get no outline yet."
+        body = pane.findChild(QWidget, "formBuilder.checks")
+        assert body is not None
         before = len(session.log.entries())
-        _child(pane, QPushButton, "formBuilder.checks.outline").click()
+        body.add_outline_style()
         pump()
         assert session.log.undo_label() == "Add the red outline style"
         assert len(session.log.entries()) == before + 1
         sheet = session.document.root.value("styleSheet")
         assert isinstance(sheet, StringValue)
         assert sheet.text == _OUTLINE
-        assert line.isHidden()
-        _child(pane, QPushButton, "formBuilder.checks.outline").click()
+        body.add_outline_style()
         pump()
         assert len(session.log.entries()) == before + 1
         assert session.document.root.value("styleSheet").text == _OUTLINE  # type: ignore[union-attr]

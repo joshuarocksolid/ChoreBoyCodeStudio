@@ -1,7 +1,7 @@
 # Try
 
 ## Preview runs the form
-Ctrl+Shift+R opens Preview. When the form has rules, checks, or steps, Preview runs them. Run behavior, in the Preview toolbar, is on. Turn it off to see the layout only.
+Press Ctrl+Shift+R to open Preview. Run behavior starts checked. When the form has checks, steps, or rules, Preview runs them and undoes database changes. Uncheck Run behavior to see the layout only. Try is that checked state, not a second command.
 
 Your window file is not imported. Each method the form names is a stand-in. A step that calls one logs "Would call {method}()". A formula that calls window.m() reads the Window values strip under the form.
 

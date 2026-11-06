@@ -12,6 +12,9 @@ from app.qt.qt_compat import enum_value
 from app.core.constants import UI_EDITOR_FONT_FAMILY_DEFAULT
 from app.features.form_builder.engine.logic.uses import WORDS, Use
 from app.features.form_builder.qtside.logic_panel.rows import LogicRow, RowFace, paint_roles
+from app.features.form_builder.qtside.theme.chrome import chrome_from_values
+from app.features.form_builder.qtside.theme.metrics import ROW
+from app.features.form_builder.qtside.theme.section_header import SectionHeader
 
 _PLAIN = getattr(getattr(Qt, "TextFormat", Qt), "PlainText")
 _GROUPS = (("read", "READS"), ("set", "SETS"), ("call", "CALLS"))
@@ -44,14 +47,10 @@ class UsesDialog(QDialog):
         self._rows: list = []
         column = QVBoxLayout(self)
         column.setContentsMargins(8, 8, 8, 8)
-        column.setSpacing(4)
+        column.setSpacing(8)
         self._column = column
-        heading = QLabel("Uses of %s" % shown, self)
-        heading.setObjectName("formBuilder.logic.usesHeading")
-        heading.setWordWrap(True)
-        heading.setMinimumWidth(0)
-        column.addWidget(heading)
         self._fill()
+        self.setFixedWidth(320)
         if tokens is not None:
             self.apply_theme(tokens)
         self.resize(560, 320)
@@ -65,6 +64,7 @@ class UsesDialog(QDialog):
     def apply_theme(self, tokens: object) -> None:
         self._tokens = tokens
         chrome = paint_roles(tokens)
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self.setAutoFillBackground(True)
         palette = self.palette()
         role = getattr(QPalette, "ColorRole", QPalette)
@@ -83,6 +83,11 @@ class UsesDialog(QDialog):
                 tokens.text_muted,  # type: ignore[attr-defined]
             )
         )
+        for index in range(self._column.count()):
+            item = self._column.itemAt(index)
+            widget = item.widget() if item is not None else None
+            if isinstance(widget, SectionHeader):
+                widget.apply_chrome(_form_chrome(tokens))
         for row in self._rows:
             row.apply_colors(
                 tokens.text_primary,  # type: ignore[attr-defined]
@@ -112,9 +117,8 @@ class UsesDialog(QDialog):
             rows = tuple(use for use in self._uses if use.role == role)
             if not rows:
                 continue
-            heading = QLabel(title, self)
-            heading.setObjectName("formBuilder.logic.title")
-            heading.setTextFormat(_PLAIN)
+            heading = SectionHeader(self, title, object_name="formBuilder.logic.title")
+            heading.setFixedHeight(ROW)
             self._column.addWidget(heading)
             for use in rows:
                 face = _face(use, self._display_of(use.widget), self._lines)
@@ -141,13 +145,33 @@ def _face(use: Use, display: str, lines: Sequence[str]) -> RowFace:
     if use.kind == "check":
         return RowFace(display, use.summary, "", False, False, use.summary, accessible)
     if use.kind == "step":
-        aside = "· %s" % use.signal if use.signal else ""
+        aside = "· %s" % use.signal.strip() if use.signal and use.signal.strip() else ""
         body = use.summary or use.method
         if body and "\u2192" in body:
             accessible = "%s %s" % (display, body)
             return RowFace(display, body, "", False, False, body, accessible)
         return RowFace(display, aside, body, True, False, body, accessible)
     return RowFace(display, use.signal or use.method, use.summary, True, False, use.widget, accessible)
+
+
+def _form_chrome(tokens: object):
+    return chrome_from_values(
+        window=str(getattr(tokens, "window_bg", "") or ""),
+        panel=str(getattr(tokens, "panel_bg", "") or ""),
+        text=str(getattr(tokens, "text_primary", "") or ""),
+        muted=str(getattr(tokens, "text_muted", "") or ""),
+        faint=str(getattr(tokens, "gutter_text", "") or ""),
+        border=str(getattr(tokens, "border", "") or ""),
+        accent=str(getattr(tokens, "accent", "") or ""),
+        row_hover=str(getattr(tokens, "tree_hover_bg", "") or ""),
+        input_bg=str(getattr(tokens, "input_bg", "") or ""),
+        error=str(getattr(tokens, "diag_error_color", "") or ""),
+        focus_width=int(getattr(tokens, "focus_border_width", 1) or 1),
+        selected=str(getattr(tokens, "tree_selected_bg", "") or ""),
+        icon_muted=str(getattr(tokens, "icon_muted", "") or ""),
+        is_dark=bool(getattr(tokens, "is_dark", False)),
+        is_high_contrast=bool(getattr(tokens, "is_high_contrast", False)),
+    )
 
 
 def displays_for(env: object) -> Dict[str, str]:

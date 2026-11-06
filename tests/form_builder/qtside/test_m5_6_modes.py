@@ -112,21 +112,29 @@ def test_each_tab_order_badge_sits_on_its_own_widget_with_a_flow_line(tmp_path: 
         boxes = {}
         for name in ("nameEdit", "emailEdit", "phoneEdit"):
             box = canvas.viewport_rect((document.by_name(name)[0],))
-            top_left = canvas.mapToScene(box.topLeft())
-            bottom_right = canvas.mapToScene(box.bottomRight())
-            boxes[name] = (top_left.x(), top_left.y(), bottom_right.x(), bottom_right.y())
+            origin = canvas.mapToScene(box.topLeft())
+            edge = canvas.mapToScene(box.topLeft() + QPoint(box.width(), box.height()))
+            boxes[name] = (origin.x(), origin.y(), edge.x(), edge.y())
         for item in badges:
             assert item.rect.width == 16 and item.rect.height == 16
             own = order[item.data[1] - 1]
-            centre_x, centre_y = item.rect.x + 8, item.rect.y + 8
             left, top, right, bottom = boxes[own]
-            # Packed rows: every badge sits just inside its own field's top-left corner.
-            assert left <= item.rect.x <= left + 4 and top <= item.rect.y <= top + 4, own
+            # Inside the field's right edge, 4 px in, vertically centred. Under 48 px the badge sits outside that edge.
+            expected_x = right + 4 if right - left < 48 else right - 4 - 16
+            expected_y = top + (bottom - top - 16) / 2.0
+            assert abs(item.rect.x - expected_x) <= 1 and abs(item.rect.y - expected_y) <= 1, own
             for name, (left, top, right, bottom) in boxes.items():
                 if name == own:
                     continue
                 overlaps = left < item.rect.x + 16 and item.rect.x < right and top < item.rect.y + 16 and item.rect.y < bottom
                 assert not overlaps, "badge %s sits over %s" % (item.data[1], name)
+        ordered = sorted(badges, key=lambda item: item.data[1])
+        centres = [
+            (float(item.rect.x + item.rect.width // 2), float(item.rect.y + item.rect.height // 2)) for item in ordered
+        ]
+        for index, segment in enumerate(flows[0].data[1]):
+            x1, y1, _cx, _cy, x2, y2 = segment
+            assert (x1, y1) == centres[index] and (x2, y2) == centres[index + 1]
         assert frame is not None
         # The hover chip says which number a click would give.
         modes._hover = "phoneEdit"
@@ -152,7 +160,7 @@ def test_the_banner_names_the_overlay_and_the_page_stays_put(tmp_path: Path, qap
         assert canvas.viewport().y() == before
         after = canvas._stage.view_map().page_origin
         assert abs(after.x - origin.x) <= 1 and abs(after.y - origin.y) <= 1
-        assert [b.text() for b in banner.findChildren(QPushButton)] == ["Reset to reading order", "Done · Esc"]
+        assert [b.text() for b in banner.findChildren(QPushButton)] == ["Reset to reading order", "Esc"]
         modes.assign("phoneEdit")
         assert kb.session.document.tabstops() is not None
         reset = banner.findChild(QPushButton, "formBuilder.overlayBannerExtra")

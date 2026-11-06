@@ -353,9 +353,10 @@ def test_connection_rows_carry_the_title(tmp_path: Path, qapp: QApplication) -> 
     assert listed.count() >= 1
     item = listed.item(0)
     assert item is not None
-    assert item.text() == "Shop database"
+    assert item.text() == ""
     row = listed.itemWidget(item)
     assert row is not None
+    assert row.title_label.text() == "Shop database"  # type: ignore[attr-defined]
     assert row.accessibleName() == "Shop database"
     page.close()
 

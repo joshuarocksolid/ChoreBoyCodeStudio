@@ -120,6 +120,8 @@ def _check_help_item() -> None:
 
 def _check_status_f4(kb: Kb) -> None:
     kb.surface.workbench.canvas.setFocus()
+    # The sentence names the selected widget. Opening a form does not select one.
+    _walk_to(kb, "nameEdit", limit=12)
     kb.press("Key_F4")
     # M6.1c: F4 is Designer's Edit Signals/Slots, the Connections overlay (UX-M6-006).
     assert "drag to another widget to connect" in kb.surface.editor_status_sentence()
@@ -313,7 +315,7 @@ def test_the_tab_order_list_reorders_by_key_and_by_drag_and_says_which_order_it_
             "2 · emailEdit · Line edit",
             "3 · phoneEdit · Line edit",
         ]
-        assert caption.text() == "Follows reading order: top to bottom, left to right."
+        assert not caption.isVisible()
         assert not kb.surface.findChild(QWidget, "formBuilder.tabOrderReset").isVisible()
         rows.setCurrentRow(0)
         QTest.keyClick(rows, Qt.Key.Key_Down, Qt.KeyboardModifier.AltModifier)

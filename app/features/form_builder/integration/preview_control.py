@@ -237,7 +237,16 @@ class PreviewControl:
     def appearance(self, path: str) -> Appearance:
         self.reload()
         assert self._choices is not None
-        return appearance_for(os.path.basename(path) or "form", self._choices, self._profiles)
+        made = appearance_for(os.path.basename(path) or "form", self._choices, self._profiles)
+        window = self._surface.window()
+        tokens = getattr(window, "current_theme_tokens", None)
+        if not callable(tokens):
+            return made
+        from dataclasses import replace
+
+        from app.features.form_builder.integration.chrome import shell_chrome_pairs
+
+        return replace(made, chrome=shell_chrome_pairs(tokens()))
 
     @property
     def is_open(self) -> bool:

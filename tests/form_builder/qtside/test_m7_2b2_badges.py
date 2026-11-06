@@ -77,7 +77,7 @@ def _badges(document: object) -> dict:
     forget_badge_memo()
     current = document.by_name("totalLabel")[0]
     static, inputs = _world(document, current)
-    output = build_badges(static, inputs, True)
+    output = build_badges(static, inputs, "all")
     found = {}
     for item in output.items:
         assert isinstance(item, LayerItem)

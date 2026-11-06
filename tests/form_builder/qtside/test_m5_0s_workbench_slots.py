@@ -70,11 +70,10 @@ def test_a_left_section_shows_with_the_form_takes_a_share_and_answers_alt_5(  # 
         lane.SHOW[0] = True
         bench.refresh(None, "keep")
         qapp.processEvents()
-        split = bench.findChild(QSplitter, "formBuilder.leftSplitter")
-        assert split.indexOf(widget) == 2 and widget.isVisibleTo(bench)
-        sizes = split.sizes()
-        assert abs(sizes[2] * 100 // sum(sizes) - 25) <= 3
-        assert abs(sizes[0] * 100 // sum(sizes) - 40) <= 3
+        tabs = bench.findChild(QTabWidget, "formBuilder.leftTabs")
+        assert tabs.indexOf(widget) == 2
+        assert bench.focus_section("actions") and tabs.currentWidget() is widget
+        assert widget.isVisibleTo(bench)
         keys = [shortcut for shortcut in surface.findChildren(QShortcut) if shortcut.key().toString() == "Alt+5"]
         assert [shortcut.objectName() for shortcut in keys] == ["form.action.focusSection.actions"]
         keys[0].activated.emit()
@@ -105,8 +104,8 @@ def test_a_left_section_is_a_third_tab_at_short_heights_and_a_third_rail_button(
         host.resize(1100, 800)
         surface.resize(1100, 800)
         qapp.processEvents()
-        split = bench.findChild(QSplitter, "formBuilder.leftSplitter")
-        assert split.indexOf(bench.section_widget("actions")) == 2 and not tabs.isVisibleTo(bench)
+        assert tabs.isVisibleTo(bench)
+        assert tabs.indexOf(bench.section_widget("actions")) == 2
         host.resize(800, 800)
         surface.resize(800, 800)
         qapp.processEvents()

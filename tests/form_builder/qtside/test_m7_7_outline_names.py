@@ -40,9 +40,10 @@ def _painted(tree: object, item: QTreeWidgetItem, width: int = 0) -> list:
     tree.setCurrentItem(item)  # type: ignore[attr-defined]
     index = tree.currentIndex()  # type: ignore[attr-defined]
     option = QStyleOptionViewItem()
-    option.rect = tree.visualItemRect(item)  # type: ignore[attr-defined]
+    rect = tree.visualItemRect(item)  # type: ignore[attr-defined]
     if width > 0:
-        option.rect.setWidth(width)
+        rect.setWidth(width)
+    option.rect = rect
     option.font = tree.font()  # type: ignore[attr-defined]
     option.fontMetrics = tree.fontMetrics()  # type: ignore[attr-defined]
     option.palette = tree.palette()  # type: ignore[attr-defined]

@@ -6,11 +6,21 @@ import math
 from typing import Optional
 
 from app.qt.QtCore import QRect, QSize, Qt
-from app.qt.QtGui import QBrush, QColor, QFontMetrics, QFontMetricsF, QPainter, QPen
-from app.qt.QtWidgets import QStyle, QStyledItemDelegate, QStyleOptionViewItem, QWidget
+from app.qt.QtGui import QBrush, QColor, QFont, QFontMetrics, QFontMetricsF, QPainter, QPen
+from app.qt.QtWidgets import (
+    QFrame,
+    QProxyStyle,
+    QStyle,
+    QStyledItemDelegate,
+    QStyleOptionViewItem,
+    QTreeWidget,
+    QWidget,
+)
 from app.qt.qt_compat import enum_value
 
 from app.features.form_builder.engine.query.outline import layout_row
+from app.features.form_builder.qtside.icons.glyphs import paint_glyph
+from app.features.form_builder.qtside.theme.metrics import CHEVRON, ICON, ROW, S4, TYPE_BODY, TYPE_FINE
 
 
 def _user(offset: int) -> int:
@@ -23,6 +33,7 @@ PROBLEM = _user(3)
 TONE = _user(4)
 EXTRA = _user(5)
 OWNER = _user(6)
+GLYPH = _user(7)
 
 
 def _flag(name: str) -> int:
@@ -30,7 +41,7 @@ def _flag(name: str) -> int:
 
 
 class OutlineRowDelegate(QStyledItemDelegate):
-    """Name, caption, and problem glyph. Colors come from the shell tokens."""
+    """Name, caption, and class glyph. Colors come from the shell tokens."""
 
     def __init__(self, parent: QWidget) -> None:
         super().__init__(parent)
@@ -38,12 +49,29 @@ class OutlineRowDelegate(QStyledItemDelegate):
         self._faint = ""
         self._error = ""
         self._layout = ""
+        self._icon = ""
+        self._hover_id: Optional[int] = None
+        self._hover_fill = ""
 
-    def update_colors(self, name: str, faint: str, error: str, layout: str) -> None:
+    def update_colors(self, name: str, faint: str, error: str, layout: str, icon_muted: str = "") -> None:
         self._name = name
         self._faint = faint
         self._error = error
         self._layout = layout
+        self._icon = icon_muted
+
+    def icon_color(self) -> str:
+        return self._icon or self._faint or self._name
+
+    def note_hover(self, node: Optional[int], fill: str) -> None:
+        """The row ``node`` wears ``fill``. ``None`` clears it.
+
+        Paint reads this directly. A grab does not always put the tree on
+        ``option.widget``, so a widget property alone never reaches the pixmap.
+        """
+        self._hover_id = node
+        if fill:
+            self._hover_fill = fill
 
     def paint(self, painter: QPainter, option: QStyleOptionViewItem, index: object) -> None:
         painter.save()
@@ -55,76 +83,139 @@ class OutlineRowDelegate(QStyledItemDelegate):
         caption = str(index.data(CAPTION) or "")  # type: ignore[attr-defined]
         problem = bool(index.data(PROBLEM))  # type: ignore[attr-defined]
         faint = bool(index.data(FAINT))  # type: ignore[attr-defined]
-        tone = str(index.data(TONE) or "")  # type: ignore[attr-defined]
-        # Measure with the font the text is drawn in, rounded up: elidedText cuts a text whose
-        # fractional width is a hair over the rounded advance.
-        metrics = QFontMetricsF(option.font)
-        caption_px = _advance(metrics, caption) if caption else 0
-        name_px = _advance(metrics, primary) if primary else 0
+        owner = bool(index.data(OWNER))  # type: ignore[attr-defined]
+        glyph = str(index.data(GLYPH) or "widget")  # type: ignore[attr-defined]
+        name_font = _pixel_font(option, TYPE_BODY)
+        caption_font = _pixel_font(option, TYPE_FINE)
+        name_metrics = QFontMetricsF(name_font)
+        caption_metrics = QFontMetricsF(caption_font)
+        caption_px = _advance(caption_metrics, caption) if caption else 0
+        name_px = _advance(name_metrics, primary) if primary else 0
         width = option.rect.width()
-        widget = option.widget
         if widget is not None and hasattr(widget, "viewport"):
             viewport = widget.viewport()
+            # The cell can still be the text size hint. The row paints across
+            # the viewport, to the right of the indent.
             visible = viewport.width() - max(option.rect.x(), 0)
-            if visible > 0:
-                width = min(width, visible)
-        elide_caption = bool(index.data(OWNER))  # type: ignore[attr-defined]
-        boxes = layout_row(width, bool(caption), problem, caption_px, name_px, elide_caption)
-        selected = bool(enum_value(option.state) & enum_value(QStyle.State_Selected))
+            if visible > width:
+                width = visible
+        # The item stylesheet paints a transparent row, which hides the hover brush.
+        self._fill_hover(painter, option, widget, index, width)
+        floor = _object_floor(caption_metrics, caption) if owner and caption else 0
+        boxes = layout_row(width, bool(caption), problem, caption_px, name_px, owner, floor)
         palette = option.palette
-        name_color = self._swatch(
-            self._layout if tone == "layout" and not faint else self._name,
-            palette.highlightedText().color() if selected else palette.text().color(),
-        )
-        if faint and not selected:
-            name_color = self._swatch(self._faint, palette.mid().color())
+        name_color = self._swatch(self._faint if faint else self._name, palette.text().color())
         caption_color = self._swatch(self._faint, palette.mid().color())
-        self._text(painter, option, _placed(option.rect, boxes.glyph), self._glyph(tone), name_color)
+        ink = self._layout if glyph.startswith("layout_") and self._layout else self.icon_color()
+        self._glyph(painter, _placed(option.rect, boxes.glyph), glyph, ink or name_color.name())
         self._text(
             painter,
-            option,
             _placed(option.rect, boxes.name),
             primary,
             name_color,
+            name_font,
             elide="right",
         )
-        if boxes.caption is not None and caption:
-            # layout_row shows a caption only when it fits. Eliding is the guard so nothing is cut bare.
-            self._text(painter, option, _placed(option.rect, boxes.caption), caption, caption_color, elide="right")
+        caption_rect = _placed(option.rect, boxes.caption)
+        if boxes.caption is not None and caption and _shows_caption(caption_font, caption, caption_rect.width(), owner):
+            self._text(
+                painter,
+                caption_rect,
+                caption,
+                caption_color,
+                caption_font,
+                elide="right",
+            )
         if boxes.problem is not None:
             self._problem(painter, _placed(option.rect, boxes.problem), palette.text().color())
+        self._focus_bar(painter, option)
         painter.restore()
+
+    def _fill_hover(
+        self,
+        painter: QPainter,
+        option: QStyleOptionViewItem,
+        widget: object,
+        index: object,
+        width: int,
+    ) -> None:
+        """The row stylesheet is transparent, so the hover colour is painted here."""
+        raw = index.data(int(getattr(Qt, "UserRole")))  # type: ignore[attr-defined]
+        hover = self._hover_id
+        if hover is None and widget is not None:
+            mark = widget.property("cbcsHover")
+            if mark:
+                hover = int(mark)
+        if hover is None or raw is None or int(raw) != int(hover) or not self._hover_fill:
+            if widget is None:
+                return
+            brush = option.backgroundBrush
+            solid = enum_value(getattr(getattr(Qt, "BrushStyle", Qt), "SolidPattern"))
+            if enum_value(brush.style()) != solid:
+                return
+            painter.fillRect(QRect(option.rect.x(), option.rect.y(), width, option.rect.height()), brush)
+            return
+        color = self._hover_fill
+        if widget is not None and not color:
+            color = str(widget.property("cbcsHoverFill") or "")
+        if not color:
+            return
+        painter.fillRect(QRect(option.rect.x(), option.rect.y(), width, option.rect.height()), QColor(color))
 
     def _swatch(self, token: str, fallback: QColor) -> QColor:
         if not token:
             return fallback
         return QColor(token)
 
-    def _glyph(self, tone: str) -> str:
-        if tone == "layout":
-            return "\u25a1"
-        if tone == "spacer":
-            return "\u2195"
-        return "\u25a0"
+    def _glyph(self, painter: QPainter, rect: QRect, name: str, color: str) -> None:
+        if rect.width() <= 0 or rect.height() <= 0 or not color or not name:
+            return
+        ratio = painter.device().devicePixelRatioF() if painter.device() is not None else 1.0
+        try:
+            pixmap = paint_glyph(name, color, ICON, float(ratio))
+        except KeyError:
+            pixmap = paint_glyph("widget", color, ICON, float(ratio))
+        x = rect.x() + max(0, (rect.width() - ICON) // 2)
+        y = rect.y() + max(0, (rect.height() - ICON) // 2)
+        painter.drawPixmap(x, y, pixmap)
 
     def _text(
         self,
         painter: QPainter,
-        option: QStyleOptionViewItem,
         rect: QRect,
         text: str,
         color: QColor,
+        font: QFont,
         elide: str = "middle",
     ) -> None:
         if rect.width() <= 0 or not text:
             return
-        painter.setFont(option.font)
+        painter.setFont(font)
         painter.setPen(QPen(color))
         name = "ElideMiddle" if elide == "middle" else "ElideRight"
         mode = getattr(getattr(Qt, "TextElideMode", Qt), name)
-        shown = QFontMetrics(option.font).elidedText(text, mode, rect.width())
+        metrics = QFontMetrics(font)
+        budget = rect.width()
+        shown = metrics.elidedText(text, mode, budget)
+        # elidedText can come back a pixel wider than the budget it was given.
+        while budget > 0 and metrics.horizontalAdvance(shown) > rect.width():
+            budget -= 1
+            shown = metrics.elidedText(text, mode, budget)
         align = _flag("AlignLeft") | _flag("AlignVCenter")
         painter.drawText(rect, align, shown)
+
+    def _focus_bar(self, painter: QPainter, option: QStyleOptionViewItem) -> None:
+        widget = option.widget
+        if widget is None or not widget.hasFocus():
+            return
+        selected = getattr(getattr(QStyle, "StateFlag", QStyle), "State_Selected")
+        if not enum_value(option.state) & enum_value(selected):
+            return
+        accent = _accent(widget)
+        if not accent:
+            return
+        rect = option.rect
+        painter.fillRect(QRect(rect.x(), rect.y(), 2, rect.height()), QColor(accent))
 
     def _problem(self, painter: QPainter, rect: QRect, fallback: QColor) -> None:
         color = self._swatch(self._error, fallback)
@@ -140,7 +231,103 @@ class OutlineRowDelegate(QStyledItemDelegate):
         hint = super().sizeHint(option, index)
         extra = index.data(EXTRA)  # type: ignore[attr-defined]
         added = int(extra) if isinstance(extra, int) else 0
-        return QSize(hint.width(), max(24, _metrics(option).height() + 8) + max(added, 0))
+        return QSize(hint.width(), ROW + max(added, 0))
+
+
+class OutlineBranches(QProxyStyle):
+    """A 10 px chevron where the tree would draw its branch lines."""
+
+    def __init__(self, delegate: OutlineRowDelegate, parent: QWidget) -> None:
+        # The default base is the application style, and this proxy does not
+        # own it. Passing the tree's style would delete that style with the tree.
+        super().__init__()
+        self.setParent(parent)
+        self._delegate = delegate
+
+    def drawPrimitive(self, element, option, painter, widget=None):  # type: ignore[override]
+        if enum_value(element) != enum_value(QStyle.PE_IndicatorBranch):
+            super().drawPrimitive(element, option, painter, widget)
+            return
+        state = enum_value(option.state)
+        if not state & enum_value(QStyle.State_Children):
+            return
+        name = "chevron_down" if state & enum_value(QStyle.State_Open) else "chevron_right"
+        color = self._delegate.icon_color()
+        if not color:
+            return
+        rect = option.rect
+        x = rect.x() + max(0, (rect.width() - CHEVRON) // 2)
+        y = rect.y() + max(0, (rect.height() - CHEVRON) // 2)
+        ratio = painter.device().devicePixelRatioF() if painter.device() is not None else 1.0
+        try:
+            pixmap = paint_glyph(name, color, CHEVRON, float(ratio))
+        except KeyError:
+            return
+        painter.drawPixmap(x, y, pixmap)
+
+
+def polish_outline_tree(tree: QTreeWidget, delegate: OutlineRowDelegate) -> None:
+    """16 px indent, no frame, painted branch chevrons.
+
+    Keyboard focus is the selected row's bar, drawn by the delegate. A focus
+    border on the tree would frame the whole outline.
+    """
+    tree.setIndentation(S4)
+    shapes = getattr(QFrame, "Shape", QFrame)
+    tree.setFrameShape(getattr(shapes, "NoFrame"))
+    tree.setLineWidth(0)
+    tree.setStyle(OutlineBranches(delegate, tree))
+    mac = getattr(getattr(Qt, "WidgetAttribute", Qt), "WA_MacShowFocusRect", None)
+    if mac is not None:
+        tree.setAttribute(mac, False)
+    tree.setStyleSheet(
+        "QTreeWidget#formBuilder\\.structure, QTreeWidget#formBuilder\\.structure:focus {"
+        " border: none; outline: none; }"
+        "QTreeWidget#formBuilder\\.structure::item,"
+        " QTreeWidget#formBuilder\\.structure::item:selected,"
+        " QTreeWidget#formBuilder\\.structure::item:focus {"
+        " border: none; outline: none; }"
+    )
+
+
+def _object_floor(metrics: QFontMetricsF, text: str) -> int:
+    """Width of eight characters, or of the whole name when it is shorter."""
+    if len(text) <= 8:
+        return _advance(metrics, text)
+    return _advance(metrics, text[:8] + "\u2026")
+
+
+def _shows_caption(font: QFont, text: str, width: int, owner: bool) -> bool:
+    """An owner's object name stays only when eight characters of it fit."""
+    if not owner or width <= 0:
+        return width > 0
+    metrics = QFontMetrics(font)
+    advance = getattr(metrics, "horizontalAdvance", None)
+    full = int(advance(text) if callable(advance) else metrics.width(text))
+    if full <= width:
+        return True
+    mode = getattr(getattr(Qt, "TextElideMode", Qt), "ElideRight")
+    shown = metrics.elidedText(text, mode, width)
+    plain = shown.replace("\u2026", "").replace("...", "")
+    return len(plain) >= 8
+
+
+def _accent(widget: QWidget) -> str:
+    current: Optional[QWidget] = widget
+    while current is not None:
+        tokens = getattr(current, "_tokens", None)
+        accent = getattr(tokens, "accent", "") if tokens is not None else ""
+        if accent:
+            return str(accent)
+        current = current.parentWidget()
+    return ""
+
+
+def _pixel_font(option: QStyleOptionViewItem, pixels: int) -> QFont:
+    font = QFont(option.font)
+    font.setPixelSize(pixels)
+    font.setBold(False)
+    return font
 
 
 def _metrics(option: QStyleOptionViewItem) -> QFontMetrics:

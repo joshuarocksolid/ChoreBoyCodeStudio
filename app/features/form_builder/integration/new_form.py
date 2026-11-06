@@ -28,7 +28,7 @@ from app.features.form_builder.engine.project.templates import first_useful_widg
 from app.features.form_builder.engine.project.written_files import note_written_files
 from app.features.form_builder.integration import settings_page, template_store
 from app.features.form_builder.integration.settings_ext import connections_page as connections_settings
-from app.features.form_builder.integration.chrome import chrome_for
+from app.features.form_builder.integration.chrome import chrome_for, shell_dialog_parts
 from app.features.form_builder.integration.provider import FormTabProvider
 from app.features.form_builder.qtside.dialogs.from_table import FromTableDialog, locale_date_format
 from app.features.form_builder.qtside.start.panel import NewFormPanel
@@ -433,6 +433,7 @@ class NewFormSurface:
             name_reason=self._panel.name_reason,
             parent=window if isinstance(window, QWidget) else self._panel,
             add_connection=add_connection,
+            shell_chrome=shell_dialog_parts(),
         )
         dialog.create_requested.connect(lambda: self._create_from_dialog(dialog))
         exec_qt(dialog)

@@ -310,7 +310,12 @@ def test_save_writes_generated_bytes_and_a_refusal_still_saves(qapp, tmp_path: P
     assert bad_tab.is_dirty is False
     label = bad.findChild(QLabel, "formBuilder.saveState")
     assert label is not None
-    assert "not written" in label.text()
+    full = label.toolTip() or label.text()
+    assert "not written" in full
+    tokens = bad._tokens  # noqa: SLF001
+    assert tokens is not None
+    assert tokens.gutter_text in label.styleSheet()
+    assert tokens.diag_error_color not in label.styleSheet()
     surface.release()
     bad.release()
 
@@ -842,7 +847,8 @@ def test_generation_failure_names_the_file(qapp, tmp_path: Path, monkeypatch: py
     assert "ui_invoice.py" in notice.diagnostics[0].message
     label = surface.findChild(QLabel, "formBuilder.saveState")
     assert label is not None
-    assert "ui_invoice.py" in label.text()
+    shown = label.toolTip() or label.text()
+    assert "ui_invoice.py" in shown
     assert any("ui_invoice.py" in record.getMessage() for record in caplog.records)
     surface.release()
 

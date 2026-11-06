@@ -5,7 +5,8 @@ from __future__ import annotations
 import os
 from typing import Any, Dict, List, Optional, Tuple
 
-from app.qt.QtCore import QEvent, QRect, QSize, Qt
+from app.qt.QtCore import QEvent, QSize, Qt
+from app.qt.QtGui import QIcon
 from app.qt.qt_compat import enum_value
 from app.qt.QtWidgets import (
     QHBoxLayout,
@@ -32,7 +33,13 @@ from app.features.form_builder.engine.logic.uses import (
     panel_rows,
 )
 from app.features.form_builder.engine.ui4.defaults import QtClassTable
+from app.features.form_builder.qtside.canvas.layers.logic_badges import set_logic_tab
+from app.features.form_builder.qtside.icons.glyphs import paint_glyph
 from app.features.form_builder.qtside.logic_panel.rows import LogicRow, RowFace, paint_roles
+from app.features.form_builder.qtside.theme.chrome import FormChrome, chrome_from_values
+from app.features.form_builder.qtside.theme.metrics import CONTROL, ICON_BUTTON_HEADER, PANE_PAD, R_CONTROL, S4
+from app.features.form_builder.qtside.theme.section_header import SectionHeader
+from app.features.form_builder.qtside.theme.segmented import SegmentedControl
 
 _PLAIN = getattr(getattr(Qt, "TextFormat", Qt), "PlainText")
 _NO_FOCUS = getattr(getattr(Qt, "FocusPolicy", Qt), "NoFocus")
@@ -41,13 +48,8 @@ _KEY_DOWN = enum_value(getattr(getattr(Qt, "Key", Qt), "Key_Down"))
 _KEY_UP = enum_value(getattr(getattr(Qt, "Key", Qt), "Key_Up"))
 _EMPTY = "This form has no rules, checks, or events yet. Select a widget and open Behavior to add one."
 _NOTE = "Read from the window file. This list is best-effort and Code Studio does not run the file."
-_CHIPS = (
-    ("rules", "Rules", "Show rules"),
-    ("checks", "Checks", "Show checks"),
-    ("events", "Events", "Show events"),
-    ("problems", "Problems", "Show problems"),
-)
 _ORDER = ("STATE", "CHECKS", "EVENTS", "IN YOUR CODE")
+_SEGMENTS = ("All", "Rules", "Checks", "Events")
 _IDLE = None  # type: ignore[var-annotated]
 _SPEAK = {
     "cbcsEnabledWhen": "condition",
@@ -64,64 +66,41 @@ def set_idle_runner(runner: Any) -> None:
     _IDLE = runner
 
 
+class _ElidedNote(QLabel):
+    """One line, inset by the pane pad, elided on the right."""
+
+    def __init__(self, text: str, parent: QWidget) -> None:
+        super().__init__(parent)
+        self._full = text
+        self.setToolTip(text)
+        self.setWordWrap(False)
+        self.setMinimumWidth(0)
+        self.setTextFormat(_PLAIN)
+        self.setSizePolicy(_policy("Ignored"), _policy("Preferred"))  # type: ignore[arg-type]
+        self.setContentsMargins(PANE_PAD, 0, PANE_PAD, 0)
+        self.setText(text)
+
+    def resizeEvent(self, event: QEvent) -> None:  # noqa: N802
+        super().resizeEvent(event)  # type: ignore[arg-type]
+        self._elide()
+
+    def showEvent(self, event: QEvent) -> None:  # noqa: N802
+        super().showEvent(event)  # type: ignore[arg-type]
+        self._elide()
+
+    def _elide(self) -> None:
+        room = self.contentsRect().width()
+        if room < 8:
+            return
+        elide = getattr(getattr(Qt, "TextElideMode", Qt), "ElideRight")
+        shown = self.fontMetrics().elidedText(self._full, elide, room)
+        if self.text() != shown:
+            self.setText(shown)
+
+
 def _policy(name: str) -> object:
     names = getattr(QSizePolicy, "Policy", QSizePolicy)
     return getattr(names, name)
-
-
-class _Pills(QWidget):
-    """One row of chips. A chip wraps onto the next line only when it does not fit."""
-
-    def __init__(self, parent: QWidget) -> None:
-        super().__init__(parent)
-        self.setObjectName("formBuilder.logic.chips")
-        self.setMinimumWidth(0)
-        self._chips: List[QToolButton] = []
-        policy = QSizePolicy(_policy("Preferred"), _policy("Minimum"))  # type: ignore[arg-type]
-        policy.setHeightForWidth(True)
-        self.setSizePolicy(policy)
-
-    def add(self, chip: QToolButton) -> None:
-        chip.setParent(self)
-        self._chips.append(chip)
-
-    def hasHeightForWidth(self) -> bool:  # noqa: N802
-        return True
-
-    def heightForWidth(self, width: int) -> int:  # noqa: N802
-        return self._flow(width, place=False)
-
-    def sizeHint(self) -> QSize:  # noqa: N802
-        return QSize(0, self.heightForWidth(max(self.width(), 184)))
-
-    def minimumSizeHint(self) -> QSize:  # noqa: N802
-        return QSize(0, self.heightForWidth(184))
-
-    def resizeEvent(self, event: object) -> None:  # noqa: N802
-        super().resizeEvent(event)  # type: ignore[arg-type]
-        height = self._flow(self.width(), place=True)
-        if self.minimumHeight() != height:
-            self.setMinimumHeight(height)
-
-    def _flow(self, width: int, place: bool) -> int:
-        x = 0
-        y = 0
-        line = 0
-        gap = 4
-        limit = max(1, width)
-        for chip in self._chips:
-            hint = chip.sizeHint()
-            wide = hint.width()
-            tall = hint.height()
-            if x and x + wide > limit:
-                x = 0
-                y += line + gap
-                line = 0
-            if place:
-                chip.setGeometry(QRect(x, y, wide, tall))
-            x += wide + gap
-            line = max(line, tall)
-        return y + line
 
 
 class LogicPanel(QWidget):
@@ -137,8 +116,8 @@ class LogicPanel(QWidget):
         self._published: Optional[Tuple[int, int, str, str]] = None
         self._filename = ""
         self._tokens: object = None
+        self._form_chrome: Optional[FormChrome] = None
         self._rows: List[LogicRow] = []
-        self._chips: Dict[str, QToolButton] = {}
         column = QVBoxLayout(self)
         column.setContentsMargins(4, 4, 4, 4)
         column.setSpacing(4)
@@ -148,36 +127,31 @@ class LogicPanel(QWidget):
         link_row.addStretch(1)
         self._read = QToolButton(self)
         self._read.setObjectName("formBuilder.logic.readAsText")
-        self._read.setText("Read as text")
+        self._read.setText("")
+        self._read.setToolTip("Read as text")
         self._read.setAccessibleName("Read as text")
         self._read.setAutoRaise(True)
-        self._read.setMinimumWidth(0)
+        self._read.setFixedSize(ICON_BUTTON_HEADER, ICON_BUTTON_HEADER)
         self._read.clicked.connect(self._open_behavior_text)
         link_row.addWidget(self._read)
-        self._filter = QLineEdit(self)
-        self._filter.setObjectName("formBuilder.logic.filter")
-        self._filter.setPlaceholderText("Filter")
+        from app.features.form_builder.qtside.theme.search_field import search_line
+
+        self._filter = search_line(self, "Filter", "formBuilder.logic.filter")
         self._filter.setAccessibleName("Filter logic")
         self._filter.setMinimumWidth(0)
         self._filter.setSizePolicy(_policy("Ignored"), _policy("Fixed"))  # type: ignore[arg-type]
-        self._filter.setClearButtonEnabled(False)
         self._filter.textChanged.connect(self._fill)
         column.addWidget(self._filter)
-        self._pills = _Pills(self)
-        for key, label, accessible in _CHIPS:
-            box = QToolButton(self._pills)
-            box.setText(label)
-            box.setCheckable(True)
-            box.setChecked(True)
-            box.setAutoRaise(True)
-            box.setObjectName("formBuilder.logic.chip.%s" % key)
-            box.setAccessibleName(accessible)
-            box.setMinimumWidth(0)
-            box.setSizePolicy(_policy("Fixed"), _policy("Fixed"))  # type: ignore[arg-type]
-            box.toggled.connect(self._fill)
-            self._chips[key] = box
-            self._pills.add(box)
-        column.addWidget(self._pills)
+        self._segments = SegmentedControl(self)
+        self._segments.setObjectName("formBuilder.logic.segments")
+        self._segments.setAccessibleName("Logic filter")
+        self._segments.set_items(
+            _SEGMENTS,
+            tooltips=("Show all", "Show rules", "Show checks", "Show events"),
+            names=("All logic", "Show rules", "Show checks", "Show events"),
+        )
+        self._segments.current_changed.connect(self._fill)
+        column.addWidget(self._segments)
         self._scroll = QScrollArea(self)
         self._scroll.setObjectName("formBuilder.logic.scroll")
         self._scroll.setAccessibleName("Logic list")
@@ -210,6 +184,14 @@ class LogicPanel(QWidget):
     def book(self) -> Optional[LogicBook]:
         return self._book
 
+    def showEvent(self, event: QEvent) -> None:  # noqa: N802
+        super().showEvent(event)
+        set_logic_tab(True)
+
+    def hideEvent(self, event: QEvent) -> None:  # noqa: N802
+        super().hideEvent(event)
+        set_logic_tab(False)
+
     def set_filter_text(self, text: str) -> None:
         """Ctrl+Shift+F on a form tab. The text is the selection, then the filter takes focus."""
         self._filter.setText(text)
@@ -229,7 +211,36 @@ class LogicPanel(QWidget):
         return self._tokens
 
     def minimumSizeHint(self) -> QSize:  # noqa: N802
-        return QSize(0, 80)
+        return QSize(0, self.section_need())
+
+    def section_need(self) -> int:
+        """Chrome plus the empty sentence. A long list keeps a window and scrolls inside."""
+
+        width = max(self.width(), 184)
+        content = 0
+        for index in range(self._body_layout.count()):
+            item = self._body_layout.itemAt(index)
+            widget = item.widget() if item is not None else None
+            if widget is None or not widget.isVisible():
+                continue
+            if widget.hasHeightForWidth():
+                content += widget.heightForWidth(width)
+            else:
+                content += widget.sizeHint().height()
+            content += 2
+        if content > 160:
+            content = 120
+        return (
+            self._read.sizeHint().height()
+            + self._filter.sizeHint().height()
+            + self._segments.sizeHint().height()
+            + content
+            + 20
+        )
+
+    def resizeEvent(self, event: object) -> None:  # noqa: N802
+        super().resizeEvent(event)  # type: ignore[arg-type]
+        self._ask_arrange()
 
     def apply_theme(self, tokens: object) -> None:
         self._tokens = tokens
@@ -244,14 +255,11 @@ class LogicPanel(QWidget):
             " color: %s; background: transparent; border: none;"
             " font-size: 10px; font-weight: 600; letter-spacing: 0.5px; }"
             "QLabel#formBuilder\\.logic\\.note { color: %s; }"
-            "QLineEdit#formBuilder\\.logic\\.filter { background: %s; color: %s; border: 1px solid %s; }"
+            "QLineEdit#formBuilder\\.logic\\.filter { background: %s; color: %s; border: 1px solid %s;"
+            " border-radius: %dpx; }"
             "QLineEdit#formBuilder\\.logic\\.filter:focus { border: %dpx solid %s; }"
-            "QToolButton { color: %s; background: transparent; border: 1px solid %s;"
-            " border-radius: 10px; padding: 2px 8px; font-size: 11px; }"
-            "QToolButton:checked { color: %s; background: %s; border: 1px solid %s; }"
-            "QToolButton:focus { border: %dpx solid %s; }"
             "QToolButton#formBuilder\\.logic\\.readAsText { color: %s; background: transparent;"
-            " border: none; border-radius: 0; padding: 0; font-size: 11px; }"
+            " border: none; border-radius: 0; padding: 0; }"
             "QToolButton#formBuilder\\.logic\\.readAsText:focus { border: %dpx solid %s; }"
             "QScrollArea#formBuilder\\.logic\\.scroll { background: %s; border: none; }"
             % (
@@ -265,13 +273,7 @@ class LogicPanel(QWidget):
                 tokens.input_bg,  # type: ignore[attr-defined]
                 tokens.text_primary,  # type: ignore[attr-defined]
                 tokens.border,  # type: ignore[attr-defined]
-                width,
-                tokens.accent,  # type: ignore[attr-defined]
-                tokens.text_primary,  # type: ignore[attr-defined]
-                chrome.border,
-                chrome.on_accent,
-                tokens.accent,  # type: ignore[attr-defined]
-                tokens.accent,  # type: ignore[attr-defined]
+                R_CONTROL,
                 width,
                 tokens.accent,  # type: ignore[attr-defined]
                 tokens.text_muted,  # type: ignore[attr-defined]
@@ -280,6 +282,10 @@ class LogicPanel(QWidget):
                 tokens.panel_bg,  # type: ignore[attr-defined]
             )
         )
+        self._form_chrome = _form_chrome(tokens)
+        self._segments.apply_chrome(self._form_chrome)
+        self._paint_search(self._form_chrome.icon_muted or chrome.faint)
+        self._paint_read(self._form_chrome.icon_muted or chrome.faint)
         viewport = self._scroll.viewport()
         if viewport is not None:
             viewport.setAutoFillBackground(True)
@@ -324,9 +330,8 @@ class LogicPanel(QWidget):
 
     def _chain_focus(self) -> None:
         previous: QWidget = self._filter
-        for chip in self._chips.values():
-            QWidget.setTabOrder(previous, chip)
-            previous = chip
+        QWidget.setTabOrder(previous, self._segments)
+        previous = self._segments
         for row in self._rows:
             QWidget.setTabOrder(previous, row)
             previous = row
@@ -361,18 +366,20 @@ class LogicPanel(QWidget):
             return
 
     def _query(self) -> PanelQuery:
+        index = self._segments.current_index()
         return PanelQuery(
             text=self._filter.text(),
-            rules=self._chips["rules"].isChecked(),
-            checks=self._chips["checks"].isChecked(),
-            events=self._chips["events"].isChecked(),
-            problems=self._chips["problems"].isChecked(),
+            rules=index in (0, 1),
+            checks=index in (0, 2),
+            events=index in (0, 3),
+            problems=True,
         )
 
     def _fill(self, *_args: object) -> None:
         book = self._book
         if book is None:
             self._clear_body()
+            self._ask_arrange()
             return
         query = self._query()
         rows = panel_rows(book, query)
@@ -401,32 +408,38 @@ class LogicPanel(QWidget):
         self._clear_body()
         if not panel_rows(book, PanelQuery()) and not rows:
             self._message(_EMPTY)
+            self._ask_arrange()
             return
         if query.text and not rows:
             self._message("Nothing matches \u201c%s\u201d." % query.text)
+            self._ask_arrange()
             return
         grouped: Dict[str, List[PanelRow]] = {name: [] for name in _ORDER}
-        problems: List[PanelRow] = []
         for row in rows:
             grouped.setdefault(row.section, []).append(row)
-            if row.problem:
-                problems.append(row)
         number = 0
         for section in _ORDER:
             items = grouped.get(section) or []
             if not items:
                 continue
-            self._heading(section)
+            problems = sum(1 for row in items if row.problem)
+            self._heading(section, problems)
             for row in items:
                 number = self._add_row(row, number)
-        if query.problems and problems:
-            count = len(problems)
-            self._heading("PROBLEMS · %d" % count)
-            for row in problems:
-                number = self._add_row(row, number, section="PROBLEMS")
         self._body_layout.addStretch(1)
         self._paint_rows()
         self._chain_focus()
+        self._ask_arrange()
+
+    def _ask_arrange(self) -> None:
+        if self.minimumHeight() >= self.section_need():
+            return
+        workbench = self._workbench
+        if getattr(workbench, "_arranging_left", False):
+            return
+        arrange = getattr(workbench, "_arrange_left", None)
+        if callable(arrange):
+            arrange()
 
     def _add_row(self, row: PanelRow, number: int, section: str = "") -> int:
         use = row.use
@@ -439,20 +452,21 @@ class LogicPanel(QWidget):
         self._rows.append(label)
         return number + 1
 
-    def _heading(self, section: str) -> None:
-        title = QLabel(section, self._body)
+    def _heading(self, section: str, problems: int = 0) -> None:
+        title = SectionHeader(self._body, section)
         title.setObjectName("formBuilder.logic.title")
-        title.setMinimumWidth(0)
-        title.setTextFormat(_PLAIN)
+        if problems:
+            title.set_count(problems)
+            title.setProperty("formBuilderProblemCount", problems)
+        if section == "IN YOUR CODE":
+            title.setProperty("cbcsCountTone", True)
+        self._style_header(title)
         self._body_layout.addWidget(title)
         if section != "IN YOUR CODE":
             return
         name = self._filename or "the window file"
-        note = QLabel("Read-only · from %s. %s" % (name, _NOTE), self._body)
+        note = _ElidedNote("Read-only · from %s. %s" % (name, _NOTE), self._body)
         note.setObjectName("formBuilder.logic.note")
-        note.setWordWrap(True)
-        note.setMinimumWidth(0)
-        note.setTextFormat(_PLAIN)
         self._body_layout.addWidget(note)
 
     def _message(self, text: str) -> None:
@@ -488,6 +502,49 @@ class LogicPanel(QWidget):
                 str(getattr(tokens, "accent", "") or ""),
                 int(getattr(tokens, "focus_border_width", 2) or 2),
             )
+        for index in range(self._body_layout.count()):
+            item = self._body_layout.itemAt(index)
+            widget = item.widget() if item is not None else None
+            if isinstance(widget, SectionHeader):
+                self._style_header(widget)
+
+    def _style_header(self, header: SectionHeader) -> None:
+        chrome = self._form_chrome
+        if chrome is None:
+            return
+        header.apply_chrome(chrome)
+        if not header.property("cbcsCountTone"):
+            return
+        count = header.property("formBuilderProblemCount")
+        if not count:
+            return
+        label = header.findChild(QLabel, "formBuilder.sectionCount")
+        if label is None:
+            return
+        color = chrome.error or chrome.warning
+        if color:
+            label.setStyleSheet(
+                "QLabel#formBuilder\\.sectionCount { color: %s; background: transparent; }" % color
+            )
+
+    def _paint_search(self, color: str) -> None:
+        actions = getattr(self._filter, "actions", None)
+        if callable(actions):
+            for action in list(actions()):
+                self._filter.removeAction(action)
+        if not color:
+            return
+        ratio = float(getattr(self, "devicePixelRatioF", lambda: 1.0)())
+        icon = QIcon(paint_glyph("search", color, 16, ratio))
+        position = getattr(getattr(QLineEdit, "ActionPosition", QLineEdit), "LeadingPosition")
+        self._filter.addAction(icon, position)
+
+    def _paint_read(self, color: str) -> None:
+        if not color:
+            return
+        ratio = float(getattr(self, "devicePixelRatioF", lambda: 1.0)())
+        self._read.setIcon(QIcon(paint_glyph("behavior", color, 16, ratio)))
+        self._read.setIconSize(QSize(16, 16))
 
     def _clear_body(self) -> None:
         self._rows = []
@@ -499,6 +556,29 @@ class LogicPanel(QWidget):
                 widget.hide()
                 widget.setParent(None)
                 widget.deleteLater()
+
+
+def _form_chrome(tokens: object) -> FormChrome:
+    text = str(getattr(tokens, "text_primary", "") or "")
+    return chrome_from_values(
+        window=str(getattr(tokens, "window_bg", "") or getattr(tokens, "panel_bg", "") or ""),
+        panel=str(getattr(tokens, "panel_bg", "") or ""),
+        text=text,
+        muted=str(getattr(tokens, "text_muted", "") or text),
+        faint=str(getattr(tokens, "gutter_text", "") or ""),
+        border=str(getattr(tokens, "border", "") or ""),
+        accent=str(getattr(tokens, "accent", "") or ""),
+        row_hover=str(getattr(tokens, "tree_hover_bg", "") or ""),
+        input_bg=str(getattr(tokens, "input_bg", "") or ""),
+        error=str(getattr(tokens, "diag_error_color", "") or ""),
+        focus_width=int(getattr(tokens, "focus_border_width", 1) or 1),
+        selected=str(getattr(tokens, "tree_selected_bg", "") or ""),
+        glyph=str(getattr(tokens, "icon_primary", "") or text),
+        icon_muted=str(getattr(tokens, "icon_muted", "") or ""),
+        is_dark=bool(getattr(tokens, "is_dark", False)),
+        is_high_contrast=bool(getattr(tokens, "is_high_contrast", False)),
+        warning=str(getattr(tokens, "diag_warning_color", "") or ""),
+    )
 
 
 def _spoken_rule(summary: str, key: str, env: object) -> str:
@@ -529,8 +609,9 @@ def _face(row: PanelRow, display: str, section: str = "", env: object = None) ->
         return RowFace(display, row.words, sentence, False, True, tooltip, accessible)
     if row.section == "EVENTS" or (row.section == "IN YOUR CODE" and use.signal and not row.problem):
         body = row.summary if row.summary.casefold() != row.words.casefold() else ""
-        aside = "· %s" % row.words if row.words else ""
-        return RowFace(display, aside, body, True, False, tooltip, accessible)
+        aside = "· %s" % row.words.strip() if row.words and row.words.strip() else ""
+        indent = S4 if row.section == "EVENTS" else 0
+        return RowFace(display, aside, body, True, False, tooltip, accessible, indent)
     if row.section == "STATE":
         raw = row.summary.strip()
         spoken = _spoken_rule(raw, use.property_key, env)

@@ -200,7 +200,7 @@ def test_unset_font_bold_writes_only_bold(qapp: QApplication) -> None:
 
 
 def _when_button(pane: InspectorPane) -> QPushButton:
-    return next(button for button in pane.findChildren(QPushButton) if button.text().startswith("+ When"))
+    return pane.findChild(QWidget, "formBuilder.events.first") or pane.findChild(QWidget, "formBuilder.events.when")
 
 
 def test_add_connection_stays_a_draft_until_a_slot_is_picked(qapp: QApplication) -> None:
@@ -303,11 +303,11 @@ def test_the_property_page_does_not_scroll_sideways(qapp: QApplication) -> None:
         assert enum_value(editor.sizePolicy().horizontalPolicy()) == enum_value(ignored)
         label = next(item for item in row.findChildren(QLabel) if item.text() == "Text")
         assert label.parentWidget() is not None
-        # UX-PED-002: the label budget (changed-bar slot + label) is 104 wide, 96 compact,
-        # and the editor column starts 8 px after it.
-        assert label.parentWidget().width() + 8 == 104
+        # The label column is 38% of the viewport, clamped between 88 and 120.
+        budget = label.parentWidget().width() + 8
+        assert 88 <= budget <= 120
         pane.set_compact(True)
-        assert label.parentWidget().width() + 8 == 96
+        assert 88 <= label.parentWidget().width() + 8 <= 120
         window.resize(236, 640)
         pane.set_group_expanded(GroupId.SIZE, True)
         pane.flush()
@@ -549,7 +549,8 @@ def test_reset_is_a_hover_icon_and_the_label_is_strong(qapp: QApplication) -> No
         pane.flush()
         reset = row.findChild(QToolButton, "formBuilder.rowReset")
         assert reset is not None
-        assert reset.text() == "\u21ba"
+        assert reset.text() == ""
+        assert not reset.icon().isNull()
         assert reset.accessibleName() == "Reset"
         assert reset.width() == 16 and reset.height() == 16
         assert reset.isVisible()
@@ -619,9 +620,14 @@ def test_headers_use_a_chevron_and_a_painted_glyph(qapp: QApplication) -> None:
         assert toggle is not None
         assert toggle.text() == "CONTENT"
         assert toggle.font().pixelSize() == 10
-        arrows = getattr(Qt, "ArrowType", Qt)
-        down = getattr(arrows, "DownArrow", getattr(Qt, "DownArrow"))
-        assert enum_value(toggle.arrowType()) == enum_value(down)
+        header = toggle.parentWidget()
+        assert header is not None
+        chevron = next(
+            label
+            for label in header.findChildren(QLabel)
+            if label is not toggle and not label.pixmap().isNull()
+        )
+        assert chevron.pixmap().width() > 0
         glyph = pane.findChild(QWidget, "formBuilder.inspectorGlyph")
         name = pane.findChild(QLineEdit, "formBuilder.inspectorName")
         assert glyph is not None and not isinstance(glyph, QLabel)
@@ -639,7 +645,8 @@ def test_link_color_reaches_crumbs_and_the_filter(qapp: QApplication) -> None:
         pane.flush()
         crumbs = pane.findChild(QLabel, "formBuilder.inspectorCrumbs")
         assert crumbs is not None and crumbs.isVisible()
-        assert "color:#123456" in crumbs.text()
+        assert "text-decoration:none" in crumbs.text()
+        assert "color:#123456" not in crumbs.text()
         search = pane.findChild(QLineEdit, "formBuilder.inspectorSearch")
         assert search is not None
         search.setText("text")
@@ -657,11 +664,11 @@ def test_form_view_lists_captions_and_a_sized_page(qapp: QApplication) -> None:
         session.selection.clear(source=SelectionSource.PROGRAM)
         pane.flush()
         expected = (
-            ("window", "Window"),
-            ("layout", "Layout"),
-            ("tabOrder", "Tab order"),
-            ("problems", "Problems"),
-            ("files", "Files"),
+            ("window", "WINDOW"),
+            ("layout", "LAYOUT"),
+            ("tabOrder", "TAB ORDER"),
+            ("problems", "PROBLEMS"),
+            ("files", "FILES"),
         )
         for name, text in expected:
             caption = pane.findChild(QLabel, "formBuilder.formCaption.%s" % name)

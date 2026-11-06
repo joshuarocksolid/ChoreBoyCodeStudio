@@ -15,6 +15,7 @@ from app.qt.QtGui import QFont  # noqa: E402
 from app.qt.QtTest import QTest  # noqa: E402
 from app.qt.QtWidgets import (  # noqa: E402
     QApplication,
+    QCheckBox,
     QComboBox,
     QLabel,
     QLineEdit,
@@ -135,9 +136,9 @@ def test_the_default_name_is_unique_in_the_folder(tmp_path: Path, qapp: object) 
     (forms / "new_form.ui").write_text("<ui/>\n", encoding="utf-8")
     panel = _panel(tmp_path, qapp)
     assert panel.stem() == "new_form_2"
-    caption = panel.findChild(QLabel, "formBuilder.newForm.caption")
-    assert caption is not None
-    assert caption.text() == (
+    name = panel.findChild(QLineEdit, "formBuilder.newForm.name")
+    assert name is not None
+    assert name.toolTip() == (
         "Creates forms/new_form_2.ui, ui_new_form_2.py and new_form_2_window.py."
     )
     empty = panel.findChild(QLabel, "formBuilder.newForm.recentEmpty")
@@ -263,9 +264,9 @@ def test_the_project_root_caption_has_no_folder(tmp_path: Path, qapp: object) ->
     folder = panel.findChild(QComboBox, "formBuilder.newForm.folder")
     assert folder is not None
     assert folder.currentText() == "(project root)"
-    caption = panel.findChild(QLabel, "formBuilder.newForm.caption")
-    assert caption is not None
-    assert caption.text() == "Creates new_form.ui, ui_new_form.py and new_form_window.py."
+    name = panel.findChild(QLineEdit, "formBuilder.newForm.name")
+    assert name is not None
+    assert name.toolTip() == "Creates new_form.ui, ui_new_form.py and new_form_window.py."
     panel.close()
 
 
@@ -369,12 +370,12 @@ def test_from_table_maps_columns_to_widgets(tmp_path: Path, qapp: object) -> Non
     shows = {}
     for row in range(table.rowCount()):
         name_item = table.item(row, 1)
-        label_item = table.item(row, 4)
+        label_edit = table.cellWidget(row, 4)
         widget = table.cellWidget(row, 3)
         assert name_item is not None
-        assert label_item is not None
+        assert isinstance(label_edit, QLineEdit)
         assert widget is not None
-        labels[name_item.text()] = label_item.text()
+        labels[name_item.text()] = label_edit.text()
         shows[name_item.text()] = widget.currentText()  # type: ignore[attr-defined]
     assert labels["customer_id"] == "Customer"
     assert labels["first_name"] == "First Name"
@@ -478,7 +479,7 @@ def test_an_integer_primary_key_starts_unchecked(tmp_path: Path, qapp: object) -
 
 
 def test_the_preview_follows_the_dialog_chrome(tmp_path: Path, qapp: object) -> None:
-    # CONTRACTS 5.4: chrome rules live on the window; the app sheet is tooltip-only.
+    # The window sheet does not paint the realized form. Fusion stays light (UX-ISO).
     app = QApplication.instance()
     assert app is not None
     window = QWidget()
@@ -526,8 +527,8 @@ def test_the_preview_follows_the_dialog_chrome(tmp_path: Path, qapp: object) -> 
                     light += 1
                 elif value < 80:
                     dark += 1
-        assert dark > 0
-        assert dark > light
+        assert light > 0
+        assert light > dark
     finally:
         dialog.close()
         window.deleteLater()
@@ -628,7 +629,7 @@ def test_primary_button_text_meets_contrast_on_the_accent() -> None:
         assert _contrast(accent, on_accent_for(accent)) >= 4.5
 
 
-def test_preview_fits_its_pane_so_every_label_shows(tmp_path: Path, qapp: object) -> None:
+def test_preview_lays_out_at_the_column_width(tmp_path: Path, qapp: object) -> None:
     dialog = FromTableDialog(
         project_root=str(tmp_path),
         stem="customer",
@@ -644,18 +645,129 @@ def test_preview_fits_its_pane_so_every_label_shows(tmp_path: Path, qapp: object
         dialog.set_database(str(_database(tmp_path)), "shop")
         dialog.resize(960, 560)
         dialog.show()
-        for _ in range(3):
+        for _ in range(4):
             QApplication.processEvents()
         form = dialog._preview_widget
         view = dialog._preview_view
         assert form is not None and view is not None
-        viewport = view.viewport().rect()
+        assert view.transform().m11() == 1
+        off = getattr(getattr(Qt, "ScrollBarPolicy", Qt), "ScrollBarAlwaysOff")
+        needed = getattr(getattr(Qt, "ScrollBarPolicy", Qt), "ScrollBarAsNeeded")
+        assert enum_value(view.horizontalScrollBarPolicy()) == enum_value(off)
+        assert enum_value(view.verticalScrollBarPolicy()) == enum_value(needed)
+        assert view.horizontalScrollBar().maximum() == 0
+        assert form.width() <= view.viewport().width()
         labels = [label for label in form.findChildren(QLabel) if label.isVisible() and label.text()]
         assert labels
-        for label in labels:
-            corner = view.mapFromScene(label.mapTo(form, label.rect().topLeft()))
-            assert viewport.contains(corner), label.text()
-            assert corner.x() + label.width() <= viewport.width() + 1, label.text()
+        assert min(label.height() for label in labels) >= 12
+        names = (
+            "firstButton",
+            "previousButton",
+            "positionLabel",
+            "nextButton",
+            "lastButton",
+            "newButton",
+            "saveButton",
+            "revertButton",
+            "deleteButton",
+            "findButton",
+        )
+        found = []
+        for name in names:
+            control = form.findChild(QWidget, name)
+            assert control is not None and control.text()
+            corner = control.mapTo(form, control.rect().bottomRight())
+            assert corner.x() <= form.width()
+            assert corner.y() <= form.height()
+            found.append(corner.y())
+        assert max(found) > min(found)
+        assert "First Name" in [label.text() for label in labels]
+        dialog.set_included("first_name", False)
+        for _ in range(4):
+            QApplication.processEvents()
+        form = dialog._preview_widget
+        view = dialog._preview_view
+        assert form is not None and view is not None
+        texts = [label.text() for label in form.findChildren(QLabel)]
+        assert "First Name" not in texts
+        assert "Joined" in texts
+        assert view.transform().m11() == 1
+        assert form.width() <= view.viewport().width()
+        assert view.horizontalScrollBar().maximum() == 0
+    finally:
+        dialog.close()
+    del qapp
+
+
+def _ink_chrome():
+    return chrome_from_values(
+        window="#000000",
+        panel="#000000",
+        text="#ffffff",
+        muted="#d0d0d0",
+        faint="#d0d0d0",
+        border="#ffffff",
+        accent="#7cb7ff",
+        row_hover="#222222",
+        input_bg="#1a1a1a",
+        error="#ff8080",
+        focus_width=2,
+        is_dark=True,
+        is_high_contrast=True,
+    )
+
+
+def _light_pixels(widget: QWidget, start: int) -> int:
+    image = widget.grab().toImage()
+    assert not image.isNull()
+    found = 0
+    for y in range(image.height()):
+        for x in range(start, image.width()):
+            if image.pixelColor(x, y).lightness() > 200:
+                found += 1
+    return found
+
+
+def test_checkbox_text_is_visible_on_black(tmp_path: Path, qapp: object) -> None:
+    dialog = FromTableDialog(
+        project_root=str(tmp_path),
+        stem="customer",
+        chrome=_ink_chrome(),
+        date_format="M/d/yy",
+        name_reason=lambda: None,
+    )
+    try:
+        dialog.resize(800, 600)
+        dialog.show()
+        QApplication.processEvents()
+        for name in ("formBuilder.fromTable.lines", "formBuilder.fromTable.start"):
+            box = dialog.findChild(QCheckBox, name)
+            assert box is not None and box.text()
+            assert _light_pixels(box, box.width() // 3) > 20
+    finally:
+        dialog.close()
+    del qapp
+
+
+def test_field_lists_use_the_input_color(tmp_path: Path, qapp: object) -> None:
+    dialog = FromTableDialog(
+        project_root=str(tmp_path),
+        stem="customer",
+        chrome=_ink_chrome(),
+        date_format="M/d/yy",
+        name_reason=lambda: None,
+    )
+    try:
+        dialog.resize(800, 600)
+        dialog.show()
+        QApplication.processEvents()
+        for name in ("formBuilder.fromTable.tables", "formBuilder.fromTable.mapping"):
+            listed = dialog.findChild(QWidget, name)
+            assert listed is not None
+            image = listed.viewport().grab().toImage()  # type: ignore[attr-defined]
+            assert not image.isNull()
+            color = image.pixelColor(image.width() // 2, image.height() // 2)
+            assert color.name().lower() == "#1a1a1a"
     finally:
         dialog.close()
     del qapp
@@ -886,7 +998,7 @@ def test_no_single_key_and_a_missing_database_disable_create(tmp_path: Path, qap
     try:
         assert unread.findChild(QListWidget, "formBuilder.fromTable.tables").count() == 0
         assert not unread.create_button().isEnabled()
-        assert "Can't open the database." in unread.disabled_reason()
+        assert "is missing" in unread.disabled_reason()
     finally:
         unread.close()
 

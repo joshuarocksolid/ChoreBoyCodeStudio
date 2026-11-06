@@ -862,9 +862,10 @@ def test_editor_column_is_132_at_236_px(qapp: QApplication) -> None:
                 break
             width += 236 - row.width()
         assert row.width() == 236
+        column = row.width() - row._label_px - 8
         editor = row._editor.widget
-        assert editor.width() == 132
-        assert stacked._editor.widget.width() >= 132
+        assert editor.width() == column
+        assert stacked._editor.widget.width() >= column
         assert scroll.horizontalScrollBar().maximum() == 0
     finally:
         _close(window, pane, realizer, session, qapp)

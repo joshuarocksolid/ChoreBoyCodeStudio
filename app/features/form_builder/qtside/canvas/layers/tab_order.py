@@ -1,11 +1,11 @@
 """The Tab order overlay (UX-OVL-002 .. 005, UX-MODE-002).
 
-One 16 px ``ov.tab`` badge per stop, seated at an outside corner of its widget
-by the chip solver (above left first). When any stop has no free corner, as in
-packed layout rows, every badge sits just inside its widget's top-left corner
-instead of in a gutter with a leader. A 1.5 px dashed flow line joins the badge centres in
-order, under the badges and fainter than them. While the user numbers widgets, the stops already
-numbered are solid and the others hollow. A hover chip says "Click to make it 4".
+One 16 px ``ov.tab`` badge per stop. It sits inside the widget's right edge,
+vertically centred, 4 px in from that edge. A widget under 48 px wide carries
+the badge outside the right edge, still vertically centred. A 1.5 px dashed
+flow line joins the badge centres in order, under the badges and fainter than
+them. While the user numbers widgets, the stops already numbered are solid
+and the others hollow. A hover chip says "Click to make it 4".
 The state is ``TabOrderState``; the host (``integration/overlays.py``) switches
 this layer on with ``canvas.show_layer("tab_order", state)``.
 """
@@ -18,13 +18,12 @@ from typing import Dict, FrozenSet, Hashable, List, Optional, Tuple
 from app.features.form_builder.engine.ids import NodeId
 from app.features.form_builder.qtside.canvas.core.chips import (
     ChipRequest,
-    CornerSeat,
     Obstacle,
     place_chips,
 )
 from app.features.form_builder.qtside.canvas.core.frame import Chip
 from app.features.form_builder.qtside.canvas.core.overlay import LayerItem, LayerOutput
-from app.features.form_builder.qtside.canvas.core.space import CanvasPoint, CanvasRect, CanvasSize
+from app.features.form_builder.qtside.canvas.core.space import CanvasRect, CanvasSize
 from app.features.form_builder.qtside.canvas.core.structure import ancestors
 from app.features.form_builder.qtside.canvas.layers import CanvasLayer
 from app.features.form_builder.qtside.theme.overlay import CanvasPalette
@@ -32,14 +31,12 @@ from app.qt.QtCore import QPointF, QRectF, Qt
 from app.qt.QtGui import QColor, QFont, QPainter, QPainterPath, QPen
 
 NAME = "tab_order"
-_SEATED: Optional[Tuple[Hashable, Dict[Hashable, object]]] = None
 _CROSSINGS: Optional[Tuple[FrozenSet[Tuple[int, int]], Dict[Tuple[int, int, int, int], bool]]] = None
 BADGE = 16
-#: Gap between a badge seated inside its widget and the widget's left and top edges.
-INSET = 3
+#: Gap between the badge and the widget's right edge.
+INSET = 4
 HINT_HEIGHT = 18
 HINT_PAD = 12
-_CORNERS = ("above_left", "below_left", "above_right", "below_right")
 _HINT_CORNERS = ("below_left", "above_left", "below_right", "above_right")
 
 
@@ -77,30 +74,12 @@ def build(static: object, inputs: object, state: Hashable) -> LayerOutput:
         if found and found[0] in placed:
             ids[name] = found[0]
     chrome = tuple(getattr(inputs, "chrome", ()))
-    # Seats depend on where the stops are, not on their numbers, so a click that only renumbers reuses them.
-    key = (view, tuple((name, placed[ids[name]]) for name in sorted(ids)), content, viewport, chrome)
-    global _SEATED
-    if _SEATED is None or _SEATED[0] != key:
-        requests = [
-            ChipRequest(name, placed[node], CanvasSize(BADGE, BADGE), _CORNERS, ancestors(document, node))
-            for name, node in ids.items()
-        ]
-        _SEATED = (key, {seat.key: seat for seat in place_chips(requests, content, chrome, page, viewport, None)})
-    seated = _SEATED[1]
-    # One rule for the whole form: when any stop has no free corner, every badge goes inside.
-    outside = all(isinstance(seated.get(name), CornerSeat) for name in ids)
     badges: List[LayerItem] = []
     centres: List[Tuple[int, int]] = []
     for number, name in enumerate(state.order, 1):
         if name not in ids:
             continue
-        target = placed[ids[name]]
-        seat = seated.get(name)
-        # A badge sits at its widget's outside corner. When corners are taken (rows
-        # packed in a layout) badges go just inside the top-left corner: a badge in a
-        # side gutter with a leader, or a mix of above, inside and below, reads as
-        # belonging to the wrong widget.
-        rect = seat.rect if outside and seat is not None else inside_corner(target)
+        rect = seat(placed[ids[name]])
         solid = state.assigned == 0 or number <= state.assigned
         line = ()
         badges.append(LayerItem(rect=rect, role="tab", layer=NAME, data=("badge", number, solid, line)))
@@ -126,8 +105,8 @@ def build(static: object, inputs: object, state: Hashable) -> LayerOutput:
         node = ids[state.hover]
         hint = ChipRequest("\0hint", placed[node], size, _HINT_CORNERS, ancestors(document, node))
         taken = chrome + tuple(badge.rect for badge in badges)
-        for seat in place_chips([hint], content, taken, page, viewport, None):
-            items.append(Chip(seat.rect, text, "tab", None))
+        for chip in place_chips([hint], content, taken, page, viewport, None):
+            items.append(Chip(chip.rect, text, "tab", None))
     return LayerOutput(tuple(items))  # type: ignore[arg-type]
 
 
@@ -176,11 +155,13 @@ def _crosses(
     return False
 
 
-def inside_corner(target: CanvasRect) -> CanvasRect:
-    """A badge just inside the widget's top-left corner, centred on a one-line field."""
-    inset_y = max(0, min(INSET, (target.height - BADGE) // 2))
-    inset_x = INSET if target.width >= BADGE + 2 * INSET else 0
-    return CanvasRect(target.x + inset_x, target.y + inset_y, BADGE, BADGE)
+def seat(target: CanvasRect) -> CanvasRect:
+    y = target.y + (target.height - BADGE) // 2
+    if target.width < 48:
+        x = target.x + target.width + INSET
+    else:
+        x = target.x + target.width - INSET - BADGE
+    return CanvasRect(x, y, BADGE, BADGE)
 
 
 def _color(raw: str, alpha: float = 1.0) -> QColor:

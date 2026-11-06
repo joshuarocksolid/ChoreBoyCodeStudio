@@ -15,10 +15,7 @@ _HEADER = "## Generated from invoice.ui by ChoreBoy Code Studio\n"
 def test_ui_module_banner_names_the_form_and_the_window() -> None:
     banner = generated_banner("/work/ui_invoice.py", _HEADER)
     assert banner is not None
-    assert banner.message == (
-        "Generated from invoice.ui. Code Studio rewrites this file every time the form is saved. "
-        "Put your code in invoice_window.py."
-    )
+    assert banner.message == "Generated from invoice.ui. Saving the form overwrites this file."
     assert banner.source_path.endswith("invoice.ui")
     assert banner.logic_path.endswith("invoice_window.py")
 

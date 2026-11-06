@@ -112,6 +112,7 @@ class OverlayKind:
     toggle: Optional[ToggleSpec] = None
     banner_action: Optional[Tuple[str, Callable[[Any], None]]] = None
     link: Optional[LinkGesture] = None
+    banner_detail: str = ""
 
     def __post_init__(self) -> None:
         if not self.kind or not self.layer:

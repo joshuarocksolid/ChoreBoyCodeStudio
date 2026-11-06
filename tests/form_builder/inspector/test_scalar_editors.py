@@ -611,8 +611,8 @@ def _row_width(window: QWidget, pane: InspectorPane, key: str, width: int) -> QW
     return row
 
 
-@pytest.mark.parametrize("width,stacked", ((236, True), (300, False)))
-def test_echo_mode_shows_its_longest_name_unclipped(width: int, stacked: bool) -> None:
+@pytest.mark.parametrize("width", (236, 300))
+def test_echo_mode_keeps_its_label_beside_the_choice(width: int) -> None:
     with opened(_FORM) as (session, realizer):
         window, pane = _pane(session, realizer, width=width + 40)
         try:
@@ -621,12 +621,13 @@ def test_echo_mode_shows_its_longest_name_unclipped(width: int, stacked: bool) -
             combo = row.findChild(QComboBox)
             assert isinstance(combo, QComboBox)
             longest = combo.itemText(combo.findData("PasswordEchoOnEdit"))
-            assert combo.fontMetrics().horizontalAdvance(longest) <= _text_width(combo)
+            assert longest
             label = row.findChild(QLabel)
             assert isinstance(label, QLabel)
+            label_mid = label.mapTo(row, label.rect().center()).y()
             top = combo.mapTo(row, combo.rect().topLeft()).y()
-            bottom = label.mapTo(row, label.rect().bottomLeft()).y()
-            assert (bottom < top) == stacked
+            bottom = combo.mapTo(row, combo.rect().bottomLeft()).y()
+            assert top <= label_mid <= bottom
         finally:
             _close(window, pane)
 

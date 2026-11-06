@@ -127,7 +127,7 @@ def place_chips(
         if request.beside_first and not request.corners_only:
             seat = _beside_seat(request, buckets, walls, count, viewport)
         if seat is None:
-            seat = _corner_seat(request, buckets, walls, viewport)
+            seat = _corner_seat(request, buckets, walls, viewport, page)
         if seat is None and not request.corners_only and not request.beside_first:
             seat = _beside_seat(request, buckets, walls, count, viewport)
         if seat is None and not request.corners_only:
@@ -146,6 +146,7 @@ def _corner_seat(
     buckets: "_Buckets",
     taken: Sequence[CanvasRect],
     viewport: CanvasRect,
+    page: CanvasRect,
 ) -> Optional[CornerSeat]:
     """A corner, slid along the target's edge into the viewport when needed."""
     target = request.target
@@ -153,6 +154,12 @@ def _corner_seat(
     for corner in request.corners:
         for stack in stacks:
             rect = corner_rect(target, request.size, corner)
+            offered_inside = any(name.startswith("inside_") for name in request.corners)
+            # A widget chip can sit in the gutter and look detached. The page-sized
+            # layout keeps those seats so its margin numbers stay outside the page.
+            smaller = target.width < page.width and target.height < page.height
+            if offered_inside and smaller and target.intersects(page) and not rect.intersects(page):
+                continue
             if stack:
                 rect = _shift_corner(rect, corner, stack, request.size.height)
             if not _inside(rect, viewport):

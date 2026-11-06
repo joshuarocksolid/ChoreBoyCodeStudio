@@ -114,6 +114,34 @@ QPushButton#shell\\.dialogChrome\\.button\\.link:hover {{
     color: {accent_hover};
     text-decoration: underline;
 }}
+QWidget#shell\\.dialogChrome\\.body QLabel {{
+    color: {tokens.text_primary};
+    background: transparent;
+}}
+QWidget#shell\\.dialogChrome\\.body QCheckBox {{
+    color: {tokens.text_primary};
+    background: transparent;
+}}
+QWidget#shell\\.dialogChrome\\.body QLineEdit,
+QWidget#shell\\.dialogChrome\\.body QComboBox,
+QWidget#shell\\.dialogChrome\\.body QSpinBox,
+QWidget#shell\\.dialogChrome\\.body QDoubleSpinBox,
+QWidget#shell\\.dialogChrome\\.body QPlainTextEdit,
+QWidget#shell\\.dialogChrome\\.body QListWidget,
+QWidget#shell\\.dialogChrome\\.body QFontComboBox {{
+    background: {tokens.input_bg};
+    color: {tokens.text_primary};
+    border: 1px solid {tokens.border};
+}}
+QWidget#shell\\.dialogChrome\\.body QLineEdit:focus,
+QWidget#shell\\.dialogChrome\\.body QComboBox:focus,
+QWidget#shell\\.dialogChrome\\.body QSpinBox:focus,
+QWidget#shell\\.dialogChrome\\.body QDoubleSpinBox:focus,
+QWidget#shell\\.dialogChrome\\.body QPlainTextEdit:focus,
+QWidget#shell\\.dialogChrome\\.body QListWidget:focus,
+QWidget#shell\\.dialogChrome\\.body QFontComboBox:focus {{
+    border: {tokens.focus_border_width}px solid {tokens.accent};
+}}
 
 /* -- Diff view (shared) -------------------------------------------------- */
 QWidget#shell\\.diffView {{

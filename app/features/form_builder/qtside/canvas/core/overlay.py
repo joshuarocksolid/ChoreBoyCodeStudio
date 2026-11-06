@@ -13,7 +13,7 @@ from dataclasses import dataclass, field, replace
 from typing import Callable, Dict, Hashable, List, Literal, Mapping, Optional, Sequence, Set, Tuple, Union
 
 from app.features.form_builder.engine.ids import NodeId
-from app.features.form_builder.engine.query.direct import EMPTY, KnobSet, Readout, Site, Turn
+from app.features.form_builder.engine.query.direct import EMPTY, KnobSet, Readout, Site, Spacing, Turn
 from app.features.form_builder.engine.query.drop_target import (
     DOCK_BAND_PX,
     DOCK_REFUSAL,
@@ -117,6 +117,8 @@ PILL_LONG = 32
 PILL_SHORT = 4
 #: Gap bars are this many screen pixels across at every zoom.
 GAP_BAR = 2
+#: A widget selection chip sits this far above the widget's top edge.
+_FLUSH_ABOVE = 2
 GRIP_GLYPH = CanvasSize(6, 16)
 _INERT_HANDLES: Tuple[Compass, ...] = ("e", "s", "se")
 _THIN_KINDS = frozenset({"gap", "margin"})
@@ -127,9 +129,9 @@ _TICK_CORNERS: Dict[str, Tuple[Corner, ...]] = {
 
 _EMPTY_FORM = (
     "Drop a widget here",
-    "or press / to search for one.",
-    "/ insert · Ctrl+Shift+G wrap · F2 rename",
+    "or press / to search",
 )
+_EMPTY_INSET = 8
 _EMPTY_NESTED = "Drop widgets here"
 #: UX-CONT-009: the caption on an empty page container.
 _EMPTY_PAGE_CAPTIONS = {
@@ -299,14 +301,25 @@ def build_static(document: UiDocument, index: HitIndex, view: ViewMap) -> Static
         paint = _clip(canvas, limit) if limit is not None else canvas
         if isinstance(node, LayoutNode):
             placed.append(Obstacle(node.id, canvas))
+            empty_root = (
+                root_layout is not None
+                and node.id == root_layout.id
+                and not _layout_filled(node)
+            )
+            if empty_root:
+                box = _empty_form_box(node, canvas)
+                layouts.append(
+                    # 4 matches theme R_CONTROL. This module cannot import the theme.
+                    Stroke(box, "layout_faint", 1, "dashed", radius=4.0, node=node.id)
+                )
+                empties.append(Caption(box, _EMPTY_FORM))
+                targets.append((box, OnSpace(node.id, node.id)))
+                continue
             if paint is not None:
                 layouts.append(Stroke(paint, "layout_faint", 1, "dashed", node=node.id))
             if _layout_filled(node):
                 continue
-            if root_layout is not None and node.id == root_layout.id:
-                empties.append(Caption(canvas, _EMPTY_FORM))
-                targets.append((canvas, OnSpace(node.id, node.id)))
-            elif paint is not None:
+            if paint is not None:
                 _empty_mark(
                     empties,
                     targets,
@@ -541,7 +554,8 @@ def build_frame(static: StaticLayer, inputs: FrameInputs) -> OverlayFrame:
     fixed = tuple(hit for hit, _target in knob_hits + inert_hits) + inputs.chrome
     viewport = inputs.viewport if inputs.viewport is not None else page.grown(400)
     seats = place_chips(requests, static.content, fixed, page, viewport, inputs.dock)
-    chip_hits, chip_rows = _seat_items(items, seats, faces, inputs.dock is not None)
+    seats = _seat_selection_above(seats, requests, faces, static, inputs, viewport)
+    chip_hits, chip_rows = _seat_items(items, seats, faces, inputs.dock is not None, page)
     targets: List[Tuple[CanvasRect, Target]] = []
     targets.extend(layer_targets)
     targets.extend(reversed(plus_hits))
@@ -820,9 +834,10 @@ def _turn_mark(items: List[Item], view: ViewMap, done: Turn) -> None:
         return
     canvas = view.to_canvas(mark)
     kind = done.readout.key[0]
-    if kind in _THIN_KINDS:
+    if kind == "margin":
         items.append(Fill(canvas, "gap_fill"))
-        items.append(Stroke(canvas, "gap", 1, "solid"))
+    elif kind == "gap":
+        items.append(Fill(_thin(canvas, GAP_BAR), "gap"))
     elif kind == "grip":
         items.append(Glyph(_grip_box(canvas), "grip", "select"))
     else:
@@ -1071,14 +1086,18 @@ def _requests(
         text = chip_text(document, inputs.selection, inputs.sizing)
         if readout is not None and readout.key[0] == "size" and readout.key[1] == primary:
             text = readout.text
-        role: Role = "layout" if isinstance(document.get(primary), LayoutNode) else "select"
+        node = document.get(primary)
+        role: Role = "layout" if isinstance(node, LayoutNode) else "select"
+        # A layout chip stays in the gutter so it does not cover the margin ticks.
+        # A widget chip may sit on the widget when the gutter seat falls off the page.
+        corners = LABEL_CORNERS if isinstance(node, LayoutNode) else BARE_CORNERS
         _ask(
             faces,
             requests,
             ("chip", primary),
             rects[primary],
             _label_size(text, inputs.measure),
-            LABEL_CORNERS,
+            corners,
             document,
             _Face("chip", primary, role, text, None),
             required=True,
@@ -1130,6 +1149,7 @@ def _requests(
             own_frame=True,
         )
     _page_chips(faces, requests, static, inputs)
+    _gap_chips(faces, requests, inputs, shown)
     return faces, requests
 
 
@@ -1428,11 +1448,171 @@ def _ask(
     requests.append(ChipRequest(key, target, size, corners, exempt, required=required, outside=outside))
 
 
+def _stored_px(node: LayoutNode, name: str) -> Optional[int]:
+    value = node.value(name)
+    raw = getattr(value, "value", None)
+    if isinstance(raw, bool) or not isinstance(raw, int):
+        return None
+    return max(raw, 0)
+
+
+def _side_px(node: LayoutNode, name: str, uniform: int) -> int:
+    stored = _stored_px(node, name)
+    if stored is None:
+        return uniform
+    return stored
+
+
+def _empty_form_box(node: LayoutNode, canvas: CanvasRect) -> CanvasRect:
+    """Dashed hint inset 8 px inside the root layout's own margins."""
+    uniform = _stored_px(node, "margin") or 0
+    left = _side_px(node, "leftMargin", uniform)
+    top = _side_px(node, "topMargin", uniform)
+    right = _side_px(node, "rightMargin", uniform)
+    bottom = _side_px(node, "bottomMargin", uniform)
+    box = CanvasRect(
+        canvas.x + left + _EMPTY_INSET,
+        canvas.y + top + _EMPTY_INSET,
+        canvas.width - left - right - _EMPTY_INSET * 2,
+        canvas.height - top - bottom - _EMPTY_INSET * 2,
+    )
+    if box.width >= 24 and box.height >= 24:
+        return box
+    return CanvasRect(
+        canvas.x + _EMPTY_INSET,
+        canvas.y + _EMPTY_INSET,
+        max(canvas.width - _EMPTY_INSET * 2, 1),
+        max(canvas.height - _EMPTY_INSET * 2, 1),
+    )
+
+
+def _gap_chips(
+    faces: Dict[Hashable, _Face],
+    requests: List[ChipRequest],
+    inputs: FrameInputs,
+    shown: SelectionState,
+) -> None:
+    """A number on a drawn gap when the gap is at least 4 px, or the layout is hovered."""
+    if isinstance(inputs.gesture, Turning):
+        return
+    focused = _focused_layouts(inputs.document, shown.current)
+    hover = inputs.gesture.hover if isinstance(inputs.gesture, Idle) else None
+    hovered = None
+    if hover is not None and inputs.document.contains(hover):
+        found = inputs.document.get(hover)
+        hovered = hover if isinstance(found, LayoutNode) else _parent_layout(inputs.document, hover)
+    for site in inputs.knobs.sites:
+        if site.look != "bar":
+            continue
+        rule = site.knob.rule
+        if not isinstance(rule, Spacing) or rule.layout not in focused:
+            continue
+        canvas = inputs.view.to_canvas(site.mark)
+        gap_px = min(canvas.width, canvas.height)
+        if gap_px < 4 and rule.layout != hovered:
+            continue
+        text = str(int(rule.origin))
+        _ask(
+            faces,
+            requests,
+            ("gapchip", rule.layout, rule.name),
+            canvas,
+            _label_size(text, inputs.measure),
+            LABEL_CORNERS,
+            inputs.document,
+            _Face("chip", rule.layout, "gap", text, None),
+        )
+
+
+def _seat_selection_above(
+    seats: Sequence[ChipSeat],
+    requests: Sequence[ChipRequest],
+    faces: Mapping[Hashable, _Face],
+    static: StaticLayer,
+    inputs: FrameInputs,
+    viewport: CanvasRect,
+) -> Tuple[ChipSeat, ...]:
+    """Seat a widget selection chip on the widget's top-left, 2 px above.
+
+    A seat that meets the page title, a neighbour, or content keeps the
+    ``place_chips`` result. There is no inside-the-widget fallback.
+    """
+    by_key = {request.key: request for request in requests}
+    rects = [seat.rect for seat in seats]
+    chosen: List[ChipSeat] = list(seats)
+    for index, seat in enumerate(seats):
+        face = faces.get(seat.key)
+        request = by_key.get(seat.key)
+        if face is None or request is None or not _selection_chip(face, seat.key):
+            continue
+        above = CanvasRect(
+            request.target.x,
+            request.target.y - _FLUSH_ABOVE - seat.rect.height,
+            seat.rect.width,
+            seat.rect.height,
+        )
+        others = rects[:index] + rects[index + 1 :]
+        if not _above_is_clear(above, face, request, static, inputs, viewport, others):
+            continue
+        chosen[index] = CornerSeat(seat.key, above, "above_left")
+        rects[index] = above
+    return tuple(chosen)
+
+
+def _selection_chip(face: _Face, key: Hashable) -> bool:
+    return (
+        face.kind == "chip"
+        and face.role == "select"
+        and isinstance(key, tuple)
+        and bool(key)
+        and key[0] == "chip"
+    )
+
+
+def _above_is_clear(
+    rect: CanvasRect,
+    face: _Face,
+    request: ChipRequest,
+    static: StaticLayer,
+    inputs: FrameInputs,
+    viewport: CanvasRect,
+    others: Sequence[CanvasRect],
+) -> bool:
+    if not _in_view(rect, viewport):
+        return False
+    if inputs.dock is not None and rect.intersects(inputs.dock):
+        return False
+    for band in inputs.chrome:
+        if rect.intersects(band):
+            return False
+    for obstacle in static.content:
+        if not rect.intersects(obstacle.rect):
+            continue
+        if obstacle.band or obstacle.node == face.node or obstacle.node not in request.exempt:
+            return False
+    if rect.intersects(request.target):
+        return False
+    for other in others:
+        if rect.intersects(other):
+            return False
+    return True
+
+
+def _in_view(rect: CanvasRect, viewport: CanvasRect) -> bool:
+    return (
+        rect.x >= viewport.x
+        and rect.y >= viewport.y
+        and rect.x + rect.width <= viewport.x + viewport.width
+        and rect.y + rect.height <= viewport.y + viewport.height
+    )
+
+
 def _seat_items(
     items: List[Item],
     seats: Sequence[ChipSeat],
     faces: Mapping[Hashable, _Face],
     chrome_dock: bool,
+    page: CanvasRect,
 ) -> Tuple[List[Tuple[CanvasRect, Target]], List[Tuple[CanvasRect, NodeId]]]:
     hits: List[Tuple[CanvasRect, Target]] = []
     rows: List[Tuple[CanvasRect, NodeId]] = []
@@ -1443,7 +1623,15 @@ def _seat_items(
             items.append(Badge(seat.rect, "error", face.role, leader, face.tip))
         else:
             items.append(
-                Chip(seat.rect, face.text, face.role, leader, chrome_dock and isinstance(seat, DockSeat), face.tip)
+                Chip(
+                    seat.rect,
+                    face.text,
+                    face.role,
+                    leader,
+                    chrome_dock and isinstance(seat, DockSeat),
+                    face.tip,
+                    not _within(seat.rect, page),
+                )
             )
         rows.append((seat.rect, face.node))
         if isinstance(face.action, ShowStacked) and face.action.delta == 0:

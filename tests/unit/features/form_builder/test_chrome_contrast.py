@@ -192,5 +192,5 @@ def test_builder_pairs_include_neutral_gray_and_the_page_title(qapp) -> None:  #
     assert _contrast(title_text, PAGE_TITLE_FILL) >= 4.5
     assert _contrast(PAGE_TITLE_GLYPH, PAGE_TITLE_FILL) >= 3.0
     sheet = _stylesheet(chrome_for(tokens))
-    assert "QCheckBox { color:" in sheet
+    assert "QCheckBox::indicator" in sheet
     assert chrome_for(tokens).text in sheet

@@ -17,7 +17,7 @@ from app.features.form_builder.qtside.start.panel import RAIL_MIN_WIDTH, RAIL_WI
 from app.qt.QtCore import Qt
 from app.qt.QtGui import QColor, QPixmap
 from app.qt.QtTest import QTest
-from app.qt.QtWidgets import QApplication, QLabel, QMenu
+from app.qt.QtWidgets import QApplication, QLabel, QMenu, QWidget
 from tests.unit.features.form_builder.test_new_form import _chrome
 
 pytestmark = [pytest.mark.unit, pytest.mark.usefixtures("qapp")]
@@ -80,9 +80,9 @@ def test_your_templates_is_the_first_group_and_cards_show_name_description_and_t
     panel = _panel(tmp_path)
     _load(panel, state, str(tmp_path / "shop"))
     label = panel.findChild(QLabel, "formBuilder.newForm.group.yours")
-    assert label.isVisible() and label.text() == "Your templates"
+    assert label.isVisible() and label.text() == "YOUR TEMPLATES"
     groups = [w.text() for w in panel.findChildren(QLabel) if w.objectName().startswith("formBuilder.newForm.group.") and w.isVisible()]
-    assert groups[0] == "Your templates" and groups[1] == "Templates"
+    assert groups[0] == "YOUR TEMPLATES" and groups[1] == "TEMPLATES"
     first = panel.card(shop.card_key)
     assert (first.title(), first.description(), first.tag()) == ("Shop window", "Till and receipts", "")
     assert panel.card(mine.card_key).tag() == "This project"
@@ -167,7 +167,7 @@ def test_recent_forms_sit_in_a_240_px_rail_from_1180_px(tmp_path: Path) -> None:
     narrow = _panel(tmp_path, 1100)
     assert not narrow.rail_shown()
     wide = _panel(tmp_path, RAIL_MIN_WIDTH)
-    box = wide.findChild(QLabel, "formBuilder.newForm.recentTitle").parentWidget()
+    box = wide.findChild(QWidget, "formBuilder.newForm.recentBox")
     assert wide.rail_shown() and box.width() == RAIL_WIDTH
     column = wide.findChild(QLabel, "formBuilder.newForm.hero").parentWidget()
     assert box.mapTo(wide, box.rect().topLeft()).x() >= column.mapTo(wide, column.rect().topRight()).x()

@@ -33,6 +33,7 @@ def chrome_for(tokens: ShellThemeTokens) -> FormChrome:
         popup=tokens.popup_bg,
         popup_border=tokens.popup_border,
         glyph=tokens.icon_primary,
+        icon_muted=tokens.icon_muted,
         is_dark=tokens.is_dark,
         is_high_contrast=tokens.is_high_contrast,
         layout=_ink(overlay.layout),
@@ -45,4 +46,48 @@ def chrome_for(tokens: ShellThemeTokens) -> FormChrome:
         syntax_keyword=tokens.syntax_keyword,
         warning=tokens.diag_warning_color,
         info=tokens.diag_info_color,
+    )
+
+
+def shell_chrome_pairs(tokens: ShellThemeTokens) -> tuple:
+    """The Preview child has no shell. These pairs ride on ``Appearance.chrome``."""
+    chrome = chrome_for(tokens)
+    return (
+        ("window", chrome.window),
+        ("panel", chrome.panel),
+        ("text", chrome.text),
+        ("muted", chrome.muted),
+        ("faint", chrome.faint),
+        ("border", chrome.border),
+        ("accent", chrome.accent),
+        ("row_hover", chrome.row_hover),
+        ("input", chrome.input),
+        ("error", chrome.error),
+        ("focus_width", str(chrome.focus_width)),
+        ("selected", chrome.selected),
+        ("glyph", chrome.glyph),
+        ("icon_muted", chrome.icon_muted),
+        ("is_dark", "1" if chrome.is_dark else "0"),
+        ("is_high_contrast", "1" if chrome.is_high_contrast else "0"),
+        ("warning", chrome.warning),
+        ("info", chrome.info),
+    )
+
+
+def shell_dialog_parts() -> tuple:
+    """The host dialog chrome. qtside cannot import ``app.shell``, so callers pass this in."""
+    from app.shell.dialog_chrome import (
+        FOOTER_ROLE_PRIMARY,
+        FOOTER_ROLE_SECONDARY,
+        add_footer_button,
+        add_footer_stretch,
+        build_dialog_chrome,
+    )
+
+    return (
+        build_dialog_chrome,
+        add_footer_button,
+        add_footer_stretch,
+        FOOTER_ROLE_PRIMARY,
+        FOOTER_ROLE_SECONDARY,
     )

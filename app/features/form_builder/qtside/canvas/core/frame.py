@@ -38,6 +38,7 @@ class Stroke:
     alpha: float = 1.0
     caps: bool = False
     node: Optional[NodeId] = None
+    radius: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -76,6 +77,8 @@ class Chip:
     #: In the dock strip. The view paints it as chrome above the page caption.
     docked: bool = False
     tip: str = ""
+    #: Sitting on the backdrop, outside the page. High contrast dark outlines it.
+    on_backdrop: bool = False
 
 
 @dataclass(frozen=True)

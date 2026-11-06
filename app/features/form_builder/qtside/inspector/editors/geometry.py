@@ -33,6 +33,7 @@ from app.features.form_builder.qtside.inspector.editors._editor_kit import (
 )
 from app.features.form_builder.qtside.inspector.editors._enum_words import POLICY_HELP, POLICY_ORDER, friendly
 from app.features.form_builder.qtside.inspector.editors._number_box import IntBox, RealBox, _SpinHooks
+from app.features.form_builder.qtside.theme.metrics import CONTROL
 from app.features.form_builder.qtside.inspector.editors._popover import RowPopover, SummaryButton
 from app.qt.QtCore import Qt
 from app.qt.QtWidgets import QComboBox, QGridLayout, QHBoxLayout, QLabel, QVBoxLayout, QWidget
@@ -93,6 +94,11 @@ class _BoxEditor:
             else:
                 box = IntBox(_INT_RANGE[0], _INT_RANGE[1], self._root, hooks)
             self._fields.append(_Field(key, title, box, unit, self._root))
+            symbols = getattr(getattr(type(box), "ButtonSymbols", None), "NoButtons", None)
+            if symbols is not None and hasattr(box, "setButtonSymbols"):
+                box.setButtonSymbols(symbols)
+            box.setFixedHeight(CONTROL)
+            box.setObjectName("formBuilder.geometrySpin")
         self._apply(True)
 
     @property

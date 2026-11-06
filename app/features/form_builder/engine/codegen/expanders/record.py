@@ -189,7 +189,7 @@ def _methods(source, fields, engine, record_word, order, search, check, hooks, a
     pieces = _sql(engine, table, key, noun, order, search, load_columns, insert_columns, writable, check, rowid)
     bodies = {
         "cbcs_open": ("key=None", _open_body(pieces, connection, prelude)),
-        "_cbcs_show": ("_index", _show_body(pieces, connection, fields, hooks, events)),
+        "_cbcs_show": ("_index", _show_body(pieces, connection, fields, hooks, events, has_lines)),
         "_cbcs_start_new": ("", _new_body(fields, hooks, has_lines, events)),
         "cbcs_read_fields": ("", _read_body(fields)),
         "cbcs_write_fields": ("_row", _write_body(fields)),
@@ -293,17 +293,36 @@ def _open_body(pieces, connection, prelude=()) -> List[str]:
     return lines
 
 
-def _show_body(pieces, connection, fields, hooks, events=None) -> List[str]:
+def _show_body(pieces, connection, fields, hooks, events=None, has_lines: bool = False) -> List[str]:
     lines = [
         "if _index < 0 or _index >= len(self._cbcs_keys):",
         "    self._cbcs_start_new()",
         "    return",
         "_key = self._cbcs_keys[_index]",
-        "import cbcs_connections",
-        "with cbcs_connections.work(%s) as _conn:" % _q(connection),
-        "    _cursor = _conn.cursor()",
-        "    _cursor.execute(%s, (_key,))" % _q(pieces["load"]),
-        "    _fetched = _cursor.fetchone()",
+    ]
+    if has_lines:
+        lines.extend(["_lines = None", "_have_lines = False"])
+    lines.extend(
+        [
+            "import cbcs_connections",
+            "with cbcs_connections.work(%s) as _conn:" % _q(connection),
+            "    _cursor = _conn.cursor()",
+            "    _cursor.execute(%s, (_key,))" % _q(pieces["load"]),
+            "    _fetched = _cursor.fetchone()",
+        ]
+    )
+    if has_lines:
+        lines.extend(
+            [
+                "    if _fetched is not None:",
+                "        _collect_lines = getattr(self, %s, None)" % _q("_cbcs_collect_lines"),
+                "        if _collect_lines is not None:",
+                "            _lines = _collect_lines(_conn, _key)",
+                "            _have_lines = True",
+            ]
+        )
+    lines.extend(
+        [
         "if _fetched is None:",
         "    _kept = []",
         "    for _item in self._cbcs_keys:",
@@ -318,7 +337,8 @@ def _show_body(pieces, connection, fields, hooks, events=None) -> List[str]:
         "        self._cbcs_start_new()",
         "    return",
         "_raw = {}",
-    ]
+        ]
+    )
     for index, column in enumerate(pieces["load_columns"]):
         lines.append("_raw[%s] = _fetched[%d]" % (_q(column), index))
     lines.extend(
@@ -333,13 +353,27 @@ def _show_body(pieces, connection, fields, hooks, events=None) -> List[str]:
             "self._cbcs_new = False",
             "self._cbcs_key = _key",
             "self._cbcs_index = _index",
-            "_load_lines = getattr(self, %s, None)" % _q("_cbcs_load_lines"),
-            "if _load_lines is not None:",
-            "    import cbcs_connections",
-            "    with cbcs_connections.work(%s) as _conn:" % _q(connection),
-            "        _load_lines(_conn, _key)",
         ]
     )
+    if has_lines:
+        lines.extend(
+            [
+                "if _have_lines:",
+                "    _install_lines = getattr(self, %s, None)" % _q("_cbcs_install_lines"),
+                "    if _install_lines is not None:",
+                "        _install_lines(_lines)",
+            ]
+        )
+    else:
+        lines.extend(
+            [
+                "_load_lines = getattr(self, %s, None)" % _q("_cbcs_load_lines"),
+                "if _load_lines is not None:",
+                "    import cbcs_connections",
+                "    with cbcs_connections.work(%s) as _conn:" % _q(connection),
+                "        _load_lines(_conn, _key)",
+            ]
+        )
     lines.extend(_call_event("cbcsOnRecordLoaded", False, events))
     lines.extend(_call_hook(hooks.after_load, False))
     lines.extend(_refresh_call())
