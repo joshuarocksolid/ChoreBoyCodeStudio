@@ -372,6 +372,9 @@ class ChildSession:
                 self._materializer.host_factory = make_host_factory(sink, try_message)
             else:
                 self._materializer.host_factory = None
+            # Style and font first. The factory then paints chrome, and show()
+            # happens after that, so the window does not open on the light fallback.
+            self._apply_appearance(message.appearance)
             try:
                 built = self._materializer.build(message, classes, extends)
             finally:
@@ -381,7 +384,9 @@ class ChildSession:
                     restore_form(built.widget, saved)
                 elif isinstance(saved, dict):
                     restore_texts(built.widget, saved)  # type: ignore[arg-type]
-            self._apply_appearance(message.appearance)
+            from app.features.form_builder.qtside.preview.shell_chrome import apply_shell_chrome
+
+            apply_shell_chrome(built.widget, message.appearance, self._app)
             scale = float(message.appearance.scale)
             self._replace_view(
                 message.view_id,
@@ -461,6 +466,9 @@ class ChildSession:
             self._fail(message.request_id, "unknown_view", message.view_id)
             return
         self._apply_appearance(message.appearance)
+        from app.features.form_builder.qtside.preview.shell_chrome import apply_shell_chrome
+
+        apply_shell_chrome(view.widget, message.appearance, self._app)
         view.scale = float(message.appearance.scale)
         self._dress(message.view_id, message.appearance, first=False)
         result = {"view_id": message.view_id}

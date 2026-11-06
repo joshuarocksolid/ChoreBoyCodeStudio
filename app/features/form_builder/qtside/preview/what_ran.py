@@ -248,7 +248,26 @@ class WhatRan(QWidget):
     def apply_chrome(self, chrome: FormChrome) -> None:
         self._chrome = chrome
         _paint(self, chrome.panel, chrome.text)
+        self.setStyleSheet(
+            "QWidget#preview\\.whatRan { background: %s; color: %s; }"
+            % (chrome.panel, chrome.text)
+        )
         self._header.apply_chrome(chrome)
+        # Qt keeps the first background rule. The header's own rule is
+        # transparent, so a light application sheet shows through the title.
+        sheet = self._header.styleSheet()
+        sheet = sheet.replace(
+            "QWidget#preview\\.whatRan\\.title { background: transparent;",
+            "QWidget#preview\\.whatRan\\.title { background: %s;" % chrome.panel,
+            1,
+        )
+        sheet = sheet.replace(
+            "QLabel#preview\\.whatRan\\.title { color: %s; background: transparent;" % chrome.muted,
+            "QLabel#preview\\.whatRan\\.title { color: %s; background: %s;" % (chrome.muted, chrome.panel),
+            1,
+        )
+        self._header.setStyleSheet(sheet)
+        self._header.setAttribute(Qt.WA_StyledBackground, True)
         polish_item_view(self._list, chrome)
         self._list.setStyleSheet(
             self._list.styleSheet()

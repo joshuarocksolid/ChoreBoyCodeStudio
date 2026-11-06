@@ -241,6 +241,7 @@ class AlignmentEditor:
         self._vertical = self._segments(_VERTICAL)
         layout.addWidget(self._horizontal, 0, Qt.AlignmentFlag.AlignLeft)
         layout.addWidget(self._vertical, 0, Qt.AlignmentFlag.AlignLeft)
+        self._root.apply_theme = self._paint_icons  # type: ignore[attr-defined]
         self._paint_icons()
 
     @property
@@ -291,16 +292,24 @@ class AlignmentEditor:
         self._host.commit(SetValue("|".join(names)))
 
     def _paint_icons(self) -> None:
-        color = self._root.palette().color(self._root.foregroundRole()).name()
+        chrome = self._host.chrome
+        idle = chrome.glyph or chrome.text
+        chosen = chrome.text
         dpr = float(self._root.devicePixelRatioF()) if hasattr(self._root, "devicePixelRatioF") else 1.0
-        self._horizontal.set_icons([_align_icon(name, color, dpr) for name in _HORIZONTAL])
-        self._vertical.set_icons([_align_icon(name, color, dpr) for name in _VERTICAL])
+        self._paint_axis(self._horizontal, _HORIZONTAL, idle, chosen, dpr)
+        self._paint_axis(self._vertical, _VERTICAL, idle, chosen, dpr)
         for row, names in ((self._horizontal, _HORIZONTAL), (self._vertical, _VERTICAL)):
             row.setFixedSize(_ALIGN_CELL * len(names), _ALIGN_CELL)
             for button in row.buttons():
                 button.setText("")
                 button.setFixedSize(_ALIGN_CELL, _ALIGN_CELL)
                 button.setIconSize(QSize(ICON, ICON))
+
+    def _paint_axis(self, row: ChoiceSegments, names: Tuple[str, ...], idle: str, chosen: str, dpr: float) -> None:
+        icons = []
+        for name, button in zip(names, row.buttons()):
+            icons.append(_align_icon(name, chosen if button.isChecked() else idle, dpr))
+        row.set_icons(icons)
 
 
 def _align_icon(name: str, color: str, dpr: float) -> QIcon:

@@ -231,6 +231,10 @@ def make_host_factory(sink: TrySink, message: TryStart):
         if host is None or ui is None:
             assert error is not None
             raise error
+        from app.features.form_builder.qtside.preview.shell_chrome import apply_shell_chrome
+        from app.qt.QtWidgets import QApplication
+
+        apply_shell_chrome(chrome, message.appearance, QApplication.instance())  # type: ignore[arg-type]
         chrome.adopt(host)
         chrome.form_ui = ui  # type: ignore[attr-defined]
         chrome.values.set_methods(specs, values)

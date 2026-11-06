@@ -100,15 +100,18 @@ class SegmentedControl(QWidget):
         focus = chrome.focus_width if chrome.focus_width > 0 else 1
         plain = _segment_selector()
         checked = _segment_selector(":checked")
+        outlined = _segment_selector("[fbOutline=\"true\"]")
         hover = _segment_selector(":hover")
         focused = _segment_selector(":focus")
+        # High contrast keeps the panel chip and adds the 2 px accent edge.
+        edge = "2px solid %s" % chrome.accent if chrome.is_high_contrast else "1px solid %s" % chrome.border
         self.setStyleSheet(
             "QWidget#formBuilder\\.segmented { background: %s; border: none; border-radius: %dpx; }"
             "%s {"
             " background: transparent; color: %s; border: none; border-radius: %dpx;"
             " padding: 0px %dpx; font-size: %dpx; font-weight: 400; }"
-            "%s {"
-            " background: %s; color: %s; border: 1px solid %s; font-weight: 600; }"
+            "%s, %s {"
+            " background: %s; color: %s; border: %s; font-weight: 600; }"
             "%s { color: %s; }"
             "%s { border: %dpx solid %s; }"
             % (
@@ -120,9 +123,10 @@ class SegmentedControl(QWidget):
                 S1,
                 TYPE_BODY,
                 checked,
+                outlined,
                 chrome.panel,
                 chrome.text,
-                chrome.border,
+                edge,
                 hover,
                 chrome.text,
                 focused,
@@ -145,7 +149,9 @@ class SegmentedControl(QWidget):
             glyph = self._glyphs[index] if index < len(self._glyphs) else ""
             if not glyph:
                 continue
-            ink = chrome.text if button.isChecked() else chrome.muted
+            # The chip is panel, not an accent fill, so the mark stays icon_primary
+            # until it is chosen, then text_primary.
+            ink = chrome.text if button.isChecked() else (chrome.glyph or chrome.text)
             button.setIcon(QIcon(paint_glyph(glyph, ink, ICON, dpr)))
             button.setIconSize(QSize(ICON, ICON))
             button.setFixedWidth(SEGMENT_CELL)
@@ -159,8 +165,9 @@ class SegmentedControl(QWidget):
         return getattr(getattr(Qt, "FocusPolicy", Qt), name)
 
 
-def _segment_selector(pseudo: str = "") -> str:
+def _segment_selector(extra: str = "") -> str:
     return (
-        "QToolButton#formBuilder\\.segment%s, QToolButton[fbTrack=\"true\"]%s"
-        % (pseudo, pseudo)
+        "QWidget#formBuilder\\.segmented QToolButton#formBuilder\\.segment%s, "
+        "QWidget#formBuilder\\.segmented QToolButton[fbTrack=\"true\"]%s"
+        % (extra, extra)
     )

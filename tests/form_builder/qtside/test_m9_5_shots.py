@@ -42,7 +42,6 @@ from app.features.form_builder.integration.chrome import chrome_for, shell_dialo
 from app.features.form_builder.qtside.dialogs.from_table import FromTableDialog  # noqa: E402
 from app.features.form_builder.qtside.inspector import TabId  # noqa: E402
 from app.features.form_builder.qtside.preview.try_log import TryLine  # noqa: E402
-from app.features.form_builder.qtside.preview.what_ran import TryChrome  # noqa: E402
 from app.qt.QtCore import Qt  # noqa: E402
 from app.qt.QtGui import QPixmap  # noqa: E402
 from app.qt.QtWidgets import (  # noqa: E402
@@ -1084,36 +1083,30 @@ def _preview(tour: _Tour, tmp: Path) -> None:
     window.resize(1400, 900)
     window.show()
     try:
-        chrome = TryChrome(window)
-        chrome.resize(1100, 640)
-        form = QWidget(chrome)
-        column = QVBoxLayout(form)
-        column.addWidget(QLabel("Customer", form))
-        column.addWidget(QLineEdit(form))
-        column.addStretch(1)
-        chrome.adopt(form)
-        chrome.set_try_data(
-            "Data: Shop database.",
-            "Try: changes to Shop database are rolled back. While a save runs, other people using it may wait up to 2 seconds.",
-            False,
-        )
-        from app.features.form_builder.engine.ipc.protocol import SourceRef
-
-        chrome.what_ran.add(
-            (TryLine("Saved, then rolled back", "", SourceRef(object_name="saveButton"), "save"),),
-            0,
-        )
-        chrome.show()
-        _pump(tour.qapp)
+        held: List[object] = []
 
         def grab_try() -> QWidget:
-            # TryChrome paints its own sheet. The form stays on the runtime
-            # palette. The toolbar and What ran follow the shell theme.
-            chrome.apply_chrome(_host_chrome(window, tour.qapp))
-            return chrome
+            _close_try(held, tour.qapp)
+            child, widget = _open_try(tour.qapp, _preview_appearance(window, tour.qapp))
+            held.append(child)
+            if widget is None:
+                raise AssertionError("preview child did not open")
+            from app.features.form_builder.engine.ipc.protocol import SourceRef
+
+            widget.set_try_data(  # type: ignore[attr-defined]
+                "Data: Shop database.",
+                "Try: changes to Shop database are rolled back. While a save runs, other people using it may wait up to 2 seconds.",
+                False,
+            )
+            widget.what_ran.add(  # type: ignore[attr-defined]
+                (TryLine("Saved, then rolled back", "", SourceRef(object_name="saveButton"), "save"),),
+                0,
+            )
+            widget.resize(1100, 640)
+            return widget
 
         tour.paint(window, 48, "preview", "run-behavior", grab_try, dense=True)
-        chrome.hide()
+        _close_try(held, tour.qapp)
         conflict = _box(
             window,
             "Someone else changed this invoice since you opened it.",
@@ -1121,27 +1114,101 @@ def _preview(tour: _Tour, tmp: Path) -> None:
         )
         conflict.show()
         _pump(tour.qapp)
-        tour.paint(window, 49, "preview", "conflict", lambda: _paint_message(conflict, window, tour.qapp))
+        tour.paint(window, 49, "preview", "conflict", lambda: _message_from_child(conflict, window, tour.qapp))
         conflict.hide()
         deleted = _box(window, "This invoice was deleted by someone else.", ("Close",))
         deleted.show()
         _pump(tour.qapp)
-        tour.paint(window, 50, "preview", "deleted", lambda: _paint_message(deleted, window, tour.qapp))
+        tour.paint(window, 50, "preview", "deleted", lambda: _message_from_child(deleted, window, tour.qapp))
         deleted.hide()
         del root
     finally:
         _shutdown(window, tour.qapp, guard)
 
 
-def _paint_message(box: QMessageBox, window: QWidget, qapp: QApplication) -> QMessageBox:
-    """A bare message box ignores the window sheet. Paint it from the shell tokens."""
-    chrome = _host_chrome(window, qapp)
-    box.setStyleSheet(
-        "QMessageBox { background: %s; color: %s; }"
-        "QLabel { color: %s; background: transparent; }"
-        "QPushButton { background: %s; color: %s; border: 1px solid %s; border-radius: 4px; padding: 4px 12px; }"
-        % (chrome.window, chrome.text, chrome.text, chrome.panel, chrome.text, chrome.border)
+_TRY_MODULE = """from PySide6.QtWidgets import QVBoxLayout, QLabel, QLineEdit
+class Ui_Form(object):
+    def setupUi(self, Form):
+        layout = QVBoxLayout(Form)
+        label = QLabel(Form)
+        label.setText("Customer")
+        layout.addWidget(label)
+        edit = QLineEdit(Form)
+        layout.addWidget(edit)
+"""
+
+
+def _preview_appearance(window: QWidget, qapp: QApplication):  # type: ignore[no-untyped-def]
+    from app.features.form_builder.engine.ipc.protocol import Appearance
+    from app.features.form_builder.integration.chrome import shell_chrome_pairs
+
+    mode = str(getattr(window, "_theme_mode", _LIGHT))
+    tokens = tokens_from_palette(qapp.palette(), force_mode=mode)
+    # style stays empty so this in-process child does not restyle the editor.
+    return Appearance(title="Preview", style="", chrome=shell_chrome_pairs(tokens))
+
+
+def _open_try(qapp: QApplication, appearance: object) -> tuple:
+    """The preview child session, in this process. The grab is its window."""
+    from app.features.form_builder.engine.ipc.protocol import TryDataPlan, TryStart, encode_frame
+    from app.features.form_builder.qtside.preview.child.session import ChildSession
+
+    class _Writer:
+        def __init__(self) -> None:
+            self.last: object = None
+
+        def send(self, message: object) -> None:
+            self.last = message
+
+    writer = _Writer()
+    child = ChildSession(writer, qapp)  # type: ignore[arg-type]
+    child._handle_line(  # noqa: SLF001
+        encode_frame(
+            TryStart(
+                request_id="shot",
+                view_id="shot",
+                module_name="ui_shot",
+                module_source=_TRY_MODULE,
+                window_class_name="Form",
+                base_class="QWidget",
+                window_values=(),
+                data=TryDataPlan(),
+                show_form=True,
+                appearance=appearance,  # type: ignore[arg-type]
+            )
+        )
     )
+    view = child._views.get("shot")  # noqa: SLF001
+    widget = view.widget if view is not None else None
+    if widget is None:
+        detail = writer.last
+        _close_try([child], qapp)
+        raise AssertionError("preview child did not open: %s" % (detail,))
+    return child, widget
+
+
+def _close_try(held: List[object], qapp: QApplication) -> None:
+    from app.features.form_builder.qtside.preview.child.try_connections import end_try
+
+    while held:
+        child = held.pop()
+        end_try("shot")
+        views = getattr(child, "_views", {})
+        for view in list(views.values()):
+            view.widget.hide()
+            view.widget.deleteLater()
+        views.clear()
+        closer = getattr(child, "_user_close", None)
+        if closer is not None:
+            qapp.removeEventFilter(closer)
+    qapp.processEvents()
+
+
+def _message_from_child(box: QMessageBox, window: QWidget, qapp: QApplication) -> QMessageBox:
+    """The same chrome the preview child installs for a form's message box."""
+    from app.features.form_builder.qtside.preview.shell_chrome import apply_shell_chrome
+
+    apply_shell_chrome(box, _preview_appearance(window, qapp), qapp)
     return box
 
 

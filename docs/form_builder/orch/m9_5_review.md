@@ -146,3 +146,13 @@ One row per blocking item. Shots are the tour names.
 | 5 SIZE | 63 | Hug, Fill, and Fixed were loose text buttons. Each axis showed a "Default for a line edit" line. | Width and Height use the shared segmented control. Those default sentences are the control's tooltip. | |
 | 6 Tab-order badges | 15 | Badges sat on the left edge and covered the field text. | Each badge sits inside the right edge, vertically centred, 4 px in. A widget under 48 px wide carries the badge just outside that edge. The flow line joins the badge centres. | |
 | 7 Behavior | 28, 30 | The EVENTS title looked disabled. Kind and Format were native combos, and Format was empty. | The EVENTS title uses the same section-header colour as STATE and CHECKS. Kind and Format are value buttons. Format is hidden when its only choice is the default. | |
+
+## Follow-up 5
+
+One row per blocking item. Shots are the tour names.
+
+| Item | Shots | What was wrong | What changed | Spec |
+| --- | --- | --- | --- | --- |
+| 1 SIZE state | 63, 63-dark, 63-high_contrast_dark | Width and Height read as plain Hug Fill Fixed. Nothing showed that one segment was the current choice. The class default is not a checked button. It is the outline flag, and the track stylesheet ignored that flag. | The shared segmented control paints that flag the same way it paints a checked segment. The track is tree_hover_bg, 24 px, with 2 px of inner padding. The chosen segment is panel_bg, a 1 px border, and text_primary at weight 600. The others are text_muted. High contrast uses a 2 px accent border on the chosen segment. | |
+| 2 Alignment glyphs and Edit | 63-dark, 15-dark | The alignment marks were painted from the widget palette, which stayed dark grey on the dark track. Edit… on Style sheet was a native light button. | Idle marks use icon_primary. The chosen mark uses text_primary, because the chip is a panel fill and white-on-accent would disappear on the light blue chip. A theme change repaints the marks. Edit… uses the host secondary button. | |
+| 3 Preview chrome | 48, 49, 50, 51, and the dark and high_contrast_dark copies | The live Preview child painted the Run behavior bar, the info bar, and What ran with the light fallback. The tour hid that by painting those widgets itself. | Appearance now carries the shell colour pairs the Preview chrome reads. The child applies them after the Qt style is set and before the window is shown. The form keeps the runtime palette. Shots 48–50 are grabbed from that child path. The tour no longer paints its own colours on those shots. | |

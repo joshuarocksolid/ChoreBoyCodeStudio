@@ -187,6 +187,8 @@ class StyleSheetEditor:
         self._button.clicked.connect(self._open)
         layout.addWidget(self._summary, 1)
         layout.addWidget(self._button, 0)
+        self._root.apply_theme = self._paint_button  # type: ignore[attr-defined]
+        self._paint_button()
 
     @property
     def widget(self) -> QWidget:
@@ -209,6 +211,14 @@ class StyleSheetEditor:
         self._button.setAccessibleName("%s: edit" % label)
         owners = self._host.owner_ids()
         self._button.setEnabled(len(owners) == 1)
+        self._paint_button()
+
+    def _paint_button(self) -> None:
+        from app.features.form_builder.qtside.theme.info_bar import secondary_button_qss
+
+        self._button.setStyleSheet(
+            secondary_button_qss(self._host.chrome, "QPushButton#formBuilder\\.styleEdit")
+        )
 
     def _open(self) -> None:
         owners = self._host.owner_ids()

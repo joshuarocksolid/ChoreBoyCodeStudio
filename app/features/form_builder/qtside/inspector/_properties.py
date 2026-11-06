@@ -479,6 +479,10 @@ class PropertiesPage(QWidget):
                 if type(control) is not SegmentedControl:
                     continue
                 control.apply_chrome(chrome)
+            for widget in self.findChildren(QWidget):
+                paint = getattr(widget, "apply_theme", None)
+                if callable(paint):
+                    paint()
             self._form.apply_section_chrome(chrome)
 
     def _paint_search(self, chrome: Optional[FormChrome]) -> None:
