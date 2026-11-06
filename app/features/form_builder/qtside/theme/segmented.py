@@ -28,6 +28,9 @@ class SegmentedControl(QWidget):
     def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
         self.setObjectName("formBuilder.segmented")
+        # Callers rename the track (Logic uses formBuilder.logic.segments).
+        # The sheet matches this property, which a new object name does not clear.
+        self.setProperty("fbSegmented", "true")
         self.setFixedHeight(CONTROL)
         self._chrome: Optional[FormChrome] = None
         self._index = 0
@@ -106,7 +109,7 @@ class SegmentedControl(QWidget):
         # High contrast keeps the panel chip and adds the 2 px accent edge.
         edge = "2px solid %s" % chrome.accent if chrome.is_high_contrast else "1px solid %s" % chrome.border
         self.setStyleSheet(
-            "QWidget#formBuilder\\.segmented { background: %s; border: none; border-radius: %dpx; }"
+            "QWidget[fbSegmented=\"true\"] { background: %s; border: none; border-radius: %dpx; }"
             "%s {"
             " background: transparent; color: %s; border: none; border-radius: %dpx;"
             " padding: 0px %dpx; font-size: %dpx; font-weight: 400; }"
@@ -167,7 +170,7 @@ class SegmentedControl(QWidget):
 
 def _segment_selector(extra: str = "") -> str:
     return (
-        "QWidget#formBuilder\\.segmented QToolButton#formBuilder\\.segment%s, "
-        "QWidget#formBuilder\\.segmented QToolButton[fbTrack=\"true\"]%s"
+        "QWidget[fbSegmented=\"true\"] QToolButton#formBuilder\\.segment%s, "
+        "QWidget[fbSegmented=\"true\"] QToolButton[fbTrack=\"true\"]%s"
         % (extra, extra)
     )

@@ -210,6 +210,7 @@ def make_host_factory(sink: TrySink, message: TryStart):
         error: Optional[AttributeError] = None
         host: Optional[QWidget] = None
         ui = None
+        designed: Optional[Tuple[int, int]] = None
         for kind in order:
             made = _stand_in(kind, message.form_methods, window_names, sink, values)(chrome.form_parent())
             host = made
@@ -217,8 +218,12 @@ def make_host_factory(sink: TrySink, message: TryStart):
             sink.entering_setup(True)
             try:
                 ui = ui_cls()
+                before = made.size()
                 with activate(message.view_id):
                     ui.setupUi(made)
+                after = made.size()
+                if (after.width(), after.height()) != (before.width(), before.height()):
+                    designed = (after.width(), after.height())
                 error = None
                 break
             except AttributeError as exc:
@@ -235,7 +240,7 @@ def make_host_factory(sink: TrySink, message: TryStart):
         from app.qt.QtWidgets import QApplication
 
         apply_shell_chrome(chrome, message.appearance, QApplication.instance())  # type: ignore[arg-type]
-        chrome.adopt(host)
+        chrome.adopt(host, designed)
         chrome.form_ui = ui  # type: ignore[attr-defined]
         chrome.values.set_methods(specs, values)
         note = str(getattr(message, "eject_note", "") or "")

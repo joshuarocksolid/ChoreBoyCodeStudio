@@ -25,7 +25,7 @@ from app.features.form_builder.qtside.theme.info_bar import TabInfoBar
 from app.features.form_builder.qtside.theme.items import polish_item_view
 from app.features.form_builder.qtside.theme.metrics import ROW, S2, TOOLBAR, TYPE_FINE
 from app.features.form_builder.qtside.theme.section_header import SectionHeader
-from app.qt.QtCore import Qt, Signal
+from app.qt.QtCore import QSize, Qt, Signal
 from app.qt.QtGui import QBrush, QColor, QFont, QFontMetrics, QPalette, QPainter
 from app.qt.QtWidgets import (
     QComboBox,
@@ -35,6 +35,7 @@ from app.qt.QtWidgets import (
     QLabel,
     QLineEdit,
     QPushButton,
+    QScrollArea,
     QSizePolicy,
     QSplitter,
     QStyle,
@@ -51,6 +52,7 @@ from app.qt.qt_compat import enum_value
 _SOURCE_CAP = 240
 _COUNT_SUFFIX = re.compile(r"^(?P<body>.*) \((?P<count>\d+ values?)\)$")
 _WHAT_RAN_MIN = 360
+_FORM_INSET = 16
 
 
 def fallback_chrome() -> FormChrome:
@@ -449,13 +451,20 @@ class TryChrome(QWidget):
         self._column = left
         left_layout = QVBoxLayout(left)
         left_layout.setContentsMargins(0, 0, 0, 0)
-        self._form_parent = QWidget(left)
-        self._form_parent.setObjectName("preview.form")
-        self._form_layout = QVBoxLayout(self._form_parent)
-        self._form_layout.setContentsMargins(0, 0, 0, 0)
+        self._form_scroll = QScrollArea(left)
+        self._form_scroll.setObjectName("preview.form")
+        self._form_scroll.setWidgetResizable(False)
+        self._form_scroll.setFrameShape(QFrame.NoFrame)
+        self._form_scroll.setAlignment(Qt.AlignLeft | Qt.AlignTop)
+        self._form_pad = QWidget()
+        self._form_pad.setObjectName("preview.formPad")
+        self._form_layout = QVBoxLayout(self._form_pad)
+        self._form_layout.setContentsMargins(_FORM_INSET, _FORM_INSET, _FORM_INSET, _FORM_INSET)
+        self._form_layout.setAlignment(Qt.AlignLeft | Qt.AlignTop)
+        self._form_scroll.setWidget(self._form_pad)
         self.values = WindowValues(left)
         self.data_strip = DataStrip(left)
-        left_layout.addWidget(self._form_parent, 1)
+        left_layout.addWidget(self._form_scroll, 1)
         left_layout.addWidget(self.values, 0)
         left_layout.addWidget(self.data_strip, 0)
         self.what_ran = WhatRan(self._splitter)
@@ -489,11 +498,16 @@ class TryChrome(QWidget):
         self._splitter.setSizes([total - right, right])
 
     def form_parent(self) -> QWidget:
-        return self._form_parent
+        return self._form_pad
 
-    def adopt(self, form: QWidget) -> None:
-        form.setParent(self._form_parent)
-        self._form_layout.addWidget(form)
+    def adopt(self, form: QWidget, designed: Optional[Tuple[int, int]] = None) -> None:
+        """Keep the form at its saved size. The pane scrolls. It does not stretch the form."""
+
+        size = _form_size(form, designed)
+        form.setFixedSize(size)
+        form.setParent(self._form_pad)
+        self._form_layout.addWidget(form, 0, Qt.AlignLeft | Qt.AlignTop)
+        self._form_pad.setFixedSize(size.width() + _FORM_INSET * 2, size.height() + _FORM_INSET * 2)
         self._keep_form_style()
 
     def apply_chrome(self, chrome: FormChrome) -> None:
@@ -510,7 +524,17 @@ class TryChrome(QWidget):
             % (chrome.panel, chrome.text, chrome.border, chrome.text, chosen, chrome.text, focus, chrome.accent)
         )
         self._column.setStyleSheet("")
-        self._form_parent.setStyleSheet("")
+        # Selectors stay on these widgets. An unscoped background would paint the form too.
+        self._form_scroll.setStyleSheet("")
+        gutter = chrome.window
+        self._form_pad.setStyleSheet("QWidget#preview\\.formPad { background: %s; }" % gutter)
+        _paint_gutter(self._form_scroll, gutter, chrome.text)
+        _paint_gutter(self._form_pad, gutter, chrome.text)
+        viewport = self._form_scroll.viewport()
+        if viewport is not None:
+            viewport.setObjectName("preview.formViewport")
+            viewport.setStyleSheet("QWidget#preview\\.formViewport { background: %s; }" % gutter)
+            _paint_gutter(viewport, gutter, chrome.text)
         self._splitter.setStyleSheet(
             "QSplitter#preview\\.splitter::handle { background: %s; border: none; margin: 0px 2px; }"
             % chrome.border
@@ -540,6 +564,18 @@ class TryChrome(QWidget):
         if form is None:
             return
         pin_runtime_look(form)
+
+
+def _form_size(form: QWidget, designed: Optional[Tuple[int, int]]) -> QSize:
+    """The ``.ui`` root geometry, or the layout hint when setupUi never resized it."""
+
+    if designed is not None and designed[0] > 0 and designed[1] > 0:
+        return QSize(designed[0], designed[1])
+    hint = form.sizeHint()
+    if hint.width() > 0 and hint.height() > 0:
+        return QSize(hint.width(), hint.height())
+    size = form.size()
+    return QSize(max(size.width(), 1), max(size.height(), 1))
 
 
 def _shown_source(line: TryLine, names: Mapping[str, str]) -> str:
@@ -585,6 +621,15 @@ def _paint(widget: QWidget, background: str, foreground: str) -> None:
     ink = QColor(foreground)
     palette.setColor(QPalette.Window, fill)
     palette.setColor(QPalette.WindowText, ink)
+    widget.setPalette(palette)
+
+
+def _paint_gutter(widget: QWidget, background: str, foreground: str) -> None:
+    """The pane around the form. The scroll viewport paints ``Base``, not ``Window``."""
+
+    _paint(widget, background, foreground)
+    palette = widget.palette()
+    palette.setColor(QPalette.Base, QColor(background))
     widget.setPalette(palette)
 
 
