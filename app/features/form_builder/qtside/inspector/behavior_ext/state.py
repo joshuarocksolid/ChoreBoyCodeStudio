@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from types import SimpleNamespace
 from typing import Dict, Optional, Tuple
 
-from app.qt.QtCore import QSize, Qt, Signal
+from app.qt.QtCore import Qt, Signal
 from app.features.form_builder.qtside.inspector.behavior_ext.value_button import ValueButton
 from app.features.form_builder.qtside.theme.metrics import INSPECTOR_ROW, S2
 from app.qt.QtWidgets import (
@@ -104,6 +104,7 @@ class _Row(QWidget):
         self.now.setObjectName("formBuilder.state.now.%s" % spec.key)
         self.now.setMinimumWidth(0)
         self.now.setAlignment(_RIGHT | _VCENTER)
+        self.now.hide()
         self.combo: Optional[QComboBox] = None
         self.places: Optional[QSpinBox] = None
         self.column = QVBoxLayout(self)
@@ -119,19 +120,6 @@ class _Row(QWidget):
         self.column.addWidget(self.line_host)
         self.column.addWidget(self.now)
         self._body = body
-
-    def hasHeightForWidth(self) -> bool:  # noqa: N802
-        return True
-
-    def heightForWidth(self, width: int) -> int:  # noqa: N802
-        return self.column.heightForWidth(width)
-
-    def sizeHint(self) -> QSize:  # noqa: N802
-        hint = super().sizeHint()
-        laid_out = self.height()
-        if laid_out > hint.height():
-            hint.setHeight(laid_out)
-        return hint
 
     def resizeEvent(self, event: object) -> None:  # noqa: N802
         super().resizeEvent(event)  # type: ignore[arg-type]
@@ -200,8 +188,8 @@ class StateBody(QWidget):
         from app.features.form_builder.qtside.inspector.behavior_ext.heading import section_heading
 
         title = section_heading(overline, "formBuilder.state.title", "STATE")
+        self._title = title
         heading.addWidget(title)
-        heading.addStretch(1)
         self._column = QVBoxLayout(self)
         self._column.setContentsMargins(0, 4, 0, 4)
         self._column.setSpacing(4)
@@ -221,6 +209,7 @@ class StateBody(QWidget):
         self._fixes = None
         chrome = self._services.chrome
         self._install_sheet(chrome.panel, chrome.text)
+        self._title.apply_chrome(chrome)
 
     def set_refresh(self, refresh: object) -> None:
         self._refresh = refresh
@@ -230,6 +219,7 @@ class StateBody(QWidget):
         # One sheet for the section. A row's muted or body ink is a property,
         # polished on that label, so a rule commit does not restyle the tree.
         self._install_sheet(panel, text)
+        self._title.apply_chrome(chrome)
         for row in self._rows.values():
             row.value.apply_chrome(chrome)
         if self._editor is not None:

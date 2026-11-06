@@ -84,7 +84,7 @@ class WhatRan(QWidget):
         self._header = SectionHeader(self, "What ran", object_name="preview.whatRan.title")
         self._header.set_pad(S2)
         self._header.setFocusPolicy(Qt.NoFocus)
-        self._clear = self._header.add_action("reset", "Clear", "Clear")
+        self._clear = self._header.add_action("close", "Clear", "Clear")
         self._clear.setObjectName("preview.whatRan.clear")
         self._copy = self._header.add_action("copy", "Copy", "Copy")
         self._copy.setObjectName("preview.whatRan.copy")
@@ -327,6 +327,14 @@ class WindowValues(QWidget):
         pin_runtime_look(self)
 
 
+def _data_title_only(text: str) -> bool:
+    """``Data: Shop database.`` names the connection and says nothing else."""
+    if not text.startswith("Data: ") or not text.endswith("."):
+        return False
+    body = text[len("Data: "):-1]
+    return bool(body) and "." not in body
+
+
 class DataStrip(QWidget):
     """The line under Window values. Reset data copies the SQLite file again."""
 
@@ -351,6 +359,8 @@ class DataStrip(QWidget):
         layout.addWidget(self._reset, 0)
 
     def set_text(self, text: str, reset: bool) -> None:
+        if _data_title_only(text):
+            text = ""
         self._label.setText(text)
         shown = bool(text)
         self.setVisible(shown)

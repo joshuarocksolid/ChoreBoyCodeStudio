@@ -7,7 +7,7 @@ from typing import Callable, List, Sequence, Tuple
 
 from app.qt.QtCore import QEvent, QObject, QPoint, QRect, QSize, Qt
 from app.qt.QtGui import QKeyEvent
-from app.qt.QtWidgets import QFrame, QLabel, QLineEdit, QListWidget, QListWidgetItem, QVBoxLayout, QWidget
+from app.qt.QtWidgets import QFrame, QLabel, QListWidget, QListWidgetItem, QVBoxLayout, QWidget
 from app.qt.qt_compat import enum_value
 
 from app.features.form_builder.qtside.theme.chrome import (
@@ -15,14 +15,17 @@ from app.features.form_builder.qtside.theme.chrome import (
     apply_page_shadow,
     popover_style,
     reveal_popover,
+    scrollbar_qss,
 )
+from app.features.form_builder.qtside.theme.metrics import ROW
+from app.features.form_builder.qtside.theme.search_field import paint_search_glyph, search_line
 
 #: One row of the picker: object name, visible text (may be empty), friendly class words.
 WidgetEntry = Tuple[str, str, str]
 
 _WIDTH = 320
 _ROWS = 8
-_ROW = 24
+_ROW = ROW
 _ENTER = frozenset({enum_value(Qt.Key.Key_Return), enum_value(Qt.Key.Key_Enter)})
 _ESCAPE = enum_value(Qt.Key.Key_Escape)
 _STEPS = {enum_value(Qt.Key.Key_Up): -1, enum_value(Qt.Key.Key_Down): 1}
@@ -80,10 +83,8 @@ class GoToWidgetPicker(QFrame):
         column = QVBoxLayout(self)
         column.setContentsMargins(8, 8, 8, 8)
         column.setSpacing(8)
-        self.search = QLineEdit(self)
-        self.search.setObjectName("formBuilder.goToWidgetSearch")
+        self.search = search_line(self, "Type a name or a kind, such as button", "formBuilder.goToWidgetSearch")
         self.search.setAccessibleName("Widget name or kind")
-        self.search.setPlaceholderText("Type a name or a kind, such as button")
         self.search.textChanged.connect(self._refill)
         self.search.installEventFilter(self)
         column.addWidget(self.search)
@@ -91,7 +92,10 @@ class GoToWidgetPicker(QFrame):
         self.rows.setObjectName("formBuilder.goToWidgetList")
         self.rows.setAccessibleName("Matching widgets")
         self.rows.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.rows.setFrameShape(getattr(getattr(QFrame, "Shape", QFrame), "NoFrame"))
+        self.rows.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.rows.itemClicked.connect(self._clicked)
+        self.rows.currentRowChanged.connect(self._paint_rows)
         column.addWidget(self.rows)
         self.note = QLabel("No widget matches.", self)
         self.note.setObjectName("formBuilder.goToWidgetNote")
@@ -100,6 +104,7 @@ class GoToWidgetPicker(QFrame):
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self.setAutoFillBackground(True)
         self.setStyleSheet(self._style())
+        paint_search_glyph(self.search, chrome.icon_muted or chrome.muted, chrome)
         apply_page_shadow(self, is_dark=chrome.is_dark, is_high_contrast=chrome.is_high_contrast)
         self.rows.setMaximumHeight(_ROW * _ROWS)
         self.setFixedWidth(_WIDTH)
@@ -165,16 +170,30 @@ class GoToWidgetPicker(QFrame):
             label.setAccessibleName(plain)
             label.setTextFormat(Qt.TextFormat.RichText)
             label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
-            label.setStyleSheet("background: transparent; border: none; padding: 4px 8px;")
-            item.setSizeHint(QSize(label.sizeHint().width(), _ROW))
+            label.setFixedHeight(_ROW)
+            item.setSizeHint(QSize(0, _ROW))
             self.rows.setItemWidget(item, label)
         if shown:
             self.rows.setCurrentRow(0)
         self._announce()
         self.note.setVisible(not shown)
-        rows = min(max(len(shown), 1), _ROWS)
-        self.rows.setFixedHeight(rows * _ROW + 6)
+        self.rows.setVisible(bool(shown))
+        if shown:
+            self.rows.setFixedHeight(min(len(shown), _ROWS) * _ROW)
+        self._paint_rows()
         self.adjustSize()
+
+    def _paint_rows(self, _row: int = -1) -> None:
+        chosen = self._chrome.selected or self._chrome.row_hover
+        ink = self._chrome.text
+        current = self.rows.currentRow()
+        for index in range(self.rows.count()):
+            item = self.rows.item(index)
+            label = self.rows.itemWidget(item) if item is not None else None
+            if label is None:
+                continue
+            background = chosen if index == current else "transparent"
+            label.setStyleSheet("background: %s; border: none; padding: 0px 8px; color: %s;" % (background, ink))
 
     def _announce(self) -> None:
         item = self.rows.currentItem()
@@ -200,22 +219,15 @@ class GoToWidgetPicker(QFrame):
         chrome = self._chrome
         frame = "QFrame#formBuilder\\.goToWidget"
         return popover_style(self.objectName(), chrome) + (
-            "%(f)s QLineEdit { color: %(text)s; background: %(input)s; border: 1px solid %(border)s;"
-            " border-radius: 4px; padding: 5px 8px; }"
-            "%(f)s QLineEdit:focus { border: %(focus)dpx solid %(accent)s; }"
             "%(f)s QListWidget { color: %(text)s; background: %(panel)s; border: none; outline: none; }"
-            "%(f)s QListWidget::item { padding: 4px 8px; border-radius: 4px; }"
+            "%(f)s QListWidget::item { min-height: %(row)dpx; max-height: %(row)dpx; padding: 0px; border: none; }"
             "%(f)s QListWidget::item:hover { background: %(hover)s; }"
-            "%(f)s QListWidget::item:selected { color: %(text)s; background: %(selected)s;"
-            " border: %(focus)dpx solid %(accent)s; }"
+            "%(f)s QListWidget::item:selected { color: %(text)s; background: %(selected)s; border: none; }"
         ) % {
             "f": frame,
             "text": chrome.text,
-            "input": chrome.input,
-            "border": chrome.border,
-            "panel": chrome.panel,
+            "panel": chrome.popup or chrome.panel,
             "hover": chrome.row_hover,
-            "selected": chrome.selected,
-            "accent": chrome.accent,
-            "focus": chrome.focus_width,
-        }
+            "selected": chrome.selected or chrome.row_hover,
+            "row": _ROW,
+        } + scrollbar_qss(chrome, frame)

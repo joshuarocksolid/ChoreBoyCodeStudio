@@ -130,7 +130,7 @@ class SegmentedControl(QWidget):
             glyph = self._glyphs[index] if index < len(self._glyphs) else ""
             if not glyph:
                 continue
-            ink = chrome.text if button.isChecked() else chrome.icon_muted
+            ink = chrome.text if button.isChecked() else chrome.muted
             button.setIcon(QIcon(paint_glyph(glyph, ink, ICON, dpr)))
             button.setIconSize(QSize(ICON, ICON))
             button.setFixedWidth(SEGMENT_CELL)

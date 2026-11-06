@@ -27,8 +27,8 @@ from app.features.form_builder.qtside.inspector.api import (
 from app.features.form_builder.qtside.inspector.editors._editor_kit import name_part, qt_key
 from app.features.form_builder.qtside.inspector.editors._enum_words import friendly
 from app.features.form_builder.qtside.inspector.editors._segments import ChoiceSegments
-from app.features.form_builder.qtside.theme.metrics import ICON, S1, SEGMENT_CELL
-from app.qt.QtCore import Qt
+from app.features.form_builder.qtside.theme.metrics import ICON, S1
+from app.qt.QtCore import QSize, Qt
 from app.qt.QtGui import QColor, QIcon, QPainter, QPen, QPixmap
 from app.qt.QtWidgets import (
     QComboBox,
@@ -39,6 +39,7 @@ from app.qt.QtWidgets import (
 )
 from app.qt.qt_compat import enum_value
 
+_ALIGN_CELL = 24
 _HORIZONTAL = ("AlignLeft", "AlignHCenter", "AlignRight", "AlignJustify")
 _VERTICAL = ("AlignTop", "AlignVCenter", "AlignBottom")
 _ALIGN_ALIASES = {"AlignLeading": "AlignLeft", "AlignTrailing": "AlignRight"}
@@ -238,9 +239,8 @@ class AlignmentEditor:
         self._buttons: List[Tuple[str, QToolButton]] = []
         self._horizontal = self._segments(_HORIZONTAL)
         self._vertical = self._segments(_VERTICAL)
-        layout.addWidget(self._horizontal)
-        layout.addWidget(self._vertical)
-        self._root.setMinimumWidth(self._horizontal.minimumWidth())
+        layout.addWidget(self._horizontal, 0, Qt.AlignmentFlag.AlignLeft)
+        layout.addWidget(self._vertical, 0, Qt.AlignmentFlag.AlignLeft)
         self._paint_icons()
 
     @property
@@ -265,10 +265,14 @@ class AlignmentEditor:
         row.set_items([""] * len(names), tooltips=tips, names=access)
         row.name_buttons(["formBuilder.align.%s" % name for name in names])
         row.show_index(-1)
-        # 4 is the segmented track's 2 px inset on each side. Each cell stays SEGMENT_CELL wide.
-        row.setMinimumWidth(SEGMENT_CELL * len(names) + 4)
+        box = row.layout()
+        if box is not None:
+            box.setContentsMargins(0, 0, 0, 0)
+            box.setSpacing(0)
+        row.setFixedSize(_ALIGN_CELL * len(names), _ALIGN_CELL)
         for button in row.buttons():
-            button.setFixedWidth(SEGMENT_CELL)
+            button.setText("")
+            button.setFixedSize(_ALIGN_CELL, _ALIGN_CELL)
         for name, button in zip(names, row.buttons()):
             button.clicked.connect(self._commit)
             self._buttons.append((name, button))
@@ -291,6 +295,12 @@ class AlignmentEditor:
         dpr = float(self._root.devicePixelRatioF()) if hasattr(self._root, "devicePixelRatioF") else 1.0
         self._horizontal.set_icons([_align_icon(name, color, dpr) for name in _HORIZONTAL])
         self._vertical.set_icons([_align_icon(name, color, dpr) for name in _VERTICAL])
+        for row, names in ((self._horizontal, _HORIZONTAL), (self._vertical, _VERTICAL)):
+            row.setFixedSize(_ALIGN_CELL * len(names), _ALIGN_CELL)
+            for button in row.buttons():
+                button.setText("")
+                button.setFixedSize(_ALIGN_CELL, _ALIGN_CELL)
+                button.setIconSize(QSize(ICON, ICON))
 
 
 def _align_icon(name: str, color: str, dpr: float) -> QIcon:

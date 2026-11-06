@@ -119,6 +119,7 @@ from app.features.form_builder.qtside.theme.metrics import (
     DIVIDER,
     ICON,
     ICON_BUTTON,
+    ICON_BUTTON_HEADER,
     ROW,
     S1,
     S2,
@@ -264,6 +265,7 @@ def _glyph_icon(glyph: str, color: str, faint: str, logical: int, dpr: float) ->
     icon = QIcon()
     mode = getattr(QIcon, "Mode", QIcon)
     icon.addPixmap(normal, getattr(mode, "Normal"))
+    icon.addPixmap(normal, getattr(mode, "Active"))
     icon.addPixmap(quiet, getattr(mode, "Disabled"))
     return icon
 
@@ -448,6 +450,7 @@ class FormToolbar(QWidget):
         on_zoom_fit: Optional[Callable[[], None]] = None,
     ) -> None:
         super().__init__(parent)
+        self._run_behavior: Optional[QToolButton] = None
         self.setObjectName("formBuilder.toolbar")
         self.setFixedHeight(TOOLBAR)
         row = QHBoxLayout(self)
@@ -474,8 +477,10 @@ class FormToolbar(QWidget):
 
         self.tab_order = _tool("Tab order", "formBuilder.tabOrder", "Tab order (F8)", self)
         self.tab_order.setCheckable(True)
+        self.tab_order.setProperty("formBuilder.fullLabel", "Tab order")
         self.buddies = _tool("Buddies", "formBuilder.buddies", "Buddies (F7)", self)
         self.buddies.setCheckable(True)
+        self.buddies.setProperty("formBuilder.fullLabel", "Buddies")
         row.addWidget(self.tab_order)
         row.addWidget(self.buddies)
         # Registered overlay kinds (integration/overlay_ext, M6.0s) add a toggle after Buddies.
@@ -575,6 +580,7 @@ class FormToolbar(QWidget):
         self._save_full = ""
         row.addWidget(self.save_state, 0)
         self._tokens: Optional[ShellThemeTokens] = None
+        self._compact = False
         icon_only = _button_style("ToolButtonIconOnly")
         for button in (self.undo, self.redo, self.zoom_out, self.zoom_in, self.overflow):
             button.setToolButtonStyle(icon_only)
@@ -585,6 +591,7 @@ class FormToolbar(QWidget):
         self.tab_order.setToolButtonStyle(beside)
         self.buddies.setToolButtonStyle(beside)
         self.preview.setToolButtonStyle(beside)
+        self._lock_mode_labels()
 
     def attach_preview(self, preview: object) -> None:
         """Turn on text size and two widths. Both stay off the document."""
@@ -655,7 +662,7 @@ class FormToolbar(QWidget):
         self.preview.setAccessibleName("Preview")
         self.preview.setToolButtonStyle(_button_style("ToolButtonTextBesideIcon"))
         self.preview.clicked.connect(lambda _checked=False: on_preview())
-        if getattr(self, "_run_behavior", None) is None:
+        if self._run_behavior is None:
             box = QToolButton(self)
             box.setObjectName("formBuilder.runBehavior")
             box.setText("Run behavior")
@@ -694,30 +701,61 @@ class FormToolbar(QWidget):
         menu.aboutToShow.connect(rebuild)
 
     def set_compact(self, compact: bool) -> None:
-        self.tab_order.setText("" if compact else "Tab order")
-        self.buddies.setText("" if compact else "Buddies")
-        style = _button_style("ToolButtonIconOnly" if compact else "ToolButtonTextBesideIcon")
-        self.tab_order.setToolButtonStyle(style)
-        self.buddies.setToolButtonStyle(style)
-        for button in self.overlay_toggles.values():
-            label = str(button.property("formBuilder.fullLabel") or "")
-            button.setText("" if compact else label)
-            button.setToolButtonStyle(style)
-            button.setAccessibleName(_control_name(button.text(), button.toolTip()))
-        self.tab_order.setAccessibleName(_control_name(self.tab_order.text(), self.tab_order.toolTip()))
-        self.buddies.setAccessibleName(_control_name(self.buddies.text(), self.buddies.toolTip()))
-        self.preview.setText("" if compact else "Preview")
-        self.preview.setToolButtonStyle(_button_style("ToolButtonIconOnly" if compact else "ToolButtonTextBesideIcon"))
-        self.preview.setAccessibleName(_control_name(self.preview.text(), self.preview.toolTip()))
-        run = getattr(self, "_run_behavior", None)
-        if isinstance(run, QToolButton):
-            run_button = cast(QToolButton, run)
-            run_button.setText("" if compact else "Run behavior")
-            run_button.setToolButtonStyle(_button_style("ToolButtonIconOnly" if compact else "ToolButtonTextOnly"))
-            run_button.setAccessibleName(_control_name(run_button.text(), run_button.toolTip()))
+        self._compact = compact
         self.text_size.setVisible(not compact)
         self.two_widths.setVisible(not compact)
         self.overflow.setVisible(compact)
+        self._fit_labels()
+
+    def _fold_targets(self) -> List[QToolButton]:
+        return [self.tab_order, self.buddies, *self.overlay_toggles.values()]
+
+    def _lock_mode_labels(self) -> None:
+        """Design and XML keep the width of their words. The bar must not middle-elide them."""
+        total = 0
+        for button, text in ((self.design, "Design"), (self.xml, "XML")):
+            if button.text() != text:
+                button.setText(text)
+            width = button.fontMetrics().horizontalAdvance(text) + 18
+            button.setMinimumWidth(width)
+            total += width
+        self._mode.setMinimumWidth(total)
+
+    def _labeled_width(self) -> int:
+        """Width the bar needs when Tab order, Buddies and Connections still show their words."""
+        total = self._mode.minimumWidth()
+        for button in self._fold_targets():
+            label = str(button.property("formBuilder.fullLabel") or "")
+            total += button.fontMetrics().horizontalAdvance(label) + ICON + 24
+        total += self.preview.fontMetrics().horizontalAdvance(self.preview.text() or "Preview") + ICON + 24
+        run = self._run_behavior
+        if run is not None:
+            total += run.fontMetrics().horizontalAdvance(run.text() or "Run behavior") + 24
+        total += ICON_BUTTON * 4 + ZOOM_READOUT
+        if self.text_size.isVisible():
+            total += self.text_size.sizeHint().width() + self.two_widths.sizeHint().width()
+        total += 5 * (1 + S2 + S2) + S2 + S2
+        return total
+
+    def _fit_labels(self) -> None:
+        """Glyph-only Tab order, Buddies and Connections when the words do not fit.
+
+        Design, XML, Preview and Run behavior keep their words.
+        """
+        self._lock_mode_labels()
+        glyph = self._compact or (self.width() > 0 and self.width() < self._labeled_width())
+        icon_style = _button_style("ToolButtonIconOnly")
+        text_style = _button_style("ToolButtonTextBesideIcon")
+        for button in self._fold_targets():
+            label = str(button.property("formBuilder.fullLabel") or "")
+            button.setText("" if glyph else label)
+            button.setToolButtonStyle(icon_style if glyph else text_style)
+            if glyph:
+                button.setFixedSize(ICON_BUTTON, ICON_BUTTON)
+            else:
+                button.setMinimumSize(0, 0)
+                button.setMaximumSize(16777215, 16777215)
+            button.setAccessibleName(_control_name(button.text(), button.toolTip()))
 
     def set_undo(self, enabled: bool, tip: str) -> None:
         # The icon already carries a disabled pixmap. Repainting every edit
@@ -745,6 +783,7 @@ class FormToolbar(QWidget):
 
     def resizeEvent(self, event: object) -> None:  # noqa: N802
         super().resizeEvent(event)  # type: ignore[arg-type]
+        self._fit_labels()
         full = getattr(self, "_save_full", "")
         if not full:
             return
@@ -871,6 +910,7 @@ def _toolbar_qss(tokens: ShellThemeTokens) -> str:
             "QWidget#formBuilder\\.modeGroup QToolButton#formBuilder\\.viewXml { border-right: none; }",
             "QFrame#formBuilder\\.toolbarDivider { background: %s; border: none; }" % tokens.border,
             flat_tool_button_qss(tokens, selectors),
+            ", ".join(selectors) + " { padding: 4px; }\n",
             "%s { border-color: transparent; }\n"
             % ",\n".join("%s:checked" % selector for selector in selectors),
             "%s { color: %s; }\n" % (disabled, quiet),
@@ -995,10 +1035,9 @@ class OutlinePane(QWidget):
         )
         self._find_button.clicked.connect(self._open_filter)
         layout.addWidget(self.header)
-        self._filter = QLineEdit(self)
-        self._filter.setObjectName("formBuilder.outlineFilter")
-        self._filter.setAccessibleName("Find a widget")
-        self._filter.setPlaceholderText("Find a widget")
+        from app.features.form_builder.qtside.theme.search_field import search_line
+
+        self._filter = search_line(self, "Find a widget", "formBuilder.outlineFilter")
         self._filter.textChanged.connect(self._filter_edited)
         self._filter.hide()
         layout.addWidget(self._filter)
@@ -1315,6 +1354,9 @@ class OutlinePane(QWidget):
 
     def set_hover_fill(self, color: str) -> None:
         self._hover_fill = color
+        self.tree.setProperty("cbcsHoverFill", color)
+        self.tree.viewport().setProperty("cbcsHoverFill", color)
+        self._delegate.note_hover(None if self._hover is None else int(self._hover), color)
         self._paint_row(self._hover)
 
     def set_drop_color(self, color: str) -> None:
@@ -1324,9 +1366,14 @@ class OutlinePane(QWidget):
     def set_hover(self, node: Optional[NodeId]) -> None:
         previous = self._hover
         self._hover = node
+        mark = None if node is None else int(node)
+        self.tree.setProperty("cbcsHover", 0 if mark is None else mark)
+        self.tree.viewport().setProperty("cbcsHover", 0 if mark is None else mark)
+        self._delegate.note_hover(mark, self._hover_fill)
         if previous != node:
             self._paint_row(previous)
             self._paint_row(node)
+        self.tree.viewport().repaint()
 
     def hover_node(self) -> Optional[NodeId]:
         return self._hover
@@ -1803,10 +1850,9 @@ class OutlinePane(QWidget):
         insert_layout.setContentsMargins(S2, S2, S2, S2)
         insert_layout.setSpacing(S2)
         self._insert_pop.setFixedWidth(280)
-        self._insert_filter = QLineEdit(self._insert_pop)
-        self._insert_filter.setObjectName("formBuilder.outlineInsertFilter")
-        self._insert_filter.setAccessibleName("Search widgets")
-        self._insert_filter.setPlaceholderText("Search widgets")
+        from app.features.form_builder.qtside.theme.search_field import search_line
+
+        self._insert_filter = search_line(self._insert_pop, "Search widgets", "formBuilder.outlineInsertFilter")
         self._insert_filter.textChanged.connect(self._quick_filter_changed)
         self._insert_filter.installEventFilter(self)
         insert_layout.addWidget(self._insert_filter)
@@ -2144,16 +2190,16 @@ class OutlinePane(QWidget):
         note = ToastNote(text, "Undo", "Delete", len(entries), entry)
         toast.show_note(note, self._undo_toast)
 
-    def _paint_insert_search(self, color: str) -> None:
-        from app.features.form_builder.qtside.icons.glyphs import paint_glyph
+    def _paint_insert_search(self, color: str, chrome: object) -> None:
+        from app.features.form_builder.qtside.theme.chrome import FormChrome
+        from app.features.form_builder.qtside.theme.search_field import paint_search_glyph
 
-        for action in list(self._insert_filter.actions()):
-            self._insert_filter.removeAction(action)
-        ratio = getattr(self, "devicePixelRatioF", None)
-        dpr = float(ratio()) if callable(ratio) else 1.0
-        pixmap = paint_glyph("search", color, ICON, dpr)
-        leading = getattr(getattr(QLineEdit, "ActionPosition", QLineEdit), "LeadingPosition")
-        self._insert_filter.addAction(QIcon(pixmap), leading)
+        paint_search_glyph(
+            self._insert_filter,
+            color,
+            chrome if isinstance(chrome, FormChrome) else None,
+        )
+        paint_search_glyph(self._filter, color, chrome if isinstance(chrome, FormChrome) else None)
 
     def apply_colors(self, tokens: ShellThemeTokens) -> None:
         self._quick_delegate.set_chrome(chrome_for(tokens))
@@ -2200,35 +2246,15 @@ class OutlinePane(QWidget):
             )
         )
         self._empty_label.setStyleSheet("color: %s; background: transparent;" % tokens.text_primary)
-        self._filter.setStyleSheet(
-            "QLineEdit#formBuilder\\.outlineFilter { color: %s; background: %s; border: %dpx solid %s; }"
-            "QLineEdit#formBuilder\\.outlineFilter:focus { border: %dpx solid %s; }"
-            % (
-                tokens.text_primary,
-                tokens.editor_bg,
-                width,
-                tokens.border,
-                width,
-                tokens.accent,
-            )
-        )
         # The delegate paints theme text. An unstyled list stays white, so dark and
         # high-contrast text disappears on it.
-        self._paint_insert_search(chrome.icon_muted or chrome.muted)
+        self._paint_insert_search(chrome.icon_muted or chrome.glyph or chrome.muted, chrome)
         self._insert_pop.setStyleSheet(
             popover_style("formBuilder.outlineInsert", chrome)
             + (
-                "QLineEdit#formBuilder\\.outlineInsertFilter {"
-                " background: %s; color: %s; border: 1px solid %s; border-radius: 4px; min-height: 24px; }"
-                "QLineEdit#formBuilder\\.outlineInsertFilter:focus { border: %dpx solid %s; }"
                 "QListWidget#formBuilder\\.outlineInsertList { background: %s; color: %s; border: none; }"
                 "QListWidget#formBuilder\\.outlineInsertList::item:selected { background: %s; color: %s; }"
                 % (
-                    chrome.input,
-                    chrome.text,
-                    chrome.popup_border or chrome.border,
-                    width,
-                    chrome.accent,
                     chrome.popup or chrome.panel,
                     chrome.text,
                     chrome.selected,
@@ -2897,6 +2923,7 @@ class FormWorkbench(QWidget):
         self._stacked = False
         self._sections: List[Tuple[LeftSection, QWidget]] = []
         self._section_shown: Tuple[str, ...] = ()
+        self._connect_button: Optional[QPushButton] = None
         self._under_key = ""
         self._under_widget: Optional[QWidget] = None
         self._under_height = 0
@@ -2942,15 +2969,16 @@ class FormWorkbench(QWidget):
         self._left_scroll.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self._left_scroll.setAccessibleName("Form sections")
         self._left_scroll.setFrameShape(getattr(getattr(QFrame, "Shape", QFrame), "NoFrame"))
-        # The shell splitter honors this while the scroller is showing. Tabs mode
-        # hides it, so a short surface can still shrink. A lower floor leaves a
-        # 768px window under the tab breakpoint.
-        self._left_scroll.setMinimumHeight(SHORT_MAX)
+        self._left_scroll.setMinimumHeight(0)
         self._left_scroll.setWidget(self._left_split)
         left_layout.addWidget(self._left_scroll)
         self._left_tabs = QTabWidget(self._left_body)
         self._left_tabs.setObjectName("formBuilder.leftTabs")
-        _name_tabs(self._left_tabs, "Outline and insert")
+        # The shell splitter only honors a minimum on a visible widget. The
+        # tabs are the left pane at every height, so they hold the floor that
+        # keeps a 900px editor out of the short header.
+        self._left_tabs.setMinimumHeight(SHORT_MAX)
+        _name_tabs(self._left_tabs, "Outline, Insert, and Logic")
         self._left_tabs.currentChanged.connect(lambda _index: self._sync_left_headers())
         self._left_tabs.hide()
         left_layout.addWidget(self._left_tabs)
@@ -3068,6 +3096,7 @@ class FormWorkbench(QWidget):
         self.canvas.refresh_chip()
         self.insert.refresh_custom()
         self._sync_sections()
+        self._sync_connect_button()
 
     def set_drawer_listener(self, callback: Callable[[], None]) -> None:
         self._drawer_listener = callback
@@ -3228,6 +3257,8 @@ class FormWorkbench(QWidget):
         self.canvas.apply_theme(tokens)
         self.inspector.apply_chrome(chrome)
         self.inspector.set_link_color(problems_link_color(tokens))
+        self._theme_tokens = tokens
+        self._paint_connect(tokens)
 
     def dispose(self, *_args: object) -> None:
         """Drop the focus watch. A closed form must not keep the application signal."""
@@ -3266,15 +3297,13 @@ class FormWorkbench(QWidget):
     def focus_outline(self) -> None:
         if self._plan is not None and not self._plan.left_docked:
             self.open_left()
-        if self._plan is not None and self._plan.stack_left:
-            self._left_tabs.setCurrentWidget(self.outline)
+        self._left_tabs.setCurrentWidget(self.outline)
         self.outline.tree.setFocus()
 
     def focus_insert(self) -> None:
         if self._plan is not None and not self._plan.left_docked:
             self.open_left()
-        if self._plan is not None and self._plan.stack_left:
-            self._left_tabs.setCurrentWidget(self.insert)
+        self._left_tabs.setCurrentWidget(self.insert)
         self.insert.body.setFocus()
 
     def _place_tile(self, key: str) -> None:
@@ -3416,11 +3445,12 @@ class FormWorkbench(QWidget):
         self._place_under()
 
     def _apply_short(self, stacked: bool) -> None:
-        self._stacked = stacked
+        del stacked
+        self._stacked = True
         self._arrange_left()
 
     def _arrange_left(self) -> None:
-        """Outline, Insert and the shown sections: split panes, or tabs at short heights."""
+        """Outline, Insert and Logic fill the left pane. Data is a button on Logic."""
         if getattr(self, "_arranging_left", False):
             return
         self._arranging_left = True
@@ -3429,113 +3459,72 @@ class FormWorkbench(QWidget):
         finally:
             self._arranging_left = False
 
-    def _raise_floor(self, widget: QWidget, floor: int) -> None:
-        ask = getattr(widget, "section_need", None)
-        if callable(ask):
-            floor = max(floor, int(ask()))
-        if widget.minimumHeight() < floor:
-            widget.setMinimumHeight(floor)
-
     def _arrange_left_now(self) -> None:
-        shown = [(spec, widget) for spec, widget in self._sections if spec.key in self._section_shown]
+        shown = [
+            (spec, widget)
+            for spec, widget in self._sections
+            if spec.key in self._section_shown and spec.key != "data"
+        ]
         for spec, widget in self._sections:
-            if spec.key not in self._section_shown:
+            on_rail = spec.key in self._section_shown and spec.key != "data"
+            if spec.key == "data" or spec.key not in self._section_shown:
                 self._park_section(widget)
-            self._rail_button(spec.key).setVisible(spec.key in self._section_shown)
-        if self._stacked:
-            self._left_scroll.hide()
-            if self._left_tabs.count() == 0:
-                self._left_tabs.addTab(self.outline, "Outline")
-                self._left_tabs.addTab(self.insert, "Insert")
-            for position, (spec, widget) in enumerate(shown):
-                if self._left_tabs.indexOf(widget) < 0:
-                    self._left_tabs.insertTab(2 + position, widget, spec.title)
-            self._left_split.hide()
-            self._left_tabs.show()
-            self._sync_left_headers()
-            return
-        if self._left_split.indexOf(self.outline) < 0:
-            for spec, widget in shown:
-                self._left_tabs.removeTab(self._left_tabs.indexOf(widget))
-            self._left_tabs.removeTab(self._left_tabs.indexOf(self.outline))
-            self._left_tabs.removeTab(self._left_tabs.indexOf(self.insert))
-            self._left_split.addWidget(self.outline)
-            self._left_split.addWidget(self.insert)
-        for position, (spec, widget) in enumerate(shown):
-            if self._left_split.indexOf(widget) < 0:
-                self._left_tabs.removeTab(self._left_tabs.indexOf(widget))
-                self._left_split.insertWidget(2 + position, widget)
-            widget.show()
-        self.outline.show()
-        self.insert.show()
-        self._raise_floor(self.outline, 240)
-        self._raise_floor(self.insert, 168)
-        floors = {"logic": 176, "data": 120}
-        for spec, widget in shown:
-            self._raise_floor(widget, floors.get(spec.key, 96))
-        self._left_tabs.hide()
-        self._left_scroll.show()
-        self._left_split.show()
+            self._rail_button(spec.key).setVisible(on_rail)
+        self._fill_left_tabs(shown)
+        self._mount_connect()
+        self._left_scroll.hide()
+        self._left_split.hide()
+        self._left_split.setMinimumHeight(0)
+        self._left_tabs.show()
         self._sync_left_headers()
-        mins: List[int] = []
-        for index in range(self._left_split.count()):
-            child = self._left_split.widget(index)
-            if child is not None and not child.isHidden():
-                mins.append(max(child.minimumHeight(), 1))
-        handles = max(0, self._left_split.count() - 1) * self._left_split.handleWidth()
-        needed = sum(mins) + handles
-        self._left_split.setMinimumHeight(needed)
-        self._left_scroll.fit(needed)
-        height = max(self._left_split.height(), needed)
-        extra = sum(spec.weight for spec, _widget in shown)
-        if height > needed and extra:
-            rest = 100 - extra
-            top = height * rest * 40 // (75 * 100)
-            middle = height * rest * 35 // (75 * 100)
-            sizes = [top, middle] + [height * spec.weight // 100 for spec, _widget in shown]
-            sizes = [max(size, floor) for size, floor in zip(sizes, mins)]
-            slack = sum(sizes) - (height - handles)
-            for index in range(len(sizes) - 1, -1, -1):
-                if slack <= 0:
-                    break
-                room = sizes[index] - mins[index]
-                take = min(room, slack)
-                sizes[index] -= take
-                slack -= take
-        elif extra:
-            sizes = mins
-        else:
-            top = height * 55 // 100
-            sizes = [max(top, mins[0]), max(height - top, mins[1] if len(mins) > 1 else 80)]
-        self._left_split.setSizes(sizes)
-        if self._plan is not None:
-            self._size_panes(self._plan)
+
+    def _fill_left_tabs(self, shown: List[Tuple[Any, QWidget]]) -> None:
+        current = self._left_tabs.currentWidget()
+        wanted = [self.outline, self.insert] + [widget for _spec, widget in shown]
+        titles = ["Outline", "Insert"] + [spec.title for spec, _widget in shown]
+        index = 0
+        while index < self._left_tabs.count():
+            widget = self._left_tabs.widget(index)
+            if widget not in wanted:
+                self._left_tabs.removeTab(index)
+                continue
+            index += 1
+        for position, widget in enumerate(wanted):
+            found = self._left_tabs.indexOf(widget)
+            if found < 0:
+                self._left_tabs.insertTab(position, widget, titles[position])
+            elif found != position:
+                text = self._left_tabs.tabText(found)
+                self._left_tabs.removeTab(found)
+                self._left_tabs.insertTab(position, widget, text)
+            self._left_tabs.setTabText(position, titles[position])
+        if current is not None and self._left_tabs.indexOf(current) >= 0:
+            self._left_tabs.setCurrentWidget(current)
 
     def _sync_left_headers(self) -> None:
-        """Tabbed mode uses the tab as the header. Stacked mode keeps one header per pane."""
+        """The tab is the header. Outline keeps + and filter. Logic keeps Read as text."""
         outline_header = getattr(self.outline, "header", None)
         insert_header = getattr(self.insert, "header", None)
         if outline_header is None or insert_header is None:
             return
-        if not self._stacked:
-            self._release_left_corner()
-            outline_header.show()
-            insert_header.show()
-            return
         outline_header.hide()
         insert_header.hide()
-        current = self._left_tabs.currentWidget()
         self._release_left_corner()
-        source = None
+        current = self._left_tabs.currentWidget()
+        buttons: List[QToolButton] = []
         if current is self.outline:
-            source = outline_header
+            buttons = list(outline_header.detach_actions())
         elif current is self.insert:
-            source = insert_header
-        detach = getattr(source, "detach_actions", None)
-        if not callable(detach):
-            return
-        buttons = detach()
-        if not isinstance(buttons, (list, tuple)) or not buttons:
+            for button in insert_header.detach_actions():
+                if button is self.insert.more_button:
+                    buttons.append(button)
+                else:
+                    button.hide()
+        elif current is self.section_widget("logic"):
+            read = current.findChild(QToolButton, "formBuilder.logic.readAsText")
+            if isinstance(read, QToolButton):
+                buttons = [read]
+        if not buttons:
             return
         corner = QWidget(self._left_tabs)
         corner.setObjectName("formBuilder.leftTabCorner")
@@ -3543,11 +3532,14 @@ class FormWorkbench(QWidget):
         row.setContentsMargins(0, 0, S1, 0)
         row.setSpacing(0)
         for button in buttons:
+            button.setFixedSize(ICON_BUTTON_HEADER, ICON_BUTTON_HEADER)
+            button.show()
             row.addWidget(button)
         corner_enum = getattr(getattr(Qt, "Corner", Qt), "TopRightCorner")
         self._left_tabs.setCornerWidget(corner, corner_enum)
 
     def _release_left_corner(self) -> None:
+        self._park_read_button()
         for pane in (self.outline, self.insert):
             header = getattr(pane, "header", None)
             reclaim = getattr(header, "reclaim_actions", None)
@@ -3559,11 +3551,144 @@ class FormWorkbench(QWidget):
         self._left_tabs.setCornerWidget(None)
         corner.deleteLater()
 
+    def _park_read_button(self) -> None:
+        logic = self.section_widget("logic")
+        if logic is None:
+            return
+        button = self.findChild(QToolButton, "formBuilder.logic.readAsText")
+        if not isinstance(button, QToolButton) or button.parent() is logic:
+            return
+        button.setParent(logic)
+        layout = logic.layout()
+        if layout is None:
+            return
+        link = layout.itemAt(0)
+        row = link.layout() if link is not None else None
+        if row is not None and row.indexOf(button) < 0:
+            row.addWidget(button)
+        elif layout.indexOf(button) < 0:
+            layout.insertWidget(0, button)
+
+    def _mount_connect(self) -> None:
+        logic = self.section_widget("logic")
+        data = self.section_widget("data")
+        if logic is None:
+            return
+        button = logic.findChild(QPushButton, "formBuilder.data.connect")
+        if button is None and data is not None:
+            found = data.findChild(QPushButton, "formBuilder.data.connect")
+            button = found if isinstance(found, QPushButton) else None
+        if button is None:
+            button = QPushButton("Connect to a table\u2026", logic)
+            button.setObjectName("formBuilder.data.connect")
+            button.setAccessibleName("Connect to a table")
+            button.clicked.connect(lambda: self._open_table_connect())
+        layout = logic.layout()
+        if layout is not None and layout.indexOf(button) < 0:
+            button.setParent(logic)
+            layout.addWidget(button)
+        self._connect_button = button
+        self._quiet_data_copy()
+        self._sync_connect_button()
+        tokens = getattr(self, "_theme_tokens", None)
+        if tokens is not None:
+            self._paint_connect(tokens)
+
+    def _quiet_data_copy(self) -> None:
+        data = self.section_widget("data")
+        if data is None:
+            return
+        for name in ("formBuilder.data.sentence", "formBuilder.data.addConnection"):
+            widget = data.findChild(QWidget, name)
+            if widget is not None:
+                widget.hide()
+
+    def _sync_connect_button(self) -> None:
+        button = self._connect_button
+        if button is None:
+            return
+        from app.features.form_builder.engine.codegen.eject import ejected_method
+        from app.features.form_builder.engine.data.source import has_data_source
+
+        document = self._session.document
+        button.setVisible(not has_data_source(document) and ejected_method(document) is None)
+        self._place_data_body()
+
+    def _open_table_connect(self) -> None:
+        data = self.section_widget("data")
+        if data is None:
+            return
+        from app.features.form_builder.qtside.data_panel.sheets import open_connect_sheet
+
+        open_connect_sheet(data)
+
+    def _paint_connect(self, tokens: ShellThemeTokens) -> None:
+        button = self._connect_button
+        if button is None:
+            return
+        from app.features.form_builder.qtside.theme.info_bar import secondary_button_qss
+
+        chrome = chrome_for(tokens)
+        button.setStyleSheet(secondary_button_qss(chrome, "QPushButton#formBuilder\\.data\\.connect"))
+
+    def _place_data_body(self) -> None:
+        """A connected form keeps its column list on Logic. The pane stays three tabs."""
+        logic = self.section_widget("logic")
+        data = self.section_widget("data")
+        if logic is None or data is None:
+            return
+        from app.features.form_builder.engine.codegen.eject import ejected_method
+        from app.features.form_builder.engine.data.source import has_data_source
+
+        document = self._session.document
+        layout = logic.layout()
+        connected = has_data_source(document) and ejected_method(document) is None
+        if not connected or layout is None:
+            if data.parent() is logic:
+                self._park_section(data)
+            return
+        if layout.indexOf(data) < 0:
+            data.setParent(logic)
+            layout.addWidget(data)
+        data.show()
+
+    def _focus_connect(self) -> bool:
+        if "data" not in self._section_shown:
+            return False
+        logic = self.section_widget("logic")
+        if logic is None:
+            return False
+        if self._plan is not None and not self._plan.left_docked:
+            self.open_left()
+        self._left_tabs.setCurrentWidget(logic)
+        button = self._connect_button
+        if button is not None and button.isVisible():
+            button.setFocus()
+            return True
+        data = self.section_widget("data")
+        if data is not None and data.isVisible():
+            spec_focus = None
+            for spec, widget in self._sections:
+                if widget is data:
+                    spec_focus = spec.focus
+                    break
+            if spec_focus is not None:
+                spec_focus(data)
+            else:
+                data.setFocus()
+            return True
+        field = logic.findChild(QWidget, "formBuilder.logic.filter")
+        if field is not None:
+            field.setFocus()
+            return True
+        logic.setFocus()
+        return True
+
     def _park_section(self, widget: QWidget) -> None:
         index = self._left_tabs.indexOf(widget)
         if index >= 0:
             self._left_tabs.removeTab(index)
-        if self._left_split.indexOf(widget) >= 0:
+        if widget.parent() is not self._left_body:
             widget.setParent(self._left_body)
         widget.hide()
 
@@ -3621,14 +3746,15 @@ class FormWorkbench(QWidget):
 
     def focus_section(self, key: str) -> bool:
         """Alt+N for a lane section. False when the section is absent for this form."""
+        if key == "data":
+            return self._focus_connect()
         if key not in self._section_shown:
             return False
         found = [(spec, widget) for spec, widget in self._sections if spec.key == key]
         spec, widget = found[0]
         if self._plan is not None and not self._plan.left_docked:
             self.open_left()
-        if self._stacked:
-            self._left_tabs.setCurrentWidget(widget)
+        self._left_tabs.setCurrentWidget(widget)
         if spec.focus is not None:
             spec.focus(widget)
         else:

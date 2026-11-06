@@ -55,7 +55,7 @@ class SectionHeader(QWidget):
         self.setObjectName(object_name or "formBuilder.sectionHeader")
         self.setFixedHeight(SECTION_HEADER)
         policy = getattr(QSizePolicy, "Policy", QSizePolicy)
-        self.setSizePolicy(getattr(policy, "Preferred"), getattr(policy, "Fixed"))
+        self.setSizePolicy(getattr(policy, "Expanding"), getattr(policy, "Fixed"))
         self.setFocusPolicy(self._focus("NoFocus") if checkable else self._focus("StrongFocus"))
         self.setAccessibleName(accessible_name or title)
 
@@ -82,18 +82,21 @@ class SectionHeader(QWidget):
             button.setArrowType(self._no_arrow())
             button.setFont(self._title_font())
             button.setFocusPolicy(self._focus("StrongFocus"))
-            button.setSizePolicy(getattr(policy, "Preferred"), getattr(policy, "Fixed"))
+            button.setSizePolicy(getattr(policy, "Fixed"), getattr(policy, "Fixed"))
+            button.setToolButtonStyle(self._text_only())
             if accessible_name:
                 button.setAccessibleName(accessible_name)
             button.clicked.connect(self._button_clicked)
             button.toggled.connect(self._sync_chevron)
             self._button = button
             self._label.hide()
-            row.addWidget(button, 1)
+            row.addWidget(button)
         else:
             if object_name:
                 self._label.setObjectName(object_name)
-            row.addWidget(self._label, 1)
+            self._label.setAlignment(self._left())
+            self._label.setSizePolicy(getattr(policy, "Fixed"), getattr(policy, "Preferred"))
+            row.addWidget(self._label)
 
         self._count = QLabel(self)
         self._count.setObjectName("formBuilder.sectionCount")
@@ -101,6 +104,7 @@ class SectionHeader(QWidget):
         self._count.setFocusPolicy(self._focus("NoFocus"))
         self._count.hide()
         row.addWidget(self._count)
+        row.addStretch(1)
         self._row = row
         self.set_title(title)
         self._sync_chevron()
@@ -120,6 +124,7 @@ class SectionHeader(QWidget):
         self._label.setText(shown)
         if self._button is not None:
             self._button.setText(shown)
+        self._fit_title()
 
     def setText(self, title: str) -> None:  # noqa: N802
         self.set_title(title)
@@ -243,10 +248,12 @@ class SectionHeader(QWidget):
                 button_rule,
             )
         )
+        self._fit_title()
         self._paint_marks()
 
     def showEvent(self, event: object) -> None:  # noqa: N802
         super().showEvent(event)  # type: ignore[arg-type]
+        self._fit_title()
         self._paint_marks()
 
     def mouseReleaseEvent(self, event: object) -> None:  # noqa: N802
@@ -306,6 +313,14 @@ class SectionHeader(QWidget):
                 return True
         return False
 
+    def _fit_title(self) -> None:
+        widget = self._button if self._button is not None else self._label
+        text = widget.text()
+        metrics = widget.fontMetrics()
+        width = max(int(metrics.horizontalAdvance(text)), int(metrics.boundingRect(text).width()), 1)
+        if widget.width() != width or widget.minimumWidth() != width:
+            widget.setFixedWidth(width)
+
     @staticmethod
     def _title_font() -> QFont:
         font = QFont()
@@ -328,6 +343,16 @@ class SectionHeader(QWidget):
     def _no_arrow() -> Qt.ArrowType:
         arrows = getattr(Qt, "ArrowType", Qt)
         return getattr(arrows, "NoArrow")
+
+    @staticmethod
+    def _text_only() -> Qt.ToolButtonStyle:
+        styles = getattr(Qt, "ToolButtonStyle", Qt)
+        return getattr(styles, "ToolButtonTextOnly")
+
+    @staticmethod
+    def _left() -> Qt.AlignmentFlag:
+        flags = getattr(Qt, "AlignmentFlag", Qt)
+        return getattr(flags, "AlignLeft") | getattr(flags, "AlignVCenter")
 
 
 def _weight(name: str) -> QFont.Weight:

@@ -347,7 +347,7 @@ class TrySession:
         if spec.mode == "would_run":
             return "Data: %s. Only the SQL is shown." % title
         if spec.mode == "rollback":
-            return "Data: %s." % title
+            return ""
         return "Data: %s. Changes are rolled back." % title
 
     def banner_text(self) -> str:

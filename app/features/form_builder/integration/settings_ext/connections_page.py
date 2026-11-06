@@ -22,6 +22,7 @@ from app.qt.QtWidgets import (
     QListWidgetItem,
     QMenu,
     QPushButton,
+    QSizePolicy,
     QSpinBox,
     QVBoxLayout,
     QWidget,
@@ -177,7 +178,11 @@ class _Worker(QThread):
 class _Row(QWidget):
     def __init__(self, title: str, engine: str, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
+        self._title = title
+        self._engine = engine
         self.setFixedHeight(CONNECTION_ROW)
+        self.setMinimumWidth(0)
+        self.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Fixed)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(8, 2, 8, 2)
         layout.setSpacing(0)
@@ -190,8 +195,36 @@ class _Row(QWidget):
         engine_font = QFont(self.engine_label.font())
         engine_font.setPixelSize(TYPE_FINE)
         self.engine_label.setFont(engine_font)
+        for label in (self.title_label, self.engine_label):
+            label.setMinimumWidth(0)
+            label.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
         layout.addWidget(self.title_label)
         layout.addWidget(self.engine_label)
+
+    def set_texts(self, title: str, engine: str) -> None:
+        self._title = title
+        self._engine = engine
+        self._elide()
+
+    def resizeEvent(self, event: QEvent) -> None:  # noqa: N802
+        super().resizeEvent(event)  # type: ignore[arg-type]
+        self._elide()
+
+    def showEvent(self, event: QEvent) -> None:  # noqa: N802
+        super().showEvent(event)  # type: ignore[arg-type]
+        self._elide()
+
+    def _elide(self) -> None:
+        room = max(0, self.width() - 16)
+        if room < 8:
+            self.title_label.setText(self._title)
+            self.engine_label.setText(self._engine)
+            return
+        elide = getattr(getattr(Qt, "TextElideMode", Qt), "ElideRight")
+        for label, full in ((self.title_label, self._title), (self.engine_label, self._engine)):
+            shown = label.fontMetrics().elidedText(full, elide, room)
+            if label.text() != shown:
+                label.setText(shown)
 
 
 class ConnectionsPage(QWidget):
@@ -256,6 +289,9 @@ class ConnectionsPage(QWidget):
         body.addWidget(left)
         self._list = QListWidget(left)
         self._list.setObjectName("formBuilder.connections.list")
+        scroll_off = getattr(getattr(Qt, "ScrollBarPolicy", Qt), "ScrollBarAlwaysOff")
+        self._list.setHorizontalScrollBarPolicy(scroll_off)
+        self._list.setTextElideMode(getattr(getattr(Qt, "TextElideMode", Qt), "ElideRight"))
         self._list.currentRowChanged.connect(self._on_row)
         left_layout.addWidget(self._list, 1)
         actions = QHBoxLayout()
@@ -501,7 +537,7 @@ class ConnectionsPage(QWidget):
                     item.setData(role, title)
                 row = _Row(connection.title, engine_line(connection), self._list)
                 row.setAccessibleName(title)
-                item.setSizeHint(QSize(220, CONNECTION_ROW))
+                item.setSizeHint(QSize(1, CONNECTION_ROW))
                 self._list.addItem(item)
                 self._list.setItemWidget(item, row)
             if 0 <= self._index < self._list.count():
@@ -683,8 +719,7 @@ class ConnectionsPage(QWidget):
         if not isinstance(widget, _Row):
             return
         connection = self._items[index]
-        widget.title_label.setText(connection.title)
-        widget.engine_label.setText(engine_line(connection))
+        widget.set_texts(connection.title, engine_line(connection))
 
     def _add_connection(self, engine: str) -> None:
         if self._items:

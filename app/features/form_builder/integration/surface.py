@@ -1052,6 +1052,7 @@ class FormSurface(QWidget):
     def showEvent(self, event: object) -> None:  # noqa: N802
         super().showEvent(event)  # type: ignore[arg-type]
         self._apply_responsive()
+        self._order_focus()
         self._attach_tab_watch()
         self._arm_window_prewarm()
 
@@ -2308,6 +2309,9 @@ class FormSurface(QWidget):
             assign_history_action(redo, redo_text, redo_on)
 
     def _order_focus(self) -> None:
+        # The form keeps its own cycle. Splicing it after the editor tab bar
+        # made Tab from a property row land on the canvas, which keeps Tab
+        # and changes the selection, so the next property was never reached.
         order = [
             self._toolbar.design,
             self._toolbar.xml,

@@ -25,9 +25,10 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Callable, List, Optional, Tuple
 
 from app.qt.QtCore import QEvent, QObject, QPoint, QRect, Qt, QTimer
+from app.features.form_builder.qtside.icons.glyphs import paint_glyph
 from app.features.form_builder.qtside.theme.chrome import apply_level2_shadow, control_qss
-from app.features.form_builder.qtside.theme.metrics import CONTROL
-from app.qt.QtGui import QColor, QFontMetrics, QKeySequence, QPalette
+from app.features.form_builder.qtside.theme.metrics import CHEVRON_SMALL, CONTROL, S1, S2
+from app.qt.QtGui import QColor, QFontMetrics, QIcon, QKeySequence, QPainter, QPalette, QPen
 from app.qt.QtWidgets import (
     QAbstractItemView,
     QAbstractSlider,
@@ -41,6 +42,7 @@ from app.qt.QtWidgets import (
     QPlainTextEdit,
     QPushButton,
     QScrollArea,
+    QSizePolicy,
     QTextEdit,
     QVBoxLayout,
     QWidget,
@@ -59,6 +61,7 @@ LARGE_MAX_WIDTH = 480
 GAP = 4
 PADDING = 12
 ARROW = "▾"
+_SWATCH = 12
 
 
 def _key(name: str) -> object:
@@ -122,7 +125,12 @@ class SummaryButton(QPushButton):
         self._named_for: Optional[Tuple[str, str]] = None
         self.setMinimumWidth(0)
         self.setFixedHeight(CONTROL)
+        policy = getattr(QSizePolicy, "Policy", QSizePolicy)
+        self.setSizePolicy(getattr(policy, "Expanding"), getattr(policy, "Fixed"))
+        self._swatch_rgb: Optional[Tuple[int, int, int]] = None
+        self._swatch_hollow = False
         self.clicked.connect(self._open)
+        self._apply_pad()
         self.set_summary("")
 
     @property
@@ -140,6 +148,21 @@ class SummaryButton(QPushButton):
         self._elide()
         self._name()
 
+    def set_swatch(self, rgb: Optional[Tuple[int, int, int]], hollow: bool = False) -> None:
+        """A 12 px colour chip inside the button. ``hollow`` draws the empty chip."""
+        self._swatch_rgb = rgb
+        self._swatch_hollow = bool(hollow or rgb is None)
+        self._elided_for = None
+        self._apply_pad()
+        self._elide()
+        self.update()
+
+    def setText(self, text: str) -> None:  # noqa: N802
+        raw = text.rstrip()
+        if raw.endswith(ARROW):
+            raw = raw[: -len(ARROW)].rstrip()
+        super().setText(raw)
+
     def changeEvent(self, event: QEvent) -> None:  # noqa: N802
         super().changeEvent(event)
         if event.type() in (_event("FontChange"), _event("StyleChange")):
@@ -151,6 +174,15 @@ class SummaryButton(QPushButton):
     def resizeEvent(self, event: QEvent) -> None:  # noqa: N802
         super().resizeEvent(event)
         self._elide()
+
+    def paintEvent(self, event: QEvent) -> None:  # noqa: N802
+        super().paintEvent(event)
+        painter = QPainter(self)
+        try:
+            self._paint_swatch(painter)
+            self._paint_chevron(painter)
+        finally:
+            painter.end()
 
     def keyPressEvent(self, event: QEvent) -> None:  # noqa: N802
         key = event.key()  # type: ignore[attr-defined]
@@ -167,14 +199,56 @@ class SummaryButton(QPushButton):
         if opener is not None:
             opener()
 
+    def _shows_swatch(self) -> bool:
+        return self._swatch_rgb is not None or self._swatch_hollow
+
+    def _pad_left(self) -> int:
+        if not self._shows_swatch():
+            return S2
+        return S2 + _SWATCH + S1
+
+    def _pad_right(self) -> int:
+        return S2 + CHEVRON_SMALL
+
+    def _apply_pad(self) -> None:
+        self.setStyleSheet(
+            "QPushButton#formBuilder\\.summary { text-align: left; padding: 0px %dpx 0px %dpx; }"
+            % (self._pad_right(), self._pad_left())
+        )
+
+    def _paint_swatch(self, painter: QPainter) -> None:
+        if not self._shows_swatch():
+            return
+        side = _SWATCH
+        rect = QRect(S2, max(0, (self.height() - side) // 2), side, side)
+        if self._swatch_rgb is not None:
+            painter.fillRect(rect, QColor(*self._swatch_rgb))
+        pen = QPen(self.palette().color(QPalette.ColorRole.Mid))
+        painter.setPen(pen)
+        painter.drawRect(rect.adjusted(0, 0, -1, -1))
+
+    def _paint_chevron(self, painter: QPainter) -> None:
+        ink = self.palette().color(QPalette.ColorRole.Text).name()
+        ratio = getattr(self, "devicePixelRatioF", None)
+        dpr = float(ratio()) if callable(ratio) else 1.0
+        pixmap = paint_glyph("chevron_down", ink, CHEVRON_SMALL, dpr)
+        side = CHEVRON_SMALL
+        QIcon(pixmap).paint(
+            painter,
+            self.width() - side - S2,
+            max(0, (self.height() - side) // 2),
+            side,
+            side,
+        )
+
     def _elide(self) -> None:
-        available = max(0, self.width() - 28)
+        available = max(0, self.width() - self._pad_left() - self._pad_right())
         # Eliding measures the text; skip it when neither the text nor the width changed.
         if self._elided_for == (self._full, available):
             return
         self._elided_for = (self._full, available)
         shown = QFontMetrics(self.font()).elidedText(self._full, _elide_right(), available) if self._full else ""
-        self.setText(("%s %s" % (shown, ARROW)).strip() if self._full else ARROW)
+        self.setText(shown)
 
     def _name(self) -> None:
         summary = self._full or "Default"

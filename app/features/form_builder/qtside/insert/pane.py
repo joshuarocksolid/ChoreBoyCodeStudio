@@ -44,6 +44,7 @@ from app.features.form_builder.qtside.insert.catalog.search import search
 from app.features.form_builder.qtside.theme.chrome import FormChrome, scrollbar_qss
 
 from app.features.form_builder.qtside.theme.metrics import S1, S6, TILE_PANE, TYPE_BODY
+from app.features.form_builder.qtside.theme.search_field import paint_search_glyph, search_line
 
 ICONS_MIN_WIDTH = TILE_PANE
 _KEY_ROW = Qt.ItemDataRole.UserRole
@@ -129,24 +130,6 @@ class InsertList(QListWidget):
         self._pane.drag_finished(str(key), action == Qt.DropAction.CopyAction)
 
 
-class _FilterEdit(QLineEdit):
-    def __init__(self, pane: "InsertPane") -> None:
-        super().__init__(pane)
-        self._pane = pane
-
-    def keyPressEvent(self, event: QKeyEvent) -> None:  # type: ignore[override]
-        if event.key() == Qt.Key.Key_Escape:
-            self._pane.escape()
-            return
-        if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
-            self._pane.activate_current()
-            return
-        if event.key() == Qt.Key.Key_Down:
-            self._pane.focus_first()
-            return
-        super().keyPressEvent(event)
-
-
 class InsertPane(QWidget):
     def __init__(
         self,
@@ -209,11 +192,9 @@ class InsertPane(QWidget):
         self.more_button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
         self.more_button.setMenu(self._build_menu())
         layout.addWidget(self.header)
-        self.filter = _FilterEdit(self)
-        self.filter.setObjectName("formBuilder.insertFilter")
-        self.filter.setAccessibleName("Search widgets")
-        self.filter.setPlaceholderText("Search widgets")
+        self.filter = search_line(self, "Search widgets", "formBuilder.insertFilter")
         self.filter.textChanged.connect(self._filter_changed)
+        self.filter.installEventFilter(self)
         layout.addWidget(self.filter)
         self.caption = QLabel(self)
         self.caption.setObjectName("formBuilder.insertCaption")
@@ -309,11 +290,7 @@ class InsertPane(QWidget):
         self.body.setStyleSheet(
             item_view_qss("QListWidget#formBuilder\\.insertBody", chrome) + scrollbar_qss(chrome)
         )
-        self.filter.setStyleSheet(
-            "QLineEdit#formBuilder\\.insertFilter { background: %s; color: %s; border: 1px solid %s; border-radius: 4px; min-height: 24px; }"
-            "QLineEdit#formBuilder\\.insertFilter:focus { border: %dpx solid %s; }"
-            % (chrome.input, chrome.text, chrome.border, chrome.focus_width, chrome.accent)
-        )
+        paint_search_glyph(self.filter, chrome.icon_muted or chrome.glyph or chrome.muted, chrome)
         self.body.viewport().update()
 
     def _paint_header_glyphs(self) -> None:
@@ -742,11 +719,24 @@ class InsertPane(QWidget):
         self._memory.clear_recent()
         self._refill()
 
+    def eventFilter(self, watched: object, event: QEvent) -> bool:  # type: ignore[override]
+        if watched is self.filter and event.type() == QEvent.Type.KeyPress:
+            key_event = event
+            if isinstance(key_event, QKeyEvent):
+                key = key_event.key()
+                if key == Qt.Key.Key_Escape:
+                    self.escape()
+                    return True
+                if key in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
+                    self.activate_current()
+                    return True
+                if key == Qt.Key.Key_Down:
+                    self.focus_first()
+                    return True
+        return super().eventFilter(watched, event)
+
     def _auto_icons(self) -> bool:
-        stored = self._memory.view()
-        if stored == "icons":
-            return True
-        if stored == "list":
+        if self._memory.view() == "list":
             return False
         return self.width() >= ICONS_MIN_WIDTH
 

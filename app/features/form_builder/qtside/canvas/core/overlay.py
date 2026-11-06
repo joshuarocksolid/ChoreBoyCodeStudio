@@ -117,6 +117,8 @@ PILL_LONG = 32
 PILL_SHORT = 4
 #: Gap bars are this many screen pixels across at every zoom.
 GAP_BAR = 2
+#: A widget selection chip sits this far above the widget's top edge.
+_FLUSH_ABOVE = 2
 GRIP_GLYPH = CanvasSize(6, 16)
 _INERT_HANDLES: Tuple[Compass, ...] = ("e", "s", "se")
 _THIN_KINDS = frozenset({"gap", "margin"})
@@ -552,6 +554,7 @@ def build_frame(static: StaticLayer, inputs: FrameInputs) -> OverlayFrame:
     fixed = tuple(hit for hit, _target in knob_hits + inert_hits) + inputs.chrome
     viewport = inputs.viewport if inputs.viewport is not None else page.grown(400)
     seats = place_chips(requests, static.content, fixed, page, viewport, inputs.dock)
+    seats = _seat_selection_above(seats, requests, faces, static, inputs, viewport)
     chip_hits, chip_rows = _seat_items(items, seats, faces, inputs.dock is not None, page)
     targets: List[Tuple[CanvasRect, Target]] = []
     targets.extend(layer_targets)
@@ -1519,6 +1522,89 @@ def _gap_chips(
             inputs.document,
             _Face("chip", rule.layout, "gap", text, None),
         )
+
+
+def _seat_selection_above(
+    seats: Sequence[ChipSeat],
+    requests: Sequence[ChipRequest],
+    faces: Mapping[Hashable, _Face],
+    static: StaticLayer,
+    inputs: FrameInputs,
+    viewport: CanvasRect,
+) -> Tuple[ChipSeat, ...]:
+    """Seat a widget selection chip on the widget's top-left, 2 px above.
+
+    A seat that meets the page title, a neighbour, or content keeps the
+    ``place_chips`` result. There is no inside-the-widget fallback.
+    """
+    by_key = {request.key: request for request in requests}
+    rects = [seat.rect for seat in seats]
+    chosen: List[ChipSeat] = list(seats)
+    for index, seat in enumerate(seats):
+        face = faces.get(seat.key)
+        request = by_key.get(seat.key)
+        if face is None or request is None or not _selection_chip(face, seat.key):
+            continue
+        above = CanvasRect(
+            request.target.x,
+            request.target.y - _FLUSH_ABOVE - seat.rect.height,
+            seat.rect.width,
+            seat.rect.height,
+        )
+        others = rects[:index] + rects[index + 1 :]
+        if not _above_is_clear(above, face, request, static, inputs, viewport, others):
+            continue
+        chosen[index] = CornerSeat(seat.key, above, "above_left")
+        rects[index] = above
+    return tuple(chosen)
+
+
+def _selection_chip(face: _Face, key: Hashable) -> bool:
+    return (
+        face.kind == "chip"
+        and face.role == "select"
+        and isinstance(key, tuple)
+        and bool(key)
+        and key[0] == "chip"
+    )
+
+
+def _above_is_clear(
+    rect: CanvasRect,
+    face: _Face,
+    request: ChipRequest,
+    static: StaticLayer,
+    inputs: FrameInputs,
+    viewport: CanvasRect,
+    others: Sequence[CanvasRect],
+) -> bool:
+    if not _in_view(rect, viewport):
+        return False
+    if inputs.dock is not None and rect.intersects(inputs.dock):
+        return False
+    for band in inputs.chrome:
+        if rect.intersects(band):
+            return False
+    for obstacle in static.content:
+        if not rect.intersects(obstacle.rect):
+            continue
+        if obstacle.band or obstacle.node == face.node or obstacle.node not in request.exempt:
+            return False
+    if rect.intersects(request.target):
+        return False
+    for other in others:
+        if rect.intersects(other):
+            return False
+    return True
+
+
+def _in_view(rect: CanvasRect, viewport: CanvasRect) -> bool:
+    return (
+        rect.x >= viewport.x
+        and rect.y >= viewport.y
+        and rect.x + rect.width <= viewport.x + viewport.width
+        and rect.y + rect.height <= viewport.y + viewport.height
+    )
 
 
 def _seat_items(

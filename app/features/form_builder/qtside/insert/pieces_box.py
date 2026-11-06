@@ -58,7 +58,12 @@ class PieceBox(QWidget):
             item.setData(int(_ROW_ROLE), index)
             item.setToolTip("Insert %s. Press Enter." % name)
             self.list.addItem(item)
-        self._fit()
+        has = self.list.count() > 0
+        self.title.setVisible(has)
+        self.list.setVisible(has)
+        self.setVisible(has)
+        if has:
+            self._fit()
 
     def apply_chrome(self, chrome: FormChrome) -> None:
         self.title.apply_chrome(chrome)

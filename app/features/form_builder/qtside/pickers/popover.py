@@ -40,10 +40,13 @@ from app.features.form_builder.qtside.theme.chrome import (
     apply_page_shadow,
     popover_style,
     reveal_popover,
+    scrollbar_qss,
 )
+from app.features.form_builder.qtside.theme.metrics import ROW
+from app.features.form_builder.qtside.theme.search_field import paint_search_glyph, search_line
 
 _WIDTH = 320
-_ROW = 24
+_ROW = ROW
 _FAINT = int(enum_value(Qt.ItemDataRole.UserRole)) + 1
 _NOTE = int(enum_value(Qt.ItemDataRole.UserRole)) + 2
 _ENTER = frozenset({enum_value(Qt.Key.Key_Return), enum_value(Qt.Key.Key_Enter)})
@@ -91,10 +94,8 @@ class EventPicker(QFrame):
         self._title.setObjectName("formBuilder.eventPickerTitle")
         self._title.hide()
         column.addWidget(self._title)
-        self.search = QLineEdit(self)
-        self.search.setObjectName("formBuilder.eventPickerSearch")
+        self.search = search_line(self, "Type to find an event", "formBuilder.eventPickerSearch")
         self.search.setAccessibleName("Find an event")
-        self.search.setPlaceholderText("Type to find an event")
         self.search.installEventFilter(self)
         self.search.textChanged.connect(self._typed)
         column.addWidget(self.search)
@@ -135,7 +136,11 @@ class EventPicker(QFrame):
         self.check.installEventFilter(self)
         self.check.toggled.connect(self._toggled)
         column.addWidget(self.check)
-        self.setStyleSheet(popover_style(self.objectName(), chrome) + self._extra(chrome))
+        frame = "QFrame#%s" % self.objectName().replace(".", "\\.")
+        self.setStyleSheet(popover_style(self.objectName(), chrome) + self._extra(chrome) + scrollbar_qss(chrome, frame))
+        shapes = getattr(QFrame, "Shape", QFrame)
+        self.rows.setFrameShape(getattr(shapes, "NoFrame"))
+        paint_search_glyph(self.search, chrome.icon_muted or chrome.muted, chrome)
         self.rows.setMaximumHeight(_ROW * 8)
         apply_page_shadow(self, is_dark=chrome.is_dark, is_high_contrast=chrome.is_high_contrast)
         self.setFixedWidth(_WIDTH)
@@ -491,12 +496,13 @@ class EventPicker(QFrame):
     def _extra(self, chrome: FormChrome) -> str:
         frame = "QFrame#formBuilder\\.eventPicker"
         return (
-            "%(f)s QLineEdit { color: %(text)s; background: %(input)s; border: 1px solid %(border)s;"
-            " border-radius: 4px; padding: 4px 8px; }"
-            "%(f)s QLineEdit:focus { border: %(focus)dpx solid %(accent)s; }"
+            "%(f)s QLineEdit#formBuilder\\.eventPickerMethod { color: %(text)s; background: %(input)s;"
+            " border: 1px solid %(border)s; border-radius: 4px; padding: 4px 8px; }"
+            "%(f)s QLineEdit#formBuilder\\.eventPickerMethod:focus { border: %(focus)dpx solid %(accent)s; }"
             "%(f)s QListView { color: %(text)s; background: %(panel)s; border: none; outline: none; }"
-            "%(f)s QListView::item { color: %(text)s; }"
-            "%(f)s QListView::item:selected { color: %(text)s; background: %(hover)s; border: %(focus)dpx solid %(accent)s; }"
+            "%(f)s QListView::item { color: %(text)s; min-height: %(row)dpx; max-height: %(row)dpx;"
+            " padding: 0px; border: none; }"
+            "%(f)s QListView::item:selected { color: %(text)s; background: %(selected)s; border: none; }"
             "%(f)s QListView::item:disabled { color: %(muted)s; }"
             "%(f)s QCheckBox { color: %(text)s; }"
         ) % {
@@ -505,10 +511,11 @@ class EventPicker(QFrame):
             "muted": chrome.muted,
             "input": chrome.input,
             "border": chrome.border,
-            "panel": chrome.panel,
-            "hover": chrome.row_hover,
+            "panel": chrome.popup or chrome.panel,
+            "selected": chrome.selected or chrome.row_hover,
             "accent": chrome.accent,
             "focus": chrome.focus_width,
+            "row": _ROW,
         }
 
 
@@ -571,18 +578,22 @@ class _RowDelegate(QStyledItemDelegate):
         super().__init__(parent)
         self._faint = QColor(chrome.faint)
         self._muted = QColor(chrome.muted)
+        self._selected = QColor(chrome.selected or chrome.row_hover)
+        self._hover = QColor(chrome.row_hover)
 
     def paint(self, painter: object, option: object, index: object) -> None:  # noqa: N802
-        style = option.widget.style()  # type: ignore[attr-defined]
-        drawn = QStyleOptionViewItem(option)  # type: ignore[arg-type]
-        self.initStyleOption(drawn, index)  # type: ignore[arg-type]
-        drawn.text = ""
-        style.drawControl(QStyle.ControlElement.CE_ItemViewItem, drawn, painter, option.widget)  # type: ignore[attr-defined]
+        painter.save()  # type: ignore[attr-defined]
+        state = option.state  # type: ignore[attr-defined]
+        selected = getattr(getattr(QStyle, "StateFlag", QStyle), "State_Selected")
+        hover = getattr(getattr(QStyle, "StateFlag", QStyle), "State_MouseOver")
+        if state & selected:
+            painter.fillRect(option.rect, self._selected)  # type: ignore[attr-defined]
+        elif state & hover:
+            painter.fillRect(option.rect, self._hover)  # type: ignore[attr-defined]
         text = index.data(enum_value(Qt.ItemDataRole.DisplayRole)) or ""  # type: ignore[attr-defined]
         faint = index.data(_FAINT) or ""  # type: ignore[attr-defined]
         note = index.data(_NOTE) or ""  # type: ignore[attr-defined]
         color = index.data(enum_value(Qt.ItemDataRole.ForegroundRole))  # type: ignore[attr-defined]
-        painter.save()  # type: ignore[attr-defined]
         painter.setPen(color if isinstance(color, QColor) else self._muted)  # type: ignore[attr-defined]
         rect = option.rect.adjusted(8, 0, -8, 0)  # type: ignore[attr-defined]
         metrics = painter.fontMetrics()  # type: ignore[attr-defined]

@@ -628,7 +628,7 @@ def test_primary_button_text_meets_contrast_on_the_accent() -> None:
         assert _contrast(accent, on_accent_for(accent)) >= 4.5
 
 
-def test_preview_fits_its_pane_so_every_label_shows(tmp_path: Path, qapp: object) -> None:
+def test_preview_stays_at_least_three_quarters_and_scrolls(tmp_path: Path, qapp: object) -> None:
     dialog = FromTableDialog(
         project_root=str(tmp_path),
         stem="customer",
@@ -649,13 +649,12 @@ def test_preview_fits_its_pane_so_every_label_shows(tmp_path: Path, qapp: object
         form = dialog._preview_widget
         view = dialog._preview_view
         assert form is not None and view is not None
-        viewport = view.viewport().rect()
+        assert view.transform().m11() >= 0.75
+        needed = getattr(getattr(Qt, "ScrollBarPolicy", Qt), "ScrollBarAsNeeded")
+        assert enum_value(view.horizontalScrollBarPolicy()) == enum_value(needed)
+        assert enum_value(view.verticalScrollBarPolicy()) == enum_value(needed)
         labels = [label for label in form.findChildren(QLabel) if label.isVisible() and label.text()]
         assert labels
-        for label in labels:
-            corner = view.mapFromScene(label.mapTo(form, label.rect().topLeft()))
-            assert viewport.contains(corner), label.text()
-            assert corner.x() + label.width() <= viewport.width() + 1, label.text()
     finally:
         dialog.close()
     del qapp

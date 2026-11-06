@@ -19,6 +19,7 @@ from app.qt.QtWidgets import (
     QComboBox,
     QDialog,
     QFrame,
+    QGraphicsOpacityEffect,
     QGraphicsView,
     QGridLayout,
     QHBoxLayout,
@@ -65,7 +66,7 @@ from app.features.form_builder.engine.project.table_form import (
 )
 from app.features.form_builder.qtside.icons.glyphs import paint_glyph
 from app.features.form_builder.qtside.schema_prompt import ask_connection_secret
-from app.features.form_builder.qtside.theme.chrome import FormChrome, apply_page_shadow
+from app.features.form_builder.qtside.theme.chrome import FormChrome, apply_page_shadow, control_qss, edge_on
 from app.features.form_builder.qtside.theme.items import polish_item_view
 from app.features.form_builder.qtside.theme.metrics import (
     CONTROL,
@@ -114,6 +115,9 @@ _CLASS_GLYPH = {
 }
 _TABLE_COLUMN = 180
 _PREVIEW_COLUMN = 320
+_INCLUDE_WIDTH = 64
+_PREVIEW_MIN_SCALE = 0.75
+_DISABLED_OPACITY = 0.5
 
 
 def locale_date_format() -> str:
@@ -461,7 +465,25 @@ class FromTableDialog(QDialog):
             "QPushButton#formBuilder\\.fromTable\\.create {"
             " background: %s; color: %s; border: none; border-radius: %dpx; padding: 0 12px;"
             " font-weight: 600; min-height: %dpx; max-height: %dpx; }"
-            "QPushButton#formBuilder\\.fromTable\\.create:disabled { background: %s; color: %s; }"
+            "QPushButton#formBuilder\\.fromTable\\.create:disabled {"
+            " background: %s; color: %s; border: none; border-radius: %dpx;"
+            " min-height: %dpx; max-height: %dpx; }"
+            "QPushButton#formBuilder\\.fromTable\\.addConnection {"
+            " background: %s; color: %s; border: 1px solid %s; border-radius: %dpx; padding: 0 12px; }"
+            "QComboBox#formBuilder\\.fromTable\\.connection,"
+            "QComboBox#formBuilder\\.fromTable\\.make,"
+            "QComboBox#formBuilder\\.fromTable\\.linesTable,"
+            "QComboBox#formBuilder\\.fromTable\\.linesLink,"
+            "QComboBox#formBuilder\\.fromTable\\.showsAs,"
+            "QLineEdit#formBuilder\\.fromTable\\.labelEdit {"
+            " background: %s; color: %s; border: 1px solid %s; border-radius: 4px; padding: 0 8px; }"
+            "QLabel#shell\\.dialogChrome\\.title { color: %s; background: transparent;"
+            " font-size: 17px; font-weight: 700; }"
+            "QWidget#shell\\.dialogChrome\\.header { background: %s; color: %s;"
+            " border-bottom: 1px solid %s; }"
+            "QWidget#shell\\.dialogChrome\\.footer { background: %s; color: %s;"
+            " border-top: 1px solid %s; }"
+            "QWidget#shell\\.dialogChrome\\.body { background: %s; color: %s; }"
             "QPushButton#formBuilder\\.fromTable\\.addConnection:focus,"
             "QPushButton#formBuilder\\.fromTable\\.cancel:focus,"
             "QPushButton#formBuilder\\.fromTable\\.create:focus,"
@@ -488,8 +510,27 @@ class FromTableDialog(QDialog):
                 R_CARD,
                 PRIMARY_BUTTON,
                 PRIMARY_BUTTON,
+                chrome.accent,
+                chrome.on_accent,
+                R_CARD,
+                PRIMARY_BUTTON,
+                PRIMARY_BUTTON,
+                chrome.input,
+                chrome.text,
+                chrome.border,
+                R_CARD,
+                chrome.input,
+                chrome.text,
+                edge_on(chrome, chrome.input or chrome.panel),
+                chrome.text,
                 chrome.panel,
-                chrome.muted,
+                chrome.text,
+                chrome.border,
+                chrome.panel,
+                chrome.text,
+                chrome.border,
+                chrome.window,
+                chrome.text,
                 focus,
                 chrome.accent,
                 chrome.panel,
@@ -497,11 +538,18 @@ class FromTableDialog(QDialog):
                 chrome.border,
                 TYPE_FINE,
             )
+            + _indicator_qss("QCheckBox#formBuilder\\.fromTable\\.lines", chrome)
+            + _indicator_qss("QCheckBox#formBuilder\\.fromTable\\.start", chrome)
+            + _indicator_qss("QTableWidget#formBuilder\\.fromTable\\.mapping", chrome)
         )
         for header in self._headers:
             header.apply_chrome(chrome)
         polish_item_view(self._tables, chrome)
         polish_item_view(self._mapping, chrome)
+        self._mapping.setStyleSheet(
+            self._mapping.styleSheet()
+            + _indicator_qss("QTableWidget#formBuilder\\.fromTable\\.mapping", chrome)
+        )
         apply_page_shadow(self._page, is_dark=chrome.is_dark, is_high_contrast=chrome.is_high_contrast)
         view = self._preview_view
         form = self._preview_widget
@@ -682,11 +730,13 @@ class FromTableDialog(QDialog):
             type_item.setForeground(QBrush(QColor(self._chrome.faint)))
             self._mapping.setItem(row, 2, type_item)
             combo = self._shows_as_combo(column.widget_class())
+            combo.setObjectName("formBuilder.fromTable.showsAs")
             combo.currentIndexChanged.connect(
                 lambda _index, row_index=row, box=combo: self._on_shows_as_changed(row_index, box)
             )
             self._mapping.setCellWidget(row, 3, combo)
             label = QLineEdit(column.field_label(), self._mapping)
+            label.setObjectName("formBuilder.fromTable.labelEdit")
             label.setFixedHeight(CONTROL)
             label.setAccessibleName("Label for %s" % column.name)
             label.editingFinished.connect(lambda row_index=row, box=label: self._on_label_edited(row_index, box))
@@ -845,7 +895,8 @@ class FromTableDialog(QDialog):
             self._start.setChecked(False)
             self._start_note.setText(made.sentence)
         self._start.blockSignals(False)
-        self._start_note.setVisible(not made.enabled)
+        self._start.setToolTip(self._start_note.text())
+        self._start_note.setVisible(False)
 
     def _chain_tabs(self) -> None:
         """Tables, the grid, then Make and the buttons. Tab must leave the grid."""
@@ -929,7 +980,7 @@ class FromTableDialog(QDialog):
             if editor is not None:
                 measured[3] = max(measured[3], editor.sizeHint().width())
         _include, column, type_width, shows = measured[:4]
-        include = 32
+        include = _INCLUDE_WIDTH
         column = max(48, column)
         spare = viewport - include - type_width - shows - column
         if spare < 64:
@@ -946,6 +997,16 @@ class FromTableDialog(QDialog):
                 continue
             rect = table.visualRect(table.model().index(row, 3))
             editor.setFixedWidth(max(rect.width(), 1))
+
+    def _fade_create(self, enabled: bool) -> None:
+        if enabled:
+            self._create.setGraphicsEffect(None)
+            return
+        effect = self._create.graphicsEffect()
+        if not isinstance(effect, QGraphicsOpacityEffect):
+            effect = QGraphicsOpacityEffect(self._create)
+            self._create.setGraphicsEffect(effect)
+        effect.setOpacity(_DISABLED_OPACITY)
 
     def _sync_button(self) -> None:
         self._sync_start()
@@ -969,9 +1030,12 @@ class FromTableDialog(QDialog):
         self._disabled = reason or ""
         self._create.setEnabled(not self._disabled)
         shown = self._disabled or self._footer
+        if shown == _CHOOSE_CONNECTION:
+            shown = ""
         self._reason.setText(shown)
         self._reason.setVisible(bool(shown))
         self._create.setToolTip(self._disabled or "")
+        self._fade_create(not self._disabled)
 
     def _on_make(self) -> None:
         self._sync_lines_and_button()
@@ -1101,7 +1165,8 @@ class FromTableDialog(QDialog):
         self._paint_preview(widget, view)
         # Top-left and fitted to the pane width, so the form reflows like the app would.
         view.setAlignment(Qt.AlignLeft | Qt.AlignTop)
-        view.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        view.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        view.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         view.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         view.viewport().setFocusPolicy(Qt.FocusPolicy.NoFocus)
         widget.setFocusPolicy(Qt.FocusPolicy.NoFocus)
@@ -1126,12 +1191,19 @@ class FromTableDialog(QDialog):
         proxy.resize(width, height)
         view.setSceneRect(0, 0, width, height)
         avail_w = max(view.viewport().width(), 1)
-        scale = min(1.0, avail_w / float(width))
+        fitted = min(1.0, avail_w / float(width))
+        scale = max(_PREVIEW_MIN_SCALE, fitted)
         view.resetTransform()
         view.scale(scale, scale)
-        view.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        view.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        view.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
 
     def _show_preview_message(self, text: str) -> None:
+        # "Choose a connection" lives on the disabled Create button.
+        if text == _CHOOSE_CONNECTION:
+            self._preview_view = None
+            self._swap_preview(QWidget(self), None)
+            return
         label = QLabel(text, self)
         label.setWordWrap(True)
         label.setObjectName("formBuilder.fromTable.previewMessage")
@@ -1158,6 +1230,36 @@ class FromTableDialog(QDialog):
         scene = view.scene()
         if scene is not None:
             scene.setBackgroundBrush(QColor(self._chrome.panel))
+
+
+def _tick_url(chrome: FormChrome) -> str:
+    rules = control_qss(chrome)
+    mark = "image: url("
+    start = rules.find(mark)
+    if start < 0:
+        return "none"
+    start += len(mark)
+    end = rules.find(")", start)
+    return rules[start:end] if end > start else "none"
+
+
+def _indicator_qss(selector: str, chrome: FormChrome) -> str:
+    edge = edge_on(chrome, chrome.panel)
+    image = _tick_url(chrome)
+    fill = chrome.input or chrome.panel
+    return (
+        "%s::indicator { width: 14px; height: 14px; border: 1px solid %s;"
+        " border-radius: 3px; background: %s; image: none; }"
+        "%s::indicator:checked { border: 1px solid %s; background: %s; image: url(%s); }"
+        "%s::indicator:disabled { border: 1px solid %s; background: %s; image: none; }"
+        "%s::indicator:checked:disabled { border: 1px solid %s; background: %s; image: url(%s); }"
+        % (
+            selector, edge, fill,
+            selector, chrome.accent, chrome.accent, image,
+            selector, edge, fill,
+            selector, chrome.accent, chrome.accent, image,
+        )
+    )
 
 
 def _field_label(text: str, buddy: QWidget, parent: QWidget) -> QLabel:

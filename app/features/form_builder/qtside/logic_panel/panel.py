@@ -37,7 +37,7 @@ from app.features.form_builder.qtside.canvas.layers.logic_badges import set_logi
 from app.features.form_builder.qtside.icons.glyphs import paint_glyph
 from app.features.form_builder.qtside.logic_panel.rows import LogicRow, RowFace, paint_roles
 from app.features.form_builder.qtside.theme.chrome import FormChrome, chrome_from_values
-from app.features.form_builder.qtside.theme.metrics import CONTROL, ICON_BUTTON_HEADER, R_CONTROL, S4
+from app.features.form_builder.qtside.theme.metrics import CONTROL, ICON_BUTTON_HEADER, PANE_PAD, R_CONTROL, S4
 from app.features.form_builder.qtside.theme.section_header import SectionHeader
 from app.features.form_builder.qtside.theme.segmented import SegmentedControl
 
@@ -64,6 +64,38 @@ def set_idle_runner(runner: Any) -> None:
     """Integration registers the shell idle hook. This module cannot import the shell."""
     global _IDLE
     _IDLE = runner
+
+
+class _ElidedNote(QLabel):
+    """One line, inset by the pane pad, elided on the right."""
+
+    def __init__(self, text: str, parent: QWidget) -> None:
+        super().__init__(parent)
+        self._full = text
+        self.setToolTip(text)
+        self.setWordWrap(False)
+        self.setMinimumWidth(0)
+        self.setTextFormat(_PLAIN)
+        self.setSizePolicy(_policy("Ignored"), _policy("Preferred"))  # type: ignore[arg-type]
+        self.setContentsMargins(PANE_PAD, 0, PANE_PAD, 0)
+        self.setText(text)
+
+    def resizeEvent(self, event: QEvent) -> None:  # noqa: N802
+        super().resizeEvent(event)  # type: ignore[arg-type]
+        self._elide()
+
+    def showEvent(self, event: QEvent) -> None:  # noqa: N802
+        super().showEvent(event)  # type: ignore[arg-type]
+        self._elide()
+
+    def _elide(self) -> None:
+        room = self.contentsRect().width()
+        if room < 8:
+            return
+        elide = getattr(getattr(Qt, "TextElideMode", Qt), "ElideRight")
+        shown = self.fontMetrics().elidedText(self._full, elide, room)
+        if self.text() != shown:
+            self.setText(shown)
 
 
 def _policy(name: str) -> object:
@@ -102,14 +134,12 @@ class LogicPanel(QWidget):
         self._read.setFixedSize(ICON_BUTTON_HEADER, ICON_BUTTON_HEADER)
         self._read.clicked.connect(self._open_behavior_text)
         link_row.addWidget(self._read)
-        self._filter = QLineEdit(self)
-        self._filter.setObjectName("formBuilder.logic.filter")
-        self._filter.setPlaceholderText("Filter")
+        from app.features.form_builder.qtside.theme.search_field import search_line
+
+        self._filter = search_line(self, "Filter", "formBuilder.logic.filter")
         self._filter.setAccessibleName("Filter logic")
         self._filter.setMinimumWidth(0)
-        self._filter.setFixedHeight(CONTROL)
         self._filter.setSizePolicy(_policy("Ignored"), _policy("Fixed"))  # type: ignore[arg-type]
-        self._filter.setClearButtonEnabled(False)
         self._filter.textChanged.connect(self._fill)
         column.addWidget(self._filter)
         self._segments = SegmentedControl(self)
@@ -428,16 +458,15 @@ class LogicPanel(QWidget):
         if problems:
             title.set_count(problems)
             title.setProperty("formBuilderProblemCount", problems)
+        if section == "IN YOUR CODE":
+            title.setProperty("cbcsCountTone", True)
         self._style_header(title)
         self._body_layout.addWidget(title)
         if section != "IN YOUR CODE":
             return
         name = self._filename or "the window file"
-        note = QLabel("Read-only · from %s. %s" % (name, _NOTE), self._body)
+        note = _ElidedNote("Read-only · from %s. %s" % (name, _NOTE), self._body)
         note.setObjectName("formBuilder.logic.note")
-        note.setWordWrap(True)
-        note.setMinimumWidth(0)
-        note.setTextFormat(_PLAIN)
         self._body_layout.addWidget(note)
 
     def _message(self, text: str) -> None:
@@ -484,6 +513,8 @@ class LogicPanel(QWidget):
         if chrome is None:
             return
         header.apply_chrome(chrome)
+        if not header.property("cbcsCountTone"):
+            return
         count = header.property("formBuilderProblemCount")
         if not count:
             return
@@ -492,7 +523,9 @@ class LogicPanel(QWidget):
             return
         color = chrome.error or chrome.warning
         if color:
-            label.setStyleSheet("QLabel#formBuilder.sectionCount { color: %s; }" % color)
+            label.setStyleSheet(
+                "QLabel#formBuilder\\.sectionCount { color: %s; background: transparent; }" % color
+            )
 
     def _paint_search(self, color: str) -> None:
         actions = getattr(self._filter, "actions", None)

@@ -49,6 +49,8 @@ from app.qt.QtWidgets import (
 )
 from app.qt.qt_compat import enum_value, exec_qt
 
+_ADD_CONNECTION = "add-connection"
+
 _OPENS = (
     ("First", "first"),
     ("Last", "last"),
@@ -208,7 +210,9 @@ class SourceForm(QWidget):
                 layout.addWidget(widget, row_index, 0, 1, 2)
             row_index += 1
         self._chrome: Optional[FormChrome] = None
-        self._connection.currentIndexChanged.connect(self._reload_tables)
+        self._add_connection: Optional[Any] = None
+        self._kept_connection = 0
+        self._connection.currentIndexChanged.connect(self._on_connection)
         self._filter.textChanged.connect(self._apply_filter)
         self._tables.currentItemChanged.connect(lambda _cur, _prev: self._on_table())
         self._word.textEdited.connect(self._on_word)
@@ -248,6 +252,8 @@ class SourceForm(QWidget):
         self._connection.clear()
         for item in connections_of(self._session, self):
             self._connection.addItem(item.title or item.name, item.name)
+        if self._add_connection is not None:
+            self._connection.addItem("Add a connection\u2026", _ADD_CONNECTION)
         self._connection.blockSignals(False)
         self._reload_tables()
         self._loading = False
@@ -283,6 +289,8 @@ class SourceForm(QWidget):
         if item is None or not _item_enabled(item):
             return None
         connection = self._connection.currentData()
+        if connection == _ADD_CONNECTION:
+            return None
         table = item.data(int(enum_value(Qt.ItemDataRole.UserRole)))
         key = item.data(int(enum_value(Qt.ItemDataRole.UserRole)) + 1)
         if not connection or not table or not key:
@@ -300,6 +308,24 @@ class SourceForm(QWidget):
             open_at=None if open_at in (None, "", "first") else str(open_at),
             allow_overwrite=self._keep.isChecked(),
         )
+
+    def offer_add_connection(self, callback: Any) -> None:
+        self._add_connection = callback
+
+    def _on_connection(self, index: int) -> None:
+        if self._connection.itemData(index) == _ADD_CONNECTION:
+            self._connection.blockSignals(True)
+            keep = self._kept_connection
+            if keep < 0 or keep >= self._connection.count() or self._connection.itemData(keep) == _ADD_CONNECTION:
+                keep = 0
+            self._connection.setCurrentIndex(keep)
+            self._connection.blockSignals(False)
+            callback = self._add_connection
+            if callable(callback):
+                callback()
+            return
+        self._kept_connection = index
+        self._reload_tables()
 
     def _reload_tables(self) -> None:
         chosen = self._tables.currentItem()
@@ -427,6 +453,7 @@ class ConnectSheet(QDialog):
             object_name="formBuilder.data.connectSheet",
         )
         self._form = SourceForm(dialog.body, session)
+        self._form.offer_add_connection(self._open_connections)
         dialog.body.layout().addWidget(self._form)
         self._error = QLabel(dialog.body)
         self._error.setWordWrap(False)
@@ -444,6 +471,14 @@ class ConnectSheet(QDialog):
         self.resize(480, 560)
         if tokens is not None:
             apply_chrome(self, tokens)
+
+    def _open_connections(self) -> None:
+        host = self.parent()
+        signal = getattr(host, "add_connection_requested", None)
+        emit = getattr(signal, "emit", None)
+        if callable(emit):
+            emit()
+        self._form.reload()
 
     def _commit(self) -> None:
         source = self._form.source()

@@ -50,6 +50,8 @@ class OutlineRowDelegate(QStyledItemDelegate):
         self._error = ""
         self._layout = ""
         self._icon = ""
+        self._hover_id: Optional[int] = None
+        self._hover_fill = ""
 
     def update_colors(self, name: str, faint: str, error: str, layout: str, icon_muted: str = "") -> None:
         self._name = name
@@ -60,6 +62,16 @@ class OutlineRowDelegate(QStyledItemDelegate):
 
     def icon_color(self) -> str:
         return self._icon or self._faint or self._name
+
+    def note_hover(self, node: Optional[int], fill: str) -> None:
+        """The row ``node`` wears ``fill``. ``None`` clears it.
+
+        Paint reads this directly. A grab does not always put the tree on
+        ``option.widget``, so a widget property alone never reaches the pixmap.
+        """
+        self._hover_id = node
+        if fill:
+            self._hover_fill = fill
 
     def paint(self, painter: QPainter, option: QStyleOptionViewItem, index: object) -> None:
         painter.save()
@@ -87,7 +99,10 @@ class OutlineRowDelegate(QStyledItemDelegate):
             visible = viewport.width() - max(option.rect.x(), 0)
             if visible > width:
                 width = visible
-        boxes = layout_row(width, bool(caption), problem, caption_px, name_px, owner)
+        # The item stylesheet paints a transparent row, which hides the hover brush.
+        self._fill_hover(painter, option, widget, index, width)
+        floor = _object_floor(caption_metrics, caption) if owner and caption else 0
+        boxes = layout_row(width, bool(caption), problem, caption_px, name_px, owner, floor)
         palette = option.palette
         name_color = self._swatch(self._faint if faint else self._name, palette.text().color())
         caption_color = self._swatch(self._faint, palette.mid().color())
@@ -99,20 +114,53 @@ class OutlineRowDelegate(QStyledItemDelegate):
             primary,
             name_color,
             name_font,
-            elide="middle" if not owner else "right",
+            elide="right",
         )
-        if boxes.caption is not None and caption:
+        caption_rect = _placed(option.rect, boxes.caption)
+        if boxes.caption is not None and caption and _shows_caption(caption_font, caption, caption_rect.width(), owner):
             self._text(
                 painter,
-                _placed(option.rect, boxes.caption),
+                caption_rect,
                 caption,
                 caption_color,
                 caption_font,
-                elide="middle" if owner else "right",
+                elide="right",
             )
         if boxes.problem is not None:
             self._problem(painter, _placed(option.rect, boxes.problem), palette.text().color())
+        self._focus_bar(painter, option)
         painter.restore()
+
+    def _fill_hover(
+        self,
+        painter: QPainter,
+        option: QStyleOptionViewItem,
+        widget: object,
+        index: object,
+        width: int,
+    ) -> None:
+        """The row stylesheet is transparent, so the hover colour is painted here."""
+        raw = index.data(int(getattr(Qt, "UserRole")))  # type: ignore[attr-defined]
+        hover = self._hover_id
+        if hover is None and widget is not None:
+            mark = widget.property("cbcsHover")
+            if mark:
+                hover = int(mark)
+        if hover is None or raw is None or int(raw) != int(hover) or not self._hover_fill:
+            if widget is None:
+                return
+            brush = option.backgroundBrush
+            solid = enum_value(getattr(getattr(Qt, "BrushStyle", Qt), "SolidPattern"))
+            if enum_value(brush.style()) != solid:
+                return
+            painter.fillRect(QRect(option.rect.x(), option.rect.y(), width, option.rect.height()), brush)
+            return
+        color = self._hover_fill
+        if widget is not None and not color:
+            color = str(widget.property("cbcsHoverFill") or "")
+        if not color:
+            return
+        painter.fillRect(QRect(option.rect.x(), option.rect.y(), width, option.rect.height()), QColor(color))
 
     def _swatch(self, token: str, fallback: QColor) -> QColor:
         if not token:
@@ -155,6 +203,19 @@ class OutlineRowDelegate(QStyledItemDelegate):
             shown = metrics.elidedText(text, mode, budget)
         align = _flag("AlignLeft") | _flag("AlignVCenter")
         painter.drawText(rect, align, shown)
+
+    def _focus_bar(self, painter: QPainter, option: QStyleOptionViewItem) -> None:
+        widget = option.widget
+        if widget is None or not widget.hasFocus():
+            return
+        selected = getattr(getattr(QStyle, "StateFlag", QStyle), "State_Selected")
+        if not enum_value(option.state) & enum_value(selected):
+            return
+        accent = _accent(widget)
+        if not accent:
+            return
+        rect = option.rect
+        painter.fillRect(QRect(rect.x(), rect.y(), 2, rect.height()), QColor(accent))
 
     def _problem(self, painter: QPainter, rect: QRect, fallback: QColor) -> None:
         color = self._swatch(self._error, fallback)
@@ -206,11 +267,60 @@ class OutlineBranches(QProxyStyle):
 
 
 def polish_outline_tree(tree: QTreeWidget, delegate: OutlineRowDelegate) -> None:
-    """16 px indent, no frame, painted branch chevrons."""
+    """16 px indent, no frame, painted branch chevrons.
+
+    Keyboard focus is the selected row's bar, drawn by the delegate. A focus
+    border on the tree would frame the whole outline.
+    """
     tree.setIndentation(S4)
     shapes = getattr(QFrame, "Shape", QFrame)
     tree.setFrameShape(getattr(shapes, "NoFrame"))
+    tree.setLineWidth(0)
     tree.setStyle(OutlineBranches(delegate, tree))
+    mac = getattr(getattr(Qt, "WidgetAttribute", Qt), "WA_MacShowFocusRect", None)
+    if mac is not None:
+        tree.setAttribute(mac, False)
+    tree.setStyleSheet(
+        "QTreeWidget#formBuilder\\.structure, QTreeWidget#formBuilder\\.structure:focus {"
+        " border: none; outline: none; }"
+        "QTreeWidget#formBuilder\\.structure::item,"
+        " QTreeWidget#formBuilder\\.structure::item:selected,"
+        " QTreeWidget#formBuilder\\.structure::item:focus {"
+        " border: none; outline: none; }"
+    )
+
+
+def _object_floor(metrics: QFontMetricsF, text: str) -> int:
+    """Width of eight characters, or of the whole name when it is shorter."""
+    if len(text) <= 8:
+        return _advance(metrics, text)
+    return _advance(metrics, text[:8] + "\u2026")
+
+
+def _shows_caption(font: QFont, text: str, width: int, owner: bool) -> bool:
+    """An owner's object name stays only when eight characters of it fit."""
+    if not owner or width <= 0:
+        return width > 0
+    metrics = QFontMetrics(font)
+    advance = getattr(metrics, "horizontalAdvance", None)
+    full = int(advance(text) if callable(advance) else metrics.width(text))
+    if full <= width:
+        return True
+    mode = getattr(getattr(Qt, "TextElideMode", Qt), "ElideRight")
+    shown = metrics.elidedText(text, mode, width)
+    plain = shown.replace("\u2026", "").replace("...", "")
+    return len(plain) >= 8
+
+
+def _accent(widget: QWidget) -> str:
+    current: Optional[QWidget] = widget
+    while current is not None:
+        tokens = getattr(current, "_tokens", None)
+        accent = getattr(tokens, "accent", "") if tokens is not None else ""
+        if accent:
+            return str(accent)
+        current = current.parentWidget()
+    return ""
 
 
 def _pixel_font(option: QStyleOptionViewItem, pixels: int) -> QFont:

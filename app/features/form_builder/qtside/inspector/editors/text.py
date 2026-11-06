@@ -70,7 +70,6 @@ from app.qt.QtWidgets import (
 
 _MULTILINE = frozenset({
     "plainText",
-    "toolTip",
     "whatsThis",
     "statusTip",
     "html",
@@ -204,6 +203,8 @@ class StringEditor:
 
     def _multiline(self, text: str) -> bool:
         name = self._host.qt_name
+        if name == "toolTip":
+            return False
         if self._rich(text):
             return True
         if name in _MULTILINE or "\n" in text or name == "html":

@@ -54,7 +54,7 @@ from app.features.form_builder.qtside.icons.glyphs import paint_glyph
 from app.features.form_builder.qtside.outline.glyphs import glyph_for
 from app.features.form_builder.qtside.realize.api import Realizer
 from app.features.form_builder.qtside.theme.metrics import CHIP, R_CONTROL, TYPE_FINE
-from app.features.form_builder.qtside.theme.overlay import BackdropPalette, overlay_palette
+from app.features.form_builder.qtside.theme.overlay import BackdropPalette, channels, overlay_palette
 
 # Handle hit, chip height, and the gap, in screen pixels. The page scale lives on the proxy.
 REVEAL_PAD = 32
@@ -603,7 +603,8 @@ class PageNameChip(QLabel):
         palette = overlay_palette(high)
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
-        painter.setBrush(QColor(palette.layout))
+        red, green, blue, alpha = channels(palette.layout)
+        painter.setBrush(QColor(red, green, blue, alpha))
         backdrop = QColor(self._backdrop[:7])
         dark = backdrop.red() == 0 and backdrop.green() == 0 and backdrop.blue() == 0
         if high and dark:
@@ -611,13 +612,15 @@ class PageNameChip(QLabel):
         else:
             painter.setPen(QPen(Qt.PenStyle.NoPen))
         painter.drawRoundedRect(QRectF(self.rect()).adjusted(0.5, 0.5, -0.5, -0.5), R_CONTROL, R_CONTROL)
+        text_red, text_green, text_blue, text_alpha = channels(palette.chip_text)
+        glyph = "#%02X%02X%02X" % (text_red, text_green, text_blue)
         ratio = painter.device().devicePixelRatioF() if painter.device() is not None else 1.0
         try:
-            pixmap = paint_glyph(self._glyph, palette.chip_text, 12, float(ratio))
+            pixmap = paint_glyph(self._glyph, glyph, 12, float(ratio))
         except KeyError:
-            pixmap = paint_glyph("layout_v", palette.chip_text, 12, float(ratio))
+            pixmap = paint_glyph("layout_v", glyph, 12, float(ratio))
         painter.drawPixmap(6, max(0, (self.height() - 12) // 2), pixmap)
-        painter.setPen(QColor(palette.chip_text))
+        painter.setPen(QColor(text_red, text_green, text_blue, text_alpha))
         painter.setFont(_chip_font())
         align = enum_value(getattr(Qt, "AlignVCenter")) | enum_value(getattr(Qt, "AlignLeft"))
         painter.drawText(QRectF(6 + 12 + 4, 0, max(self.width() - 28, 0), self.height()), align, self.text())

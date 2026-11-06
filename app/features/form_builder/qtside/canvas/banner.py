@@ -11,7 +11,7 @@ from typing import Callable, Optional
 from app.features.form_builder.qtside.icons.glyphs import paint_glyph
 from app.features.form_builder.qtside.theme.chrome import apply_page_shadow
 from app.features.form_builder.qtside.theme.metrics import BANNER, ICON, R_CONTROL, R_POPOVER, S2, S3, TYPE_BODY, TYPE_FINE
-from app.qt.QtCore import Qt
+from app.qt.QtCore import QSize, Qt
 from app.qt.QtGui import QKeyEvent
 from app.qt.QtWidgets import QFrame, QHBoxLayout, QLabel, QPushButton, QWidget
 
@@ -27,6 +27,8 @@ class EnterButton(QPushButton):
 
 
 DONE_LABEL = "Esc"
+_PILL_CAP = 560
+_PILL_INSET = 32
 
 
 class ModeBanner(QFrame):
@@ -91,7 +93,7 @@ class ModeBanner(QFrame):
         self._extra.setVisible(bool(extra))
         self._extra.setAccessibleName(extra)
         self._extra_slot = on_extra
-        self._fit_sentence(self.width())
+        self._sentence.setText(self._full)
         self._paint_glyph()
         self.show()
 
@@ -106,6 +108,17 @@ class ModeBanner(QFrame):
 
     def sentence(self) -> str:
         return self._full
+
+    def sizeHint(self) -> QSize:  # noqa: N802
+        return QSize(min(self._content_width(self._text_px(self._full)), _PILL_CAP), BANNER)
+
+    def preferred_width(self, viewport: int) -> int:
+        """Content width, and no wider than 560 or the viewport minus 32."""
+        cap = min(_PILL_CAP, max(0, int(viewport) - _PILL_INSET))
+        hint = self.sizeHint().width()
+        if cap < 1:
+            return hint
+        return min(hint, cap)
 
     def fitted_height(self, width: int) -> int:
         """The pill is one line. A long sentence elides. The tooltip keeps the rest."""
@@ -169,10 +182,32 @@ class ModeBanner(QFrame):
         )
         apply_page_shadow(self, is_dark=is_dark, is_high_contrast=high_contrast)
         self._paint_glyph()
+        fit = getattr(self.parentWidget(), "_fit_banner", None)
+        if callable(fit):
+            fit()
 
     def resizeEvent(self, event: object) -> None:  # noqa: N802
         super().resizeEvent(event)  # type: ignore[arg-type]
         self._fit_sentence(self.width())
+
+    def _text_px(self, text: str) -> int:
+        if not text:
+            return 0
+        metrics = self._sentence.fontMetrics()
+        advance = int(metrics.horizontalAdvance(text))
+        bounds = int(metrics.boundingRect(text).width())
+        return max(advance, bounds)
+
+    def _content_width(self, sentence_px: int) -> int:
+        layout = self.layout()
+        margins = layout.contentsMargins()
+        spacing = max(0, layout.spacing())
+        pieces = [self._glyph.width() or ICON, max(self._name.sizeHint().width(), 0), max(0, sentence_px)]
+        if not self._extra.isHidden():
+            pieces.append(max(self._extra.sizeHint().width(), self._extra.minimumSizeHint().width(), 0))
+        pieces.append(max(self._done.sizeHint().width(), self._done.minimumSizeHint().width(), 0))
+        gaps = spacing * (len(pieces) - 1)
+        return margins.left() + margins.right() + sum(pieces) + gaps + 8
 
     def _fit_sentence(self, width: int) -> None:
         full = self._full

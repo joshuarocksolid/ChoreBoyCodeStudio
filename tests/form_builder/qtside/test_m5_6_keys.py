@@ -315,7 +315,7 @@ def test_the_tab_order_list_reorders_by_key_and_by_drag_and_says_which_order_it_
             "2 · emailEdit · Line edit",
             "3 · phoneEdit · Line edit",
         ]
-        assert caption.text() == "Follows reading order: top to bottom, left to right."
+        assert not caption.isVisible()
         assert not kb.surface.findChild(QWidget, "formBuilder.tabOrderReset").isVisible()
         rows.setCurrentRow(0)
         QTest.keyClick(rows, Qt.Key.Key_Down, Qt.KeyboardModifier.AltModifier)

@@ -23,7 +23,7 @@ from app.features.form_builder.qtside.canvas.core.overlay import LayerItem
 from app.features.form_builder.qtside.canvas.core.space import CanvasRect
 from app.features.form_builder.qtside.canvas.layers import paint_layer_item
 from app.features.form_builder.qtside.theme.chrome import PAGE_TITLE_GLYPH, PAGE_TITLE_TEXT
-from app.features.form_builder.qtside.theme.overlay import CanvasPalette
+from app.features.form_builder.qtside.theme.overlay import CanvasPalette, channels
 
 _CHIP_RADIUS = 4.0
 _HANDLE_BORDER = 1.5
@@ -227,7 +227,10 @@ def _chip_body(painter: QPainter, item: Chip, fill: QColor, palette: CanvasPalet
     box = _box(item.rect)
     backdrop = QColor(palette.backdrop.fill[:7])
     dark = backdrop.red() == 0 and backdrop.green() == 0 and backdrop.blue() == 0
-    if item.on_backdrop and palette.overlay.min_stroke >= 2 and dark:
+    high = palette.overlay.min_stroke >= 2
+    if item.role == "select" and high:
+        painter.setPen(_pen(QColor(255, 255, 255), 1.0, "solid"))
+    elif item.on_backdrop and high and dark:
         painter.setPen(_pen(QColor(255, 255, 255), 1.0, "solid"))
     else:
         painter.setPen(_no_pen())
@@ -341,11 +344,7 @@ def _ink(palette: CanvasPalette, role: Role, alpha: float) -> QColor:
 
 
 def _color(raw: str, alpha: float) -> QColor:
-    text = raw[1:] if raw.startswith("#") else raw
-    red = int(text[0:2], 16)
-    green = int(text[2:4], 16)
-    blue = int(text[4:6], 16)
-    stored = int(text[6:8], 16) if len(text) >= 8 else 255
+    red, green, blue, stored = channels(raw)
     return QColor(red, green, blue, max(0, min(255, int(round(stored * alpha)))))
 
 

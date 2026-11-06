@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import replace
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
-from app.features.form_builder.qtside.theme.metrics import S4, TYPE_BODY, TYPE_FINE
+from app.features.form_builder.qtside.theme.metrics import S2, S4, TYPE_BODY, TYPE_FINE
 from app.qt.QtCore import QEvent, QObject, Qt
 from app.qt.QtGui import QKeyEvent, QResizeEvent
 from app.qt.QtWidgets import (
@@ -78,9 +78,10 @@ class EventsBody(QWidget):
         from app.features.form_builder.qtside.inspector.behavior_ext.heading import section_heading
 
         title = section_heading(overline, "formBuilder.events.overline", "EVENTS")
+        self._title = title
         row.addWidget(title)
-        row.addStretch(1)
         self._when = title.add_action("plus", "Add event", "Add event")
+        title.apply_chrome(self._chrome)
         self._when.clicked.connect(self._add_event)
         self._when.installEventFilter(self)
         self._events = QVBoxLayout()
@@ -118,6 +119,7 @@ class EventsBody(QWidget):
         self._built = {}
         self._view = None
         chrome = self._chrome
+        self._title.apply_chrome(chrome)
         self.setStyleSheet(
             "QWidget#formBuilder\\.events, QWidget#formBuilder\\.events QWidget { background: %s; color: %s; }"
             "QLabel, QWidget#formBuilder\\.events QLabel { color: %s; background: transparent; }"
@@ -663,6 +665,8 @@ class _Group(QWidget):
 
 _STEP_MENU_RESERVE = 0
 _TOP = getattr(getattr(Qt, "AlignmentFlag", Qt), "AlignTop")
+_RIGHT = getattr(getattr(Qt, "AlignmentFlag", Qt), "AlignRight")
+_VCENTER = getattr(getattr(Qt, "AlignmentFlag", Qt), "AlignVCenter")
 
 
 def _step_menu_reserve(parent: QWidget) -> int:
@@ -748,7 +752,7 @@ class _Row(QWidget):
         text_col.setSpacing(0)
         line.addLayout(text_col, 1)
         self._label = QLabel(head, self)
-        self._label.setWordWrap(True)
+        self._label.setWordWrap(index < 0)
         self._label.setMinimumWidth(0)
         # setSizePolicy() clears the height-for-width bit setWordWrap turned on.
         # The row then keeps a one-line hint and the wrapped sentence draws
@@ -787,7 +791,7 @@ class _Row(QWidget):
             badge.setStyleSheet("color: %s; background: transparent;" % body._chrome.error)
             line.addWidget(badge)
         if step is not None and step.method:
-            line.addWidget(_place_link(self, body, step.method))
+            line.addWidget(_place_link(self, body, step.method), 0, _RIGHT | _VCENTER)
         if index < -1:
             line.addWidget(self._make_menu())
         elif index >= 0:
@@ -827,11 +831,11 @@ class _Row(QWidget):
         self._fitted = True
 
     def _fit_texts(self) -> None:
-        """Wrap a step sentence. Header rows still elide the call.
+        """Keep a step on one line. The place keeps its width.
 
-        The place keeps a trailing ``:NN`` and middle-elides the file name.
-        A step label's maximum width is the room beside the place, so the
-        sentence wraps instead of drawing past the row.
+        The call elides on the right when the row is short. The place
+        middle-elides, keeping a trailing ``:NN``, only when it cannot
+        fit whole. Its tooltip is that short name.
         """
         if self.width() <= 0:
             return
@@ -845,7 +849,8 @@ class _Row(QWidget):
         else:
             menu_w = 0
         badge = 16 if self.findChild(QLabel, "formBuilder.events.badge") is not None else 0
-        available = max(0, self.width() - menu_w - badge - 8)
+        number_w = S4 + S2 if self.step_index >= 0 else 0
+        available = max(0, self.width() - menu_w - badge - number_w - 8)
         place_full = str(place.property("cbcsFull") or "") if place is not None else ""
         pad = 8
         place_natural = _text_width(place_metrics, place_full) + pad if place_full else 0
@@ -853,36 +858,29 @@ class _Row(QWidget):
         call_natural = _text_width(call_metrics, call_full) + 4
         place_floor_sample = "\u2026:NN"
         place_floor = _text_width(place_metrics, place_floor_sample) + pad if place_full else 0
-        if self.step_index >= 0:
-            # The sentence wraps in full. Only the place link gives up width.
-            call_shown = call_full
-            if place_natural and place_natural + 80 <= available:
-                place_budget = place_natural
-                place_shown = place_full
-            else:
-                place_budget = place_floor if place_full else 0
-                if place_full and available > place_floor + 40:
-                    place_budget = min(place_natural, max(place_floor, available // 2))
-                place_shown = _elide_place(place_full, place_metrics, max(8, place_budget - pad)) if place_full else ""
-        elif call_natural + place_natural <= available:
+        if call_natural + place_natural <= available:
             call_shown = call_full
             place_shown = place_full
             place_budget = place_natural
-        elif call_natural + place_floor <= available:
-            call_shown = call_full
-            place_budget = max(place_floor, available - call_natural)
-            place_shown = _elide_place(place_full, place_metrics, max(8, place_budget - pad)) if place_full else ""
+        elif place_full and place_natural <= available:
+            place_shown = place_full
+            place_budget = place_natural
+            call_room = max(8, available - place_budget)
+            call_shown = _elide_call(call_full, call_metrics, call_room)
         else:
             place_budget = place_floor if place_full else 0
+            if place_full and available > place_floor + 40:
+                place_budget = min(place_natural, max(place_floor, available // 2))
             place_shown = _elide_place(place_full, place_metrics, max(8, place_budget - pad)) if place_full else ""
             call_room = max(8, available - place_budget)
             call_shown = _elide_call(call_full, call_metrics, call_room)
+        label_room = self._label.width()
+        if label_room > 8 and _text_width(call_metrics, call_shown) > label_room + 2:
+            call_shown = _elide_call(call_full, call_metrics, label_room)
         if self._label.text() != call_shown:
             self._label.setText(call_shown)
-        if self.step_index >= 0:
-            label_width = max(8, available - place_budget)
-            if self._label.maximumWidth() != label_width:
-                self._label.setMaximumWidth(label_width)
+        if self.step_index >= 0 and self._label.maximumWidth() < 100000:
+            self._label.setMaximumWidth(16777215)
         if place is None:
             self._grow_step()
             return
@@ -899,6 +897,8 @@ class _Row(QWidget):
             tip = (place_full + "\n" + reason) if place_shown != place_full and place_full else reason
             if place.toolTip() != tip:
                 place.setToolTip(tip)
+        elif place_full and place.toolTip() != place_full:
+            place.setToolTip(place_full)
         self._grow_step()
 
     def _grow_step(self) -> None:

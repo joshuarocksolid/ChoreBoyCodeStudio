@@ -111,10 +111,7 @@ def _assert_width(width: int) -> None:
         skip.click()
         _pump(qapp)
         _set_inspector_width(window, width, qapp)
-        outline = window.findChild(QWidget, "formBuilder.checks.outlineLine")
-        assert outline is not None and outline.isVisible()
-        words = window.findChild(QLabel, "formBuilder.checks.outlineWords")
-        assert words is not None and words.text() == "Fields that fail a check get no outline yet."
+        assert window.findChild(QWidget, "formBuilder.checks.outlineLine") is None
         _assert_section(window)
         add = window.findChild(QWidget, "formBuilder.checks.add")
         assert add is not None

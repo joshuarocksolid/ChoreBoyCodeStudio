@@ -432,7 +432,7 @@ Clicking a card, or pressing Enter on a focused card, creates the files with the
 
 **UX-WB-001** `M2.2` `[S]` Three panes in a horizontal splitter: left pane (Outline over Insert), canvas, inspector. Default widths at a 1280 px wide tab: left 232, inspector 300, canvas the rest. Limits: left 184–360, inspector 264–420, canvas at least 360. The splitter handles are 1 px lines with a 6 px hit area, and they drag (the spike's handles do not). Widths persist per user, not per file.
 
-**UX-WB-002** `M2.2` `[S]` The left pane is a vertical splitter, Outline above Insert (default 45 / 55), each with an Overline header, a header button row (Outline: + insert, ⌕ filter; Insert: ⌕ filter) and its own scroll. Either can be collapsed to its header by clicking the header; collapsed state persists.
+**UX-WB-002** `M2.2` `[S]` The left pane is always the tab bar Outline | Insert | Logic. Each tab fills the pane. Outline's + and filter, and Logic's Read as text, sit in the tab corner as 20 px icon buttons. Insert uses a one-column list below 232 px and the 72 by 56 tile grid at or above that. Saved pieces is a section inside Insert, shown only when a piece exists.
 
 **UX-WB-003** `M2.2` `[S]` Tab toolbar contents, left to right: **Design | XML** segments; a 1 px divider; overlay toggles **Tab order** and **Buddies** (toggle buttons, not a segmented "mode" control; text plus glyph; checked state uses `fb.row_selected` fill); Undo and Redo icon buttons (disabled state uses `fb.faint`, enabled `icon_primary`; the spike's always-faint arrows read as disabled); zoom group **− [100%] +** where the percentage is a menu button (Fit, 50, 75, 100, 150, 200 %); **Aa ▾** preview options (UX-SCALE); **⇆** two widths toggle (UX-WIDTHS); **Preview** button (secondary style with play glyph); the save-state text (UX-SHELL-005). Every icon-only button has a tooltip that includes its shortcut.
 
@@ -476,7 +476,7 @@ ChoreBoy screens may be 1366 × 768. Inside CBCS (project tree, menu, toolbar, t
 
 **UX-RESP-004** `M2.2` `[S T]` W < 720: the inspector also collapses to a right rail with its three tab icons; opening it shows a 288 px drawer. Selecting a widget does not auto-open it.
 
-**UX-RESP-005** `M2.2` `[S]` H < 560: Outline and Insert stop splitting vertically and become two tabs in one left pane ("Outline | Insert"). The inspector header compresses to one line (glyph, name, class) and the breadcrumb moves into the name field's tooltip.
+**UX-RESP-005** `M2.2` `[S]` The left pane stays Outline | Insert | Logic at every height, including H < 560. There is no stacked column. The inspector header compresses to one line (glyph, name, class) and the breadcrumb moves into the name field's tooltip.
 
 **UX-RESP-006** `M2.2` `[S]` The tab toolbar at W < 1000 hides the overlay toggle labels (glyph only, with tooltips) and folds Aa and ⇆ into a ⋯ menu. Nothing in the toolbar wraps or clips.
 

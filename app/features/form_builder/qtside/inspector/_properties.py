@@ -28,12 +28,12 @@ from app.features.form_builder.qtside.theme.metrics import (
     LABEL_MIN,
     LABEL_RATIO,
     PANE_PAD,
-    R_CONTROL,
     S2,
     S1,
     TYPE_BODY,
 )
 from app.features.form_builder.qtside.icons.glyphs import paint_glyph
+from app.features.form_builder.qtside.theme.search_field import paint_search_glyph, search_line
 from app.features.form_builder.qtside.theme.section_header import SectionHeader
 from app.features.form_builder.qtside.inspector.api import (
     NOT_SET_TEXT,
@@ -206,11 +206,7 @@ class PropertiesPage(QWidget):
         # per select with All properties open, so the pane relinks just before
         # a Tab moves focus inside it or focus enters it (ensure_tab_chain).
         self._chain_dirty = False
-        self._search = QLineEdit(self)
-        self._search.setObjectName("formBuilder.inspectorSearch")
-        self._search.setPlaceholderText("Find a property")
-        self._search.setAccessibleName("Find a property")
-        self._search.setFixedHeight(CONTROL)
+        self._search = search_line(self, "Find a property", "formBuilder.inspectorSearch")
         self._search.textChanged.connect(self._search_changed)
         self._search.installEventFilter(self)
         self._pill = QLabel(self)
@@ -476,18 +472,13 @@ class PropertiesPage(QWidget):
         if chrome is not None:
             for header in self.findChildren(SectionHeader):
                 header.apply_chrome(chrome)
+            self._form.apply_section_chrome(chrome)
 
     def _paint_search(self, chrome: Optional[FormChrome]) -> None:
         if chrome is None:
             return
         focus = chrome.focus_width if chrome.focus_width > 0 else 1
-        self._search.setStyleSheet(
-            "QLineEdit#formBuilder\\.inspectorSearch {"
-            " background: %s; color: %s; border: 1px solid %s; border-radius: %dpx;"
-            " font-size: %dpx; }"
-            "QLineEdit#formBuilder\\.inspectorSearch:focus { border: %dpx solid %s; }"
-            % (chrome.input, chrome.text, chrome.border, R_CONTROL, TYPE_BODY, focus, chrome.accent)
-        )
+        paint_search_glyph(self._search, chrome.icon_muted or chrome.muted, chrome)
         self._more.setStyleSheet(
             "QToolButton#formBuilder\\.inspectorMenu { background: transparent; border: none; padding: 0px; }"
             "QToolButton#formBuilder\\.inspectorMenu::menu-indicator { image: none; width: 0px; }"
@@ -496,10 +487,6 @@ class PropertiesPage(QWidget):
         )
         dpr = float(self.devicePixelRatioF()) if hasattr(self, "devicePixelRatioF") else 1.0
         ink = chrome.icon_muted or chrome.muted
-        leading = getattr(getattr(QLineEdit, "ActionPosition", QLineEdit), "LeadingPosition")
-        for action in list(self._search.actions()):
-            self._search.removeAction(action)
-        self._search.addAction(QIcon(paint_glyph("search", ink, ICON, dpr)), leading)
         self._more.setIcon(QIcon(paint_glyph("more", ink, ICON, dpr)))
         self._more.setIconSize(self._more.size())
         self._seat_menu()
@@ -645,8 +632,7 @@ class _FormSection(QWidget):
         self._window.hide()
         self._size = QLabel(self)
         self._size.setObjectName("formBuilder.formDesignSize")
-        self._drag = QLabel(_DRAG, self)
-        self._drag.setWordWrap(True)
+        self._size.setToolTip(_DRAG)
         self._layout_name = QLabel(self)
         from app.features.form_builder.qtside.inspector.editors.tab_order_list import TabOrderBody
 
@@ -669,37 +655,59 @@ class _FormSection(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(2)
         self._layout = layout
-        layout.addWidget(_caption(self, "window", "Window"))
+        self._window_header = _form_header(self, "window", "Window")
+        self._layout_header = _form_header(self, "layout", "Layout")
+        self._tab_header = _form_header(self, "tabOrder", "Tab order")
+        self._problems_header = _form_header(self, "problems", "Problems")
+        self._files_header = _form_header(self, "files", "Files")
+        layout.addWidget(self._window_header)
         layout.addWidget(self._window)
         layout.addWidget(self._size)
-        layout.addWidget(self._drag)
-        layout.addWidget(_caption(self, "layout", "Layout"))
+        layout.addWidget(self._layout_header)
         layout.addWidget(self._layout_name)
-        layout.addWidget(_caption(self, "tabOrder", "Tab order"))
+        layout.addWidget(self._tab_header)
         layout.addWidget(self._tab_body.widget)
-        layout.addWidget(_caption(self, "problems", "Problems"))
+        layout.addWidget(self._problems_header)
         layout.addWidget(self._problems)
-        layout.addWidget(_caption(self, "files", "Files"))
+        layout.addWidget(self._files_header)
         layout.addWidget(self._files)
+        self._window_header.toggled.connect(lambda on: self._set_section(on, (self._window, self._size)))
+        self._layout_header.toggled.connect(lambda on: self._set_section(on, (self._layout_name,)))
+        self._tab_header.toggled.connect(lambda on: self._set_section(on, (self._tab_body.widget,)))
+        self._problems_header.toggled.connect(lambda on: self._set_section(on, (self._problems,)))
+        self._files_header.toggled.connect(lambda on: self._set_section(on, (self._files,)))
 
     def paint(self, body: FormBody, match_color: str) -> None:
         self._match_color = match_color
         window = body.window
-        if window is None:
+        window_open = self._window_header.isChecked()
+        if window is None or not window_open:
             self._window.hide()
         else:
             self._window.show()
             self._window.paint(window, match_color, self._show_qt)
             self._order_title()
         self._size.setText(body.design_size)
+        self._size.setVisible(window_open)
         self._layout_name.setText(body.root_layout)
+        self._layout_name.setVisible(self._layout_header.isChecked())
         self._tab_body.show(())
+        self._tab_body.widget.setVisible(self._tab_header.isChecked())
         self._last_problems = body.problems
         self._paint_problems()
+        self._problems.setVisible(self._problems_header.isChecked())
         self._files.setText(body.files)
+        self._files.setVisible(self._files_header.isChecked())
 
     def set_label_width(self, width: int) -> None:
         self._window.set_label_width(width)
+
+    def apply_section_chrome(self, chrome: Optional[FormChrome]) -> None:
+        self._tab_body.apply_chrome(chrome)
+
+    def _set_section(self, on: bool, widgets: Tuple[QWidget, ...]) -> None:
+        for widget in widgets:
+            widget.setVisible(bool(on))
 
     def focus_tab_order(self) -> None:
         """Form > Overlays > Tab order list… (UX-MODE-003)."""
@@ -771,6 +779,7 @@ class _FormGroup(QWidget):
         self._spec = spec
         self._on_opened = on_opened
         self._expanded = spec.expanded
+        self._user_toggled = False
         self._custom: Optional[GroupBody] = None
         self._host = _GroupHost(services, ())
         self._header = _group_header(self, "formBuilder.group.%s" % spec.key, spec.title, self._expanded)
@@ -798,7 +807,9 @@ class _FormGroup(QWidget):
             return
         self.show()
         self._body.setVisible(self._expanded)
-        if not self._expanded:
+        # A user-closed group stays closed. An auto-closed empty Pictures
+        # group still refreshes, so a file added later can open it.
+        if not self._expanded and (self._user_toggled or self._custom is None):
             return
         try:
             if self._custom is None:
@@ -808,6 +819,14 @@ class _FormGroup(QWidget):
                 self._custom.widget.show()
             self._host.set_frame((document.root.id,), False)
             self._custom.show(())
+            if getattr(self._custom, "force_closed", False) and not self._user_toggled:
+                self._expanded = False
+                self._header.setChecked(False)
+                self._body.setVisible(False)
+            elif not self._user_toggled and self._spec.expanded:
+                self._expanded = True
+                self._header.setChecked(True)
+                self._body.setVisible(True)
         except Exception:
             logger.exception("form group %s failed", self._spec.key)
             self.hide()
@@ -824,6 +843,7 @@ class _FormGroup(QWidget):
         self._toggled(bool(expanded))
 
     def _toggled(self, checked: bool) -> None:
+        self._user_toggled = True
         self._expanded = bool(checked)
         self._body.setVisible(self._expanded)
         if self._expanded:
@@ -1326,15 +1346,7 @@ class _Row(QWidget):
             self._label_col.setMinimumWidth(0)
             self._label_col.setMaximumWidth(_UNBOUNDED)
             return
-        label_px = self._label_px
-        editor = self._editor
-        if editor is not None and self.width() > 0:
-            needed = int(editor.widget.minimumWidth())
-            room = max(0, self.width() - _BAR_SLOT - _ROW_GAP)
-            if needed > 0 and label_px > room - needed:
-                # A 4-cell alignment control is 4 x 28. The label yields so those cells do not overlap.
-                label_px = max(0, room - needed)
-        self._label_col.setFixedWidth(max(0, label_px - _BAR_SLOT))
+        self._label_col.setFixedWidth(max(0, self._label_px - _BAR_SLOT))
 
     def _label_needs_line(self) -> bool:
         """A phrase that does not fit the 96 px column stacks (UX-PED-002).
@@ -1547,9 +1559,6 @@ class _Row(QWidget):
         budget = max(0, self._label_px - _BAR_SLOT)
         if self._stacked:
             budget = max(0, self.width() - _BAR_SLOT)
-        elif " " not in full:
-            # A single long token, such as inputMethodHints, elides in the 88 px column.
-            budget = min(budget, max(0, LABEL_MIN - _BAR_SLOT))
         actual = self._label.width()
         width = budget if actual <= 0 else min(budget, actual)
         if width <= 0:
@@ -2142,11 +2151,17 @@ def _overline_font() -> QFont:
     font.setLetterSpacing(QFont.AbsoluteSpacing, 0.5)
     return font
 
-def _caption(parent: QWidget, name: str, text: str) -> QLabel:
-    label = QLabel(text, parent)
-    label.setObjectName("formBuilder.formCaption.%s" % name)
-    label.setFont(_overline_font())
-    return label
+def _form_header(parent: QWidget, name: str, title: str) -> SectionHeader:
+    """A form-inspector section. The shared header places the chevron at ``PANE_PAD``."""
+    header = SectionHeader(
+        parent,
+        title,
+        collapsible=True,
+        object_name="formBuilder.formCaption.%s" % name,
+        accessible_name=title,
+    )
+    header.setChecked(True)
+    return header
 
 
 class _Content(QWidget):

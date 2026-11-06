@@ -16,7 +16,6 @@ from app.features.form_builder.qtside.inspector.api import (
 )
 from app.features.form_builder.qtside.visual.color_picker import (
     ColorPicker,
-    Swatch,
     colour_summary,
 )
 from app.features.form_builder.qtside.visual.common import (
@@ -39,13 +38,11 @@ class ColorEditor:
         self._root = QWidget(parent)
         layout = QHBoxLayout(self._root)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(6)
-        self._swatch = Swatch(self._root, 16)
-        self._swatch.set_tokens(host.chrome)
+        layout.setSpacing(0)
         self._summary = RowSummary(host.label or _ROW, self._root)
         self._summary.set_opener(self._open)
         self._summary.set_summary("Default")
-        layout.addWidget(self._swatch)
+        self._summary.set_swatch(None, hollow=True)
         layout.addWidget(self._summary, 1)
         self._color: Optional[ColorValue] = None
         self._written = False
@@ -65,11 +62,11 @@ class ColorEditor:
         text = colour_summary(self._color if isinstance(self._color, ColorValue) else None, mixed=self._mixed, unset=not self._written)
         self._summary.set_summary(text)
         self._summary.show_state(value, self._host.chrome.faint)
-        self._swatch.set_color(
-            self._color if isinstance(self._color, ColorValue) else None,
-            hollow=not self._written and not self._mixed,
-            mixed=self._mixed,
-        )
+        shown = self._color if isinstance(self._color, ColorValue) else None
+        if shown is None:
+            self._summary.set_swatch(None, hollow=True)
+        else:
+            self._summary.set_swatch((shown.red, shown.green, shown.blue))
         if (
             self._picker is not None
             and isinstance(self._color, ColorValue)

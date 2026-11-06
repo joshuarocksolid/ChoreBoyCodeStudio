@@ -223,7 +223,7 @@ def test_state_row_speaks_and_keeps_a_code_line_when_it_cannot(
         assert not formula.isVisible()
 
 
-def test_step_sentence_wraps_in_full(qapp: QApplication) -> None:
+def test_step_sentence_stays_on_one_line(qapp: QApplication) -> None:
     host = QWidget()
     host._chrome = default_chrome()  # type: ignore[attr-defined]
     host.resize(400, 200)
@@ -231,13 +231,12 @@ def test_step_sentence_wraps_in_full(qapp: QApplication) -> None:
     row = _Row(host, "clicked", 0, _STEP, _STEP, False, False, False, "cbcsOnClicked")
     row.resize(180, 24)
     qapp.processEvents()
-    label = next(item for item in row.findChildren(QLabel) if item.text() == _STEP)
-    assert label.text() == _STEP
-    assert "\u2026" not in label.text()
-    assert label.wordWrap() is True
-    assert label.hasHeightForWidth() is True
-    assert label.heightForWidth(140) > label.fontMetrics().lineSpacing()
-    assert row.minimumHeight() > label.fontMetrics().lineSpacing()
+    label = row._label  # noqa: SLF001
+    assert label.toolTip() == _STEP
+    assert label.wordWrap() is False
+    shown = label.text()
+    assert shown == _STEP or (shown.endswith("\u2026") and _STEP.startswith(shown[:-1]))
+    assert row.minimumHeight() <= label.fontMetrics().lineSpacing() + 8
 
 
 def test_place_link_middle_elides_the_file_and_keeps_the_line(qapp: QApplication) -> None:

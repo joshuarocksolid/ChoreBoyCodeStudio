@@ -358,9 +358,9 @@ class FormCanvas(QGraphicsView):
         if not banner.isVisible():
             return
         side = 12
-        available = max(160, self.width() - side * 2)
-        hint = max(banner.sizeHint().width(), 160)
-        width = min(hint, available)
+        width = banner.preferred_width(self.width())
+        if width < 1:
+            return
         banner.fitted_height(width)
         banner.setGeometry(max(0, (self.width() - width) // 2), side, width, 32)
         margins = self.viewportMargins()

@@ -144,10 +144,11 @@ class EntryDelegate(QStyledItemDelegate):
         return self._colors()[0]
 
     def _paint_header(self, painter: QPainter, option: QStyleOptionViewItem, row: Row) -> None:
-        text, faint, _hover, _current, _match, _accent = self._colors()
+        _text, faint, _hover, _current, _match, _accent = self._colors()
+        title_ink = self._chrome.muted if self._chrome is not None and self._chrome.muted else faint
         rect = option.rect
         if row.kind == SECTION:
-            painter.setPen(QColor(faint))
+            painter.setPen(QColor(title_ink))
             painter.setFont(self._font(option, 10, bold=True))
             painter.drawText(rect.adjusted(8, 0, -8, 0), int(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter), row.title.upper())
             return
@@ -160,7 +161,7 @@ class EntryDelegate(QStyledItemDelegate):
         except KeyError:
             pass
         painter.setFont(self._font(option, TYPE_SECTION, bold=True))
-        painter.setPen(QColor(text))
+        painter.setPen(QColor(title_ink))
         label_left = rect.left() + 22
         room = max(rect.width() - 22 - 44, 24)
         lines = _wrap_header(row.title.upper(), QFontMetrics(painter.font()), room)
@@ -176,17 +177,21 @@ class EntryDelegate(QStyledItemDelegate):
         text, _faint, _hover, _current, _match, _accent = self._colors()
         rect = option.rect
         self._background(painter, option, rect, _RADIUS)
-        self._glyph(painter, row.glyph, rect.center().x() - GLYPH_TILE // 2, rect.top() + 6, GLYPH_TILE)
+        self._glyph(painter, row.glyph, rect.center().x() - GLYPH_TILE // 2, rect.top() + 2, GLYPH_TILE)
         font = self._font(option, TYPE_FINE)
         painter.setFont(font)
         painter.setPen(QColor(text))
         width = rect.width() - 8
-        label = QFontMetrics(font).elidedText(row.title, Qt.TextElideMode.ElideRight, width)
-        painter.drawText(
-            QRect(rect.left() + 4, rect.top() + 26, width, 18),
-            int(Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignVCenter),
-            label,
-        )
+        label = row.title.split(" · ")[0]
+        lines = _tile_lines(label, QFontMetrics(font), width)
+        line_h = 14
+        top = rect.bottom() - line_h * len(lines) - 2
+        for index, line in enumerate(lines):
+            painter.drawText(
+                QRect(rect.left() + 4, top + index * line_h, width, line_h),
+                int(Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignVCenter),
+                line,
+            )
 
     def _paint_row(self, painter: QPainter, option: QStyleOptionViewItem, row: Row) -> None:
         text, faint, _hover, _current, match_bg, _accent = self._colors()
@@ -291,6 +296,25 @@ def _right_caption(row: Row) -> str:
 
 def _points(points: tuple) -> QPolygonF:
     return QPolygonF([QPointF(x, y) for x, y in points])
+
+
+def _tile_lines(text: str, metrics: QFontMetrics, width: int) -> List[str]:
+    """One line, or two broken at a space. The words stay whole."""
+    if metrics.horizontalAdvance(text) <= width:
+        return [text]
+    words = text.split(" ")
+    first = ""
+    index = 0
+    while index < len(words):
+        candidate = (first + " " + words[index]).strip()
+        if first and metrics.horizontalAdvance(candidate) > width:
+            break
+        first = candidate
+        index += 1
+    rest = " ".join(words[index:])
+    if not rest or not first:
+        return [text]
+    return [first, rest]
 
 
 def _two_lines(text: str, metrics: QFontMetrics, width: int) -> List[str]:

@@ -410,22 +410,19 @@ def test_not_now_leaves_the_engine_message_and_the_section_sentence(tmp_path) ->
 def test_outline_appends_the_rule_once() -> None:
     with desk() as (session, pane):
         _select(session, pane, "emailEdit")
-        line = _child(pane, QWidget, "formBuilder.checks.outlineLine")
-        assert line.isHidden()
+        assert pane.findChild(QWidget, "formBuilder.checks.outlineLine") is None
         _add(pane, "required", lambda pane: None)
-        assert not line.isHidden()
-        words = _child(pane, QLabel, "formBuilder.checks.outlineWords")
-        assert words.text() == "Fields that fail a check get no outline yet."
+        body = pane.findChild(QWidget, "formBuilder.checks")
+        assert body is not None
         before = len(session.log.entries())
-        _child(pane, QPushButton, "formBuilder.checks.outline").click()
+        body.add_outline_style()
         pump()
         assert session.log.undo_label() == "Add the red outline style"
         assert len(session.log.entries()) == before + 1
         sheet = session.document.root.value("styleSheet")
         assert isinstance(sheet, StringValue)
         assert sheet.text == _OUTLINE
-        assert line.isHidden()
-        _child(pane, QPushButton, "formBuilder.checks.outline").click()
+        body.add_outline_style()
         pump()
         assert len(session.log.entries()) == before + 1
         assert session.document.root.value("styleSheet").text == _OUTLINE  # type: ignore[union-attr]

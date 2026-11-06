@@ -338,12 +338,17 @@ def _new_form(tour: _Tour, tmp: Path) -> None:
             from app.qt.QtCore import QPointF
             from app.qt.QtGui import QEnterEvent
 
-            cards = window.findChildren(QWidget, "formBuilder.newForm.card.blank")
-            card = cards[0] if cards else _cards()
-            point = QPointF(card.width() / 2.0, card.height() / 2.0)
-            card.enterEvent(QEnterEvent(point, point, point))
-            card.setFocus()
-            return card
+            cards = [
+                card
+                for card in window.findChildren(QWidget)
+                if card.objectName().startswith("formBuilder.newForm.card.")
+            ]
+            focused = cards[0] if cards else _cards()
+            hovered = cards[1] if len(cards) > 1 else focused
+            point = QPointF(hovered.width() / 2.0, hovered.height() / 2.0)
+            hovered.enterEvent(QEnterEvent(point, point, point))
+            focused.setFocus()
+            return _cards()
 
         tour.paint(window, 64, "start", "card-hover-focus", _hovered_card)
         from app.features.form_builder.engine.project.user_templates import TemplateInfo
@@ -556,7 +561,7 @@ def _overlays(tour: _Tour, window: MainWindow, surface: object) -> None:
         tour.note(13, "canvas", "layout-popover", str(exc))
     for number, state, kind in (
         (14, "buddies", "buddies"),
-        (15, "tab-order", "tabOrder"),
+        (15, "tab-order", "tab_order"),
         (16, "connections", "connections"),
     ):
         try:
@@ -607,7 +612,16 @@ def _inspector(tour: _Tour, window: MainWindow, surface: object) -> None:
     _open_groups(inspector)
     _pump(tour.qapp)
     tour.paint(window, 27, "inspector", "properties", lambda: _child(window, "formBuilder.inspector"), dense=True)
-    tour.paint(window, 63, "inspector", "size", lambda: _child(window, "formBuilder.inspector"))
+
+    def _size_section() -> QWidget:
+        body = window.findChild(QWidget, "formBuilder.sizeBody")
+        scroll = window.findChild(QWidget, "formBuilder.inspectorScroll")
+        ensure = getattr(scroll, "ensureWidgetVisible", None)
+        if body is not None and callable(ensure):
+            ensure(body)
+        return _child(window, "formBuilder.inspector")
+
+    tour.paint(window, 63, "inspector", "size", _size_section)
     inspector.focus_tab(TabId.BEHAVIOR)
     _pump(tour.qapp)
     tour.paint(window, 28, "inspector", "behavior", lambda: _child(window, "formBuilder.inspector"), dense=True)
@@ -689,28 +703,34 @@ def _logic(tour: _Tour, window: MainWindow, surface: object) -> None:
     tour.paint(window, 36, "logic", "filled", _filled, dense=True)
 
     def _problems_chip() -> QWidget:
-        # Theme runs before the grab and the chip starts checked. A click would clear it.
-        chip = window.findChild(QWidget, "formBuilder.logic.chip.problems")
-        if chip is not None and not chip.isChecked():  # type: ignore[attr-defined]
-            chip.setChecked(True)  # type: ignore[attr-defined]
+        from app.qt.QtCore import QPointF
+        from app.qt.QtGui import QEnterEvent
+
         panel = _child(window, "formBuilder.logic")
-        reload = getattr(panel, "reload", None)
-        if callable(reload):
-            reload()
-        _show_logic_rows(window)
-        scroll = panel.findChild(QWidget, "formBuilder.logic.scroll")
-        ensure = getattr(scroll, "ensureWidgetVisible", None)
-        if callable(ensure):
-            rows = [
-                child
-                for child in panel.findChildren(QWidget)
-                if child.objectName().startswith("formBuilder.logic.row.")
-            ]
-            if rows:
-                ensure(rows[-1])
+        warning = None
+        for child in panel.findChildren(QWidget):
+            face = getattr(child, "face", None)
+            if callable(face) and bool(getattr(face(), "warning", False)):
+                warning = child
+                break
+        if warning is not None:
+            use = getattr(warning, "use", None)
+            name = str(getattr(use, "widget", "") or getattr(use, "name", "") or "")
+            setter = getattr(panel, "set_filter_text", None)
+            if name and callable(setter):
+                setter(name)
+            point = QPointF(warning.width() / 2.0, warning.height() / 2.0)
+            warning.enterEvent(QEnterEvent(point, point, point))
+            scroll = panel.findChild(QWidget, "formBuilder.logic.scroll")
+            ensure = getattr(scroll, "ensureWidgetVisible", None)
+            if callable(ensure):
+                ensure(warning)
         return panel
 
     tour.paint(window, 37, "logic", "problems", _problems_chip)
+    field = window.findChild(QLineEdit, "formBuilder.logic.filter")
+    if field is not None:
+        field.setText("")
     try:
         from app.features.form_builder.qtside.logic_panel.read_as_text import show_behavior_text
 
@@ -747,7 +767,48 @@ def _outline(tour: _Tour, window: MainWindow, surface: object) -> None:
     surface.workbench.focus_outline()  # type: ignore[attr-defined]
     _pump(tour.qapp)
     tour.paint(window, 23, "outline", "tree", lambda: _child(window, "formBuilder.outline"), dense=True)
-    tour.paint(window, 65, "outline", "hover", lambda: _child(window, "formBuilder.outline"))
+
+    def _hovered_row() -> QWidget:
+        from app.qt.QtCore import Qt
+        from app.qt.QtWidgets import QTreeWidget, QTreeWidgetItem
+        from app.features.form_builder.engine.ids import NodeId
+
+        outline = _child(window, "formBuilder.outline")
+        tree = window.findChild(QTreeWidget, "formBuilder.structure")
+        if not isinstance(tree, QTreeWidget):
+            return outline
+        role = int(getattr(Qt, "UserRole"))
+        view = tree.viewport().rect()
+        chosen = None
+
+        def walk(parent: Optional[QTreeWidgetItem]) -> None:
+            nonlocal chosen
+            if chosen is not None:
+                return
+            count = tree.topLevelItemCount() if parent is None else parent.childCount()
+            for index in range(count):
+                current = tree.topLevelItem(index) if parent is None else parent.child(index)
+                if current is None:
+                    continue
+                rect = tree.visualItemRect(current)
+                if rect.isValid() and view.contains(rect.center()) and current is not tree.currentItem():
+                    chosen = current
+                    return
+                walk(current)
+
+        walk(None)
+        if chosen is None:
+            chosen = tree.currentItem() or tree.topLevelItem(0)
+        if chosen is not None:
+            tree.scrollToItem(chosen)
+            raw = chosen.data(0, role)
+            if raw is not None:
+                surface.workbench.outline.set_hover(NodeId(int(raw)))  # type: ignore[attr-defined]
+            tree.viewport().repaint()
+        return outline
+
+    tour.paint(window, 65, "outline", "hover", _hovered_row)
+    surface.workbench.outline.set_hover(None)  # type: ignore[attr-defined]
     node = surface.session.document.by_name("emailEdit")[0]
     try:
         surface.workbench.outline.begin_rename(node)  # type: ignore[attr-defined]
@@ -923,7 +984,15 @@ def _missing_connection(tour: _Tour, tmp: Path) -> None:
             return visible[-1] if visible else None
 
         tour.paint(window, 54, "files", "generated-banner", _banner)
-        tour.paint(window, 67, "files", "generated-banner", _banner)
+
+        def _banner_page() -> Optional[QWidget]:
+            bar = _banner()
+            page = bar.parentWidget() if bar is not None else None
+            if page is None or page.width() < 2 or page.height() < 2:
+                return bar
+            return page
+
+        tour.paint(window, 67, "files", "generated-banner", _banner_page)
         damaged = root / "forms" / "broken.ui"
         damaged.write_bytes(b"<?xml version='1.0' \xff\xfe not utf-8")
         window._editor_tab_factory.open_file_in_editor(str(damaged))  # noqa: SLF001
@@ -1195,6 +1264,25 @@ def _shoot(qapp: QApplication, tmp: Path, folder: Path, scale: str) -> List[str]
     return tour.misses
 
 
+def _assert_distinct_shots(folder: Path) -> None:
+    """Two different shot names must not share pixels at the same theme and scale."""
+    groups = {}
+    for path in folder.glob("*.png"):
+        parts = path.stem.split("-")
+        if len(parts) < 4:
+            continue
+        stem = "-".join(parts[:-2])
+        key = (parts[-2], parts[-1])
+        groups.setdefault(key, {}).setdefault(path.read_bytes(), []).append(stem)
+    dupes = []
+    for theme, scale in sorted(groups):
+        for stems in groups[(theme, scale)].values():
+            unique = sorted(set(stems))
+            if len(unique) > 1:
+                dupes.append("%s %s: %s" % (theme, scale, ", ".join(unique)))
+    assert not dupes, "identical shots:\n" + "\n".join(dupes)
+
+
 def _write_index(folder: Path) -> None:
     groups = {}
     for path in sorted(folder.glob("*.png")):
@@ -1288,3 +1376,4 @@ def test_m9_5_tour(qapp: QApplication, tmp_path: Path) -> None:
     _write_index(folder)
     assert not misses, "\n".join(misses)
     assert not child, child
+    _assert_distinct_shots(folder)

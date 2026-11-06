@@ -664,11 +664,11 @@ def test_form_view_lists_captions_and_a_sized_page(qapp: QApplication) -> None:
         session.selection.clear(source=SelectionSource.PROGRAM)
         pane.flush()
         expected = (
-            ("window", "Window"),
-            ("layout", "Layout"),
-            ("tabOrder", "Tab order"),
-            ("problems", "Problems"),
-            ("files", "Files"),
+            ("window", "WINDOW"),
+            ("layout", "LAYOUT"),
+            ("tabOrder", "TAB ORDER"),
+            ("problems", "PROBLEMS"),
+            ("files", "FILES"),
         )
         for name, text in expected:
             caption = pane.findChild(QLabel, "formBuilder.formCaption.%s" % name)
