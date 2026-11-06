@@ -582,27 +582,20 @@ def _overlays(tour: _Tour, window: MainWindow, surface: object) -> None:
 
 
 def _drag_line(tour: _Tour, window: MainWindow, surface: object) -> None:
-    """Press on the canvas. The insertion line is painted only while a drag has a target."""
+    """Hold the insertion line a palette drop would paint, with its chip."""
     if tour.scale == "200":
         return
     try:
-        from app.qt.QtTest import QTest
-
         canvas = _child(window, "formBuilder.canvas")
         _select_name(surface, "emailEdit")
-        QTest.mousePress(canvas, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, canvas.rect().center())
-        QTest.mouseMove(canvas, canvas.rect().center() + canvas.rect().topLeft())
+        surface.workbench.canvas.set_insert_preview("QPushButton")  # type: ignore[attr-defined]
         _pump(tour.qapp)
         tour.paint(window, 12, "canvas", "insertion-line", lambda: canvas)
     except Exception as exc:
         tour.note(12, "canvas", "insertion-line", str(exc))
     finally:
         try:
-            from app.qt.QtTest import QTest
-
-            canvas = window.findChild(QWidget, "formBuilder.canvas")
-            if canvas is not None:
-                QTest.mouseRelease(canvas, Qt.MouseButton.LeftButton)
+            surface.workbench.canvas.set_insert_preview(None)  # type: ignore[attr-defined]
         except Exception:
             pass
 

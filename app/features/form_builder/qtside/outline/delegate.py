@@ -82,9 +82,11 @@ class OutlineRowDelegate(QStyledItemDelegate):
         width = option.rect.width()
         if widget is not None and hasattr(widget, "viewport"):
             viewport = widget.viewport()
+            # The cell can still be the text size hint. The row paints across
+            # the viewport, to the right of the indent.
             visible = viewport.width() - max(option.rect.x(), 0)
-            if visible > 0:
-                width = min(width, visible)
+            if visible > width:
+                width = visible
         boxes = layout_row(width, bool(caption), problem, caption_px, name_px, owner)
         palette = option.palette
         name_color = self._swatch(self._faint if faint else self._name, palette.text().color())
@@ -100,12 +102,9 @@ class OutlineRowDelegate(QStyledItemDelegate):
             elide="middle" if not owner else "right",
         )
         if boxes.caption is not None and caption:
-            # layout_row leaves a 4 px gap. Two more pixels make the 6 px gap.
-            box = _placed(option.rect, boxes.caption)
-            shifted = QRect(box.x() + 2, box.y(), max(box.width() - 2, 0), box.height())
             self._text(
                 painter,
-                shifted,
+                _placed(option.rect, boxes.caption),
                 caption,
                 caption_color,
                 caption_font,

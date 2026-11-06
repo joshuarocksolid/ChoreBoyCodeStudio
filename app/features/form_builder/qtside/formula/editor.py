@@ -613,24 +613,29 @@ class FormulaEditor(QPlainTextEdit):
         if host is self:
             point = QPoint(0, self.height())
         else:
-            if pad is not None and pad.objectName() == "formBuilder.state.edit":
-                below_anchor = pad
-            elif self._status is not None and self._status.isVisible():
+            if self._status is not None and self._status.isVisible():
                 below_anchor = self._status
+            elif pad is not None and pad.objectName() == "formBuilder.state.edit":
+                below_anchor = pad
             else:
                 below_anchor = self
             below_y = below_anchor.mapTo(host, QPoint(0, below_anchor.height() + 2)).y()
             above_y = self.mapTo(host, QPoint(0, -(list_h + 2))).y()
-            fits = below_y >= margin and below_y + list_h <= host.height() - margin
-            if screen is not None and fits:
-                global_y = host.mapToGlobal(QPoint(0, below_y)).y()
-                fits = global_y + list_h <= screen.availableGeometry().bottom() - 4
-            if fits:
+            # The status sentence stays visible. A list that does not fit still
+            # opens under it, rather than covering the sentence.
+            if below_anchor is self._status:
                 top = below_y
-            elif above_y >= 0:
-                top = above_y
             else:
-                top = max(0, below_y)
+                fits = below_y >= margin and below_y + list_h <= host.height() - margin
+                if screen is not None and fits:
+                    global_y = host.mapToGlobal(QPoint(0, below_y)).y()
+                    fits = global_y + list_h <= screen.availableGeometry().bottom() - 4
+                if fits:
+                    top = below_y
+                elif above_y >= 0:
+                    top = above_y
+                else:
+                    top = max(0, below_y)
             point = QPoint(origin_x, top)
         widget.move(point)
         widget.show()

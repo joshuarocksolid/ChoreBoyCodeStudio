@@ -35,7 +35,12 @@ from app.features.form_builder.qtside.pickers.flow import (
     opening,
     reduce,
 )
-from app.features.form_builder.qtside.theme.chrome import FormChrome, apply_page_shadow, popover_style
+from app.features.form_builder.qtside.theme.chrome import (
+    FormChrome,
+    apply_page_shadow,
+    popover_style,
+    reveal_popover,
+)
 
 _WIDTH = 320
 _ROW = 24
@@ -142,6 +147,7 @@ class EventPicker(QFrame):
         self.adjustSize()
         self._place(host, at)
         self.show()
+        reveal_popover(self)
         focus = self.field if self.field.isVisible() else self.search
         focus.setFocus()
         if focus is self.field:

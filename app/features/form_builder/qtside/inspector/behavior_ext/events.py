@@ -1061,9 +1061,6 @@ def _place_link(row: QWidget, body: "EventsBody", method: str) -> QPushButton:
         % (color, TYPE_FINE, body._chrome.focus_width, body._chrome.accent)
     )
     button.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
-    path = _window_path(body)
-    if tone == "ok" and path and ":" in text:
-        button.setToolTip("%s:%s" % (path, text.rsplit(":", 1)[-1]))
     button.clicked.connect(lambda: body._go_code(method))
     return button
 

@@ -308,6 +308,9 @@ class RowPopover(QFrame):
         self.place()
         self.show()
         self.raise_()
+        from app.features.form_builder.qtside.theme.chrome import reveal_popover
+
+        reveal_popover(self)
         self._guard_wheels()
         window = self.window()
         self._window_size = window.size() if window is not None else None

@@ -241,6 +241,50 @@ def popover_style(object_name: str, chrome: FormChrome) -> str:
     }
 
 
+def reveal_popover(widget: object) -> None:
+    """Rise 4 px and fade in over 120 ms.
+
+    An offscreen grab sees the settled frame. The shadow effect on a popup
+    window stays, because the fade uses the window opacity.
+    """
+    import os
+
+    from app.qt.QtCore import QPoint, QPropertyAnimation
+    from app.qt.QtWidgets import QGraphicsOpacityEffect, QWidget
+
+    if not isinstance(widget, QWidget):
+        return
+    if os.environ.get("QT_QPA_PLATFORM") == "offscreen":
+        return
+    placed = widget.pos()
+    widget.move(placed.x(), placed.y() + 4)
+    animations = []
+    if widget.isWindow():
+        widget.setWindowOpacity(0.0)
+        fade = QPropertyAnimation(widget, b"windowOpacity", widget)
+        fade.setDuration(120)
+        fade.setStartValue(0.0)
+        fade.setEndValue(1.0)
+        animations.append(fade)
+    else:
+        effect = QGraphicsOpacityEffect(widget)
+        effect.setOpacity(0.0)
+        widget.setGraphicsEffect(effect)
+        fade = QPropertyAnimation(effect, b"opacity", widget)
+        fade.setDuration(120)
+        fade.setStartValue(0.0)
+        fade.setEndValue(1.0)
+        animations.append(fade)
+    slide = QPropertyAnimation(widget, b"pos", widget)
+    slide.setDuration(120)
+    slide.setStartValue(QPoint(placed.x(), placed.y() + 4))
+    slide.setEndValue(placed)
+    animations.append(slide)
+    setattr(widget, "_cbcs_reveal", tuple(animations))
+    for animation in animations:
+        animation.start()
+
+
 def on_accent_for(accent: str) -> str:
     """Text on an accent fill: white, or near-black when white is under 4.5 : 1."""
     if _contrast(accent, "#FFFFFF") >= 4.5:

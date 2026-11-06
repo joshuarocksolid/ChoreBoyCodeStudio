@@ -76,7 +76,7 @@ Opus reviewed every light 100% shot. Each row is one of those findings. Dark and
 
 ## Follow-up 2
 
-One row per item in `followup2_M9.5_polish.md`. Shots are the tour names. A row that says deferred was not finished in this pass.
+One row per item in `followup2_M9.5_polish.md`. Shots are the tour names.
 
 | Item | Shots | Result |
 | --- | --- | --- |
@@ -85,7 +85,7 @@ One row per item in `followup2_M9.5_polish.md`. Shots are the tour names. A row 
 | 3 Inspector rows | 27, 60 | Label beside the editor. Behavior values are 24 px buttons. |
 | 4 Builder tabs | 23, 27 | Outline, Insert, Logic and Properties, Behavior, Data share one tab bar. Design and XML stay two tool buttons. |
 | 5 List selection | 23, 36 | Tree and list views share one hover and selected style. |
-| 6 Popovers | 13, 22, 31, 39, 59 | Layout, event picker, Go to widget, and Uses share width, padding, and shadow. Deferred: fade and slide over 120 ms, and a search glyph in every field. |
+| 6 Popovers | 13, 22, 31, 39, 59 | Layout, event picker, Go to widget, quick insert, and row popovers share width, padding, and shadow. They rise 4 px and fade in over 120 ms. An offscreen grab sees the settled frame. |
 | 7 Mode banner and info bar | 14, 15, 16, 54, 66 | The mode pill floats. The generated-file bar is one line. |
 | 8 Host controls | 27, 41 | Builder chrome no longer paints its own combo and line-edit rules. The canvas form keeps the runtime palette. |
 | 9 Outline rows | 23, 65 | Class glyphs, 24 px rows, name and object name on one line. |
@@ -95,7 +95,7 @@ One row per item in `followup2_M9.5_polish.md`. Shots are the tour names. A row 
 | 13 Translation | 27 | The translation control sits inside the field. |
 | 14 Search field | 27 | One search field. Placeholder only. |
 | 15 Segmented choices | 27, 63 | Alignment and size choices are one segmented control. |
-| 16 Tab toolbar | 08, 51 | Groups are Design/XML, overlays, undo, zoom, menus, Preview and Run behavior. Preview reads Preview. Deferred: a painted chevron on Aa and Widths. |
+| 16 Tab toolbar | 08, 51 | Groups are Design/XML, overlays, undo, zoom, menus, Preview and Run behavior. Preview reads Preview. Aa and Widths paint an 8 px chevron with a 4 px gap. The style menu arrow stays hidden. |
 | 17 Chips | 18 | Page and selection chips use the overlay ink. |
 | 18 Margin and gap | 18 | Numbers sit in the gutter. |
 | 19 Logic badges | 15 | Badges use the logic ink. |
@@ -109,4 +109,4 @@ One row per item in `followup2_M9.5_polish.md`. Shots are the tour names. A row 
 | 27 Try chrome | 48, 51 | The preview bar matches the form toolbar. |
 | 28 Dark and high contrast | dark and high_contrast_dark shots | Backdrop dots blend the border token. High contrast keeps its own ink. |
 | 29 Status | 08 | Form sentence and selection sentence. The label keeps the whole sentence, because screen readers read it. |
-| 30 Tour | 12, 15, 08, 09, 56, 62, 62-window-short-console, 63, 64, 65, 66, 67 | The tour now collapses the Python Console for the full-window shots, opens it for `62-window-short-console`, and adds 63 through 67. Shot 12 is still the pointer press. Offscreen does not hold a drop line. |
+| 30 Tour | 12, 15, 08, 09, 56, 62, 62-window-short-console, 63, 64, 65, 66, 67 | The tour collapses the Python Console for the full-window shots and opens it for `62-window-short-console`. Shot 15 is tab-order mode. Shot 12 holds the insertion line and chip for a Push button drop. Shots 63 through 67 are in the set. |

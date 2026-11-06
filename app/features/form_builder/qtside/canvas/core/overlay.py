@@ -552,7 +552,6 @@ def build_frame(static: StaticLayer, inputs: FrameInputs) -> OverlayFrame:
     fixed = tuple(hit for hit, _target in knob_hits + inert_hits) + inputs.chrome
     viewport = inputs.viewport if inputs.viewport is not None else page.grown(400)
     seats = place_chips(requests, static.content, fixed, page, viewport, inputs.dock)
-    seats = _flush_selection(seats, faces, static, inputs, page)
     chip_hits, chip_rows = _seat_items(items, seats, faces, inputs.dock is not None, page)
     targets: List[Tuple[CanvasRect, Target]] = []
     targets.extend(layer_targets)
@@ -1520,55 +1519,6 @@ def _gap_chips(
             inputs.document,
             _Face("chip", rule.layout, "gap", text, None),
         )
-
-
-def _flush_selection(
-    seats: Sequence[ChipSeat],
-    faces: Mapping[Hashable, _Face],
-    static: StaticLayer,
-    inputs: FrameInputs,
-    page: CanvasRect,
-) -> List[ChipSeat]:
-    """Widget chips sit flush with the left edge, 2 px above, and flip inside when blocked."""
-    placed = {item.node: item.rect for item in static.placed}
-    chrome = tuple(inputs.chrome)
-    flushed: List[ChipSeat] = []
-    for seat in seats:
-        face = faces.get(seat.key)
-        key = seat.key
-        if (
-            face is None
-            or face.kind != "chip"
-            or face.role != "select"
-            or not isinstance(key, tuple)
-            or not key
-            or key[0] != "chip"
-        ):
-            flushed.append(seat)
-            continue
-        target = placed.get(face.node)
-        if target is None:
-            flushed.append(seat)
-            continue
-        above = CanvasRect(target.x, target.y - 2 - seat.rect.height, seat.rect.width, seat.rect.height)
-        inside = CanvasRect(target.x, target.y + 2, seat.rect.width, seat.rect.height)
-        chosen = inside if _chip_blocked(above, page, chrome, inputs.dock) else above
-        flushed.append(replace(seat, rect=chosen))
-    return flushed
-
-
-def _chip_blocked(
-    rect: CanvasRect,
-    page: CanvasRect,
-    chrome: Sequence[CanvasRect],
-    dock: Optional[CanvasRect],
-) -> bool:
-    if not _within(rect, page):
-        return True
-    for band in chrome:
-        if rect.intersects(band):
-            return True
-    return dock is not None and rect.intersects(dock)
 
 
 def _seat_items(

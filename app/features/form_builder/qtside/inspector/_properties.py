@@ -14,7 +14,10 @@ from app.features.form_builder.engine.ui4.document import UiDocument
 from app.features.form_builder.engine.ui4.values import EnumValue, SetValue, Value
 from app.features.form_builder.qtside.inspector._services import Dropped, Rejected, Services, rejection_text
 from app.features.form_builder.qtside.inspector.editors._popover import SummaryButton
-from app.features.form_builder.qtside.inspector.editors._editor_kit import warning_color
+from app.features.form_builder.qtside.inspector.editors._editor_kit import (
+    warning_color,
+    yield_form_undo_from_children,
+)
 from app.features.form_builder.qtside.theme.chrome import FormChrome, control_qss
 from app.features.form_builder.qtside.theme.metrics import (
     CONTROL,
@@ -233,6 +236,7 @@ class PropertiesPage(QWidget):
         self._sort_action.setCheckable(True)
         self._sort_action.toggled.connect(self._on_sort)
         self._more.setMenu(menu)
+        yield_form_undo_from_children(self._search)
         self._scroll = QScrollArea(self)
         self._scroll.setObjectName("formBuilder.inspectorScroll")
         self._scroll.setAccessibleName("Properties")
@@ -352,6 +356,7 @@ class PropertiesPage(QWidget):
             # Same path as a click: All properties needs a rebuild to build its
             # rows, and other groups repaint, so the body is not left hidden.
             widget.apply_expanded(expanded)
+        self._apply_label_budget()
 
     def builds_all_properties(self) -> bool:
         return bool(self.search.strip()) or self._expanded.get(GroupId.ALL, False)
@@ -577,7 +582,7 @@ class PropertiesPage(QWidget):
         self._scroll.verticalScrollBar().setValue(0)
 
     def _chain_tabs(self) -> None:
-        stops = _stops_under(self)
+        stops = _with_field_buttons(_stops_under(self))
         known = self._tab_key
         if known is not None and len(known) == len(stops) and all(a is b for a, b in zip(known, stops)):
             return
@@ -1308,6 +1313,7 @@ class _Row(QWidget):
     def set_label_width(self, width: int) -> None:
         self._label_px = width
         self._apply_label_width()
+        self._elide_label()
 
     def resizeEvent(self, event: QEvent) -> None:  # noqa: N802
         super().resizeEvent(event)
@@ -1367,10 +1373,12 @@ class _Row(QWidget):
         self._move_reset()
 
     def _move_reset(self) -> None:
+        """The mark stays in the label column so it does not cover the editor."""
         button = self._reset
         if button is None:
             return
-        button.move(max(0, self.width() - button.width() - S2), max(0, (self.height() - button.height()) // 2))
+        edge = self._label_col.mapTo(self, QPoint(self._label_col.width(), 0))
+        button.move(max(0, edge.x() - button.width()), max(0, (self.height() - button.height()) // 2))
         button.raise_()
 
     def _paint_reset(self) -> None:
@@ -1533,10 +1541,19 @@ class _Row(QWidget):
             return
         if view.match is not None and view.match.where == "label":
             return
-        width = self.width() - _BAR_SLOT if self._stacked else self._label.width()
+        # The label's own width is its text until the column has laid out, so a
+        # long name such as inputMethodHints would never elide. Cap at the column.
+        full = view.label
+        budget = max(0, self._label_px - _BAR_SLOT)
+        if self._stacked:
+            budget = max(0, self.width() - _BAR_SLOT)
+        elif " " not in full:
+            # A single long token, such as inputMethodHints, elides in the 88 px column.
+            budget = min(budget, max(0, LABEL_MIN - _BAR_SLOT))
+        actual = self._label.width()
+        width = budget if actual <= 0 else min(budget, actual)
         if width <= 0:
             return
-        full = view.label
         if self._stacked:
             if self._label.text() != full:
                 self._label.setText(full)
@@ -2008,6 +2025,31 @@ def _tab_stop(widget: QWidget) -> bool:
         return False
     no_focus = getattr(getattr(Qt, "FocusPolicy", Qt), "NoFocus")
     return widget.focusPolicy() != no_focus
+
+
+def _with_field_buttons(stops: List[QWidget]) -> List[QWidget]:
+    """A button parked on a field is the next stop.
+
+    The field is itself a tab stop, so the walk does not descend into it.
+    The translation glyph and the inspector menu would otherwise land after
+    every group.
+    """
+    names = ("formBuilder.translationToggle", "formBuilder.inspectorMenu")
+    out: List[QWidget] = []
+    seen = set()
+    for stop in stops:
+        if stop in seen:
+            continue
+        seen.add(stop)
+        out.append(stop)
+        for child in stop.children():
+            if not isinstance(child, QWidget) or child in seen or child.objectName() not in names:
+                continue
+            if not _tab_stop(child):
+                continue
+            seen.add(child)
+            out.append(child)
+    return out
 
 
 def _stops_under(widget: QWidget) -> List[QWidget]:

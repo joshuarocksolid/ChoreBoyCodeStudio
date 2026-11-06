@@ -11,7 +11,7 @@ import os
 from typing import Any, Callable, Dict, FrozenSet, List, Optional, Sequence, Set, Tuple, cast
 
 from app.qt.QtCore import QEvent, QItemSelectionModel, QMimeData, QObject, QPoint, QRect, QSize, Qt, QTimer
-from app.qt.QtGui import QBrush, QColor, QDrag, QIcon, QPalette
+from app.qt.QtGui import QBrush, QColor, QDrag, QIcon, QPainter, QPalette
 from app.qt.QtWidgets import (
     QActionGroup,
     QApplication,
@@ -115,6 +115,7 @@ from app.features.form_builder.integration.pieces import (
 from app.features.form_builder.integration.chrome import chrome_for
 from app.features.form_builder.qtside.theme.chrome import popover_style, scrollbar_qss
 from app.features.form_builder.qtside.theme.metrics import (
+    CHEVRON_SMALL,
     DIVIDER,
     ICON,
     ICON_BUTTON,
@@ -322,6 +323,52 @@ def _tool(text: str, name: str, tip: str, parent: QWidget) -> QToolButton:
     return button
 
 
+class _ChevronTool(QToolButton):
+    """A toolbar menu button with an 8 px chevron and a 4 px gap. The style arrow stays hidden."""
+
+    def __init__(self, parent: QWidget) -> None:
+        super().__init__(parent)
+        self._ink = ""
+        pad = CHEVRON_SMALL + S1 + S1
+        self.setStyleSheet(
+            "QToolButton { padding-right: %dpx; }"
+            "QToolButton::menu-indicator { image: none; width: 0px; height: 0px; }"
+            % pad
+        )
+
+    def set_chevron_ink(self, color: str) -> None:
+        self._ink = color
+        self.update()
+
+    def paintEvent(self, event: object) -> None:  # noqa: N802
+        super().paintEvent(event)  # type: ignore[arg-type]
+        if not self._ink:
+            return
+        painter = QPainter(self)
+        try:
+            dpr = float(self.devicePixelRatioF()) if hasattr(self, "devicePixelRatioF") else 1.0
+            pixmap = paint_glyph("chevron_down", self._ink, CHEVRON_SMALL, dpr)
+            painter.drawPixmap(
+                self.width() - CHEVRON_SMALL - S1,
+                max(0, (self.height() - CHEVRON_SMALL) // 2),
+                pixmap,
+            )
+        finally:
+            painter.end()
+
+
+def _chevron_tool(text: str, name: str, tip: str, parent: QWidget) -> _ChevronTool:
+    button = _ChevronTool(parent)
+    button.setObjectName(name)
+    button.setText(text)
+    button.setToolTip(tip)
+    button.setAccessibleName(_control_name(text, tip))
+    button.setFocusPolicy(_strong())
+    button.setAutoRaise(True)
+    button.setToolButtonStyle(getattr(Qt, "ToolButtonTextOnly"))
+    return button
+
+
 def problems_link_color(tokens: ShellThemeTokens) -> str:
     """Body text colour: it clears 4.5:1 (7:1 in high contrast) on the panel in every theme."""
     return tokens.text_primary
@@ -490,8 +537,8 @@ class FormToolbar(QWidget):
         for button in (self.zoom_out, self.zoom_label, self.zoom_in):
             row.addWidget(button)
         row.addWidget(_toolbar_divider(self))
-        self.text_size = _tool("Aa", "formBuilder.textSize", "Text size is not available yet", self)
-        self.two_widths = _tool("Widths", "formBuilder.twoWidths", "Two widths is not available yet", self)
+        self.text_size = _chevron_tool("Aa", "formBuilder.textSize", "Text size is not available yet", self)
+        self.two_widths = _chevron_tool("Widths", "formBuilder.twoWidths", "Two widths is not available yet", self)
         self.text_size.setEnabled(False)
         self.two_widths.setEnabled(False)
         row.addWidget(self.text_size)
@@ -760,6 +807,10 @@ class FormToolbar(QWidget):
             button = self.overlay_toggles.get(kind.kind)
             if button is not None and kind.glyph:
                 _paint_glyph(button, kind.glyph, tokens, 16)
+        ink = tokens.icon_muted or tokens.text_muted or tokens.text_primary
+        for button in (self.text_size, self.two_widths):
+            if isinstance(button, _ChevronTool):
+                button.set_chevron_ink(ink)
 
 
 def _toolbar_divider(parent: QWidget) -> QWidget:
@@ -2039,6 +2090,12 @@ class OutlinePane(QWidget):
         """The per-user recent list the quick insert shows first (UX-CAT-013)."""
         self._quick_recent = recent
 
+    def resizeEvent(self, event: object) -> None:  # noqa: N802
+        super().resizeEvent(event)  # type: ignore[arg-type]
+        view = self.tree.viewport().width()
+        if view > 0:
+            self.tree.setColumnWidth(0, view)
+
     def show_insert(self, *, return_to: Optional[QWidget] = None) -> None:
         self._insert_return = return_to
         self._insert_filter.clear()
@@ -2048,6 +2105,9 @@ class OutlinePane(QWidget):
         self._insert_pop.setGeometry(0, self.header.height(), self.width(), height)
         self._insert_pop.show()
         self._insert_pop.raise_()
+        from app.features.form_builder.qtside.theme.chrome import reveal_popover
+
+        reveal_popover(self._insert_pop)
         self._insert_filter.setFocus()
         self._preview_insert_row()
 

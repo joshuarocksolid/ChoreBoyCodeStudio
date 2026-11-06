@@ -10,7 +10,12 @@ from app.qt.QtGui import QKeyEvent
 from app.qt.QtWidgets import QFrame, QLabel, QLineEdit, QListWidget, QListWidgetItem, QVBoxLayout, QWidget
 from app.qt.qt_compat import enum_value
 
-from app.features.form_builder.qtside.theme.chrome import FormChrome, apply_page_shadow, popover_style
+from app.features.form_builder.qtside.theme.chrome import (
+    FormChrome,
+    apply_page_shadow,
+    popover_style,
+    reveal_popover,
+)
 
 #: One row of the picker: object name, visible text (may be empty), friendly class words.
 WidgetEntry = Tuple[str, str, str]
@@ -107,6 +112,7 @@ class GoToWidgetPicker(QFrame):
         at.setX(max(bounds.left(), min(at.x(), bounds.right() - self.width())))
         self.move(at)
         self.show()
+        reveal_popover(self)
         self.search.setFocus()
 
     def names(self) -> List[str]:
