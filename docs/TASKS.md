@@ -2964,3 +2964,18 @@ persistent results on top of the existing `pytest_runner_service.py`.
 - Release class: `RELEASE-CRITICAL`
 - Depends on: `R01`..`R06`
 - Done when: testing workflow has automated evidence, theme-safe validation, and user docs.
+
+### T01 — Team Sync: collaboration between shops
+
+- Status: `DONE`
+- Objective: share a project between ChoreBoy shops with real git history, using only each shop's FaxMail terminal; review, combine, history and the power tools in plain words.
+- Primary files:
+  - `docs/team_sync/SPEC.md`, `docs/team_sync/PLAN.md`
+  - `app/features/team_sync/` (`api.py`, `core/`, `ui/`, `install.py`)
+  - `app/shell/contributions.py`, `app/shell/explorer_decorations.py`, `app/shell/toast.py`
+- Automated test layer: `unit`, `integration` (performance shard), `manual_acceptance`
+- Validation method: `python3 run_tests.py tests/unit/features/team_sync`; `python3 run_tests.py tests/integration/performance/test_team_sync_budgets.py -m performance`; cbfarm shop day (`docs/team_sync/SHOP_DAY_2.md`)
+- Acceptance linkage: `AT-106`..`AT-113`
+- Release class: `ENHANCEMENT`
+- Depends on: shop sharing (`share_roots`, `Machine`), vendored dulwich 0.24.10
+- Done when: the shop day passes on real ChoreBoys with matching histories on both stations and no open issues.

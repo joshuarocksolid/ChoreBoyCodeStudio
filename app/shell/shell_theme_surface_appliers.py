@@ -154,6 +154,9 @@ def apply_activity_bar_view_icons(refs: ShellThemeSurfaceRefs, tokens: ShellThem
         "test_explorer",
         test_icon(color_normal=normal, color_active=active),
     )
+    recolor = getattr(refs.activity_bar, "recolor_factory_icons", None)
+    if recolor is not None:
+        recolor(normal, active)
 
 
 def apply_menu_bar_icons(refs: ShellThemeSurfaceRefs, tokens: ShellThemeTokens) -> None:

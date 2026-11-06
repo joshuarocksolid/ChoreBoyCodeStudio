@@ -222,6 +222,10 @@ class RuntimeSupportWorkflow:
             self._set_latest_package_issue_report(result.validation.issue_report)
             self._set_latest_runtime_issue_report(self._build_runtime_issue_report())
             if result.success:
+                contributions = getattr(self._parent, "_shell_contributions", None)
+                if contributions is not None:
+                    version = str(getattr(reviewed_package_config, "version", "") or "")
+                    contributions.notify_packaged(wizard, version)
                 QMessageBox.information(
                     self._parent,
                     "Package created",

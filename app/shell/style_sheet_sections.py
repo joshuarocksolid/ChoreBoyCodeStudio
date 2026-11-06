@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from app.shell.style_sheet_sections_controls import shell_section_checkbox_indicators
+from app.shell.style_sheet_sections_team_sync import shell_section_team_sync
 from app.shell.style_sheet_sections_tooltips import shell_section_tooltips
 
 from app.shell.style_sheet_sections_chrome import (
@@ -82,6 +83,7 @@ __all__ = [
     "shell_section_runtime_center_dialog",
     "shell_section_search_sidebar",
     "shell_section_tab_bar",
+    "shell_section_team_sync",
     "shell_section_test_explorer",
     "shell_section_tooltips",
     "shell_section_toolbar_buttons",

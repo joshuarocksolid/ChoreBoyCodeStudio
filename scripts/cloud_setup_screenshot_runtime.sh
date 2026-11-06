@@ -39,7 +39,7 @@ cloud_install_conda_freecad
 ensure_vendor() {
   local profile="$1" marker_a="$2" marker_b="$3" script="$4"
   local target="${CBCS_ARTIFACTS_DIR}/vendor_${profile}"
-  if [[ -d "${target}/${marker_a}" && -d "${target}/${marker_b}" ]]; then
+  if [[ -d "${target}/${marker_a}" && -d "${target}/${marker_b}" && -d "${target}/dulwich" ]]; then
     cloud_log "vendor_${profile} already present at ${target}"
     return 0
   fi

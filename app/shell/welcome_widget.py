@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Optional, Sequence
 
+from app.features.shop_sharing.model import RecentRow
 from app.qt.QtCore import Qt, Signal
 from app.qt.QtWidgets import (
     QHBoxLayout,
@@ -36,7 +36,7 @@ class WelcomeWidget(QWidget):
     def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
         self.setObjectName("shell.welcome")
-        self._all_projects: list[str] = []
+        self._all_projects: list[RecentRow] = []
         self._build_ui()
         self._apply_filter("")
 
@@ -232,9 +232,9 @@ class WelcomeWidget(QWidget):
 
     # -- Public API -----------------------------------------------------------
 
-    def set_recent_projects(self, project_paths: list[str]) -> None:
-        """Populate the project list from an ordered list of paths."""
-        self._all_projects = list(project_paths)
+    def set_recent_projects(self, rows: Sequence[RecentRow]) -> None:
+        """Populate the project list from stored order."""
+        self._all_projects = list(rows)
         self._apply_filter(self._search_input.text())
 
     def set_runtime_summary(self, summary: str, details: str = "") -> None:
@@ -255,16 +255,23 @@ class WelcomeWidget(QWidget):
 
     def _apply_filter(self, text: str) -> None:
         query = text.strip().lower()
-        filtered = [
-            p for p in self._all_projects if query in p.lower()
-        ] if query else list(self._all_projects)
+        rows = self._all_projects
+        if query:
+            rows = [row for row in rows if _row_matches(row, query)]
 
         self._project_list.clear()
-        for project_path in filtered:
-            leaf = Path(project_path).name or project_path
-            item = QListWidgetItem(f"{leaf}\n{project_path}")
-            item.setData(Qt.UserRole, project_path)
-            item.setToolTip(project_path)
+        for row in rows:
+            if row.host and not row.available:
+                item = QListWidgetItem(f"{row.label}\non {row.host}")
+                item.setFlags(Qt.NoItemFlags)
+                item.setToolTip(f"on {row.host}")
+            elif row.available:
+                leaf = row.label or row.path
+                item = QListWidgetItem(f"{leaf}\n{row.path}")
+                item.setData(Qt.UserRole, row.path)
+                item.setToolTip(row.path)
+            else:
+                continue
             self._project_list.addItem(item)
 
         has_items = self._project_list.count() > 0
@@ -280,3 +287,9 @@ class WelcomeWidget(QWidget):
         project_path = item.data(Qt.UserRole)
         if project_path:
             self.project_selected.emit(project_path)
+
+
+def _row_matches(row: RecentRow, query: str) -> bool:
+    if query in row.label.lower() or query in row.path.lower():
+        return True
+    return row.host is not None and query in row.host.lower()

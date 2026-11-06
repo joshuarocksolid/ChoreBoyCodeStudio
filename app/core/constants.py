@@ -1,6 +1,6 @@
 """Shared constants for bootstrap/path contracts."""
 
-APP_VERSION = "0.4.13"
+APP_VERSION = "0.4.14"
 
 APP_RUN_PATH = "/opt/freecad/AppRun"
 
@@ -12,7 +12,6 @@ PRODUCT_INSTALL_BASE = "/home/default/FreeCAD/CBCS"
 PRODUCT_STATE_ROOT = "/home/default/FreeCAD/CBCS/state"
 CBCS_STATE_ROOT_ENV_NAME = "CBCS_STATE_ROOT"
 CBCS_STATE_ROOT_POINTER_FILENAME = "cbcs_state_root"
-SHOP_STATE_ROOT_POINTER_PATH = "/home/default/share/Chore_Boy/CBCS/cbcs_state_root"
 GLOBAL_SETTINGS_FILENAME = "settings.json"
 STATE_MIGRATING_SUFFIX = ".migrating"
 CAPABILITY_PROBE_CANARY_PREFIX = "capability_probe_"

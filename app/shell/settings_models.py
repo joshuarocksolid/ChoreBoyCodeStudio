@@ -571,6 +571,25 @@ def merge_editor_settings_snapshot(
     return merged
 
 
+def normalize_global_settings_payload(payload: Mapping[str, Any]) -> dict[str, Any]:
+    """Add the Settings dialog's default fill for keys ``payload`` lacks.
+
+    Keys already present, including ones the dialog does not know, are kept as
+    they are, so diffing two normalized payloads leaves only real edits.
+    """
+    return _fill_missing(payload, merge_editor_settings_snapshot(payload, parse_editor_settings_snapshot(payload)))
+
+
+def _fill_missing(payload: Mapping[str, Any], defaults: Mapping[str, Any]) -> dict[str, Any]:
+    filled = dict(payload)
+    for key, default in defaults.items():
+        if key not in filled:
+            filled[key] = default
+        elif isinstance(filled[key], Mapping) and isinstance(default, Mapping):
+            filled[key] = _fill_missing(filled[key], default)
+    return filled
+
+
 def merge_editor_settings_snapshot_for_scope(
     *,
     scope: str,

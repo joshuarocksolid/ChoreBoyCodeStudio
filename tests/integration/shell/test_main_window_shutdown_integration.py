@@ -9,7 +9,6 @@ import pytest
 pytest.importorskip("app.qt.QtWidgets", exc_type=ImportError)
 
 from app.qt.QtGui import QCloseEvent
-from app.bootstrap.paths import global_python_console_history_path
 from app.run.process_supervisor import ProcessEvent
 from app.persistence.history_models import DRAFT_RECOVERY_POLICY_RESTORE_SILENTLY
 from app.shell.document_safety import (
@@ -223,8 +222,7 @@ def test_close_event_persists_python_console_history(
         window.closeEvent(close_event)
 
         assert close_event.isAccepted() is True
-        history_path = global_python_console_history_path(str(state_root))
-        assert load_python_console_history(history_path, max_entries=200) == ["print('saved')"]
+        assert load_python_console_history(str(state_root), max_entries=200) == ["print('saved')"]
     finally:
         shutdown_main_window_for_test(window, app)
 

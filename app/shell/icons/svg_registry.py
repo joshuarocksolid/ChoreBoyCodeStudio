@@ -509,6 +509,30 @@ SVG_GLYPHS: dict[str, SvgGlyphSpec] = {
         cached=True,
         two_color=False,
     ),
+    "chevron_left_icon": SvgGlyphSpec(
+        cache_name="chevron_left",
+        body='<path d="M10 3.2L5.2 8 10 12.8" fill="none" stroke="{color}" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>',
+        cached=False,
+        two_color=False,
+    ),
+    "chevron_right_icon": SvgGlyphSpec(
+        cache_name="chevron_right",
+        body='<path d="M6 3.2L10.8 8 6 12.8" fill="none" stroke="{color}" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>',
+        cached=False,
+        two_color=False,
+    ),
+    "send_icon": SvgGlyphSpec(
+        cache_name="send",
+        body='<path d="M2.2 8.2L13.8 2.4 9.2 13.6 7.6 8.8z" fill="{color}"/>',
+        cached=False,
+        two_color=False,
+    ),
+    "warning_icon": SvgGlyphSpec(
+        cache_name="warning",
+        body='<path d="M8 2.2l6.2 11H1.8L8 2.2z" fill="{color}" fill-opacity="0.16" stroke="{color}" stroke-width="1.2" stroke-linejoin="round"/><path d="M8 6.4v3.2" stroke="{color}" stroke-width="1.4" stroke-linecap="round"/><circle cx="8" cy="11.3" r=".7" fill="{color}"/>',
+        cached=False,
+        two_color=False,
+    ),
     "zoom_reset_icon": SvgGlyphSpec(
         cache_name="zoom_reset",
         body='<circle cx="7" cy="7" r="4.5" fill="none" stroke="{color}" stroke-width="1.3"/><path d="M5 7h4M10.5 10.5L14 14M12 2.5a3.5 3.5 0 0 1 1 2.5M13 2.5h-2.5V5" fill="none" stroke="{color}" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>',

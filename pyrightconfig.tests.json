@@ -6,7 +6,8 @@
     "tests/support",
     "tests/unit/debug/test_safe_eval.py",
     "tests/unit/packaging/test_dependency_audit.py",
-    "tests/unit/shell/test_python_tooling_status_copy.py"
+    "tests/unit/shell/test_python_tooling_status_copy.py",
+    "tests/unit/features/team_sync/test_api_parity.py"
   ],
   "executionEnvironments": [
     {

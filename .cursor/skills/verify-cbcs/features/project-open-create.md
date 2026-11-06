@@ -27,13 +27,13 @@ Owns AT-03, AT-04, AT-17, AT-19, AT-20, AT-21, AT-24, AT-33.
 Preconditions:
 
 - Doctor passed.
-- Scratch destination under the disposable HOME or `/mnt/cbprobe/cbcs-verify/<run-id>/project`.
+- Scratch destination under the disposable HOME or the `GUEST_PROJECT` path from `control-cbcs seed`.
 - For valid-open, seed a folder that already contains `cbcs/project.json` (copy `example_projects/crud_showcase` into the run tree).
 
 Folder pickers are Qt `QFileDialog` with `DontUseNativeDialog`. They are not `#shell.*`. After `arm`, complete the visible dialog without `ctl key Return` (that blocks the bridge). Prefer `setDirectory(parent)` + `selectFile` via `ctl exec` so **Choose** enables, then click `text:&Choose`. Typing into `#fileNameEdit` alone often leaves Choose disabled. `open_project_by_path` is not picker proof. Use `oskey` only if the Qt dialog cannot be completed, and only after a fresh shot.
 
-- **Seed example on the share.** From the Mac, rsync `example_projects/crud_showcase` to `debian:/home/joshua/shared-usb/cbcs-verify/<run-id>/project/crud`.
-- **Open Project.** `control-cbcs arm "$SID" shell.action.file.openProject` (modal `exec_()`). Complete the folder picker as above. Or click `#shell.welcome.openProjectBtn` then arm is unnecessary if the button path already opened the dialog. Run `control-cbcs ctl "$SID" exec --` with `win=find('#shell.mainWindow'); win._file_project_commands_workflow.open_project_by_path('/mnt/cbprobe/cbcs-verify/<run-id>/project/crud')` only if a user-visible Open dialog cannot be completed. Then assert the user-visible result below.
+- **Seed example on the share.** `control-cbcs seed "$SID" example_projects/crud_showcase` prints `GUEST_PROJECT=`. Open that path. On the farm it is under `/mnt/cbprobe/incoming/cbcs-verify-<run-id>/`. On the lab it is `/mnt/cbprobe/cbcs-verify/<run-id>/project`.
+- **Open Project.** `control-cbcs arm "$SID" shell.action.file.openProject` (modal `exec_()`). Complete the folder picker as above. Or click `#shell.welcome.openProjectBtn` then arm is unnecessary if the button path already opened the dialog. Run `control-cbcs ctl "$SID" exec --` with `win=find('#shell.mainWindow'); win._file_project_commands_workflow.open_project_by_path('<GUEST_PROJECT>')` only if a user-visible Open dialog cannot be completed. Then assert the user-visible result below.
 - **Tree and status.** `#shell.projectTree` has rows. `control-cbcs read "$SID" shell.projectStatusLabel` contains the project name.
 - **Invalid folder.** Point Open Project at `/tmp`. Dialog **Unable to open project**; `#shell.mainWindow` stays up. Shot `project-invalid`. An empty folder is `GENERIC_WORKSPACE`, not an error. Import does not write `cbcs/project.json` on open (`manifest_materialized=False`).
 - **New from template.** `control-cbcs arm "$SID" shell.action.file.newProjectFromTemplate` (modal). Ctrl+N is `newProject` (blank `blank_project`), not the template picker. Complete name + destination into the disposable tree. New folder contains `cbcs/project.json`. Project status updates.

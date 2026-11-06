@@ -59,6 +59,8 @@ class SettingsScopeHandlersMixin:
                 )
         if self._appearance_group is not None:
             self._appearance_group.setVisible(not is_project_scope)
+        if self._shop_sharing_group is not None:
+            self._shop_sharing_group.setVisible(not is_project_scope)
         self._enable_preview_input.setEnabled(not is_project_scope)
         if self._output_reset_to_global_btn is not None:
             self._output_reset_to_global_btn.setVisible(is_project_scope)

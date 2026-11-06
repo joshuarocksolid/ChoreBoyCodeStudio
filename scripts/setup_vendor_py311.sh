@@ -22,6 +22,10 @@ pip3 install pyflakes==3.4.0 \
   --target="$TARGET" --python-version=3.11 --only-binary=:all: \
   --platform=manylinux_2_17_x86_64
 
+# Team Sync: pure-Python git (no native speedups; Apache-2.0 option of its dual license).
+pip3 install dulwich==0.24.10 --no-deps --target="$TARGET" \
+  --python-version=3.11 --implementation=py --abi=none --platform=any --only-binary=:all:
+
 echo ""
 echo "Done. Verify with:"
 echo "  CBCS_APPRUN=/opt/freecad/AppRun ./run_dev.sh --probe"
