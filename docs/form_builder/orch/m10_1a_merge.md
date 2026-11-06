@@ -26,17 +26,19 @@
 
 | Item | Shot | What was wrong | What changed |
 | --- | --- | --- | --- |
-| Start cards | 02, 64 | | |
-| From-table combos | 05, 06 | | |
-| Record bar | 05, 06 | | |
-| Connect combos | 41 | | |
-| Max length | 27, 63 | | |
-| Why this size | 63 | | |
-| Required row | 28 | | |
-| Form inspector sentences | | | |
-| Insert pitch | 20 | | |
-| Tab-order chip | 15 | | |
-| Tab-order badge | 15-dark | | |
-| Run behavior | 48 | | |
-| Form centre | 48 | | |
-| What ran colour | | | |
+| Start cards | 02, 64 | Cards sat 9 px right of the heading. The card grid used the style's default layout margin. | The grid margins are 0, so the cards line up with the heading. |
+| From-table combos | 05, 06 | Combos used a heavy border and a gradient arrow button. | The arrow button is borderless and transparent, with 24 px of padding so the text stays clear of it. |
+| Record bar | 05, 06 | The preview record bar wrapped onto four rows. | The preview packs that bar onto one 24 px row. Navigation buttons use short labels (`|<`, `<`, `1 of 1`, `>`, `>|`) and the tip keeps the full name. |
+| Connect combos | 41 | The arrow button showed a dark corner. | The same host combo rule as the from-table dialog. |
+| Max length | 27, 63 | The row said "Maximum length", which clipped. | The row says "Max length". |
+| Why this size | 63 | The size paragraph was always open. | It sits behind a collapsed "Why this size?" row. |
+| Required row | 28 | Required had no editor, and a wrapped sentence painted a stray "Email" line over the next row. | Each check's message is a value button. Required shows "On" when it has no sentence. The message no longer wraps over the next row. |
+| Form inspector sentences | Files, Tab order | "Saves invoice.ui …" and "No fields to visit yet…" repeated the header. | Files shows the file names. An empty tab-order list shows the empty list. |
+| Insert pitch | 20 | Tile rows were not on one pitch, so the gap above Horizontal splitter was larger. | Icon tiles are placed on a 60 px pitch. Category headers stay full width. |
+| Tab-order chip | 15 | In Tab order the page name chip painted the layout colour, which is darker than `ov.select`. | While Tab order is on, that chip paints `ov.select`. A selected layout's overlay chip does the same. |
+| Tab-order badge | 15-dark | Badge 1 covered the end of a narrow check box's text. | A check box or radio badge sits outside the widget. Any other badge sits outside when the text would run under it, or the widget is under 48 px. |
+| Run behavior | 48 | The control looked like a plain button. | It is a checkable tool button with a 4 px radius, 12 px text, and a checked fill. |
+| Form centre | 48 | A small form sat at the left of a wide empty pane. | The form is centred when it is narrower than half the pane. A wider form stays at the left. |
+| What ran colour | What ran | The title colour was applied by rewriting the header's stylesheet string. | `SectionHeader.set_title_color()` writes the colour into the first stylesheet rules. |
+
+Pass 2 leftovers (Start card offset, from-table combo borders, the Required row, form-inspector sentences, the chip in Tab order, Try's Run behavior style) are the rows above.

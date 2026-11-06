@@ -118,7 +118,6 @@ _TABLE_COLUMN = 180
 _PREVIEW_COLUMN = 320
 _INCLUDE_WIDTH = 64
 _DISABLED_OPACITY = 0.5
-_WIDGET_MAX = 16777215
 _BAR_NAMES = ("recordBar", "listButtons", "lineButtons")
 
 
@@ -480,9 +479,17 @@ class FromTableDialog(QDialog):
             "QComboBox#formBuilder\\.fromTable\\.make,"
             "QComboBox#formBuilder\\.fromTable\\.linesTable,"
             "QComboBox#formBuilder\\.fromTable\\.linesLink,"
-            "QComboBox#formBuilder\\.fromTable\\.showsAs,"
+            "QComboBox#formBuilder\\.fromTable\\.showsAs {"
+            " background: %s; color: %s; border: 1px solid %s; border-radius: 4px; padding: 0 24px 0 8px; }"
             "QLineEdit#formBuilder\\.fromTable\\.labelEdit {"
             " background: %s; color: %s; border: 1px solid %s; border-radius: 4px; padding: 0 8px; }"
+            "QComboBox#formBuilder\\.fromTable\\.connection::drop-down,"
+            "QComboBox#formBuilder\\.fromTable\\.make::drop-down,"
+            "QComboBox#formBuilder\\.fromTable\\.linesTable::drop-down,"
+            "QComboBox#formBuilder\\.fromTable\\.linesLink::drop-down,"
+            "QComboBox#formBuilder\\.fromTable\\.showsAs::drop-down {"
+            " border: none; background: transparent; width: 20px;"
+            " subcontrol-origin: padding; subcontrol-position: center right; }"
             "QLabel#shell\\.dialogChrome\\.title { color: %s; background: transparent;"
             " font-size: 17px; font-weight: 700; }"
             "QWidget#shell\\.dialogChrome\\.header { background: %s; color: %s;"
@@ -527,6 +534,9 @@ class FromTableDialog(QDialog):
                 chrome.text,
                 chrome.border,
                 R_CARD,
+                chrome.input,
+                chrome.text,
+                edge_on(chrome, chrome.input or chrome.panel),
                 chrome.input,
                 chrome.text,
                 edge_on(chrome, chrome.input or chrome.panel),
@@ -1430,54 +1440,49 @@ def _take_host(host: QWidget) -> List[QWidget]:
     return widgets
 
 
-def _pack(column: QVBoxLayout, widgets: List[QWidget], width: int) -> None:
-    row = None
-    used = 0
-    gap = S2
-    for widget in widgets:
-        hint = _control_width(widget, width)
-        if row is not None and used + gap + hint > width:
-            row.addStretch(1)
-            row = None
-            used = 0
-        if row is None:
-            row = QHBoxLayout()
-            row.setContentsMargins(0, 0, 0, 0)
-            row.setSpacing(gap)
-            column.addLayout(row)
-        elif used:
-            used += gap
-        row.addWidget(widget)
-        used += hint
-    if row is not None:
-        row.addStretch(1)
+_BAR_SHORT = {
+    "First": "|<",
+    "Previous": "<",
+    "Next": ">",
+    "Last": ">|",
+    "New": "New",
+    "Save": "Save",
+    "Revert": "Rev",
+    "Delete": "Del",
+    "Find": "Find",
+}
 
 
-def _control_width(widget: QWidget, limit: int) -> int:
-    if isinstance(widget, (QLabel, QPushButton)):
-        full = widget.property("cbcsFullText")
-        if not isinstance(full, str) or not full:
-            full = widget.text()
-            widget.setProperty("cbcsFullText", full)
-        widget.setText(full)
-        widget.setMaximumWidth(_WIDGET_MAX)
-        hint = max(widget.sizeHint().width(), 1)
-        if hint <= limit:
-            return hint
-        shown = widget.fontMetrics().elidedText(
-            full,
-            Qt.TextElideMode.ElideRight,  # type: ignore[attr-defined]
-            max(8, limit - 8),
-        )
+def _preview_caption(widget: QWidget) -> None:
+    """One readable word that fits the preview column. The tip keeps the real name."""
+    full = widget.property("cbcsFullText")
+    if not isinstance(full, str) or not full:
+        full = widget.text()
+        widget.setProperty("cbcsFullText", full)
+    if isinstance(widget, QLabel):
+        shown = full[7:] if full.startswith("Record ") else full
+    else:
+        shown = _BAR_SHORT.get(full, full)
+    if widget.text() != shown:
         widget.setText(shown)
+    if widget.toolTip() != full:
         widget.setToolTip(full)
-        widget.setMaximumWidth(limit)
-        return limit
-    hint = max(widget.sizeHint().width(), 1)
-    if hint > limit:
-        widget.setMaximumWidth(limit)
-        return limit
-    return hint
+
+
+def _pack(column: QVBoxLayout, widgets: List[QWidget], width: int) -> None:
+    host = column.parentWidget()
+    if host is not None:
+        host.setMaximumWidth(max(width, 1))
+    row = QHBoxLayout()
+    row.setContentsMargins(0, 0, 0, 0)
+    row.setSpacing(2)
+    for widget in widgets:
+        _preview_caption(widget)
+        widget.setFixedHeight(24)
+        widget.setMinimumWidth(0)
+        row.addWidget(widget)
+    row.addStretch(1)
+    column.addLayout(row)
 
 
 def _tick_url(chrome: FormChrome) -> str:

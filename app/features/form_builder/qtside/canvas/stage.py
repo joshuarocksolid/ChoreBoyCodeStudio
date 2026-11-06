@@ -276,6 +276,9 @@ class Stage:
         self._form_selected = selected
         self._apply_page_chip_style()
 
+    def set_name_chip_select(self, on: bool) -> None:
+        self._name.set_select_fill(on)
+
     def set_page_chip_selected_style(self, stylesheet: str) -> None:
         """Selection fill for the page name. Idle clears back to the view sheet."""
         self._selected_page_style = stylesheet
@@ -570,6 +573,7 @@ class PageNameChip(QLabel):
         self.setAutoFillBackground(False)
         self._glyph = "layout_v"
         self._backdrop = ""
+        self._select = False
 
     def set_glyph(self, name: str) -> None:
         if name and name != self._glyph:
@@ -578,6 +582,13 @@ class PageNameChip(QLabel):
 
     def set_backdrop(self, fill: str) -> None:
         self._backdrop = fill
+        self.update()
+
+    def set_select_fill(self, on: bool) -> None:
+        """Tab order uses ``ov.select``. Every other mode keeps the layout fill."""
+        if self._select is on:
+            return
+        self._select = on
         self.update()
 
     def fit(self) -> None:
@@ -603,7 +614,7 @@ class PageNameChip(QLabel):
         palette = overlay_palette(high)
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
-        red, green, blue, alpha = channels(palette.layout)
+        red, green, blue, alpha = channels(palette.select if self._select else palette.layout)
         painter.setBrush(QColor(red, green, blue, alpha))
         painter.setPen(QPen(Qt.PenStyle.NoPen))
         painter.drawRoundedRect(QRectF(self.rect()).adjusted(0.5, 0.5, -0.5, -0.5), R_CONTROL, R_CONTROL)

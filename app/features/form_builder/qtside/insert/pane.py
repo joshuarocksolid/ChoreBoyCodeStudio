@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import Any, Callable, List, Optional, Sequence, Tuple
 
-from app.qt.QtCore import QEvent, QMimeData, QSize, Qt
+from app.qt.QtCore import QEvent, QMimeData, QPoint, QSize, Qt
 from app.qt.QtGui import QAction, QActionGroup, QDrag, QIcon, QKeyEvent, QMouseEvent
 from app.qt.QtWidgets import (
     QApplication,
@@ -106,6 +106,55 @@ class InsertList(QListWidget):
     def focusOutEvent(self, event: QEvent) -> None:  # type: ignore[override]
         super().focusOutEvent(event)
         self._pane.clear_preview()
+
+    def doItemsLayout(self) -> None:
+        if getattr(self, "_placing", False):
+            return
+        super().doItemsLayout()
+        self._place_on_pitch()
+
+    def _place_on_pitch(self) -> None:
+        pane = self._pane
+        if not getattr(pane, "_icons", False) or getattr(pane, "_query", ""):
+            return
+        from app.features.form_builder.qtside.insert.delegate import TILE_HEIGHT, TILE_WIDTH
+        from app.features.form_builder.qtside.insert.rows import ENTRY
+        from app.features.form_builder.qtside.theme.metrics import S1
+
+        pitch_w = TILE_WIDTH + S1
+        pitch_h = TILE_HEIGHT + S1
+        view = self.viewport()
+        width = view.width() if view is not None else 0
+        if width < pitch_w:
+            return
+        model = self.model()
+        # Static ignores setPositionForIndex, and switching back to it lays the
+        # view out again. Free keeps the positions. The palette drag is our own.
+        free = getattr(getattr(QListView, "Movement", QListView), "Free")
+        self._placing = True
+        try:
+            self.setMovement(free)
+            x = 0
+            y = 0
+            for index in range(self.count()):
+                item = self.item(index)
+                row = _row_of(item)
+                at = model.index(index, 0)
+                if row is None or row.kind != ENTRY:
+                    if x:
+                        x = 0
+                        y += pitch_h
+                    self.setPositionForIndex(QPoint(0, y), at)
+                    y += max(item.sizeHint().height(), 28)
+                    x = 0
+                    continue
+                if x and x + pitch_w > width:
+                    x = 0
+                    y += pitch_h
+                self.setPositionForIndex(QPoint(x, y), at)
+                x += pitch_w
+        finally:
+            self._placing = False
 
     def mouseMoveEvent(self, event: QMouseEvent) -> None:  # type: ignore[override]
         if not event.buttons() & Qt.MouseButton.LeftButton:

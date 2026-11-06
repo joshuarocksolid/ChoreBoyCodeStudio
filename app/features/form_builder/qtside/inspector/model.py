@@ -629,12 +629,8 @@ def tabstops_only(changeset: ChangeSet) -> bool:
 def files_line(scope: FormScope) -> str:
     ui_name = os.path.basename(scope.ui_path)
     if not scope.generates or scope.generated_path is None:
-        return "Saves %s." % ui_name
-    folder = os.path.dirname(scope.ui_path)
-    if scope.project_root:
-        folder = os.path.relpath(folder, scope.project_root).replace(os.sep, "/")
-    where = "the project folder" if folder == "." else folder + "/"
-    return "Saves %s and %s in %s." % (ui_name, os.path.basename(scope.generated_path), where)
+        return ui_name
+    return "%s, %s" % (ui_name, os.path.basename(scope.generated_path))
 
 def problems_line(count: int) -> str:
     if count == 0:

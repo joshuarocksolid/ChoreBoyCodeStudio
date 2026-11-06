@@ -241,6 +241,11 @@ class SourceForm(QWidget):
             is_high_contrast=bool(getattr(tokens, "is_high_contrast", False)),
         )
         self._chrome = chrome
+        from app.features.form_builder.qtside.theme.chrome import host_combo_qss
+
+        names = ["formBuilder.data.connection", "formBuilder.data.opensAt"]
+        names.extend("formBuilder.data.orderColumn%d" % index for index in range(len(self._orders)))
+        self.setStyleSheet(host_combo_qss(names, chrome))
         for _column, direction in self._orders:
             direction.apply_chrome(chrome)
         polish_item_view(self._tables, chrome)

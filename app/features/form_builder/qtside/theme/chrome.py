@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import Optional, Sequence, Tuple
 
 PAGE_TITLE_HEIGHT = 22
 PAGE_TITLE_FILL = "#E4E4E4"
@@ -422,6 +422,22 @@ def control_qss(chrome: FormChrome, ancestor: str = "") -> str:
             "check": check,
             "ink": ink,
         }
+    )
+
+
+def host_combo_qss(names: Sequence[str], chrome: FormChrome) -> str:
+    boxes = ", ".join("QComboBox#%s" % name.replace(".", "\\.") for name in names)
+    drops = ", ".join("QComboBox#%s::drop-down" % name.replace(".", "\\.") for name in names)
+    views = ", ".join("QComboBox#%s QAbstractItemView" % name.replace(".", "\\.") for name in names)
+    background = chrome.input or chrome.panel
+    edge = edge_on(chrome, background)
+    return (
+        "%s { background: %s; color: %s; border: 1px solid %s; border-radius: 4px;"
+        " padding: 0 24px 0 8px; min-height: 20px; font-size: 12px; }"
+        "%s { border: none; background: transparent; width: 20px;"
+        " subcontrol-origin: padding; subcontrol-position: center right; }"
+        "%s { background: %s; color: %s; }"
+        % (boxes, background, chrome.text, edge, drops, views, chrome.panel, chrome.text)
     )
 
 

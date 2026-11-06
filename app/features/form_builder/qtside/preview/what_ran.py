@@ -26,7 +26,7 @@ from app.features.form_builder.qtside.theme.items import polish_item_view
 from app.features.form_builder.qtside.theme.metrics import ROW, S2, TOOLBAR, TYPE_FINE
 from app.features.form_builder.qtside.theme.section_header import SectionHeader
 from app.qt.QtCore import QSize, Qt, Signal
-from app.qt.QtGui import QBrush, QColor, QFont, QFontMetrics, QPalette, QPainter
+from app.qt.QtGui import QBrush, QColor, QFont, QFontMetrics, QPalette, QPainter, QResizeEvent
 from app.qt.QtWidgets import (
     QComboBox,
     QFrame,
@@ -254,21 +254,8 @@ class WhatRan(QWidget):
             "QWidget#preview\\.whatRan { background: %s; color: %s; }"
             % (chrome.panel, chrome.text)
         )
+        self._header.set_title_color(chrome.muted, chrome.panel)
         self._header.apply_chrome(chrome)
-        # Qt keeps the first background rule. The header's own rule is
-        # transparent, so a light application sheet shows through the title.
-        sheet = self._header.styleSheet()
-        sheet = sheet.replace(
-            "QWidget#preview\\.whatRan\\.title { background: transparent;",
-            "QWidget#preview\\.whatRan\\.title { background: %s;" % chrome.panel,
-            1,
-        )
-        sheet = sheet.replace(
-            "QLabel#preview\\.whatRan\\.title { color: %s; background: transparent;" % chrome.muted,
-            "QLabel#preview\\.whatRan\\.title { color: %s; background: %s;" % (chrome.muted, chrome.panel),
-            1,
-        )
-        self._header.setStyleSheet(sheet)
         self._header.setAttribute(Qt.WA_StyledBackground, True)
         polish_item_view(self._list, chrome)
         self._list.setStyleSheet(
@@ -433,6 +420,7 @@ class TryChrome(QWidget):
         self.run_behavior.setCheckable(True)
         self.run_behavior.setChecked(True)
         self.run_behavior.setAutoRaise(True)
+        self.run_behavior.setFixedHeight(24)
         self.run_behavior.setToolButtonStyle(getattr(getattr(Qt, "ToolButtonStyle", Qt), "ToolButtonTextOnly"))
         self.run_behavior.toggled.connect(self.run_toggled.emit)
         bar.addWidget(self.run_behavior)
@@ -485,6 +473,11 @@ class TryChrome(QWidget):
     def showEvent(self, event: object) -> None:  # noqa: N802
         super().showEvent(event)  # type: ignore[arg-type]
         self._share_what_ran()
+        self._align_form()
+
+    def resizeEvent(self, event: QResizeEvent) -> None:
+        super().resizeEvent(event)
+        self._align_form()
 
     def _share_what_ran(self) -> None:
         """What ran starts at about 40% of the window, and at least 360 px."""
@@ -508,7 +501,17 @@ class TryChrome(QWidget):
         form.setParent(self._form_pad)
         self._form_layout.addWidget(form, 0, Qt.AlignLeft | Qt.AlignTop)
         self._form_pad.setFixedSize(size.width() + _FORM_INSET * 2, size.height() + _FORM_INSET * 2)
+        self._align_form()
         self._keep_form_style()
+
+    def _align_form(self) -> None:
+        item = self._form_layout.itemAt(0)
+        form = item.widget() if item is not None else None
+        view = self._form_scroll.viewport()
+        if form is None or view is None or view.width() <= 0:
+            return
+        horizontal = Qt.AlignHCenter if form.width() < view.width() / 2 else Qt.AlignLeft
+        self._form_scroll.setAlignment(horizontal | Qt.AlignTop)
 
     def apply_chrome(self, chrome: FormChrome) -> None:
         self._chrome = chrome
@@ -516,12 +519,18 @@ class TryChrome(QWidget):
         _paint(self, chrome.window, chrome.text)
         _paint(self._toolbar, chrome.panel, chrome.text)
         chosen = chrome.selected or chrome.row_hover
-        self._toolbar.setStyleSheet(
-            "QWidget#preview\\.toolbar { background: %s; color: %s; border-bottom: 1px solid %s; }"
-            "QToolButton#preview\\.runBehavior { background: transparent; color: %s; border: none; padding: 2px 8px; }"
-            "QToolButton#preview\\.runBehavior:checked { background: %s; color: %s; }"
+        button = (
+            "QToolButton#preview\\.runBehavior { background: transparent; color: %s; border: 1px solid transparent;"
+            " border-radius: 4px; padding: 0 8px; font-size: 12px; min-height: 24px; }"
+            "QToolButton#preview\\.runBehavior:checked { background: %s; color: %s; border: 1px solid %s; }"
+            "QToolButton#preview\\.runBehavior:hover { background: %s; }"
             "QToolButton#preview\\.runBehavior:focus { border: %dpx solid %s; }"
-            % (chrome.panel, chrome.text, chrome.border, chrome.text, chosen, chrome.text, focus, chrome.accent)
+            % (chrome.text, chosen, chrome.text, chrome.border, chrome.row_hover, focus, chrome.accent)
+        )
+        self.run_behavior.setStyleSheet(button)
+        self._toolbar.setStyleSheet(
+            "QWidget#preview\\.toolbar { background: %s; color: %s; border-bottom: 1px solid %s; }%s"
+            % (chrome.panel, chrome.text, chrome.border, button)
         )
         self._column.setStyleSheet("")
         # Selectors stay on these widgets. An unscoped background would paint the form too.

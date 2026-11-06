@@ -51,6 +51,8 @@ class SectionHeader(QWidget):
         self._collapsible = collapsible
         self._expanded = True
         self._chrome: Optional[FormChrome] = None
+        self._title_color: Optional[str] = None
+        self._title_background: Optional[str] = None
         self._actions: List[Tuple[QToolButton, str]] = []
         self.setObjectName(object_name or "formBuilder.sectionHeader")
         self.setFixedHeight(SECTION_HEADER)
@@ -201,24 +203,32 @@ class SectionHeader(QWidget):
         margins = self._row.contentsMargins()
         self._row.setContentsMargins(left, margins.top(), margins.right(), margins.bottom())
 
+    def set_title_color(self, color: str, background: Optional[str] = None) -> None:
+        self._title_color = color
+        self._title_background = background
+        if self._chrome is not None:
+            self.apply_chrome(self._chrome)
+
     def apply_chrome(self, chrome: FormChrome) -> None:
         self._chrome = chrome
         title = self._label.objectName() or _TITLE_NAME
         title_sel = _escape(title)
         button_sel = _escape(self._button.objectName()) if self._button is not None else ""
         focus = chrome.focus_width if chrome.focus_width > 0 else 1
+        title_color = self._title_color or chrome.muted
+        title_bg = self._title_background or "transparent"
         if self._button is not None and button_sel:
             # The button's own sheet beats a parent rule that paints every QWidget.
             self._button.setStyleSheet(
-                "QToolButton#%s[fbSectionTitle=\"true\"] { color: %s; background: transparent; border: none;"
+                "QToolButton#%s[fbSectionTitle=\"true\"] { color: %s; background: %s; border: none;"
                 " padding: 0px; text-align: left; font-size: %dpx; font-weight: 700;"
                 " letter-spacing: %spx; }"
                 "QToolButton#%s[fbSectionTitle=\"true\"]:focus { border: %dpx solid %s; }"
-                % (button_sel, chrome.muted, TYPE_SECTION, LETTER_SECTION, button_sel, focus, chrome.accent)
+                % (button_sel, title_color, title_bg, TYPE_SECTION, LETTER_SECTION, button_sel, focus, chrome.accent)
             )
         self.setStyleSheet(
-            "QWidget#%s { background: transparent; border: none; }"
-            "QLabel#%s { color: %s; background: transparent; border: none; padding: 0px;"
+            "QWidget#%s { background: %s; border: none; }"
+            "QLabel#%s { color: %s; background: %s; border: none; padding: 0px;"
             " font-size: %dpx; font-weight: 700; letter-spacing: %spx; }"
             "QLabel#formBuilder\\.sectionCount { color: %s; background: transparent; border: none;"
             " font-size: %dpx; font-variant-numeric: tabular-nums; }"
@@ -229,8 +239,10 @@ class SectionHeader(QWidget):
             "%s { image: none; width: 0px; }"
             % (
                 _escape(self.objectName()),
+                title_bg,
                 title_sel,
-                chrome.muted,
+                title_color,
+                title_bg,
                 TYPE_SECTION,
                 LETTER_SECTION,
                 chrome.faint,

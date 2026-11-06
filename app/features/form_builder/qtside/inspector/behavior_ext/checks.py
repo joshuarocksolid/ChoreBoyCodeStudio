@@ -129,14 +129,14 @@ class _CheckRow(QWidget):
         self.setMinimumWidth(0)
         self.words = QLabel(self)
         self.words.setObjectName("formBuilder.checks.words.%d" % index)
+        self.words.setWordWrap(False)
         self.words.setMinimumWidth(0)
-        self.message = QLabel(self)
+        from app.features.form_builder.qtside.inspector.behavior_ext.value_button import ValueButton
+
+        self.message = ValueButton(self)
         self.message.setObjectName("formBuilder.checks.messageText.%d" % index)
-        self.message.setWordWrap(True)
-        self.message.setMinimumWidth(0)
-        message_policy = self.message.sizePolicy()
-        message_policy.setHeightForWidth(True)
-        self.message.setSizePolicy(message_policy)
+        self.message.setMinimumWidth(72)
+        self.message.clicked.connect(lambda _checked=False: self._edit())
         self.qt = QLabel("Qt", self)
         self.qt.setObjectName("formBuilder.checks.qt.%d" % index)
         host = QWidget(self)
@@ -156,14 +156,15 @@ class _CheckRow(QWidget):
     def show_check(self, words: str, message: str, native: bool, number: int, total: int) -> None:
         self.words.setText(words)
         self._full = message
+        shown = message if message else "On"
+        self.message.set_value(shown)
+        self.message.set_muted(not message)
         self.qt.setVisible(native)
-        self._elide()
-        sentence = "Check %d of %d, %s, message %s" % (number, total, words, message)
+        sentence = "Check %d of %d, %s, message %s" % (number, total, words, message or shown)
         self.setAccessibleName(sentence)
 
-    def resizeEvent(self, event: QEvent) -> None:  # noqa: N802
-        super().resizeEvent(event)  # type: ignore[arg-type]
-        self._elide()
+    def _edit(self) -> None:
+        self._body.edit_check(self.index)
 
     def event(self, event: QEvent) -> bool:  # noqa: N802
         if enum_value(event.type()) == _OVERRIDE and self._claim(event):
@@ -199,13 +200,6 @@ class _CheckRow(QWidget):
         if key in (_UP, _DOWN):
             return bool(mods & _ALT)
         return key == _DELETE or key in _ENTER
-
-    def _elide(self) -> None:
-        full = self._full
-        if self.message.text() != full:
-            self.message.setText(full)
-        if self.message.toolTip():
-            self.message.setToolTip("")
 
 
 def _run_order(checks: Tuple[Check, ...]) -> List[int]:
@@ -601,13 +595,12 @@ class ChecksBody(QWidget):
         total = len(order)
         width = _words_width(self) if total else 0
         chrome = self._services.chrome
-        muted = "color: %s; background: transparent; border: none;" % chrome.text
         for place, stored in enumerate(order):
             check = self._checks[stored]
             row = self._row_widgets[place]
             row.index = stored
             row.words.setFixedWidth(width)
-            _apply_sheet(row.message, muted)
+            row.message.apply_chrome(chrome)
             message = generated_message(
                 self._class_name(),
                 check,

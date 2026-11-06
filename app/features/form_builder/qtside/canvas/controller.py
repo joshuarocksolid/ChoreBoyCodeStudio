@@ -1266,6 +1266,7 @@ class CanvasController:
             static = True
         assert self._static is not None
         selection = self._session.selection.state
+        self._stage.set_name_chip_select(any(layer.name == "tab_order" for layer in self._layers))
         inputs = self._frame_inputs(view, selection)
         # A rule commit leaves the static layer and the structure alone. Feeds and
         # badges are the only marks that read the new formula text.

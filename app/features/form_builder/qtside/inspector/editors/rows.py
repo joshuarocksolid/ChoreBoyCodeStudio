@@ -50,7 +50,7 @@ _ROWS: Tuple[RowSpec, ...] = (
     ),
     RowSpec("toolTip", _CONTENT, "Tooltip", "Shown when the pointer rests on it.", Prop("toolTip")),
     RowSpec("echoMode", _INPUT, "Echo mode", "Show, hide or mask what the user types.", Prop("echoMode")),
-    RowSpec("maxLength", _INPUT, "Maximum length", "The most characters the user can type.", Prop("maxLength")),
+    RowSpec("maxLength", _INPUT, "Max length", "The most characters the user can type.", Prop("maxLength")),
     RowSpec("inputMask", _INPUT, "Input mask", "A pattern the typed text must follow.", Prop("inputMask")),
     RowSpec("readOnly", _INPUT, "Read only", "The user can see the value but not change it.", Prop("readOnly")),
     RowSpec("minimum", _INPUT, "Minimum", "The smallest value allowed.", Prop("minimum")),
