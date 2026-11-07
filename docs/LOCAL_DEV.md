@@ -92,7 +92,8 @@ npx pyright -p pyrightconfig.tests.json
 ```
 
 `pyrightconfig.json` adds FreeCAD `site-packages` to `extraPaths` so `PySide2`
-imports resolve. Shipped PySide2 `.pyi` stubs are incomplete for Shiboken
+imports resolve. The cloud conda prefix is listed before `/opt/freecad` and is
+ignored where that directory is absent. Shipped PySide2 `.pyi` stubs are incomplete for Shiboken
 subclasses; the `app` execution environment sets `reportArgumentType`,
 `reportAttributeAccessIssue`, `reportCallIssue`, `reportIncompatibleMethodOverride`,
 `reportReturnType`, and `reportAssignmentType` to `"none"` so real syntax/import
@@ -131,22 +132,17 @@ Qt6 `uic` and `rcc` on that image are `/usr/local/bin/cbcs-fb-uic` and `/usr/loc
 
 ## Form builder lanes on Cursor Cloud
 
-`.cursor/environment.json` runs `bash scripts/cloud_setup_screenshot_runtime.sh` on install. The same command is safe to run again. It leaves FreeCAD 1.1 at `/opt/freecad-1.1` (Python 3.11, PySide6 6.8.3) and a conda Python 3.9 at `~/opt/freecad` that also imports PySide6 6.8.3.
+`.cursor/environment.json` runs `bash scripts/cloud_setup_screenshot_runtime.sh` on install and `bash scripts/cloud_start_display.sh` on start. The install command is safe to run again. On Linux it defaults `CBCS_RUNTIME_PINS` to `scripts/cloud_runtime_pins.env` when the image did not export it, so a plain pod can run the same command. It leaves FreeCAD 1.1 at `/opt/freecad-1.1` (Python 3.11, PySide6 6.8.3) and a conda Python 3.9 at `~/opt/freecad` that also imports PySide6 6.8.3.
 
-A non-login shell loads the pinned paths from `/etc/cbcs-cloud.env`.
+The install writes `/etc/cbcs-cloud.env` and `/usr/local/bin/cbcs-fb-python`. Login shells export that file from `/etc/profile.d/cbcs-cloud.sh`. A non-login shell does not. `testing/run_form_builder_checks.py` reads the env file itself, and uses `/usr/local/bin/cbcs-fb-python` when the variables are unset. An explicit `CBCS_FB_PY311` or `CBCS_FB_PY39` still wins, including a path that does not exist. `--only` fails a gate whose interpreter is missing. The same missing interpreter stays a skip when the gate was not named.
+
+`docker.io` is installed with the rest of the image packages. Start launches `dockerd` when the binary is present and the daemon is not already up. If the daemon cannot run, `--only pg93` fails with `docker unavailable` instead of starting a container.
 
 ```bash
-set -a
-. /etc/cbcs-cloud.env
-set +a
-export QT_QPA_PLATFORM=offscreen
-export PYTHONPATH="${CBCS_ARTIFACTS_DIR}/vendor_py311${PYTHONPATH:+:$PYTHONPATH}"
-"$CBCS_FB_PY311" -m pytest tests/form_builder/engine -q
-"$CBCS_FB_PY311" -m pytest tests/unit/features/form_builder -q
 python3 testing/run_form_builder_checks.py --only syntax-py39 pyright dune unit-py311
 ```
 
-`CBCS_FB_PY311` is `/usr/local/bin/cbcs-fb-python`. `CBCS_FB_PY39` is `~/opt/freecad/bin/python`, the conda interpreter that imports PySide6. The gate reads those two variables. Put `vendor_py311` on `PYTHONPATH` so that interpreter can import pytest. The env file sets `npm_config_yes` so the gate's `npx pyright@1.1.410` install does not wait for a prompt.
+`CBCS_FB_PY311` is `/usr/local/bin/cbcs-fb-python`. `CBCS_FB_PY39` is `~/opt/freecad/bin/python`, the conda interpreter that imports PySide6. The env file sets `npm_config_yes` so the gate's `npx pyright@1.1.410` install does not wait for a prompt. Pyright's test config lists the cloud conda site-packages and `~/cbcs_artifacts` vendor trees in front of the image paths. Those directories are absent on a Mac, so the Mac run still resolves Qt from the FreeCAD.app interpreter.
 
 ## Overrides
 

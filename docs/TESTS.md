@@ -134,7 +134,7 @@ python3 testing/run_form_builder_checks.py --json /tmp/form-builder-checks.json
 
 Both pytest lanes set `QT_QPA_PLATFORM=offscreen` and `CBCS_DISABLE_BACKGROUND_RUNTIME=1`. Pytest comes from the matching `vendor_py311` or `vendor_py39` tree, the same injection `run_tests.py` uses. `--import-mode=importlib` comes from `pyproject.toml`. When `vendor_py311` is absent, the Python 3.11 lane loads pytest from another tree that has it and appends that tree after the interpreter's site-packages. The pass row names that tree.
 
-`syntax-py39` and `pyright` report `skipped: no package` until `app/features/form_builder/` contains Python files. A missing interpreter reports `skipped: runtime not found at ...`. Override the interpreters with `CBCS_FORM_BUILDER_PY311` and `CBCS_FORM_BUILDER_PY39`. When the AppRun is missing and the package exists, `syntax-py39` uses `ast.parse(..., feature_version=(3, 9))` on the interpreter that launched the runner.
+`syntax-py39` and `pyright` report `skipped: no package` until `app/features/form_builder/` contains Python files. A missing interpreter reports `skipped: runtime not found at ...` unless that gate was named with `--only`, in which case the gate fails. Override the interpreters with `CBCS_FORM_BUILDER_PY311` and `CBCS_FORM_BUILDER_PY39` (the cloud short names `CBCS_FB_PY311` and `CBCS_FB_PY39` match). On Linux the runner also reads `/etc/cbcs-cloud.env` and `/usr/local/bin/cbcs-fb-python` when those variables are unset.
 
 `pyrightconfig.tests.json` is an allowlist. Add `tests/form_builder` to its `include` list when the suite grows past the smoke test. The runner still passes that path on the pyright command line.
 
