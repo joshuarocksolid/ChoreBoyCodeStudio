@@ -139,6 +139,24 @@ cloud_install_docker() {
   cloud_as_root env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends docker.io
 }
 
+cloud_install_pgtest() {
+  # The pg93 gate imports psycopg and pg8000 from vendor_pgtest. FreeCAD 1.1.4
+  # does not ship them. Versions match the FreeCAD 1.1 VM noted in the form-builder notes.
+  local target="${CBCS_ARTIFACTS_DIR:-$(cloud_home)/cbcs_artifacts}/vendor_pgtest"
+  if [[ -d "${target}/psycopg" && -d "${target}/pg8000" ]]; then
+    cloud_log "vendor_pgtest already present at ${target}"
+    return 0
+  fi
+  local python="/usr/local/bin/cbcs-fb-python"
+  if [[ ! -x "$python" ]]; then
+    cloud_log "no cbcs-fb-python; vendor_pgtest not installed"
+    return 0
+  fi
+  mkdir -p "$target"
+  cloud_log "installing psycopg and pg8000 into ${target}"
+  "$python" -m pip install --target "$target" 'psycopg[binary]==3.3.4' 'pg8000==1.31.5'
+}
+
 cloud_install_node() {
   # nvm can satisfy `command -v node` while /usr/bin and /usr/local/bin stay empty.
   # The form-builder gate runs with a stripped PATH, so the binaries have to live here.

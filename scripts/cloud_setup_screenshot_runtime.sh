@@ -56,6 +56,7 @@ ensure_vendor() {
 
 ensure_vendor py39 tree_sitter jedi setup_vendor_py39.sh
 ensure_vendor py311 tree_sitter jedi setup_vendor_py311.sh
+cloud_install_pgtest
 
 # run_tests.py looks beside the repo when CBCS_ARTIFACTS_DIR is unset.
 conventional="$(dirname "$ROOT")/ChoreBoyCodeStudio_artifacts"
