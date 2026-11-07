@@ -282,15 +282,16 @@ def _select_name(surface: object, name: str) -> None:
     surface.workbench.inspector.flush()  # type: ignore[attr-defined]
 
 
-def _bottom_panel(window: QWidget, open_panel: bool) -> None:
-    """Full-window shots keep the Python Console collapsed unless a shot asks for it."""
+def _bottom_panel(window: QWidget, _open_panel: bool) -> None:
+    """Full-window shots keep the Python Console collapsed.
+
+    setSizes that opens a pane after a zero height segfaults Qt offscreen, so this
+    only collapses. Shot 62's open-console frame stays on the previous pixels.
+    """
     splitter = getattr(window, "_vertical_splitter", None)
     if splitter is None:
         return
     height = max(int(window.height()), 1)
-    if open_panel:
-        splitter.setSizes([int(height * 0.62), max(1, int(height * 0.38))])
-        return
     splitter.setSizes([height, 0])
 
 
@@ -903,13 +904,10 @@ def _problems(tour: _Tour, window: MainWindow, surface: object) -> None:
         return
     tabs = getattr(window, "_problems_tab_widget", None)
     panel = getattr(window, "_problems_panel", None)
-    splitter = getattr(window, "_vertical_splitter", None)
     if tabs is not None and panel is not None:
         tabs.setCurrentWidget(panel)
         if panel is not None:
             panel.setMinimumHeight(320)
-        if splitter is not None:
-            splitter.setSizes([640, 360])
         _pump(tour.qapp)
         tour.paint(window, 53, "problems", "form", lambda: panel if panel is not None else window)
     del surface
@@ -958,9 +956,6 @@ def _big(tour: _Tour, tmp: Path) -> None:
             ensure(sentence)
             _pump(tour.qapp)
         tour.paint(window, 62, "window", "short", lambda: window)
-        _bottom_panel(window, True)
-        _pump(tour.qapp)
-        tour.paint(window, 62, "window", "short-console", lambda: window)
     finally:
         _shutdown(window, tour.qapp, guard)
 

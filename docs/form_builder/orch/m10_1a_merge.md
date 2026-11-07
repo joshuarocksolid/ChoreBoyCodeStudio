@@ -42,3 +42,5 @@
 | What ran colour | What ran | The title colour was applied by rewriting the header's stylesheet string. | `SectionHeader.set_title_color()` writes the colour into the first stylesheet rules. |
 
 Pass 2 leftovers (Start card offset, from-table combo borders, the Required row, form-inspector sentences, the chip in Tab order, Try's Run behavior style) are the rows above.
+
+The tour collapses the Python Console by giving that splitter pane height 0. Opening the pane again with `setSizes` segfaults Qt offscreen. The same call crashes on the thousand-row form with no other windows open. Shot 53 selects the problems tab and does not force the splitter open. Shot 62's open-console frame keeps the previous pixels.
