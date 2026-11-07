@@ -92,8 +92,7 @@ npx pyright -p pyrightconfig.tests.json
 ```
 
 `pyrightconfig.json` adds FreeCAD `site-packages` to `extraPaths` so `PySide2`
-imports resolve. The cloud conda prefix is listed before `/opt/freecad` and is
-ignored where that directory is absent. Shipped PySide2 `.pyi` stubs are incomplete for Shiboken
+imports resolve. Shipped PySide2 `.pyi` stubs are incomplete for Shiboken
 subclasses; the `app` execution environment sets `reportArgumentType`,
 `reportAttributeAccessIssue`, `reportCallIssue`, `reportIncompatibleMethodOverride`,
 `reportReturnType`, and `reportAssignmentType` to `"none"` so real syntax/import
@@ -142,7 +141,7 @@ The install writes `/etc/cbcs-cloud.env` and `/usr/local/bin/cbcs-fb-python`. Lo
 python3 testing/run_form_builder_checks.py --only syntax-py39 pyright dune unit-py311
 ```
 
-`CBCS_FB_PY311` is `/usr/local/bin/cbcs-fb-python`. `CBCS_FB_PY39` is `~/opt/freecad/bin/python`, the conda interpreter that imports PySide6. The env file sets `npm_config_yes` so the gate's `npx pyright@1.1.410` install does not wait for a prompt. Pyright's test config lists the cloud conda site-packages and `~/cbcs_artifacts` vendor trees in front of the image paths. Those directories are absent on a Mac, so the Mac run still resolves Qt from the FreeCAD.app interpreter.
+`CBCS_FB_PY311` is `/usr/local/bin/cbcs-fb-python`. `CBCS_FB_PY39` is `~/opt/freecad/bin/python`, the conda interpreter that imports PySide6. The env file sets `npm_config_yes` so the gate's `npx pyright@1.1.410` install does not wait for a prompt. Pyright's test config lists the `cbcs_artifacts` vendor trees so pytest resolves, and it does not list FreeCAD site-packages. `app.qt` is typed as PySide2, and a second site-packages tree that also contains PySide6 makes those two bindings different types (`QtCore.QDate` is not `PySide6.QtCore.QDate`). The gate passes `--pythonpath`, so Qt comes from that one interpreter, which is FreeCAD.app on a Mac and `/usr/local/bin/cbcs-fb-python` on the cloud image. `useLibraryCodeForTypes` is false so pyright uses the `.pyi` files instead of the untyped extension modules. The cloud install adds an empty `py.typed` beside PySide2 and PySide6 when the wheels shipped stubs without that marker.
 
 ## Overrides
 

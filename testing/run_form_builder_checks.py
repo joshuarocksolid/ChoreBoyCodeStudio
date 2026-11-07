@@ -850,6 +850,11 @@ def gate_pyright() -> GateResult:
     logs: list[str] = []
     env = os.environ.copy()
     env.setdefault("npm_config_yes", "true")
+    # A non-login shell can have PATH=/usr/bin:/bin. npx's shebang needs node.
+    local_bin = "/usr/local/bin"
+    parts = [part for part in env.get("PATH", "").split(os.pathsep) if part]
+    if local_bin not in parts:
+        env["PATH"] = os.pathsep.join([local_bin, *parts])
     for command in commands:
         result = _run_command(command, env=env, timeout=COMMAND_TIMEOUT_SECONDS)
         label = " ".join(command)

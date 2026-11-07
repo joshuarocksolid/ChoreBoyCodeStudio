@@ -377,6 +377,43 @@ cloud_publish_freecad_11_tools() {
   cloud_write_env_files /usr/local/bin/cbcs-fb-python "$uic" "$rcc"
 }
 
+cloud_mark_pyside_stubs() {
+  # PySide ships .pyi stubs and no py.typed marker. Pyright then ignores the
+  # stubs once --pythonpath can import the package, and types from the untyped
+  # extension modules instead. An empty marker makes it use the stubs.
+  local pkg
+  for pkg in "$@"; do
+    if [[ ! -d "$pkg" || -e "$pkg/py.typed" ]]; then
+      continue
+    fi
+    if [[ -w "$pkg" ]]; then
+      touch "$pkg/py.typed"
+    else
+      cloud_as_root touch "$pkg/py.typed"
+    fi
+    cloud_log "marked ${pkg}/py.typed"
+  done
+}
+
+cloud_mark_known_pyside_stubs() {
+  local home prefix
+  home="$(cloud_home)"
+  prefix="${FREECAD_DEV_PREFIX:-${home}/opt/freecad}"
+  local roots=()
+  local root
+  for root in \
+    "${prefix}/lib/python3.9/site-packages" \
+    "${FREECAD_10_DEST:-}/usr/lib/python3.11/site-packages" \
+    "${FREECAD_11_DEST:-}/usr/lib/python3.11/site-packages"
+  do
+    [[ -n "$root" && -d "$root" ]] || continue
+    roots+=("$root/PySide2" "$root/PySide6" "$root/shiboken2" "$root/shiboken6")
+  done
+  if ((${#roots[@]})); then
+    cloud_mark_pyside_stubs "${roots[@]}"
+  fi
+}
+
 cloud_verify_runtimes() {
   local home prefix
   home="$(cloud_home)"
@@ -394,6 +431,7 @@ cloud_verify_runtimes() {
   fi
   # FreeCAD treats a long -c string as a filesystem path and fails with
   # "File name too long". Keep each probe to one short statement.
+  cloud_mark_known_pyside_stubs
   cloud_log "FreeCAD 1.0 AppRun"
   "${FREECAD_10_DEST}/AppRun" -c 'import sys,PySide2,FreeCAD; print(sys.version.split()[0], PySide2.__version__, FreeCAD.Version()[:3])'
   cloud_log "FreeCAD 1.1 AppRun"

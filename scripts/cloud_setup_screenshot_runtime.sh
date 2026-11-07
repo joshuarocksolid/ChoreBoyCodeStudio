@@ -36,6 +36,7 @@ if [[ ! -d /home/default ]]; then
   cloud_log "created /home/default for the product state root"
 fi
 cloud_install_apt_packages
+cloud_install_node
 cloud_install_appimages
 cloud_install_conda_freecad
 
