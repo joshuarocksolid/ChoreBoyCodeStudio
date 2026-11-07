@@ -10,6 +10,7 @@ import argparse
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -73,8 +74,11 @@ class CommandResult:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
+    global _EXPLICIT_ONLY
     parser = _parser()
     args = parser.parse_args(argv)
+    _EXPLICIT_ONLY = frozenset(args.only or ())
+    _apply_cloud_env()
     unknown = [name for name in (args.only or []) if name not in _GATE_RUNNERS]
     if unknown:
         known = ", ".join(_GATE_RUNNERS)
@@ -219,6 +223,29 @@ _RUNTIME_ALIASES = {
     "CBCS_FORM_BUILDER_PY311": ("CBCS_FB_PY311",),
     "CBCS_FORM_BUILDER_PY39": ("CBCS_FB_PY39",),
 }
+_CLOUD_ENV_PATH = Path("/etc/cbcs-cloud.env")
+# Gates named with --only. A missing interpreter fails these instead of skipping.
+_EXPLICIT_ONLY: frozenset[str] = frozenset()
+_CLOUD_PY311 = Path("/usr/local/bin/cbcs-fb-python")
+
+
+def _read_cloud_env(path: Path = _CLOUD_ENV_PATH) -> dict[str, str]:
+    if not path.is_file():
+        return {}
+    values: dict[str, str] = {}
+    for raw in path.read_text(encoding="utf-8").splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        values[key.strip()] = value.strip().strip("'\"")
+    return values
+
+
+def _apply_cloud_env() -> None:
+    for key, value in _read_cloud_env().items():
+        if value:
+            os.environ.setdefault(key, value)
 
 
 def _runtime(env_name: str, default: str) -> Path:
@@ -227,7 +254,16 @@ def _runtime(env_name: str, default: str) -> Path:
         raw = os.environ.get(name, "").strip()
         if raw:
             return Path(raw).expanduser()
+    if env_name == "CBCS_FORM_BUILDER_PY311" and _is_runtime(_CLOUD_PY311):
+        return _CLOUD_PY311
     return Path(default).expanduser()
+
+
+def _missing_runtime(name: str, seconds: float, path: object) -> GateResult:
+    detail = "runtime not found at %s" % path
+    if name in _EXPLICIT_ONLY:
+        return _fail(name, seconds, detail)
+    return _skip(name, "skipped: %s" % detail, seconds)
 
 
 def _is_runtime(path: Path) -> bool:
@@ -266,6 +302,7 @@ def _vendor_candidates(dirname: str) -> list[Path]:
     artifacts_name = "ChoreBoyCodeStudio_artifacts"
     candidates.append(REPO_ROOT.parent / artifacts_name / dirname)
     candidates.append(REPO_ROOT.parent.parent / artifacts_name / dirname)
+    candidates.append(Path.home() / "cbcs_artifacts" / dirname)
     return candidates
 
 
@@ -318,6 +355,9 @@ def _resolved_qt_tool(name: str) -> Path | None:
     if raw:
         path = Path(raw).expanduser()
         return path if path.is_file() else None
+    published = Path("/usr/local/bin") / ("cbcs-fb-" + name)
+    if published.is_file():
+        return published
     return _qt_tool(name)
 
 
@@ -330,7 +370,7 @@ def _child_env(extra: dict[str, str] | None = None) -> dict[str, str]:
     env["CBCS_SYNC_PROJECT_OPEN"] = "1"
     env["CBCS_QT_API"] = "pyside6"
     for tool in ("uic", "rcc"):
-        found = _qt_tool(tool)
+        found = _resolved_qt_tool(tool)
         if found is not None:
             env.setdefault("CBCS_FB_" + tool.upper(), str(found))
     env["CBCS_FB_REQUIRE_ORACLE"] = "1"
@@ -374,6 +414,13 @@ def _run_command(
             stdout=stdout,
             stderr=stderr,
             timed_out=True,
+        )
+    except FileNotFoundError as exc:
+        return CommandResult(
+            code=127,
+            seconds=time.monotonic() - started,
+            stdout="",
+            stderr="command not found: %s" % (exc.filename or command[0]),
         )
     return CommandResult(
         code=completed.returncode,
@@ -576,7 +623,7 @@ def _judge_pytest(name: str, result: CommandResult, *, require_pass: bool) -> Ga
         detail = result.stderr.strip() or "runtime not found"
         if detail.startswith("runtime missing:"):
             path = detail.split(":", 1)[1].strip()
-            return _skip(name, "skipped: runtime not found at %s" % path, result.seconds)
+            return _missing_runtime(name, result.seconds, path)
         return _fail(name, result.seconds, detail, _command_log(result))
     if result.timed_out:
         return _fail(
@@ -643,6 +690,8 @@ def _py39_skip_reason(runtime: Path) -> str | None:
 
 def gate_unit_py39() -> GateResult:
     runtime = _runtime("CBCS_FORM_BUILDER_PY39", PY39_DEFAULT)
+    if not _is_runtime(runtime):
+        return _missing_runtime("unit-py39-pyside6", 0.0, runtime)
     reason = _py39_skip_reason(runtime)
     if reason is not None:
         return _skip("unit-py39-pyside6", reason)
@@ -654,6 +703,8 @@ def gate_syntax_py39() -> GateResult:
     if not _package_ready():
         return _skip(name, "skipped: no package")
     apprun = _runtime("CBCS_FORM_BUILDER_PY39", PY39_DEFAULT)
+    if not _is_runtime(apprun):
+        return _missing_runtime(name, 0.0, apprun)
     reason = _py39_skip_reason(apprun)
     if reason is not None:
         return _skip(name, reason)
@@ -766,15 +817,26 @@ def _syntax_program(root: Path, corpus: Path) -> str:
     return "\n".join(lines) + "\n"
 
 
+def _resolve_npx() -> str:
+    found = shutil.which("npx")
+    if found:
+        return found
+    for candidate in (Path("/usr/local/bin/npx"), Path("/usr/bin/npx")):
+        if os.access(candidate, os.X_OK):
+            return str(candidate)
+    return "npx"
+
+
 def gate_pyright() -> GateResult:
     name = "pyright"
     if not _package_ready():
         return _skip(name, "skipped: no package")
     python = str(_runtime("CBCS_FORM_BUILDER_PY311", PY311_DEFAULT))
+    npx = _resolve_npx()
     commands = (
-        ["npx", "pyright", "--pythonpath", python, "app/features/form_builder"],
+        [npx, "pyright", "--pythonpath", python, "app/features/form_builder"],
         [
-            "npx",
+            npx,
             "pyright@1.1.410",
             "--pythonpath",
             python,
@@ -786,8 +848,10 @@ def gate_pyright() -> GateResult:
     started = time.monotonic()
     details: list[str] = []
     logs: list[str] = []
+    env = os.environ.copy()
+    env.setdefault("npm_config_yes", "true")
     for command in commands:
-        result = _run_command(command, timeout=COMMAND_TIMEOUT_SECONDS)
+        result = _run_command(command, env=env, timeout=COMMAND_TIMEOUT_SECONDS)
         label = " ".join(command)
         if result.timed_out:
             return _fail(name, time.monotonic() - started, "timed out: %s" % label, _command_log(result))
@@ -865,6 +929,28 @@ def gate_perf() -> GateResult:
     return GateResult(judged.name, judged.status, judged.seconds, detail, judged.log)
 
 
+def _resolve_docker() -> str | None:
+    found = shutil.which("docker")
+    if found:
+        return found
+    for candidate in ("/usr/bin/docker", "/usr/local/bin/docker"):
+        if os.access(candidate, os.X_OK):
+            return candidate
+    return None
+
+
+def _docker_unavailable() -> str | None:
+    docker = _resolve_docker()
+    if docker is None:
+        return "docker unavailable: docker is not installed"
+    probe = _run_command([docker, "info"], timeout=30)
+    if probe.code != 0:
+        text = (probe.stderr or probe.stdout or "docker info failed").strip()
+        line = text.splitlines()[-1] if text else "docker info failed"
+        return "docker unavailable: %s" % line[:300]
+    return None
+
+
 def _pgtest_vendor() -> Path:
     for candidate in _vendor_candidates("vendor_pgtest"):
         if candidate.is_dir():
@@ -872,7 +958,7 @@ def _pgtest_vendor() -> Path:
     return REPO_ROOT.parent / "ChoreBoyCodeStudio_artifacts" / "vendor_pgtest"
 
 
-def _wait_pg_isready(container: str) -> str | None:
+def _wait_pg_isready(container: str, docker: str) -> str | None:
     """Wait until the entrypoint has created the database.
 
     ``pg_isready`` succeeds on the temporary server initdb starts, before
@@ -883,7 +969,7 @@ def _wait_pg_isready(container: str) -> str | None:
     last = ""
     while time.monotonic() < deadline:
         result = _run_command(
-            ["docker", "exec", container, "psql", "-U", "cbcs", "-d", "cbcs", "-c", "SELECT 1"],
+            [docker, "exec", container, "psql", "-U", "cbcs", "-d", "cbcs", "-c", "SELECT 1"],
             timeout=20,
         )
         if result.code == 0:
@@ -893,8 +979,8 @@ def _wait_pg_isready(container: str) -> str | None:
     return "pg_isready did not succeed (%s)" % (last or "no output")
 
 
-def _published_port(container: str) -> str | None:
-    result = _run_command(["docker", "port", container, "5432"], timeout=20)
+def _published_port(container: str, docker: str) -> str | None:
+    result = _run_command([docker, "port", container, "5432"], timeout=20)
     if result.code != 0:
         return None
     text = result.stdout.strip().splitlines()
@@ -909,13 +995,17 @@ def gate_pg93() -> GateResult:
     name = "pg93"
     runtime = _runtime("CBCS_FORM_BUILDER_PY311", PY311_DEFAULT)
     if not _is_runtime(runtime):
-        return _skip(name, "skipped: runtime not found at %s" % runtime)
+        return _missing_runtime(name, 0.0, runtime)
+    unavailable = _docker_unavailable()
+    if unavailable is not None:
+        return _fail(name, 0.0, unavailable)
+    docker = _resolve_docker() or "docker"
     started = time.monotonic()
     container = ""
     try:
         launched = _run_command(
             [
-                "docker",
+                docker,
                 "run",
                 "--rm",
                 "-d",
@@ -946,10 +1036,10 @@ def gate_pg93() -> GateResult:
         container = launched.stdout.strip().splitlines()[-1].strip() if launched.stdout.strip() else ""
         if not container:
             return _fail(name, launched.seconds, "docker run returned no container id", _command_log(launched))
-        ready = _wait_pg_isready(container)
+        ready = _wait_pg_isready(container, docker)
         if ready is not None:
             return _fail(name, time.monotonic() - started, ready)
-        port = _published_port(container)
+        port = _published_port(container, docker)
         if port is None:
             return _fail(name, time.monotonic() - started, "docker port did not publish 5432")
         dsn = "host=127.0.0.1 port=%s user=cbcs password=cbcs-test dbname=cbcs" % port
@@ -963,14 +1053,14 @@ def gate_pg93() -> GateResult:
         return _judge_pytest(name, result, require_pass=True)
     finally:
         if container:
-            _run_command(["docker", "rm", "-fv", container], timeout=60)
+            _run_command([docker, "rm", "-fv", container], timeout=60)
 
 
 def gate_speed() -> GateResult:
     name = "speed"
     runtime = _runtime("CBCS_FORM_BUILDER_PY311", PY311_DEFAULT)
     if not _is_runtime(runtime):
-        return _skip(name, "skipped: runtime not found at %s" % runtime)
+        return _missing_runtime(name, 0.0, runtime)
     script = REPO_ROOT / "tools" / "form_builder_speed.py"
     result = _run_command(
         [str(runtime), str(script), "--profile", "mac"],
