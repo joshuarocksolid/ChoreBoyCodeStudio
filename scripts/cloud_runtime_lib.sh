@@ -140,16 +140,23 @@ cloud_install_docker() {
 }
 
 cloud_install_pgtest() {
-  # The pg93 gate imports psycopg and pg8000 from vendor_pgtest. FreeCAD 1.1.4
-  # does not ship them. Versions match the FreeCAD 1.1 VM noted in the form-builder notes.
+  # FreeCAD 1.1.4 does not ship the drivers. Schema helpers are a fresh
+  # interpreter, so the packages have to sit on its site-packages. The gate
+  # also adds vendor_pgtest to sys.path for the parent pytest process.
+  local python="/usr/local/bin/cbcs-fb-python"
+  if [[ ! -x "$python" ]]; then
+    cloud_log "no cbcs-fb-python; pg93 drivers not installed"
+    return 0
+  fi
+  if ! "$python" -c 'import psycopg, pg8000' >/dev/null 2>&1; then
+    cloud_log "installing psycopg 3.3.4 and pg8000 1.31.5 into the FreeCAD 1.1 prefix"
+    "$python" -m pip install 'psycopg[binary]==3.3.4' 'pg8000==1.31.5'
+  else
+    cloud_log "FreeCAD 1.1 already imports psycopg and pg8000"
+  fi
   local target="${CBCS_ARTIFACTS_DIR:-$(cloud_home)/cbcs_artifacts}/vendor_pgtest"
   if [[ -d "${target}/psycopg" && -d "${target}/pg8000" ]]; then
     cloud_log "vendor_pgtest already present at ${target}"
-    return 0
-  fi
-  local python="/usr/local/bin/cbcs-fb-python"
-  if [[ ! -x "$python" ]]; then
-    cloud_log "no cbcs-fb-python; vendor_pgtest not installed"
     return 0
   fi
   mkdir -p "$target"

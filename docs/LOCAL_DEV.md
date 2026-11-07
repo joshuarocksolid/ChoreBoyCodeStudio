@@ -135,7 +135,7 @@ Qt6 `uic` and `rcc` on that image are `/usr/local/bin/cbcs-fb-uic` and `/usr/loc
 
 The install writes `/etc/cbcs-cloud.env` and `/usr/local/bin/cbcs-fb-python`. Login shells export that file from `/etc/profile.d/cbcs-cloud.sh`. A non-login shell does not. `testing/run_form_builder_checks.py` reads the env file itself, and uses `/usr/local/bin/cbcs-fb-python` when the variables are unset. An explicit `CBCS_FB_PY311` or `CBCS_FB_PY39` still wins, including a path that does not exist. `--only` fails a gate whose interpreter is missing. The same missing interpreter stays a skip when the gate was not named.
 
-`docker.io` is installed with the rest of the image packages. Start launches `dockerd` when the binary is present and the daemon is not already up. If the daemon cannot run, `--only pg93` fails with `docker unavailable` instead of starting a container. The install also puts `psycopg` 3.3.4 and `pg8000` 1.31.5 in `~/cbcs_artifacts/vendor_pgtest`, which is the tree the pg93 gate adds to `sys.path`. FreeCAD 1.1.4 does not ship those drivers.
+`docker.io` is installed with the rest of the image packages. Start launches `dockerd` when the binary is present and the daemon is not already up. If the daemon cannot run, `--only pg93` fails with `docker unavailable` instead of starting a container. The install also puts `psycopg` 3.3.4 and `pg8000` 1.31.5 on the FreeCAD 1.1 prefix and in `~/cbcs_artifacts/vendor_pgtest`. FreeCAD 1.1.4 does not ship those drivers, and the schema helper is a fresh interpreter that only sees the prefix.
 
 ```bash
 python3 testing/run_form_builder_checks.py --only syntax-py39 pyright dune unit-py311
