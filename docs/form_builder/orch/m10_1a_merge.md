@@ -44,3 +44,29 @@
 Pass 2 leftovers (Start card offset, from-table combo borders, the Required row, form-inspector sentences, the chip in Tab order, Try's Run behavior style) are the rows above.
 
 The tour collapses the Python Console by giving that splitter pane height 0. Opening the pane again with `setSizes` segfaults Qt offscreen. The same call crashes on the thousand-row form with no other windows open. Shot 53 selects the problems tab and does not force the splitter open. Shot 62's open-console frame keeps the previous pixels.
+
+## K19 crash
+
+`unit-py311` died with `SIGSEGV` in `tests/form_builder/qtside/test_m5_4_k19.py` at `_select(kb, "noteLabel")` after the Preview "Got it" click. The same step in `test_m5_keyboard_scripts.py` died the same way. The Python frame is `Kb.pump` calling `processEvents`. The native frame, from `python-2026-11-06-202751.ips` and the matching reports that evening, is `QSplitter` resize, then `QWidget::setGeometry`, then `QObjectWrapper::eventFilter`, then `Shiboken::Errors::storePythonOverrideErrorOrPrint`.
+
+The filter is `_ResizeFilter` in `app/shell/toast.py`. A debug wrap of every Python `eventFilter` logged this, twice, on the run that used to segfault:
+
+`RuntimeError: Internal C++ object (Toast) already deleted` at `toast.isHidden()`.
+
+The filter was a child of the anchor, so `Toast.dismiss` (`hide`, then `deleteLater`) left it installed. The next resize of that anchor called the deleted toast. Shiboken crashed while reporting the error. `app/shell/toast.py` arrived with the merge. `6fc71f61` does not have the file.
+
+A direct test, `tests/unit/shell/test_toast_resize.py`, flushes the deferred delete and resizes the anchor. On `0c2f8cce` that process exits 139. After the fix it passed 10 of 10.
+
+| Commit | One K19 test, separate processes | Both K19 files, one process |
+| --- | --- | --- |
+| `6a80ab3e` before the fix | 3 crashes in 30 | not run |
+| `8f4b881d` the fix | 0 crashes in 30 | 0 crashes in 10 |
+| `0c2f8cce` nits | 0 crashes in 30 | 10 crashes in 10, all exit 139 |
+| `8a5d6464` merge | 1 failure in 30, exit 134, empty log | 10 crashes in 10, all exit 139 at the same `_select` |
+| `6fc71f61` before M10 | 0 crashes in 30 | 0 crashes in 10 |
+
+The combined run is the one that shows the bug. It does not need extra CPU load. Load at the start of this table was 31. The single-test crash is uncommon. The earlier 3 in 30 on `6a80ab3e` is that sample.
+
+The fix makes the filter a child of the toast, and the filter returns without touching a toast whose wrapper is already dead. Opening the Python Console on an empty main window, including after a dismissed toast, did not crash on the old code or the new code. The tour still leaves that pane collapsed. The thousand-row shot was not re-run.
+
+`test_chips_do_not_cover_content_on_loadable_corpus_forms` walks 211 corpus forms and selects each widget. One run here took 30.0 s wall and 26.1 s of user time, at a load average near 19. The 86 s and 180 s times were that same walk while the machine was at load 74. The test is unchanged.
