@@ -26,11 +26,15 @@ COPY scripts/cloud_runtime_pins.env \
      scripts/setup_freecad_dev.sh \
      /opt/cbcs/
 
+# docker.io is the pg93 gate's daemon. cloud_install_apt.sh installs it too,
+# so a plain pod (no image rebuild) gets the same package.
 RUN bash /opt/cbcs/cloud_install_apt.sh \
     && echo 'ubuntu ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/ubuntu \
     && chmod 440 /etc/sudoers.d/ubuntu \
     && bash /opt/cbcs/cloud_install_node.sh \
     && bash /opt/cbcs/cloud_bake_runtimes.sh \
+    && apt-get update -y \
+    && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends docker.io \
     && rm -rf /var/lib/apt/lists/* /root/.cache
 
 USER ubuntu

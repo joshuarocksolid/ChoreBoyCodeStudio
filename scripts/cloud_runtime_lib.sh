@@ -112,6 +112,7 @@ cloud_install_apt_packages() {
     && command -v Xvfb >/dev/null 2>&1 \
     && dpkg -s libxcb-xinerama0 >/dev/null 2>&1; then
     cloud_log "apt packages already present"
+    cloud_install_docker
     return 0
   fi
   if ! command -v apt-get >/dev/null 2>&1; then
@@ -121,18 +122,39 @@ cloud_install_apt_packages() {
   cloud_log "installing apt packages"
   cloud_as_root apt-get update -y
   cloud_as_root env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "${needed[@]}"
+  cloud_install_docker
+}
+
+cloud_install_docker() {
+  if command -v docker >/dev/null 2>&1; then
+    cloud_log "docker already present ($(docker --version 2>/dev/null || true))"
+    return 0
+  fi
+  if ! command -v apt-get >/dev/null 2>&1; then
+    cloud_log "apt-get unavailable; docker not installed"
+    return 0
+  fi
+  cloud_log "installing docker.io"
+  cloud_as_root apt-get update -y
+  cloud_as_root env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends docker.io
 }
 
 cloud_install_node() {
-  if command -v node >/dev/null 2>&1 && command -v npm >/dev/null 2>&1; then
-    cloud_log "node already present ($(node -v))"
+  # nvm can satisfy `command -v node` while /usr/bin and /usr/local/bin stay empty.
+  # The form-builder gate runs with a stripped PATH, so the binaries have to live here.
+  if [[ -x /usr/local/bin/node && -x /usr/local/bin/npx ]]; then
+    cloud_log "node already present ($(/usr/local/bin/node -v)) at /usr/local/bin"
+    return 0
+  fi
+  if [[ -x /usr/bin/node && -x /usr/bin/npx ]]; then
+    cloud_log "node already present ($(/usr/bin/node -v)) at /usr/bin"
     return 0
   fi
   local cache="${CBCS_DOWNLOAD_CACHE:-$(cloud_home)/.cache/cbcs}"
   local archive="${cache}/${NODE_FILENAME}"
   cloud_download "$NODE_URL" "$archive" "$NODE_SHA256"
   cloud_as_root tar -xJf "$archive" -C /usr/local --strip-components=1
-  cloud_log "installed node $(node -v)"
+  cloud_log "installed node $(/usr/local/bin/node -v)"
 }
 
 cloud_install_miniconda() {
