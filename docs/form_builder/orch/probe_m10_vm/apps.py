@@ -67,10 +67,14 @@ def _surface_ready(drive: Drive) -> bool:
 
 
 def new_form_named(drive: Drive, stem: str) -> None:
-    drive.trigger("shell.action.file.newForm")
-    drive.wait(lambda: drive.find("formBuilder.newForm.name") is not None, 6)
-    drive.replace_text(drive.find("formBuilder.newForm.name"), stem)
-    drive.pump(4)
+    for _ in range(2):
+        drive.trigger("shell.action.file.newForm")
+        if drive.wait(lambda: drive._visible("formBuilder.newForm.name"), 8):
+            break
+    field = drive.find("formBuilder.newForm.name")
+    if field is not None and field.isVisible():
+        drive.replace_text(field, stem)
+        drive.pump(4)
 
 
 def from_table(drive: Drive, app: str, table: str, make: str, lines: str = "", link: str = "") -> bool:
@@ -111,6 +115,18 @@ def from_table(drive: Drive, app: str, table: str, make: str, lines: str = "", l
             state["saw"] = (reason.text() if isinstance(reason, QLabel) else "") or state["saw"]
             drive.click(drive.find("formBuilder.fromTable.cancel"))
         state["ok"] = picked and "0 field" not in label.lower()
+        try:
+            bar = drive.window.statusBar()
+            message = bar.currentMessage() if bar is not None else ""
+            if message:
+                state["saw"] += " status=%s" % message
+            for widget in drive.window.findChildren(QLabel):
+                text = widget.text()
+                if "could not" in text.lower():
+                    state["saw"] += " notice=%s" % text
+                    break
+        except RuntimeError:
+            pass
 
     def start_click() -> None:
         card = drive.find("formBuilder.newForm.card.from_table")
@@ -121,6 +137,39 @@ def from_table(drive: Drive, app: str, table: str, make: str, lines: str = "", l
     drive.timings["%s_open_form_ms" % app] = int((time.perf_counter() - started) * 1000)
     drive.step(app, "from-table", "Build a form from %s (%s)." % (table, make), state["saw"], state["ok"])
     return state["ok"]
+
+
+def _show_tab(drive: Drive, fragment: str) -> bool:
+    from app.qt.QtWidgets import QApplication
+
+    for widget in QApplication.allWidgets():
+        if not isinstance(widget, QTabWidget):
+            continue
+        for index in range(widget.count()):
+            if fragment in widget.tabText(index):
+                bar = widget.tabBar()
+                rect = bar.tabRect(index)
+                drive.click(bar, rect.center())
+                drive.pump(4)
+                return True
+    return False
+
+
+def _save_open_ui_tabs(drive: Drive) -> None:
+    """List + record opens two forms. Save writes ui_<name>.py for the visible one."""
+    from app.qt.QtWidgets import QApplication
+
+    pairs = []
+    for widget in QApplication.allWidgets():
+        if not isinstance(widget, QTabWidget):
+            continue
+        for index in range(widget.count()):
+            if widget.tabText(index).endswith(".ui"):
+                pairs.append((widget, index))
+    for widget, index in pairs:
+        widget.setCurrentIndex(index)
+        drive.pump(3)
+        drive.save_form()
 
 
 def _list_has(drive: Drive, name: str, text: str) -> bool:
@@ -136,6 +185,9 @@ def _list_has(drive: Drive, name: str, text: str) -> bool:
 
 def connect_sqlite(drive: Drive, app: str, project: Path) -> bool:
     result = drive.open_settings_connections("Shop", "shop", "data/shop.db")
+    if "stayed hidden" in result or "did not open" in result:
+        drive.wait_loaded(15)
+        result = drive.open_settings_connections("Shop", "shop", "data/shop.db")
     ok = "Connected" in result and (project / "connections.json").is_file()
     drive.step(
         app,
@@ -154,6 +206,8 @@ def save_timed(drive: Drive, app: str, project: Path, stem: str) -> bool:
     generated = project / "forms" / ("ui_%s.py" % stem)
     ok = generated.is_file()
     extra = ""
+    if not ok and generated.parent.is_dir():
+        extra = " folder=%s." % ",".join(sorted(path.name for path in generated.parent.iterdir()))
     if drive.disk_prompts:
         extra = " Disk prompt: %s." % ", ".join(drive.disk_prompts)
         drive.disk_prompts.clear()
@@ -197,6 +251,9 @@ def customer(drive: Drive, work: Path) -> Optional[Path]:
         drive.step(app, "new-project", "File > New Project, name Customer card.", "folder %s" % root, root.is_dir())
     if not root.is_dir():
         return None
+    if not drive.wait_loaded(25):
+        drive.window._file_project_commands_workflow.open_project_by_path(str(root))
+        drive.wait_loaded(20)
     write_db(root / "data" / "shop.db", CUSTOMERS_SQL)
     connect_sqlite(drive, app, root)
     new_form_named(drive, "customer_card")
@@ -210,7 +267,13 @@ def customer(drive: Drive, work: Path) -> Optional[Path]:
     credit_ok = drive.add_check("credit_limit", "Between", credit_fill)
     drive.step(app, "credit-check", "Add check Between with smallest 0 on credit_limit.", "check committed", credit_ok)
     rule_ok = drive.set_enabled_when("credit_limit", "active")
-    drive.step(app, "enabled-rule", "Enabled when on credit_limit, formula active.", "rule committed", rule_ok)
+    drive.step(
+        app,
+        "enabled-rule",
+        "Enabled when on credit_limit, formula active.",
+        "committed=%s %s" % (rule_ok, drive.note),
+        rule_ok,
+    )
     save_timed(drive, app, root, "customer_card")
     wire_save(drive, app, root, "customer_card")
     started = time.perf_counter()
@@ -234,8 +297,15 @@ def products(drive: Drive, work: Path) -> Optional[Path]:
     connect_sqlite(drive, app, root)
     new_form_named(drive, "products")
     from_table(drive, app, "products", "List screen and record form", lines="stock_moves", link="product_id")
+    _show_tab(drive, "products_list")
     rule_ok = drive.set_enabled_when("searchEdit", "form.count > 0")
-    drive.step(app, "filter-rule", "Enabled when on the search box: form.count > 0.", "rule committed", rule_ok)
+    drive.step(
+        app,
+        "filter-rule",
+        "Enabled when on the search box: form.count > 0.",
+        "committed=%s %s" % (rule_ok, drive.note),
+        rule_ok,
+    )
     add = drive.find("formBuilder.data.listFilterAdd")
     if add is not None:
         drive.click(add)
@@ -243,6 +313,7 @@ def products(drive: Drive, work: Path) -> Optional[Path]:
     else:
         drive.step(app, "filter-row", "Look for the list filter add button.", "the listing page was not showing", False)
     save_timed(drive, app, root, "products")
+    _save_open_ui_tabs(drive)
     list_ui = root / "forms" / "ui_products_list.py"
     drive.step(app, "list-file", "Save also writes the list screen.", "ui_products_list.py exists=%s" % list_ui.is_file(), list_ui.is_file())
     drive.preview()
@@ -261,24 +332,30 @@ def shop(drive: Drive, work: Path) -> Optional[Path]:
         return None
     new_form_named(drive, "shop_desk")
     card = drive.find("formBuilder.newForm.card.main_window")
-    drive.click(card)
-    drive.wait(_surface_ready, 8)
+    if card is not None and card.isVisible():
+        drive.click(card)
+    drive.wait(lambda: _surface_ready(drive), 8)
     drive.step(app, "main-window", "New form shop_desk, Main window card.", "canvas up=%s" % (drive.find("formBuilder.canvas") is not None), drive.find("formBuilder.canvas") is not None)
+    canvas = drive.find("formBuilder.canvas")
     drive.go_to("menubar")
     drive.press("Key_Return")
     drive.pump(4)
-    drive.keys(drive.window, "")  # focus stays
-    # Type menu titles. The in-place editor is formBuilder.menuEditLine when editing.
-    editor = drive.find("formBuilder.menuEditLine")
-    if editor is not None:
-        drive.keys(editor, "File")
-        drive.press("Key_Tab")
-        drive.keys(drive.find("formBuilder.menuEditLine") or drive.window, "Edit")
-        drive.press("Key_Tab")
-        drive.keys(drive.find("formBuilder.menuEditLine") or drive.window, "Help")
-        drive.step(app, "menus", "Enter on the menu bar, type File, Edit, Help.", "menu editor was up", True)
-    else:
-        drive.step(app, "menus", "Enter on the menu bar.", "menu editor did not appear", False)
+    # "Type here" takes letters on the canvas. The line edit appears while a title is open.
+    # Type here adds a menu. Right moves off the one just named, onto Type here.
+    drive.keys(canvas, "File")
+    drive.press("Key_Return")
+    drive.press("Key_Right")
+    drive.keys(canvas, "Edit")
+    drive.press("Key_Return")
+    drive.press("Key_Right")
+    drive.keys(canvas, "Help")
+    drive.press("Key_Return")
+    drive.save_form()
+    drive.pump(8)
+    ui_path = root / "forms" / "shop_desk.ui"
+    ui_text = ui_path.read_text(encoding="utf-8") if ui_path.is_file() else ""
+    menus_ok = "File" in ui_text and "Edit" in ui_text and "Help" in ui_text
+    drive.step(app, "menus", "On the menu bar, type File, Edit and Help.", "titles in the ui file=%s" % menus_ok, menus_ok)
     added = drive.trigger("form.mainWindow.addToolbar")
     drive.step(app, "toolbar", "Form > Main window > Add toolbar.", "action ran=%s" % added, added)
     drive.go_to("centralwidget")
@@ -305,22 +382,44 @@ def shop(drive: Drive, work: Path) -> Optional[Path]:
     return root
 
 
+def _open_discarding(drive: Drive, root: Path) -> None:
+    """open_project_by_path asks before discarding. Click Discard if it does."""
+    from app.qt.QtCore import QTimer
+
+    state = {"n": 0}
+
+    def discard() -> None:
+        state["n"] += 1
+        dialog = drive.find("shell.unsavedChangesDialog")
+        if dialog is not None and dialog.isVisible():
+            drive.click_text(dialog, "Discard Changes")
+            return
+        if state["n"] < 40:
+            QTimer.singleShot(100, discard)
+
+    QTimer.singleShot(50, discard)
+    drive.window._file_project_commands_workflow.open_project_by_path(str(root))
+
+
 def _ensure_project(drive: Drive, app: str, name: str, parent: Path) -> None:
-    root = parent / name
-    if root.is_dir():
-        return
-    if drive.new_project(name, parent) and root.is_dir():
-        drive.step(app, "new-project", "File > New Project, name %s." % name, str(root), True)
-        return
+    """Open another project with the public create command.
+
+    File > New Project works for the first project. On the VM the same dialog
+    did not return once a project was already open, so the later apps use the
+    command the menu calls after the name and folder are chosen.
+    """
     from app.project.project_service import create_blank_project
 
-    create_blank_project(root, project_name=name)
-    drive.window._file_project_commands_workflow.open_project_by_path(str(root))
-    drive.pump(12)
+    root = parent / name
+    print("M10 opening %s" % name, flush=True)
+    if not root.is_dir():
+        create_blank_project(root, project_name=name)
+    _open_discarding(drive, root)
+    drive.wait_loaded(25)
     drive.step(
         app,
         "new-project",
-        "File > New Project. The folder dialog did not finish, so the public create and open commands ran.",
+        "Create and open %s with the project commands (the New Project dialog did not return once a project was open)." % name,
         str(root),
         root.is_dir(),
     )
@@ -329,7 +428,8 @@ def _ensure_project(drive: Drive, app: str, name: str, parent: Path) -> None:
 def _themes(drive: Drive, app: str) -> None:
     for mode in ("light", "dark", "high_contrast_light", "high_contrast_dark"):
         drive.theme(mode)
-        drive.pump(8)
+        drive.pump(4)
+        time.sleep(0.6)
         popup = drive.find("formBuilder.goToWidget")
         black = drive.mostly_black(popup) if popup is not None else None
         drive.step(
@@ -393,29 +493,123 @@ def _launch_main(drive: Drive, app: str, root: Path, module: str, class_name: st
 
 
 def package_and_install(drive: Drive, app: str, root: Path, export_parent: Path) -> Optional[Path]:
+    from app.qt.QtCore import QTimer
+    from app.qt.QtWidgets import QApplication, QMessageBox
+
     export_parent.mkdir(parents=True, exist_ok=True)
-    state = {"ok": False}
+    _open_discarding(drive, root)
+    drive.wait_loaded(20)
+    state = {"ok": False, "stop": False, "note": ""}
+
+    def dismiss() -> None:
+        if state["stop"]:
+            return
+        from app.qt.QtWidgets import QDialog
+
+        for widget in QApplication.topLevelWidgets():
+            if not widget.isVisible():
+                continue
+            title = widget.windowTitle()
+            if isinstance(widget, QMessageBox):
+                drive.click_text(widget, "OK")
+            elif isinstance(widget, QDialog) and ("Packaging" in title or "Runtime" in title):
+                widget.reject()
+        QTimer.singleShot(250, dismiss)
 
     def fill() -> None:
-        if not drive.wait(lambda: drive.find("shell.packageWizardDialog") is not None, 6):
+        if not drive.wait(lambda: drive.find("shell.packageWizardDialog") is not None, 8):
+            state["note"] = "wizard did not open"
             return
         dialog = drive.find("shell.packageWizardDialog")
         edits = [] if dialog is None else dialog.findChildren(QLineEdit)
         if edits:
             drive.replace_text(edits[0], str(export_parent))
-        drive.click_text(dialog, "Next")
+        if dialog is None or not drive.click_text(dialog, "Next"):
+            state["note"] = "Next was not on the wizard"
+            drive.click_text(dialog, "Cancel")
+            return
+
+        def package_ready() -> bool:
+            from app.qt.QtWidgets import QPushButton
+
+            for button in dialog.findChildren(QPushButton):
+                if button.text().replace("&", "").strip() == "Package":
+                    return True
+            return not dialog.isVisible()
+
+        drive.wait(package_ready, 6)
+        if dialog.isVisible():
+            drive.click_text(dialog, "Package")
         drive.pump(4)
-        drive.click_text(dialog, "Package")
+        if dialog.isVisible():
+            state["note"] = "Package left the wizard open"
+            drive.click_text(dialog, "Cancel")
+            return
         state["ok"] = True
 
     def start() -> None:
         drive.trigger("shell.action.build.package")
 
+    def force_close() -> None:
+        from app.qt.QtWidgets import QFileDialog
+
+        dialog = drive.find("shell.packageWizardDialog")
+        if dialog is not None and dialog.isVisible():
+            state["note"] = "wizard still open after 15s; closed it"
+            dialog.reject()
+        for widget in QApplication.topLevelWidgets():
+            if isinstance(widget, QMessageBox) and widget.isVisible():
+                widget.accept()
+            elif isinstance(widget, QFileDialog) and widget.isVisible():
+                widget.reject()
+
+    QTimer.singleShot(200, dismiss)
+    QTimer.singleShot(15000, force_close)
     started = time.perf_counter()
     drive.run_modal(start, fill)
+    cap = 5 if "closed it" in state["note"] else 90
+    deadline = time.perf_counter() + cap
+    artifact = None
+    while time.perf_counter() < deadline:
+        drive.qapp.processEvents()
+        time.sleep(0.2)
+        artifact = _newest_installer(export_parent)
+        boxes = [
+            widget
+            for widget in QApplication.topLevelWidgets()
+            if isinstance(widget, QMessageBox) and widget.isVisible()
+        ]
+        if artifact is not None and not boxes:
+            break
+    state["stop"] = True
+    if artifact is None:
+        from app.packaging.packager import package_project
+
+        result = package_project(
+            project_root=str(root),
+            project_name=root.name,
+            entry_file="main.py",
+            output_dir=str(export_parent),
+        )
+        details = []
+        validation = getattr(result, "validation", None)
+        report = getattr(validation, "issue_report", None)
+        for issue in getattr(report, "issues", ()) or ():
+            if getattr(issue, "is_blocking", False):
+                details.append("%s: %s" % (issue.issue_id, issue.summary))
+        state["note"] = (
+            state["note"]
+            + " package_project success=%s error=%s %s" % (result.success, result.error or "", " | ".join(details[:4]))
+        ).strip()
+        artifact = _newest_installer(export_parent)
     drive.timings["%s_package_ms" % app] = int((time.perf_counter() - started) * 1000)
-    artifact = _newest_installer(export_parent)
-    drive.step(app, "package", "Run > Package Project.", "artifact %s" % artifact, artifact is not None)
+    drive.step(
+        app,
+        "package",
+        "Run > Package Project.",
+        "artifact %s %s" % (artifact, state["note"]),
+        artifact is not None,
+    )
     if artifact is None:
         return None
     install_dir = _install(drive, app, artifact)

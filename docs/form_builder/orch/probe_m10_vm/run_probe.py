@@ -106,10 +106,22 @@ def _launcher_shot(drive, app: str, install_dir: Path) -> None:
     env = os.environ.copy()
     env.pop("QT_QPA_PLATFORM", None)
     started = time.perf_counter()
-    proc = subprocess.Popen(argv, env=env, cwd=str(install_dir))
+    log_path = Path("/tmp") / ("m10_launcher_%s.log" % app)
+    log_handle = log_path.open("w", encoding="utf-8")
+    proc = subprocess.Popen(argv, env=env, cwd=str(install_dir), stdout=log_handle, stderr=log_handle)
     time.sleep(4)
     drive.timings["%s_installed_start_ms" % app] = int((time.perf_counter() - started) * 1000)
-    drive.step(app, "launcher", "Start the installed .desktop Exec.", "pid %s screen %s" % (proc.pid, drive.shot()), proc.poll() is None)
+    log_handle.flush()
+    tail = ""
+    if proc.poll() is not None:
+        tail = log_path.read_text(encoding="utf-8", errors="replace")[-300:]
+    drive.step(
+        app,
+        "launcher",
+        "Start the installed .desktop Exec.",
+        "pid %s screen %s %s" % (proc.pid, drive.shot(), tail),
+        proc.poll() is None,
+    )
     proc.terminate()
     try:
         proc.wait(timeout=8)
@@ -151,14 +163,12 @@ def main() -> int:
     installs = {}
     try:
         roots["customer"] = customer(drive, work)
-        if roots["customer"] is not None:
-            installs["customer"] = package_and_install(drive, "customer", roots["customer"], work / "export" / "customer")
         roots["products"] = products(drive, work)
-        if roots["products"] is not None:
-            installs["products"] = package_and_install(drive, "products", roots["products"], work / "export" / "products")
         roots["shop"] = shop(drive, work)
-        if roots["shop"] is not None:
-            installs["shop"] = package_and_install(drive, "shop", roots["shop"], work / "export" / "shop")
+        for app in ("customer", "products", "shop"):
+            root = roots.get(app)
+            if root is not None:
+                installs[app] = package_and_install(drive, app, root, work / "export" / app)
         uses = {
             "customer": ("forms.customer_card_window", "CustomerCardWindow", "record"),
             "products": ("forms.products_list_window", "ProductsListWindow", "list"),

@@ -12,8 +12,12 @@ import os
 import sys
 
 from PySide.QtGui import QGuiApplication
-from PySide.QtTest import QTest
 from PySide.QtWidgets import QApplication, QLineEdit, QPushButton, QWidget
+
+try:
+    from PySide.QtTest import QTest
+except ImportError:
+    from PySide6.QtTest import QTest
 
 
 def _qt():
