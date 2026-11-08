@@ -715,7 +715,7 @@ def test_inserting_a_method_rehighlights_the_edit_not_the_file(tmp_path: Any, qa
 
 
 def test_typing_ten_characters_rebuilds_locals_at_most_once(qapp: QApplication) -> None:
-    from app.qt.QtTest import QTest
+    from tests.support.qt_wait import qt_wait
 
     source = "def build(value):\n    return value\n"
     document, highlighter = _render("/tmp/locals_type.py", source)
@@ -732,13 +732,13 @@ def test_typing_ten_characters_rebuilds_locals_at_most_once(qapp: QApplication) 
     for character in "abcdefghij":
         cursor.insertText(character)
     assert rebuilds["n"] <= 1, rebuilds
-    QTest.qWait(200)
+    qt_wait(200)
     qapp.processEvents()
     assert rebuilds["n"] == 1, rebuilds
 
 
 def test_a_renamed_local_takes_its_color_after_idle(qapp: QApplication) -> None:
-    from app.qt.QtTest import QTest
+    from tests.support.qt_wait import qt_wait
 
     source = "def build(value):\n    return value\n"
     document, _highlighter = _render("/tmp/locals_rename.py", source)
@@ -757,7 +757,7 @@ def test_a_renamed_local_takes_its_color_after_idle(qapp: QApplication) -> None:
     cursor.movePosition(QTextCursor.Right, QTextCursor.KeepAnchor, len("value"))
     cursor.insertText("total")
     assert _color_at(document, 0, 0) == DEFAULT_LIGHT_PALETTE["keyword"].lower()
-    QTest.qWait(200)
+    qt_wait(200)
     qapp.processEvents()
     renamed = document.findBlockByNumber(1).text()
     assert _color_at(document, 1, renamed.index("total")) == DEFAULT_LIGHT_PALETTE["semantic_parameter"].lower()
@@ -766,7 +766,7 @@ def test_a_renamed_local_takes_its_color_after_idle(qapp: QApplication) -> None:
 def test_a_tied_capture_keeps_its_color_when_only_its_line_is_requeried(qapp: QApplication) -> None:
     # fh.read() matches two captures with the same priority. A ranged requery
     # must pick the same one a whole-file query picked.
-    from app.qt.QtTest import QTest
+    from tests.support.qt_wait import qt_wait
 
     source = "import os\nx = os.path\n" + "\n" * 20 + "with open('x') as fh:\n    data = fh.read()\n"
     document, _highlighter = _render("/tmp/tied_capture.py", source)
@@ -776,7 +776,7 @@ def test_a_tied_capture_keeps_its_color_when_only_its_line_is_requeried(qapp: QA
     cursor = QTextCursor(document)
     cursor.setPosition(block.position() + len(block.text()))
     cursor.insertText(" ")
-    QTest.qWait(200)
+    qt_wait(200)
     qapp.processEvents()
     assert _color_at(document, 23, line.index("read")) == before
 
@@ -849,8 +849,8 @@ def test_one_edit_in_a_big_file_rebuilds_the_locals_of_one_statement(qapp: QAppl
 
 
 def test_a_renamed_local_in_one_method_leaves_the_other_methods_alone(qapp: QApplication) -> None:
-    from app.qt.QtTest import QTest
     from tests.form_builder.qtside.test_m6_2b_perf import _window_source
+    from tests.support.qt_wait import qt_wait
 
     source = _window_source()
     document, _highlighter = _render("/tmp/locals_big_rename.py", source)
@@ -862,7 +862,7 @@ def test_a_renamed_local_in_one_method_leaves_the_other_methods_alone(qapp: QApp
     parameter = DEFAULT_LIGHT_PALETTE["semantic_parameter"].lower()
     _replace_in_line(document, def_row + 1, "total", "result")
     _replace_in_line(document, def_row + 2, "total", "result")
-    QTest.qWait(300)
+    qt_wait(300)
     qapp.processEvents()
     assert _color_at(document, def_row + 1, document.findBlockByNumber(def_row + 1).text().index("result")) == variable
     assert _color_at(document, def_row + 2, document.findBlockByNumber(def_row + 2).text().index("result")) == variable
