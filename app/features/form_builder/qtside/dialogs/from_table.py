@@ -36,7 +36,7 @@ from app.qt.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
-from app.qt.qt_compat import enum_value
+from app.qt.qt_compat import enum_value, wrapper_is_valid
 
 from app.features.form_builder.engine.data.connections import Connection, load_connections
 from app.features.form_builder.engine.data.schema import Column, Schema, Table
@@ -131,6 +131,9 @@ class FromTableDialog(QDialog):
     """Table list, column mapping, and a live preview."""
 
     create_requested = Signal()
+    # Qt's allWidgets() list still yields destroyed widgets. Touching one
+    # segfaults the binding, so an open dialog records itself here instead.
+    _shown: List["FromTableDialog"] = []
 
     def __init__(
         self,
@@ -448,8 +451,39 @@ class FromTableDialog(QDialog):
 
     def showEvent(self, event: object) -> None:  # type: ignore[override]
         super().showEvent(event)  # type: ignore[arg-type]
+        self._mark_shown()
         QTimer.singleShot(0, self._fit_columns)
         QTimer.singleShot(0, self._fit_preview)
+
+    def hideEvent(self, event: object) -> None:  # type: ignore[override]
+        self._mark_hidden()
+        super().hideEvent(event)  # type: ignore[arg-type]
+
+    def _mark_shown(self) -> None:
+        if all(item is not self for item in FromTableDialog._shown):
+            FromTableDialog._shown.append(self)
+
+    def _mark_hidden(self) -> None:
+        FromTableDialog._shown = [
+            item for item in FromTableDialog._shown if item is not self
+        ]
+
+    @classmethod
+    def is_open(cls) -> bool:
+        kept: List[FromTableDialog] = []
+        visible = False
+        for dialog in cls._shown:
+            if not wrapper_is_valid(dialog):
+                continue
+            try:
+                showing = dialog.isVisible()
+            except RuntimeError:
+                continue
+            kept.append(dialog)
+            if showing:
+                visible = True
+        cls._shown = kept
+        return visible
 
     def _apply_chrome(self) -> None:
         chrome = self._chrome

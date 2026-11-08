@@ -1303,12 +1303,12 @@ def test_data_sections_stack_and_the_footer_stays_at_the_bottom(tmp_path: Path, 
         session.dispose()
 
 
-def test_the_start_tab_stays_open_while_the_from_table_dialog_is_up(qapp) -> None:  # type: ignore[no-untyped-def]
-    from app.qt.QtWidgets import QDialog
+def test_the_start_tab_stays_open_while_the_from_table_dialog_is_up(
+    tmp_path: Path, qapp
+) -> None:  # type: ignore[no-untyped-def]
+    from app.features.form_builder.integration.new_form import _close_start_tab, new_form_tab_path
 
-    from app.features.form_builder.integration.new_form import _close_start_tab
-
-    closed = []
+    closed: list[str] = []
 
     class Workflow:
         def close_tab_discarding_edits(self, path: str, skip_close_blockers: bool = False) -> None:
@@ -1318,14 +1318,17 @@ def test_the_start_tab_stays_open_while_the_from_table_dialog_is_up(qapp) -> Non
     class Window:
         _editor_tab_workflow = Workflow()
 
-    dialog = QDialog()
-    dialog.setObjectName("formBuilder.fromTable")
+    dialog = _customer_dialog(tmp_path)
     dialog.show()
     try:
         qapp.processEvents()
-        _close_start_tab(Window(), "/tmp/cbcs-project")
+        _close_start_tab(Window(), str(tmp_path))
         qapp.processEvents()
         assert closed == []
+        dialog.hide()
+        qapp.processEvents()
+        _close_start_tab(Window(), str(tmp_path))
+        assert closed == [new_form_tab_path(str(tmp_path))]
     finally:
         dialog.hide()
         dialog.deleteLater()

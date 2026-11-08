@@ -728,15 +728,9 @@ def _close_start_tab(window: object, project_root: str) -> None:
     (list and record). Closing then deletes the dialog, and the second file
     is never written.
     """
-    from app.qt.QtCore import QTimer
-    from app.qt.QtWidgets import QApplication
-
-    app = QApplication.instance()
-    if app is not None:
-        for widget in app.allWidgets():
-            if widget.objectName() == "formBuilder.fromTable" and widget.isVisible():
-                QTimer.singleShot(100, lambda: _close_start_tab(window, project_root))
-                return
+    if FromTableDialog.is_open():
+        QTimer.singleShot(100, lambda: _close_start_tab(window, project_root))
+        return
     workflow = getattr(window, "_editor_tab_workflow", None)
     if workflow is None:
         return
