@@ -1,2 +1,0 @@
-DEBUG: here_dir = /opt/freecad
-DEBUG: freecad_bin = /opt/freecad/usr/bin/freecad

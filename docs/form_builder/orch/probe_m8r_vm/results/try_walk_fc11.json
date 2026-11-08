@@ -1,6 +1,0 @@
-{
-  "saved": true,
-  "banner": "",
-  "what_ran": "Ran: SELECT \"id\" FROM \"invoices\" ORDER BY \u2026\nRan: SELECT \"id\", \"name\" FROM \"customers\" \u2026\nRan: SELECT \"id\", \"name\" FROM \"products\" O\u2026\nRan: SELECT \"invoice_no\", \"customer_id\", \"\u2026 (1 value)\nRan: SELECT \"id\", \"product_id\", \"descripti\u2026 (1 value)\nRan: SELECT \"id\" FROM \"invoices\" ORDER BY \u2026\nRan: SELECT \"id\", \"name\" FROM \"customers\" \u2026\nRan: SELECT \"id\", \"name\" FROM \"products\" O\u2026\nRan: SELECT \"invoice_no\", \"customer_id\", \"\u2026 (1 value)\nRan: SELECT \"id\", \"product_id\", \"descripti\u2026 (1 value)\nRan: UPDATE \"invoices\" SET \"notes\" = ? WHE\u2026 (7 values)\nRan: SELECT \"invoice_no\", \"customer_id\", \"\u2026 (1 value)\nRan: SELECT \"id\", \"product_id\", \"descripti\u2026 (1 value)\nRan: SELECT \"id\" FROM \"invoices\" ORDER BY \u2026",
-  "error": ""
-}
