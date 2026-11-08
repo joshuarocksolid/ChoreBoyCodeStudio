@@ -11,14 +11,25 @@ import sys
 import tempfile
 import types
 from pathlib import Path
-from typing import Any, Callable, List, Optional, Tuple
+from typing import Any, Callable, List, Optional, Tuple, cast
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from tests.form_builder.engine.codegen.uic_status import same_failure
 from PySide6.QtCore import QByteArray, QLocale, QMetaMethod, QObject, QPointF, QRectF, QSize, QSizeF, Qt
 from PySide6.QtGui import QAction, QActionGroup, QBrush, QColor, QCursor, QFont, QIcon, QPalette, QPixmap, QRegion
-from PySide6.QtWidgets import QApplication, QButtonGroup, QMainWindow, QSizePolicy, QToolBar, QWidget
+from PySide6.QtWidgets import (
+    QApplication,
+    QButtonGroup,
+    QComboBox,
+    QListWidget,
+    QMainWindow,
+    QSizePolicy,
+    QTableWidget,
+    QToolBar,
+    QTreeWidget,
+    QWidget,
+)
 
 from app.features.form_builder.engine.codegen.api import generate_form_module
 from app.features.form_builder.engine.codegen.qtmap import class_module
@@ -795,37 +806,59 @@ def _tree_item(item, columns: int):
     }
 
 
+def _qt_class_name(raw: object) -> str:
+    """className() is str at runtime. The PySide6 stub types it as bytes."""
+    if isinstance(raw, str):
+        return raw
+    if isinstance(raw, (bytes, bytearray, memoryview)):
+        return bytes(raw).decode()
+    return str(raw)
+
+
 def _item_view(widget: QWidget, class_name: str):
     """Item contents of list, combo, tree and table widgets (None for other classes)."""
     if class_name == "QTreeWidget":
-        columns = widget.columnCount()
+        tree = cast(QTreeWidget, widget)
+        columns = tree.columnCount()
         return {
-            "header": [_cell(widget.headerItem(), column) for column in range(columns)],
-            "items": [_tree_item(widget.topLevelItem(i), columns) for i in range(widget.topLevelItemCount())],
+            "header": [_cell(tree.headerItem(), column) for column in range(columns)],
+            "items": [_tree_item(tree.topLevelItem(i), columns) for i in range(tree.topLevelItemCount())],
         }
     if class_name == "QListWidget":
-        return {"items": [dict(flags=_as_int(widget.item(i).flags()), cell=_cell(widget.item(i), -1)) for i in range(widget.count())]}
-    if class_name == "QComboBox":
+        listing = cast(QListWidget, widget)
         return {
             "items": [
-                {_as_int(role): _item_value(widget.itemData(i, role)) for role in _ITEM_ROLES if widget.itemData(i, role) not in (None, "")}
-                for i in range(widget.count())
+                dict(flags=_as_int(listing.item(i).flags()), cell=_cell(listing.item(i), -1))
+                for i in range(listing.count())
+            ]
+        }
+    if class_name == "QComboBox":
+        combo = cast(QComboBox, widget)
+        return {
+            "items": [
+                {
+                    _as_int(role): _item_value(combo.itemData(i, role))
+                    for role in _ITEM_ROLES
+                    if combo.itemData(i, role) not in (None, "")
+                }
+                for i in range(combo.count())
             ]
         }
     if class_name == "QTableWidget":
+        table = cast(QTableWidget, widget)
         cells = {}
-        for row in range(widget.rowCount()):
-            for column in range(widget.columnCount()):
-                item = widget.item(row, column)
+        for row in range(table.rowCount()):
+            for column in range(table.columnCount()):
+                item = table.item(row, column)
                 if item is not None:
                     cells["%d,%d" % (row, column)] = dict(flags=_as_int(item.flags()), cell=_cell(item, -1))
         header = {}
-        for index in range(widget.columnCount()):
-            item = widget.horizontalHeaderItem(index)
+        for index in range(table.columnCount()):
+            item = table.horizontalHeaderItem(index)
             if item is not None:
                 header["c%d" % index] = _cell(item, -1)
-        for index in range(widget.rowCount()):
-            item = widget.verticalHeaderItem(index)
+        for index in range(table.rowCount()):
+            item = table.verticalHeaderItem(index)
             if item is not None:
                 header["r%d" % index] = _cell(item, -1)
         return {"cells": cells, "header": header}
@@ -844,7 +877,7 @@ def _widget(widget: QWidget, depth=0):
     if depth > 30:
         return {"truncated": True}
     try:
-        class_name = widget.metaObject().className()
+        class_name = _qt_class_name(widget.metaObject().className())
         object_name = widget.objectName()
     except RuntimeError:
         return {"class": "deleted", "objectName": "", "props": {}, "children": []}

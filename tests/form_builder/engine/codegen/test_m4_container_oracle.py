@@ -241,6 +241,8 @@ def _qui_load(path: Path):  # type: ignore[no-untyped-def]
 def test_quiloader_reads_the_titles_order_and_start_page_the_builder_wrote(tmp_path: Path, qapp, uic_env) -> None:  # type: ignore[no-untyped-def]
     """Titles, order and the start page as Qt's own .ui loader reads them (UX-CONT-001)."""
     del uic_env
+    from typing import Optional, cast
+
     from PySide6.QtWidgets import QMdiArea, QTabWidget, QToolBox, QWizard
 
     log = open_log(TABS)
@@ -271,7 +273,7 @@ def test_quiloader_reads_the_titles_order_and_start_page_the_builder_wrote(tmp_p
     doc = log.document
     log.execute(InsertPage(doc.by_name("mdiArea")[0]))
     mdi = _qui_load(_save(tmp_path, "q_mdi", write_ui(doc).text))
-    area = mdi.findChild(QMdiArea, "mdiArea")
+    area = cast(Optional[QMdiArea], mdi.findChild(QMdiArea, "mdiArea"))
     assert area is not None
     assert sorted(sub.windowTitle() for sub in area.subWindowList()) == ["Notes", "Window 2"]
 

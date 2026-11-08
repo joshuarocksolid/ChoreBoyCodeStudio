@@ -946,7 +946,10 @@ def _open(
     from app.features.form_builder.qtside.preview.child.try_connections import activate
 
     if parent is not None:
-        holder = QDialog()
+        class _Holder(QDialog):
+            ui: Any
+
+        holder = _Holder()
         holder.ui = ui_cls()
         with activate(view):
             holder.ui.setupUi(parent)
