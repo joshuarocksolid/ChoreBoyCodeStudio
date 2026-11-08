@@ -12,8 +12,6 @@ import re
 from dataclasses import dataclass
 from typing import Optional
 
-from app.features.form_builder.install import form_builder_enabled
-
 _HEADER_SOURCE = re.compile(r"^## Generated from (.+) by ChoreBoy Code Studio", re.MULTILINE)
 _META_FRAGMENT = "/cbcs/form_builder/"
 _PEEK_CHARS = 512
@@ -48,7 +46,7 @@ def generated_source_basename(path: str, text: Optional[str] = None) -> str:
     if header:
         return os.path.basename(header)
     # PySide2 users never open the form builder. A neighboring .ui is their own file.
-    if not form_builder_enabled():
+    if not _form_builder_on():
         return ""
     sibling = _sibling_name(os.path.basename(path))
     if not sibling:
@@ -96,6 +94,18 @@ def generated_banner(path: str, text: str = "") -> Optional[GeneratedBanner]:
     logic_path = os.path.join(os.path.dirname(source_path) or folder, logic_name)
     message = "Generated from %s. Saving the form overwrites this file." % os.path.basename(source_path)
     return GeneratedBanner(message=message, source_path=source_path, logic_path=logic_path)
+
+
+def _form_builder_on() -> bool:
+    """The form-builder feature predicate.
+
+    Editors cannot import ``app.features.form_builder``. The registry calls
+    ``form_builder_enabled``.
+    """
+    from app.features import FEATURE_SPECS, feature_is_enabled
+
+    spec = next((item for item in FEATURE_SPECS if item.key == "form-builder"), None)
+    return spec is not None and feature_is_enabled(spec)
 
 
 def _header_source(path: str, text: Optional[str]) -> str:
