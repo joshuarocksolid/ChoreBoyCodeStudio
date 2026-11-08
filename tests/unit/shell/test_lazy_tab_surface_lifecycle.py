@@ -51,10 +51,19 @@ class _MarkdownProvider:
         return file_path.endswith(".md")
 
 
+class _TabBar:
+    def tabData(self, _index: int) -> None:
+        return None
+
+
 class _Tabs:
     def __init__(self, file_path: str) -> None:
         self._file_path = file_path
+        self._bar = _TabBar()
         self.removed: list[int] = []
+
+    def tabBar(self) -> _TabBar:  # noqa: N802
+        return self._bar
 
     def tabToolTip(self, index: int) -> str:  # noqa: N802
         return self._file_path if index == 0 else ""
