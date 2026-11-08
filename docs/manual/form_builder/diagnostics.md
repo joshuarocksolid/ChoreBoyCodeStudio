@@ -29,6 +29,7 @@ Saving a form is still allowed when a code is an error. 4 errors stop Design fro
 | FB035 | Warning | A class of your own comes from a module that is not in this project. | The form still opens. Fix this when you can. |
 | FB036 | Info | An action is not on any menu, toolbar or widget. | Nothing is broken. Read the note and decide whether to change anything. |
 | FB037 | Warning | A widget sits inside a toolbar or status bar. | The form still opens. Fix this when you can. |
+| FB038 | Info | A check has no red outline. | Nothing is broken. Read the note and decide whether to change anything. |
 | FB101 | Error | Unknown name | Fix this before you rely on the form. You can still save. |
 | FB102 | Error | Type mismatch | Fix this before you rely on the form. You can still save. |
 | FB103 | Error | Not available in formulas | Fix this before you rely on the form. You can still save. |
