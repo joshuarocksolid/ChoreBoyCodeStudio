@@ -306,7 +306,8 @@ def test_uses_and_the_logic_code_line_keep_identifiers_whole(qapp: QApplication)
 def _assert_identifier_stays_whole(text: str, identifier: str) -> None:
     font = QFontDatabase.systemFont(QFontDatabase.FixedFont)
     metrics = QFontMetrics(font)
-    width = metrics.horizontalAdvance(identifier) + 4
+    # The break keeps the leading dot with the word. A monospace dot is a full cell.
+    width = metrics.horizontalAdvance("." + identifier) + 4
     assert metrics.horizontalAdvance(text.replace("\u200b", "")) > width
     for line in _wrapped_lines(text, width, font):
         visible = line.replace("\u200b", "")

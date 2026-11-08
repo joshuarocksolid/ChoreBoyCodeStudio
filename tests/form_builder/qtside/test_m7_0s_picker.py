@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 from typing import Any, Tuple
 
@@ -138,7 +139,8 @@ def test_step_picker_pixels_match_the_light_snapshot(qapp: QApplication) -> None
     picker.adjustSize()
     app.processEvents()
     grabbed = picker.grab()
-    stored = QImage(str(_M7 / "step_picker_light.png"))
+    snapshot = "step_picker_light_linux.png" if sys.platform.startswith("linux") else "step_picker_light.png"
+    stored = QImage(str(_M7 / snapshot))
     assert _argb(grabbed) == _argb(stored)
 
 

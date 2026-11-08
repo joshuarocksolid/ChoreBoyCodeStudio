@@ -307,6 +307,9 @@ class ExternalFileChangeWorkflow:
             self._host.refresh_conflict_presentation(path)
             return ExternalFileChangeOutcome.CONTENT_ALREADY_MATCHES
         if tab_state.is_dirty:
+            # A write in the same timestamp tick does not move mtime. Keeping
+            # the old snapshot then looks clean, and the poller never asks.
+            tab_state.set_last_known_mtime(None)
             return ExternalFileChangeOutcome.SKIPPED
         if not self._editor_sync.apply_disk_content(
             path,

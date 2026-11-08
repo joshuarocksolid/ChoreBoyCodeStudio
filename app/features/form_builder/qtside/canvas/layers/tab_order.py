@@ -1,10 +1,10 @@
 """The Tab order overlay (UX-OVL-002 .. 005, UX-MODE-002).
 
 One 16 px ``ov.tab`` badge per stop. It sits inside the widget's right edge,
-vertically centred, 4 px in from that edge. A widget under 48 px wide carries
-the badge outside the right edge, still vertically centred. A 1.5 px dashed
-flow line joins the badge centres in order, under the badges and fainter than
-them. While the user numbers widgets, the stops already numbered are solid
+vertically centred, 4 px in from that edge. A widget under 48 px wide, one
+whose text would run under the badge, or a check box or radio button, carries
+the badge outside the right edge, still vertically centred. A 1.5 px dashed flow line joins the badge
+centres in order, under the badges and fainter than them. While the user numbers widgets, the stops already numbered are solid
 and the others hollow. A hover chip says "Click to make it 4".
 The state is ``TabOrderState``; the host (``integration/overlays.py``) switches
 this layer on with ``canvas.show_layer("tab_order", state)``.
@@ -13,9 +13,11 @@ this layer on with ``canvas.show_layer("tab_order", state)``.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict, FrozenSet, Hashable, List, Optional, Tuple
+from typing import Callable, Dict, FrozenSet, Hashable, List, Optional, Tuple
 
 from app.features.form_builder.engine.ids import NodeId
+from app.features.form_builder.engine.ui4.document import UiDocument
+from app.features.form_builder.engine.ui4.nodes import WidgetNode
 from app.features.form_builder.qtside.canvas.core.chips import (
     ChipRequest,
     Obstacle,
@@ -79,7 +81,10 @@ def build(static: object, inputs: object, state: Hashable) -> LayerOutput:
     for number, name in enumerate(state.order, 1):
         if name not in ids:
             continue
-        rect = seat(placed[ids[name]])
+        text_right = 0
+        if isinstance(document, UiDocument) and callable(measure):
+            text_right = _text_right(document, ids[name], placed[ids[name]], measure)
+        rect = seat(placed[ids[name]], text_right)
         solid = state.assigned == 0 or number <= state.assigned
         line = ()
         badges.append(LayerItem(rect=rect, role="tab", layer=NAME, data=("badge", number, solid, line)))
@@ -155,13 +160,32 @@ def _crosses(
     return False
 
 
-def seat(target: CanvasRect) -> CanvasRect:
+def seat(target: CanvasRect, text_right: int = 0) -> CanvasRect:
     y = target.y + (target.height - BADGE) // 2
-    if target.width < 48:
+    inside = target.x + target.width - INSET - BADGE
+    if target.width < 48 or (text_right and text_right > inside):
         x = target.x + target.width + INSET
     else:
-        x = target.x + target.width - INSET - BADGE
+        x = inside
     return CanvasRect(x, y, BADGE, BADGE)
+
+
+def _text_right(
+    document: UiDocument, node_id: NodeId, target: CanvasRect, measure: Callable[[str], int]
+) -> int:
+    node = document.get(node_id)
+    if not isinstance(node, WidgetNode):
+        return 0
+    value = node.value("text")
+    text = getattr(value, "text", "") if value is not None else ""
+    if not text:
+        return 0
+    # A check box's indicator already uses the left of a short label. The badge
+    # always sits outside so it cannot cover "Discount" and its kin.
+    if node.class_name in ("QCheckBox", "QRadioButton"):
+        return target.x + target.width + 1
+    lead = 6
+    return target.x + lead + int(measure(text)) + 8
 
 
 def _color(raw: str, alpha: float = 1.0) -> QColor:

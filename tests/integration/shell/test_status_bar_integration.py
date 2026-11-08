@@ -63,3 +63,23 @@ def test_editor_status_shows_the_active_tabs_disk_state(tmp_path: Path, shell_qa
     window._editor_tab_workflow.refresh_tab_presentation(report)
     assert window._status_controller.editor_status_text().endswith("| saved")
     shutdown_main_window_for_test(window, shell_qapp)
+
+
+def test_closing_the_last_tab_resets_editor_status_and_outline(tmp_path: Path, shell_qapp) -> None:  # type: ignore[no-untyped-def]
+    window, report = _window_with_project(tmp_path, shell_qapp)
+    assert window._editor_tab_factory.open_file_in_editor(report) is True
+    status = window._status_controller
+    status.set_diagnostics_counts(1, 0)
+    window._outline_panel.set_outline([], report)
+    assert "report.py" in status.editor_status_text()
+    assert status.indent_text()
+    assert status.diagnostics_text()
+
+    window._editor_tab_workflow.close_active_tab()
+
+    assert window._editor_manager.all_tabs() == []
+    assert "report.py" not in status.editor_status_text()
+    assert status.indent_text() == ""
+    assert status.diagnostics_text() == ""
+    assert window._outline_panel.current_file_path() is None
+    shutdown_main_window_for_test(window, shell_qapp)

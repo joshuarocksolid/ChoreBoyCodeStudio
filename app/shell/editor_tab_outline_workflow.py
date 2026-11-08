@@ -48,6 +48,12 @@ class EditorTabOutlineWorkflow:
         self.stop_refresh_timer()
         self.refresh_for_active_tab()
 
+    def clear_for_no_tabs(self) -> None:
+        self.stop_refresh_timer()
+        outline_panel = self._host.outline_panel()
+        if outline_panel is not None:
+            outline_panel.clear()
+
     def refresh_for_active_tab(self) -> None:
         outline_panel = self._host.outline_panel()
         if outline_panel is None:

@@ -70,6 +70,18 @@ def _install_form_builder(ctx: "ShellCompositionContext") -> None:
     install_form_builder(ctx)
 
 
+def _install_shop_sharing(ctx: "ShellCompositionContext") -> None:
+    from app.features.shop_sharing.install import install_shop_sharing
+
+    install_shop_sharing(ctx)
+
+
+def _install_team_sync(ctx: "ShellCompositionContext") -> None:
+    from app.features.team_sync.install import install_team_sync
+
+    install_team_sync(ctx)
+
+
 FEATURE_SPECS: tuple[FeatureSpec, ...] = (
     FeatureSpec(
         key="markdown",
@@ -94,6 +106,16 @@ FEATURE_SPECS: tuple[FeatureSpec, ...] = (
         ownership_globs=("app/features/form_builder/**",),
         install=_install_form_builder,
         enabled=_form_builder_enabled,
+    ),
+    FeatureSpec(
+        key="shop-sharing",
+        ownership_globs=("app/features/shop_sharing/**",),
+        install=_install_shop_sharing,
+    ),
+    FeatureSpec(
+        key="team-sync",
+        ownership_globs=("app/features/team_sync/**",),
+        install=_install_team_sync,
     ),
 )
 

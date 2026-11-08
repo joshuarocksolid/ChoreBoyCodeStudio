@@ -23,7 +23,7 @@ from app.qt.QtGui import QColor, QKeyEvent, QPalette
 from app.qt.QtWidgets import QAbstractItemView, QLabel, QListWidget, QListWidgetItem, QVBoxLayout, QWidget
 
 CUSTOM = "Custom order. New fields join it where they sit on the form."
-EMPTY = "No fields to visit yet. Inputs join the order as you add them."
+EMPTY = ""
 USE_READING = "Use reading order"
 
 
@@ -98,7 +98,7 @@ class TabOrderBody:
         custom = document.tabstops() is not None
         self._caption.setVisible(custom)
         self._caption.setText(CUSTOM if custom else "")
-        self._empty.setVisible(not stops)
+        self._empty.setVisible(bool(EMPTY) and not stops)
         self.list.setVisible(bool(stops))
         self.reset.setVisible(custom)
         self.apply_chrome(self._chrome())

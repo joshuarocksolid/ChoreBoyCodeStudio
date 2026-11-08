@@ -1087,7 +1087,8 @@ def _requests(
         if readout is not None and readout.key[0] == "size" and readout.key[1] == primary:
             text = readout.text
         node = document.get(primary)
-        role: Role = "layout" if isinstance(node, LayoutNode) else "select"
+        tab_order = any(layer.name == "tab_order" for layer in inputs.layers)
+        role: Role = "select" if tab_order or not isinstance(node, LayoutNode) else "layout"
         # A layout chip stays in the gutter so it does not cover the margin ticks.
         # A widget chip may sit on the widget when the gutter seat falls off the page.
         corners = LABEL_CORNERS if isinstance(node, LayoutNode) else BARE_CORNERS

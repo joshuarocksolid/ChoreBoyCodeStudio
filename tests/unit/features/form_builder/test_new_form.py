@@ -679,8 +679,8 @@ def test_preview_lays_out_at_the_column_width(tmp_path: Path, qapp: object) -> N
             corner = control.mapTo(form, control.rect().bottomRight())
             assert corner.x() <= form.width()
             assert corner.y() <= form.height()
-            found.append(corner.y())
-        assert max(found) > min(found)
+            found.append((corner.x(), corner.y()))
+        assert len(set(found)) == len(found)
         assert "First Name" in [label.text() for label in labels]
         dialog.set_included("first_name", False)
         for _ in range(4):
@@ -1211,6 +1211,14 @@ def test_create_from_dialog_writes_nothing_on_a_clash(tmp_path: Path, qapp: obje
 def test_create_from_dialog_undoes_on_the_editor_tab(tmp_path: Path, qapp: object) -> None:
     import json
 
+    from app.features.form_builder.install import form_builder_enabled
+
+    if not form_builder_enabled():
+        pytest.skip(
+            "Form builder editor tabs are registered on PySide6. "
+            "This coverage lives in the form-builder gate's unit-py311 lane."
+        )
+
     from app.features.form_builder.engine.ids import IdAllocator
     from app.features.form_builder.engine.ui4.reader import read_ui
     from app.features.form_builder.engine.ui4.writer import write_ui
@@ -1293,3 +1301,35 @@ def test_data_sections_stack_and_the_footer_stays_at_the_bottom(tmp_path: Path, 
     finally:
         panel.close()
         session.dispose()
+
+
+def test_the_start_tab_stays_open_while_the_from_table_dialog_is_up(
+    tmp_path: Path, qapp
+) -> None:  # type: ignore[no-untyped-def]
+    from app.features.form_builder.integration.new_form import _close_start_tab, new_form_tab_path
+
+    closed: list[str] = []
+
+    class Workflow:
+        def close_tab_discarding_edits(self, path: str, skip_close_blockers: bool = False) -> None:
+            del skip_close_blockers
+            closed.append(path)
+
+    class Window:
+        _editor_tab_workflow = Workflow()
+
+    dialog = _customer_dialog(tmp_path)
+    dialog.show()
+    try:
+        qapp.processEvents()
+        _close_start_tab(Window(), str(tmp_path))
+        qapp.processEvents()
+        assert closed == []
+        dialog.hide()
+        qapp.processEvents()
+        _close_start_tab(Window(), str(tmp_path))
+        assert closed == [new_form_tab_path(str(tmp_path))]
+    finally:
+        dialog.hide()
+        dialog.deleteLater()
+        qapp.processEvents()

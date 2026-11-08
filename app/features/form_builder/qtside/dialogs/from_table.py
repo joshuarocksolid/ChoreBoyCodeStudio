@@ -36,7 +36,7 @@ from app.qt.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
-from app.qt.qt_compat import enum_value
+from app.qt.qt_compat import enum_value, wrapper_is_valid
 
 from app.features.form_builder.engine.data.connections import Connection, load_connections
 from app.features.form_builder.engine.data.schema import Column, Schema, Table
@@ -118,7 +118,6 @@ _TABLE_COLUMN = 180
 _PREVIEW_COLUMN = 320
 _INCLUDE_WIDTH = 64
 _DISABLED_OPACITY = 0.5
-_WIDGET_MAX = 16777215
 _BAR_NAMES = ("recordBar", "listButtons", "lineButtons")
 
 
@@ -132,6 +131,9 @@ class FromTableDialog(QDialog):
     """Table list, column mapping, and a live preview."""
 
     create_requested = Signal()
+    # Qt's allWidgets() list still yields destroyed widgets. Touching one
+    # segfaults the binding, so an open dialog records itself here instead.
+    _shown: List["FromTableDialog"] = []
 
     def __init__(
         self,
@@ -449,8 +451,39 @@ class FromTableDialog(QDialog):
 
     def showEvent(self, event: object) -> None:  # type: ignore[override]
         super().showEvent(event)  # type: ignore[arg-type]
+        self._mark_shown()
         QTimer.singleShot(0, self._fit_columns)
         QTimer.singleShot(0, self._fit_preview)
+
+    def hideEvent(self, event: object) -> None:  # type: ignore[override]
+        self._mark_hidden()
+        super().hideEvent(event)  # type: ignore[arg-type]
+
+    def _mark_shown(self) -> None:
+        if all(item is not self for item in FromTableDialog._shown):
+            FromTableDialog._shown.append(self)
+
+    def _mark_hidden(self) -> None:
+        FromTableDialog._shown = [
+            item for item in FromTableDialog._shown if item is not self
+        ]
+
+    @classmethod
+    def is_open(cls) -> bool:
+        kept: List[FromTableDialog] = []
+        visible = False
+        for dialog in cls._shown:
+            if not wrapper_is_valid(dialog):
+                continue
+            try:
+                showing = dialog.isVisible()
+            except RuntimeError:
+                continue
+            kept.append(dialog)
+            if showing:
+                visible = True
+        cls._shown = kept
+        return visible
 
     def _apply_chrome(self) -> None:
         chrome = self._chrome
@@ -480,9 +513,17 @@ class FromTableDialog(QDialog):
             "QComboBox#formBuilder\\.fromTable\\.make,"
             "QComboBox#formBuilder\\.fromTable\\.linesTable,"
             "QComboBox#formBuilder\\.fromTable\\.linesLink,"
-            "QComboBox#formBuilder\\.fromTable\\.showsAs,"
+            "QComboBox#formBuilder\\.fromTable\\.showsAs {"
+            " background: %s; color: %s; border: 1px solid %s; border-radius: 4px; padding: 0 24px 0 8px; }"
             "QLineEdit#formBuilder\\.fromTable\\.labelEdit {"
             " background: %s; color: %s; border: 1px solid %s; border-radius: 4px; padding: 0 8px; }"
+            "QComboBox#formBuilder\\.fromTable\\.connection::drop-down,"
+            "QComboBox#formBuilder\\.fromTable\\.make::drop-down,"
+            "QComboBox#formBuilder\\.fromTable\\.linesTable::drop-down,"
+            "QComboBox#formBuilder\\.fromTable\\.linesLink::drop-down,"
+            "QComboBox#formBuilder\\.fromTable\\.showsAs::drop-down {"
+            " border: none; background: transparent; width: 20px;"
+            " subcontrol-origin: padding; subcontrol-position: center right; }"
             "QLabel#shell\\.dialogChrome\\.title { color: %s; background: transparent;"
             " font-size: 17px; font-weight: 700; }"
             "QWidget#shell\\.dialogChrome\\.header { background: %s; color: %s;"
@@ -527,6 +568,9 @@ class FromTableDialog(QDialog):
                 chrome.text,
                 chrome.border,
                 R_CARD,
+                chrome.input,
+                chrome.text,
+                edge_on(chrome, chrome.input or chrome.panel),
                 chrome.input,
                 chrome.text,
                 edge_on(chrome, chrome.input or chrome.panel),
@@ -994,6 +1038,15 @@ class FromTableDialog(QDialog):
         spare = viewport - include - type_width - shows - column
         if spare < 64:
             column = max(48, viewport - include - type_width - shows - 64)
+        # The Shows combo's size hint can leave the Label column under 48px.
+        # Stretch then keeps the header text width and the header grows past
+        # the viewport. Take the missing pixels from Shows, then Type.
+        room = viewport - include - column - type_width - shows - 48
+        if room < 0:
+            shows = max(48, shows + room)
+            room = viewport - include - column - type_width - shows - 48
+        if room < 0:
+            type_width = max(16, type_width + room)
         header.setStretchLastSection(False)
         for index, width in ((0, include), (1, column), (2, type_width), (3, shows)):
             header.setSectionResizeMode(index, fixed)
@@ -1430,54 +1483,49 @@ def _take_host(host: QWidget) -> List[QWidget]:
     return widgets
 
 
-def _pack(column: QVBoxLayout, widgets: List[QWidget], width: int) -> None:
-    row = None
-    used = 0
-    gap = S2
-    for widget in widgets:
-        hint = _control_width(widget, width)
-        if row is not None and used + gap + hint > width:
-            row.addStretch(1)
-            row = None
-            used = 0
-        if row is None:
-            row = QHBoxLayout()
-            row.setContentsMargins(0, 0, 0, 0)
-            row.setSpacing(gap)
-            column.addLayout(row)
-        elif used:
-            used += gap
-        row.addWidget(widget)
-        used += hint
-    if row is not None:
-        row.addStretch(1)
+_BAR_SHORT = {
+    "First": "|<",
+    "Previous": "<",
+    "Next": ">",
+    "Last": ">|",
+    "New": "New",
+    "Save": "Save",
+    "Revert": "Rev",
+    "Delete": "Del",
+    "Find": "Find",
+}
 
 
-def _control_width(widget: QWidget, limit: int) -> int:
-    if isinstance(widget, (QLabel, QPushButton)):
-        full = widget.property("cbcsFullText")
-        if not isinstance(full, str) or not full:
-            full = widget.text()
-            widget.setProperty("cbcsFullText", full)
-        widget.setText(full)
-        widget.setMaximumWidth(_WIDGET_MAX)
-        hint = max(widget.sizeHint().width(), 1)
-        if hint <= limit:
-            return hint
-        shown = widget.fontMetrics().elidedText(
-            full,
-            Qt.TextElideMode.ElideRight,  # type: ignore[attr-defined]
-            max(8, limit - 8),
-        )
+def _preview_caption(widget: QWidget) -> None:
+    """One readable word that fits the preview column. The tip keeps the real name."""
+    full = widget.property("cbcsFullText")
+    if not isinstance(full, str) or not full:
+        full = widget.text()
+        widget.setProperty("cbcsFullText", full)
+    if isinstance(widget, QLabel):
+        shown = full[7:] if full.startswith("Record ") else full
+    else:
+        shown = _BAR_SHORT.get(full, full)
+    if widget.text() != shown:
         widget.setText(shown)
+    if widget.toolTip() != full:
         widget.setToolTip(full)
-        widget.setMaximumWidth(limit)
-        return limit
-    hint = max(widget.sizeHint().width(), 1)
-    if hint > limit:
-        widget.setMaximumWidth(limit)
-        return limit
-    return hint
+
+
+def _pack(column: QVBoxLayout, widgets: List[QWidget], width: int) -> None:
+    host = column.parentWidget()
+    if host is not None:
+        host.setMaximumWidth(max(width, 1))
+    row = QHBoxLayout()
+    row.setContentsMargins(0, 0, 0, 0)
+    row.setSpacing(2)
+    for widget in widgets:
+        _preview_caption(widget)
+        widget.setFixedHeight(24)
+        widget.setMinimumWidth(0)
+        row.addWidget(widget)
+    row.addStretch(1)
+    column.addLayout(row)
 
 
 def _tick_url(chrome: FormChrome) -> str:

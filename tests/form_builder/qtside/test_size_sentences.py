@@ -145,7 +145,12 @@ def _close(window: QWidget, pane: InspectorPane) -> None:
 
 def _why(pane: QWidget) -> QLabel:
     found = pane.findChild(QLabel, "formBuilder.sizeWhy")
-    assert isinstance(found, QLabel) and found.isVisible()
+    assert isinstance(found, QLabel)
+    if not found.isVisible():
+        toggle = pane.findChild(QToolButton, "formBuilder.sizeWhyToggle")
+        assert isinstance(toggle, QToolButton)
+        toggle.click()
+    assert found.isVisible()
     return found
 
 

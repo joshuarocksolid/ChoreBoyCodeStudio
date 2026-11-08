@@ -39,6 +39,9 @@ class _Host:
     def shell_theme_workflow(self) -> Any:
         return SimpleNamespace(resolve_theme_tokens=lambda: None)
 
+    def shop_sharing_settings_group(self) -> None:
+        return None
+
     def settings_apply_workflow(self) -> Any:
         return SimpleNamespace(apply_after_settings_saved=lambda **kwargs: self.applied.append(kwargs))
 

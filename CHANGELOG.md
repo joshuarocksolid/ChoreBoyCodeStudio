@@ -2,9 +2,48 @@
 
 All notable user-facing changes to ChoreBoy Code Studio are documented here.
 
-Release tags: `v0.1`, `v0.2`, `v0.4.5`, `v0.4.9`, `v0.4.10`, `v0.4.11`, `v0.4.12`, `v0.4.13`.
+Release tags: `v0.1`, `v0.2`, `v0.4.5`, `v0.4.9`, `v0.4.10`, `v0.4.11`, `v0.4.12`, `v0.4.13`, `v0.4.14`.
 
-LibrePy list mail-outs: v0.4.5 on 2026-06-27, v0.4.7 on 2026-06-30, v0.4.8 on 2026-08-24, v0.4.9 on 2026-08-31, v0.4.13 on 2026-10-21.
+LibrePy list mail-outs: v0.4.5 on 2026-06-27, v0.4.7 on 2026-06-30, v0.4.8 on 2026-08-24, v0.4.9 on 2026-08-31, v0.4.13 on 2026-10-21, v0.4.14 on 2026-10-26.
+
+## [Unreleased]
+
+Team Sync: work on one project with another shop, using the FaxMail terminal you already have.
+
+### Added
+
+- A Team view in the activity bar. Share Project invites another shop by email. They open the project from the invite, and from then on changes travel through both shops' FaxMail terminals, usually within a few minutes by day.
+- Send (in the Team view or the toolbar) saves a change with a note and sends it. Each change shows Queued, then ✓ when FaxMail sent it, then ✓✓ when the other shop has it. Save Only keeps a checkpoint without sending.
+- Incoming changes never touch your files until you press Accept. A toast, the Team badge, the status bar and a bar on any open file it touches tell you something arrived. Review opens as a tab: inline or side by side, with changed words highlighted, and forms compared as pictures.
+- When both shops changed the same lines, the Combine tab shows yours and theirs side by side over the result. Nothing is written until Finish, and Cancel puts everything back. Forms are chosen whole. A file one shop deleted and the other edited asks which to keep.
+- History of every change from both shops, with Restore, Undo This Change, compare, and who changed a line (hover in the editor). Set Aside parks unfinished work. Package Project can mark the version in history. Experiments let you try an idea separately.
+- Settings › Team: the who-changed summary, and advanced options for people who know git.
+
+### Security
+
+- Every change is signed with the project's key and checked before it is read. Messages from anyone else are ignored and counted in the Team popover. Code Studio only writes its own outgoing folders in the FaxMail mail tree and never moves or deletes your mail.
+
+## [0.4.14] - 2026-10-26
+
+Shop settings sharing is now set up from inside Code Studio (Clair Nolt). No pointer file, link or text editing.
+
+### Added
+
+- Settings > General > Shop sharing. Turn on "Share my settings with the other ChoreBoys in this shop" on the server first. It creates `share/Code Studio Settings` with this computer's settings, recent projects and Python Console history. History, logs, caches and SQLite stay on each computer.
+- The other ChoreBoys find that folder by themselves and ask once, in a bar across the top of the window: Use shop settings, or Keep this computer's. Using the shop settings keeps a backup of this computer's settings in `before_shop`. The choice can be changed later in Settings.
+- A status bar chip shows `Settings: shop · <server>`, or `Settings: shop offline · copy from <time>` when the server is off. Clicking it opens Settings at Shop sharing.
+
+### Fixed
+
+- A client ChoreBoy no longer falls back to its own settings with a startup dialog because the server's pointer file held the server's path. Each computer stores its own path to the shop folder.
+- Saving settings on one computer no longer undoes changes made on another. Save writes only the settings you changed, and merges them into the current shared file.
+- A client launch no longer empties the shared recent projects list. A project on the shop share opens from every computer. A project on one computer's own disk shows greyed out as "on <computer>" elsewhere and is never removed by another computer.
+- When the server is off or the share disappears mid-session, Code Studio keeps working on its last synced copy, says so in the status bar, and sends the changes when the share comes back. It no longer saves silently to the local file.
+
+### Changed
+
+- A v0.4.13 pointer file (`share/Chore_Boy/CBCS/cbcs_state_root`) or a `~/choreboy_code_studio_state` link is read once and turned into the new setting. A relative path in the pointer file now works. Reading these old setups will be removed in v0.4.16.
+- `CBCS_STATE_ROOT` still works for advanced use. Its startup message now says to check that the folder exists on this computer.
 
 ## [Unreleased]
 

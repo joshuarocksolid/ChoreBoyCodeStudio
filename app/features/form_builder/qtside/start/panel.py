@@ -549,7 +549,10 @@ class NewFormPanel(QWidget):
             column.addWidget(wrap)
             grid_host = QWidget(self._column)
             grid_host.setObjectName("formBuilder.newForm.grid." + group)
-            QVBoxLayout(grid_host)  # replaced on reflow by a fresh layout
+            grid = QVBoxLayout(grid_host)
+            # The style's default margin is 9 px, which sat the cards right of the heading.
+            grid.setContentsMargins(0, 0, 0, 0)
+            grid.setSpacing(0)
             self._grids[group] = grid_host
             column.addWidget(grid_host)
             for spec in catalog:
@@ -644,6 +647,8 @@ class NewFormPanel(QWidget):
             layout = host.layout()
             if not isinstance(layout, QVBoxLayout):
                 continue
+            layout.setContentsMargins(0, 0, 0, 0)
+            layout.setSpacing(0)
             while layout.count():
                 item = layout.takeAt(0)
                 widget = item.widget()

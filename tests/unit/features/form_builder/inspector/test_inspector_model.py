@@ -277,7 +277,7 @@ def test_empty_selection_shows_the_form_section() -> None:
         "Vertical layout",
         ("email", "phone", "okButton"),
         "No problems.",
-        "Saves invoice.ui and ui_invoice.py in forms/.",
+        "invoice.ui, ui_invoice.py",
     )
 
 

@@ -1,0 +1,9 @@
+ts	phase	decision	why	evidence	result
+2026-11-02T21:43:52Z	share	ledger connection is shared across the background pool and sqlite refused the second thread	status() opened the ledger, then Send Invite ran on another pool thread	app/features/team_sync/core/ledger.py	fail then fix
+2026-11-02T21:55:00Z	checkout	dulwich 0.24 skips every path starting with .git, including .gitignore	Ana's accept left .gitignore out of the worktree and the next commit dropped it	app/features/team_sync/core/repo.py	fail then fix
+2026-11-02T22:08:00Z	combine	finish_combine committed locally and sent a have, not the merged tree	Sam stayed at Delivered with nothing to accept until a live _push_change	app/features/team_sync/core/service.py	fail then fix
+2026-11-02T22:28:00Z	combine	a resolution that matches the worktree skipped the merge commit	test_finish_writes_the_resolution_and_a_merge_commit saw one parent	app/features/team_sync/core/service.py	fail then fix
+2026-11-02T21:50:00Z	mailbox	keep requiring account_settings_v2.conf	the address and size cap live there, and a real terminal always has the file	twin account folder was created with a realistic conf as test setup	kept
+2026-11-02T21:46:00Z	invite	do not add a person-name field during the day	the share dialog names the invitee from the mailbox address	Sam invited rocksolid at Cedar Hollow, not Ana Kurtz	documented
+2026-11-02T21:52:00Z	history	join commits stay local and the SHAs differ	accept_invite commits joined before sending, and the join message carries no pack	common ancestor e5bd6e49 matches; later SHAs do not	documented
+2026-11-02T22:11:00Z	invite	a shared mailbox shows the sender their own invite on launch	invite watch has no identity and _seen_invites is memory only	Sam cancelled rocksolid invited you to Invoice App	documented

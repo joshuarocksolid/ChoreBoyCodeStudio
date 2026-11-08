@@ -1,6 +1,6 @@
 # Handles
 
-Selectors for `control-cbcs ctl` / `cbapp`: `#objectName`, `text:Label`, `class:QClass[n]`.
+Selectors for `control-cbcs ctl` (farm `do verb=ctl`, lab `cbapp ctl`): `#objectName`, `text:Label`, `class:QClass[n]`.
 
 Prefer `#shell.*`. Action ids are QAction objectNames; trigger them with `control-cbcs trigger "$SID" <id>`.
 
@@ -8,7 +8,7 @@ Duplicate names exist (`shell.welcome.onboardingActionBtn` on several welcome bu
 
 `CodeEditorWidget` itself is unnamed. The factory sets `shell.editorTabs.textEditor` on every tab — use `class:` + index or in-app Python if you need a specific buffer.
 
-The installer wizard (`packaging/install.py`) has no `shell.*` names. When driving it by hand, use `#__qt__passive_wizardbutton1` and `#qt_wizard_commit`. `control-cbcs launch --install` uses `cbapp install-test`, which auto-walks those pages — those handles are not reachable in that lane. When install-test finishes the SID is exited; do not doctor that SID. Proof is the `01_welcome`…`05_done` shots; Runtime-ready needs a later launch of the installed app.
+The installer wizard (`packaging/install.py`) has no `shell.*` names. When driving it by hand, use `#__qt__passive_wizardbutton1` and `#qt_wizard_commit`. `control-cbcs launch --install` uses `install-test` (farm `do app install-test`, lab `cbapp install-test`), which auto-walks those pages. Those handles are not reachable in that lane. When install-test finishes the SID is exited; do not doctor that SID. Proof is the `01_welcome`…`05_done` shots; Runtime-ready needs a later launch of the installed app.
 
 Recovery Center has no object names. Arm `shell.action.file.recoveryCenter` and click `text:Open Timeline` / `text:Restore Latest to Buffer`.
 
@@ -29,6 +29,8 @@ Dependency Inspector title is **Project Dependencies**. No `#shell.dependency*` 
 | `#shell.activityBar.btn.explorer` | Explorer view |
 | `#shell.activityBar.btn.search` | Search view |
 | `#shell.activityBar.btn.test_explorer` | Test Explorer view |
+| `#shell.activityBar.btn.team` | Team view |
+| `#shell.activityBar.badge.*` | Count badge on an activity-bar button |
 | `#shell.leftRegion` | Sidebar host |
 | `#shell.sidebarStack` | 0 Explorer, 1 Search, 2 Test Explorer |
 | `#shell.projectTree` | Project tree |
@@ -107,6 +109,7 @@ Onboarding action buttons share `#shell.welcome.onboardingActionBtn`. Use `text:
 | `#shell.editorStatusLabel` | file, line, col, modified/saved, then `changed on disk` (stale tab) or `missing from disk` (missing tab, replaces modified/saved) |
 | `#shell.formTimingsLabel` | Developer form timings. Hidden unless `CBCS_FB_TIMINGS=1` or QSettings `form_builder/dev/show_timings` is on, and a caller passed a line. |
 | `#shell.completionModeStatusLabel` | `Completion: Manual · Ctrl+Space (Global setting)` / `Completion: While typing (Project setting)` / `Completion: Off (Global setting)`. Click opens Settings (`exec_()`, blocks the bridge); read it with `control-cbcs read`. |
+| `#shell.status.shopSharing` | `Settings: shop · <label>` or `Settings: shop offline · copy from <HH:MM>`. Hidden in local and pinned mode. Click opens Settings on the General tab at Shop sharing. |
 | `#shell.statusBar.activeRunConfig` | Default or named config |
 
 ## Find, search, markdown
@@ -154,6 +157,15 @@ Onboarding action buttons share `#shell.welcome.onboardingActionBtn`. Use `text:
 | Handle | What |
 |--------|------|
 | `#shell.settingsDialog` | Settings. Modal. Use `arm` `shell.action.file.settings`. |
+| `#shell.settings.shopSharing` | Shop sharing group. Global scope only. Hidden on the Project tab. |
+| `#shell.settings.shopSharing.enabled` | Share my settings with the other ChoreBoys in this shop |
+| `#shell.settings.shopSharing.folder` | Saved-in path. Read only. |
+| `#shell.settings.shopSharing.change` | Change… Starts in `~/share`. |
+| `#shell.settings.shopSharing.status` | Shared / offline / this computer only |
+| `#shell.settings.shopSharing.error` | Refusal reason. Empty until Save refuses. |
+| `#shell.shopPrompt` | One-time bar directly above the center stack. |
+| `#shell.shopPrompt.use` | Use shop settings |
+| `#shell.shopPrompt.keep` | Keep this computer's |
 | `#shell.runtimeCenterDialog` | Runtime Center |
 | `#shell.runtimeOnboardingDialog` | Onboarding |
 | `#shell.packageWizardDialog` | Package Project. Modal. Use `arm` `shell.action.build.package`. Step 1 of 2 = **Choose Package Destination** (primary **Next**, Cancel); Step 2 of 2 = **Review Package Metadata** (primary **Package**). The install-folder checkbox is `vis=False` on Step 1 and visible/unchecked on Step 2. |
@@ -360,6 +372,12 @@ The Dune checker requires each handle below to match a `setObjectName` call unde
 - `#shell.searchSidebar.replaceToggle`
 - `#shell.searchSidebar.summary`
 - `#shell.searchSidebar.wordBtn`
+- `#shell.settings.shopSharing`
+- `#shell.settings.shopSharing.change`
+- `#shell.settings.shopSharing.enabled`
+- `#shell.settings.shopSharing.error`
+- `#shell.settings.shopSharing.folder`
+- `#shell.settings.shopSharing.status`
 - `#shell.settingsDialog.addExcludeBtn`
 - `#shell.settingsDialog.addLocalHistoryExcludeBtn`
 - `#shell.settingsDialog.appearanceGroup`
@@ -406,6 +424,10 @@ The Dune checker requires each handle below to match a `setObjectName` call unde
 - `#shell.settingsDialog.syntaxValidation`
 - `#shell.settingsDialog.tabs`
 - `#shell.settingsDialog.validationBanner`
+- `#shell.shopPrompt`
+- `#shell.shopPrompt.keep`
+- `#shell.shopPrompt.use`
+- `#shell.status.shopSharing`
 - `#shell.testExplorer.countSkipped`
 - `#shell.testExplorer.debugFailedBtn`
 - `#shell.testExplorer.filterBar`
@@ -496,3 +518,54 @@ Object names use `formBuilder.<area>.<name>`. View XML reuses `#shell.editorTabs
 | `formBuilder.outlineInsert` | Quick insert popover (`/`) |
 | `formBuilder.outlineInsertFilter` | Quick insert search field |
 | `formBuilder.outlineInsertList` | Quick insert rows |
+
+## Team Sync
+
+`#shell.teamSync.*` covers the Team view, Send, status segment, Review, Combine, History, dialogs, and the editor notices. `#shell.toast` is the generic toast. Team Sync restyles that instance as `#shell.teamSync.toast`.
+
+| Handle | What |
+|--------|------|
+| `#shell.teamSync.teamView` | Thread page |
+| `#shell.teamSync.shareButton` | Share Project… |
+| `#shell.teamSync.feed` | Thread feed |
+| `#shell.teamSync.composer` | Composer |
+| `#shell.teamSync.composerSend` | Composer Send |
+| `#shell.teamSync.toolbar.send` | Toolbar Send |
+| `#shell.teamSync.sendSheet` | Send sheet |
+| `#shell.teamSync.statusSegment` | Status-bar Team segment |
+| `#shell.teamSync.statusPopover` | Segment popover |
+| `#shell.teamSync.experimentSegment` | Experiment segment |
+| `#shell.teamSync.experimentMenu` | Experiment menu |
+| `#shell.teamSync.infoBar` | Incoming or clash notice |
+| `#shell.teamSync.reviewTab` | Review tab |
+| `#shell.teamSync.combineTab` | Combine tab |
+| `#shell.teamSync.combineFinish` | Finish |
+| `#shell.teamSync.historyTab` | History tab |
+| `#shell.teamSync.historyMenu` | History context menu |
+| `#shell.teamSync.hoverCard` | Who-changed card |
+| `#shell.teamSync.gutterPeek` | Gutter quick diff |
+| `#shell.teamSync.shareDialog` | Share dialog |
+| `#shell.teamSync.inviteDialog` | Invite dialog |
+| `#shell.teamSync.membersDialog` | Members dialog |
+| `#shell.teamSync.deletedClashDialog` | Deleted clash choice |
+| `#shell.teamSync.settingsGroup` | Settings › Team |
+| `#shell.teamSync.packageMilestone` | Mark this version in history |
+| `#shell.teamSync.toast` | Arrival toast |
+| `#shell.teamSync.teamHeader` | Thread header row |
+| `#shell.teamSync.composerNote` | Thread message field |
+| `#shell.teamSync.composerFiles` | Pending-files chip |
+| `#shell.teamSync.feedFiles` | "N files" link on a message |
+| `#shell.teamSync.feedReview` | Review on an incoming message |
+| `#shell.teamSync.feedMark` | Queued / ✓ / ✓✓ |
+| `#shell.teamSync.statusDot` | 7 px status dot |
+| `#shell.teamSync.statusHistory` | Popover History |
+| `#shell.teamSync.statusMenu` | Popover ⋯ |
+| `#shell.teamSync.lineSummary` | End-of-line who-changed note |
+| `#shell.teamSync.combinePrev` | Previous clash |
+| `#shell.teamSync.combineNext` | Next clash |
+| `#shell.teamSync.historySearch` | History search |
+| `#shell.teamSync.historyFilter` | Main / All lines |
+| `#shell.toast` | Generic toast frame |
+| `#shell.toast.message` | Toast text |
+| `#shell.toast.action` | Toast action |
+| `#shell.editorTabPage.notices` | Feature notices under the disk-conflict bar |

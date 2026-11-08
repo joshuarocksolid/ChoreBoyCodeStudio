@@ -120,6 +120,15 @@ QLabel#shell\\.settingsDialog\\.fileExcludesHelp {{
     font-size: 11px;
     padding: 4px 0px;
 }}
+QGroupBox#shell\\.settings\\.shopSharing QLabel[shopSharingRole="hint"] {{
+    color: {tokens.text_muted};
+}}
+QLabel#shell\\.settings\\.shopSharing\\.status {{
+    color: {tokens.text_muted};
+}}
+QLabel#shell\\.settings\\.shopSharing\\.error {{
+    color: {tokens.diag_error_color};
+}}
 """
 def settings_section_combo_spin_font(tokens: ShellThemeTokens) -> str:
     return f"""/* -- Combo boxes --------------------------------------------------------- */

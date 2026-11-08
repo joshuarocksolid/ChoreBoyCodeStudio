@@ -26,6 +26,10 @@ pip3 install \
   --only-binary=:all: \
   --platform=manylinux_2_17_x86_64
 
+# Team Sync: pure-Python git (no native speedups; Apache-2.0 option of its dual license).
+pip3 install dulwich==0.24.10 --no-deps --target="$TARGET" \
+  --python-version=3.9 --implementation=py --abi=none --platform=any --only-binary=:all:
+
 pip3 install "black==24.10.0" "click>=8.0,<8.2" --no-binary=black --target="$TARGET" --upgrade --force-reinstall
 
 echo "Overlaying Linux tree-sitter core and grammar bindings..."

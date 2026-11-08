@@ -139,9 +139,18 @@ def _install_unhandled_exception_hook(logger: logging.Logger) -> None:
     sys.excepthook = _hook
 
 
+_FAULT_FILE = None
+
+
 def _enable_fault_handler(logger: logging.Logger) -> None:
+    global _FAULT_FILE
+    path = os.environ.get("CBCS_FAULT_LOG", "").strip()
     try:
-        faulthandler.enable()
+        if path:
+            _FAULT_FILE = open(path, "a", buffering=1, encoding="utf-8")
+            faulthandler.enable(_FAULT_FILE, all_threads=True)
+        else:
+            faulthandler.enable(all_threads=True)
     except Exception:
         logger.warning("Failed to enable faulthandler.", exc_info=True)
 

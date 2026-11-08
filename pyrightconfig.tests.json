@@ -1,12 +1,14 @@
 {
   "pythonVersion": "3.9",
+  "useLibraryCodeForTypes": false,
   "verboseOutput": true,
   "stubPath": "typings",
   "include": [
     "tests/support",
     "tests/unit/debug/test_safe_eval.py",
     "tests/unit/packaging/test_dependency_audit.py",
-    "tests/unit/shell/test_python_tooling_status_copy.py"
+    "tests/unit/shell/test_python_tooling_status_copy.py",
+    "tests/unit/features/team_sync/test_api_parity.py"
   ],
   "executionEnvironments": [
     {
@@ -15,9 +17,11 @@
         ".",
         "vendor",
         "../ChoreBoyCodeStudio_artifacts/vendor_py311",
+        "../ChoreBoyCodeStudio_artifacts/vendor_py39",
         "/ChoreBoyCodeStudio_artifacts/vendor_py311",
-        "/opt/freecad/usr/lib/python3.11/site-packages",
-        "/opt/freecad-1.1/usr/lib/python3.11/site-packages"
+        "/ChoreBoyCodeStudio_artifacts/vendor_py39",
+        "/home/ubuntu/cbcs_artifacts/vendor_py311",
+        "/home/ubuntu/cbcs_artifacts/vendor_py39"
       ]
     }
   ],

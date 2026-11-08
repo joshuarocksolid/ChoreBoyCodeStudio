@@ -42,7 +42,7 @@ def _restore_python_console_history(window: Any) -> None:
     if window._python_console_widget is None:
         return
     entries = load_python_console_history(
-        window._python_console_history_path,
+        window._state_root,
         max_entries=200,
     )
     window._python_console_widget.set_history(entries)
@@ -105,6 +105,18 @@ def build_left_panel(window: Any) -> QWidget:
 
     window._test_explorer_panel = TestExplorerPanel(panel)
     window._sidebar_stack.addWidget(window._test_explorer_panel)
+
+    contributions = getattr(window, "_shell_contributions", None)
+    if contributions is not None:
+        for spec in contributions.sidebar:
+            window._activity_bar.add_view(
+                spec.view_id,
+                "",
+                spec.tooltip,
+                icon=spec.icon_factory(normal, active),
+                icon_factory=spec.icon_factory,
+            )
+            window._sidebar_stack.addWidget(spec.widget_factory(panel))
 
     window._sidebar_stack.setCurrentIndex(0)
     panel.setMinimumWidth(220)
@@ -184,6 +196,16 @@ def build_explorer_page(window: Any) -> QWidget:
     window._project_tree_widget.copyRequested.connect(workflow.handle_project_tree_copy_key)
     window._project_tree_widget.cutRequested.connect(workflow.handle_project_tree_cut_key)
     window._project_tree_widget.pasteRequested.connect(workflow.handle_project_tree_paste_key)
+    contributions = getattr(window, "_shell_contributions", None)
+    if contributions is not None and contributions.explorer_decorations:
+        from app.shell.explorer_decorations import ExplorerDecorationDelegate
+
+        window._project_tree_widget.setItemDelegate(
+            ExplorerDecorationDelegate(
+                contributions.explorer_decorations,
+                window._project_tree_widget,
+            )
+        )
 
     window._explorer_splitter = QSplitter(Qt.Vertical, page)
     window._explorer_splitter.setObjectName("shell.explorerSplitter")

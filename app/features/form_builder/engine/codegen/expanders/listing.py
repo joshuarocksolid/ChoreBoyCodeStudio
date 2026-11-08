@@ -86,6 +86,7 @@ class ListingExpander:
             _method("_cbcs_list_failed", _failed_body(table), "_exc"),
             _method("_cbcs_after_record", ["self.cbcs_refresh_list()"]),
             _method("_cbcs_record_window", _window_body(open_stem)),
+            _method("_cbcs_form_count", _form_count_body()),
         ]
         if search:
             methods.append(_method("_cbcs_like_pattern", _pattern_body(), "_text"))
@@ -99,6 +100,21 @@ class ListingExpander:
             ordered_setup=((895, "self._cbcs_arm_list()"), (895, "self.cbcs_refresh_list()")),
             needs_form=True,
         )
+
+
+def _form_count_body() -> List[str]:
+    """form.count on a list is how many rows the table is showing.
+
+    Record forms define this from the key list. A list that uses the same
+    formula (Enabled when, a filter) has to define it too, or the packaged
+    app crashes on the first show.
+    """
+    return [
+        "_model = getattr(self, '_cbcs_list_model', None)",
+        "if _model is None:",
+        "    return 0",
+        "return _model.rowCount()",
+    ]
 
 
 def _method(name: str, lines: Sequence[str], params: str = "") -> Method:

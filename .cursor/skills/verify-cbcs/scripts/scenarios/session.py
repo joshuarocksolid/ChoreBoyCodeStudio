@@ -25,7 +25,8 @@ from scenarios.probes import (
 )
 from scenarios.wizard import drive as drive_wizard
 
-FREE_PREFERENCE = ("ChoreBoy4", "ChoreBoy5", "ChoreBoy3")
+FREE_PREFERENCE = ("ChoreBoy4", "ChoreBoy3")
+FORBIDDEN_SLOTS = {"ChoreBoy5"}
 ARTIFACT_ROOT = Path.home() / "ChoreBoy" / "artifacts" / "verify-cbcs"
 GUEST_SHARE = "/mnt/cbprobe"
 INSTALL_PARENT = "/home/default"
@@ -85,6 +86,8 @@ class Session:
         self._set_env("CHOREBOY_REMOTE_PROBES", self.harness)
 
     def lease(self) -> str:
+        if self.want in FORBIDDEN_SLOTS:
+            raise SystemExit("refusing {}: that slot is not a verify target".format(self.want))
         self.slot = self.want or pick_free_slot()
         if not slot_is_free(self.slot):
             raise SystemExit("refusing to lease {}: it is not free".format(self.slot))

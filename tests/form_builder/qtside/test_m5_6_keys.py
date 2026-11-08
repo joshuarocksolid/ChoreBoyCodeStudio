@@ -348,7 +348,8 @@ def test_a_form_with_no_inputs_says_so(tmp_path: Path, qapp: QApplication) -> No
         kb.surface.focus_tab_order_list()
         kb.pump()
         empty = kb.surface.findChild(QLabel, "formBuilder.tabOrderEmpty")
-        assert empty.isVisible() and empty.text() == "No fields to visit yet. Inputs join the order as you add them."
+        assert not empty.isVisible()
+        assert kb.surface.findChild(QListWidget, "formBuilder.tabOrderRows").count() == 0
     finally:
         _close(window, qapp, guard)
 

@@ -721,6 +721,16 @@ def ask_text(parent: QWidget, title: str, label: str, value: str) -> Optional[st
 
 
 def _close_start_tab(window: object, project_root: str) -> None:
+    """Close New form after Create. Not while the from-table dialog is still open.
+
+    Create opens the new file and asks to close New form on the next turn.
+    That turn can be the ``processEvents`` inside the first of two files
+    (list and record). Closing then deletes the dialog, and the second file
+    is never written.
+    """
+    if FromTableDialog.is_open():
+        QTimer.singleShot(100, lambda: _close_start_tab(window, project_root))
+        return
     workflow = getattr(window, "_editor_tab_workflow", None)
     if workflow is None:
         return

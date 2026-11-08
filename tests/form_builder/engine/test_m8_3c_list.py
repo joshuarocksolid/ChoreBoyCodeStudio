@@ -393,6 +393,11 @@ def test_list_settings_are_one_undo_step(tmp_path: Path, qapp) -> None:
     assert _read(session).limit == 500
 
 
+def test_a_list_form_count_is_the_rows_on_screen(tmp_path: Path) -> None:
+    with _open(tmp_path, limit=10) as (host, _db):
+        assert host.ui._cbcs_form_count() == len(_names(host))
+
+
 def _open(tmp_path: Path, limit: int, source: Optional[ListSource] = None):
     chosen = source if source is not None else _source(limit)
     return record_window(tmp_path, _xml(chosen, _widgets()), _prepare)

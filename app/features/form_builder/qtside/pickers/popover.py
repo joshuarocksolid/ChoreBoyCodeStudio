@@ -275,9 +275,12 @@ class EventPicker(QFrame):
             self._shut()
             return True
         if isinstance(nxt, Commit):
+            gesture = nxt.gesture
             self.hide()
-            self._on_commit(nxt.gesture)
+            # _shut gives focus back to the host. The commit may move it on,
+            # to the editor the choice just opened, so it runs after the close.
             self._shut()
+            self._on_commit(gesture)
             return True
         if isinstance(nxt, Page):
             self._apply(nxt)

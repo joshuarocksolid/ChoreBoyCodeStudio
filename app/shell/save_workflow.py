@@ -273,6 +273,11 @@ class MainWindowSaveDocumentHost:
     def update_editor_status_for_path(self, file_path: str) -> None:
         self._window._editor_tab_workflow.update_editor_status_for_path(file_path)
 
+    def notify_file_saved(self, file_path: str) -> None:
+        contributions = getattr(self._window, "_shell_contributions", None)
+        if contributions is not None:
+            contributions.notify_file_saved(file_path)
+
     def rescan_project_from_disk(self, *, reload_plugins: bool, reindex: bool) -> None:
         self._window._project_rescan_workflow.rescan_from_disk(
             reload_plugins=reload_plugins,
@@ -689,6 +694,9 @@ class SaveWorkflow:
         if not defer_history:
             self._lint_and_notify(saved_tab.file_path)
         getattr(host.logger(), "info")("Saved file: %s", saved_tab.file_path)
+        notifier = getattr(host, "notify_file_saved", None)
+        if callable(notifier):
+            notifier(saved_tab.file_path)
         return True
 
     def python_tooling_failure_message(self, action_label: str, result: PythonTextTransformResult) -> str:

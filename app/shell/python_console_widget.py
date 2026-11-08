@@ -70,6 +70,7 @@ class PythonConsoleWidget(QTextEdit):
 
         self._history: list[str] = []
         self._history_index: int = 0
+        self._history_appended: int = 0
         self._session_active: bool = False
         self._pending_block_lines: list[str] = []
         self._completion_request_generation: int = 0
@@ -514,6 +515,7 @@ class PythonConsoleWidget(QTextEdit):
             history_entry = source.rstrip("\n")
             if not self._history or self._history[-1] != history_entry:
                 self._history.append(history_entry)
+                self._history_appended += 1
                 if len(self._history) > _MAX_HISTORY:
                     self._history.pop(0)
             self._history_index = len(self._history)
@@ -758,12 +760,17 @@ class PythonConsoleWidget(QTextEdit):
     def history_snapshot(self) -> list[str]:
         return list(self._history)
 
+    def history_appended_count(self) -> int:
+        """Entries appended since the last ``set_history``, counting ones the cap later evicted."""
+        return self._history_appended
+
     def set_history(self, entries: list[str]) -> None:
         normalized = [entry for entry in entries if isinstance(entry, str) and entry.strip()]
         if len(normalized) > _MAX_HISTORY:
             normalized = normalized[-_MAX_HISTORY:]
         self._history = normalized
         self._history_index = len(self._history)
+        self._history_appended = 0
 
     def _show_history_search_picker(self) -> None:
         if not self._history:

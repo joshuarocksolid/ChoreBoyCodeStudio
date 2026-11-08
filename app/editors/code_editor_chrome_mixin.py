@@ -4,7 +4,7 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping
 from typing import TYPE_CHECKING, Any, cast
 
-from app.qt.QtCore import QPointF, QRect, QSize, Qt
+from app.qt.QtCore import QEvent, QPoint, QPointF, QRect, QSize, Qt
 from app.qt.QtGui import QColor, QPainter, QPolygonF, QTextCursor, QTextFormat
 from app.qt.QtWidgets import QTextEdit, QWidget
 from app.qt.qt_compat import event_pos
@@ -27,6 +27,10 @@ if TYPE_CHECKING:
         _gutter_notes: dict[int, str]
         _gutter_note_width: int
         _breakpoint_color: QColor
+        _change_mark_lines: set[int]
+        _change_mark_callback: Callable[[int], None] | None
+        _change_mark_color: QColor
+        _line_hover_callback: Callable[[int, QPoint, QPoint], bool] | None
         _diagnostic_lines: dict[int, Any]
 
         def _diag_color_for_severity(self, severity: Any) -> QColor: ...
@@ -50,10 +54,29 @@ class _LineNumberArea(QWidget):
     def paintEvent(self, event) -> None:  # type: ignore[no-untyped-def]  # noqa: N802
         self._editor.paint_line_number_area(event)
 
+    def event(self, event) -> bool:  # noqa: N802 - Qt signature
+        if event.type() == QEvent.ToolTip:
+            callback = getattr(self._editor, "_line_hover_callback", None)
+            if callback is not None:
+                point = event_pos(event)
+                line = self._editor._line_at_y(int(point.y()))
+                local = self.mapTo(self._editor, point)
+                if callback(line, QPoint(event.globalPos()), QPoint(local)):
+                    return True
+        return super().event(event)
+
     def mousePressEvent(self, event) -> None:  # type: ignore[no-untyped-def]  # noqa: N802
         if event.button() != Qt.LeftButton:
             return super().mousePressEvent(event)
-        self._editor.toggle_breakpoint_at_y(event_pos(event).y())
+        point = event_pos(event)
+        marks = getattr(self._editor, "_change_mark_lines", None)
+        callback = getattr(self._editor, "_change_mark_callback", None)
+        if marks and callback is not None and point.x() >= self.width() - 8:
+            line = self._editor._line_at_y(point.y())
+            if line in marks:
+                callback(line)
+                return
+        self._editor.toggle_breakpoint_at_y(point.y())
 
 
 class CodeEditorChromeMixin(_CodeEditorChromeBase):
@@ -66,6 +89,10 @@ class CodeEditorChromeMixin(_CodeEditorChromeBase):
         self._gutter_note_width = 0
         self._line_number_area = _LineNumberArea(self)
         self._breakpoint_toggled_callback: Callable[[int, bool], None] | None = None
+        self._change_mark_lines: set[int] = set()
+        self._change_mark_callback: Callable[[int], None] | None = None
+        self._change_mark_color = QColor("#1A7F37")
+        self._line_hover_callback: Callable[[int, QPoint, QPoint], bool] | None = None
         self._debug_execution_color = QColor("#D97706")
         self._debug_execution_line_bg = QColor("#D0E2FF")
         self._gutter_bg = QColor("#F1F3F5")
@@ -79,6 +106,8 @@ class CodeEditorChromeMixin(_CodeEditorChromeBase):
         self._gutter_bg = QColor(tokens.gutter_bg)
         self._gutter_text = QColor(tokens.gutter_text)
         self._breakpoint_color = QColor(tokens.diag_error_color)
+        if tokens.test_passed_color:
+            self._change_mark_color = QColor(tokens.test_passed_color)
         if tokens.debug_paused_color:
             self._debug_execution_color = QColor(tokens.debug_paused_color)
         if tokens.debug_current_frame_bg:
@@ -86,6 +115,34 @@ class CodeEditorChromeMixin(_CodeEditorChromeBase):
 
     def set_breakpoint_toggled_callback(self, callback: Callable[[int, bool], None] | None) -> None:
         self._breakpoint_toggled_callback = callback
+
+    def set_change_marks(
+        self,
+        lines: set[int],
+        on_click: Callable[[int], None] | None = None,
+    ) -> None:
+        """Paint a thin mark on the gutter's right edge. Clicking it calls ``on_click``."""
+        self._change_mark_lines = set(lines)
+        self._change_mark_callback = on_click
+        self._line_number_area.update()
+
+    def set_line_hover_callback(self, callback: Callable[[int, QPoint, QPoint], bool] | None) -> None:
+        """Hover hook. Return True only when the pointer is on team-sync chrome."""
+        self._line_hover_callback = callback
+
+    def _line_at_y(self, y_coordinate: int) -> int:
+        block = self.firstVisibleBlock()
+        block_number = block.blockNumber()
+        top = int(self.blockBoundingGeometry(block).translated(self.contentOffset()).top())
+        bottom = top + int(self.blockBoundingRect(block).height())
+        while block.isValid():
+            if top <= y_coordinate <= bottom:
+                return block_number + 1
+            block = block.next()
+            block_number += 1
+            top = bottom
+            bottom = top + int(self.blockBoundingRect(block).height())
+        return 0
 
     def set_breakpoints(self, breakpoints: set[int]) -> None:
         self._breakpoints = set(breakpoints)
@@ -195,6 +252,15 @@ class CodeEditorChromeMixin(_CodeEditorChromeBase):
                     color = self._gutter_text
                     font_height = self.fontMetrics().height()
                     center_y = top + font_height // 2
+
+                    if line_number in self._change_mark_lines:
+                        painter.fillRect(
+                            self._line_number_area.width() - 4,
+                            top + 2,
+                            3,
+                            max(4, bottom - top - 4),
+                            self._change_mark_color,
+                        )
 
                     if line_number in self._breakpoints:
                         color = self._breakpoint_color

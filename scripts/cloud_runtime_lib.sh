@@ -112,6 +112,7 @@ cloud_install_apt_packages() {
     && command -v Xvfb >/dev/null 2>&1 \
     && dpkg -s libxcb-xinerama0 >/dev/null 2>&1; then
     cloud_log "apt packages already present"
+    cloud_install_docker
     return 0
   fi
   if ! command -v apt-get >/dev/null 2>&1; then
@@ -121,18 +122,64 @@ cloud_install_apt_packages() {
   cloud_log "installing apt packages"
   cloud_as_root apt-get update -y
   cloud_as_root env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "${needed[@]}"
+  cloud_install_docker
+}
+
+cloud_install_docker() {
+  if command -v docker >/dev/null 2>&1; then
+    cloud_log "docker already present ($(docker --version 2>/dev/null || true))"
+    return 0
+  fi
+  if ! command -v apt-get >/dev/null 2>&1; then
+    cloud_log "apt-get unavailable; docker not installed"
+    return 0
+  fi
+  cloud_log "installing docker.io"
+  cloud_as_root apt-get update -y
+  cloud_as_root env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends docker.io
+}
+
+cloud_install_pgtest() {
+  # FreeCAD 1.1.4 does not ship the drivers. Schema helpers are a fresh
+  # interpreter, so the packages have to sit on its site-packages. The gate
+  # also adds vendor_pgtest to sys.path for the parent pytest process.
+  local python="/usr/local/bin/cbcs-fb-python"
+  if [[ ! -x "$python" ]]; then
+    cloud_log "no cbcs-fb-python; pg93 drivers not installed"
+    return 0
+  fi
+  if ! "$python" -c 'import psycopg, pg8000' >/dev/null 2>&1; then
+    cloud_log "installing psycopg 3.3.4 and pg8000 1.31.5 into the FreeCAD 1.1 prefix"
+    "$python" -m pip install 'psycopg[binary]==3.3.4' 'pg8000==1.31.5'
+  else
+    cloud_log "FreeCAD 1.1 already imports psycopg and pg8000"
+  fi
+  local target="${CBCS_ARTIFACTS_DIR:-$(cloud_home)/cbcs_artifacts}/vendor_pgtest"
+  if [[ -d "${target}/psycopg" && -d "${target}/pg8000" ]]; then
+    cloud_log "vendor_pgtest already present at ${target}"
+    return 0
+  fi
+  mkdir -p "$target"
+  cloud_log "installing psycopg and pg8000 into ${target}"
+  "$python" -m pip install --target "$target" 'psycopg[binary]==3.3.4' 'pg8000==1.31.5'
 }
 
 cloud_install_node() {
-  if command -v node >/dev/null 2>&1 && command -v npm >/dev/null 2>&1; then
-    cloud_log "node already present ($(node -v))"
+  # nvm can satisfy `command -v node` while /usr/bin and /usr/local/bin stay empty.
+  # The form-builder gate runs with a stripped PATH, so the binaries have to live here.
+  if [[ -x /usr/local/bin/node && -x /usr/local/bin/npx ]]; then
+    cloud_log "node already present ($(/usr/local/bin/node -v)) at /usr/local/bin"
+    return 0
+  fi
+  if [[ -x /usr/bin/node && -x /usr/bin/npx ]]; then
+    cloud_log "node already present ($(/usr/bin/node -v)) at /usr/bin"
     return 0
   fi
   local cache="${CBCS_DOWNLOAD_CACHE:-$(cloud_home)/.cache/cbcs}"
   local archive="${cache}/${NODE_FILENAME}"
   cloud_download "$NODE_URL" "$archive" "$NODE_SHA256"
   cloud_as_root tar -xJf "$archive" -C /usr/local --strip-components=1
-  cloud_log "installed node $(node -v)"
+  cloud_log "installed node $(/usr/local/bin/node -v)"
 }
 
 cloud_install_miniconda() {
@@ -355,6 +402,43 @@ cloud_publish_freecad_11_tools() {
   cloud_write_env_files /usr/local/bin/cbcs-fb-python "$uic" "$rcc"
 }
 
+cloud_mark_pyside_stubs() {
+  # PySide ships .pyi stubs and no py.typed marker. Pyright then ignores the
+  # stubs once --pythonpath can import the package, and types from the untyped
+  # extension modules instead. An empty marker makes it use the stubs.
+  local pkg
+  for pkg in "$@"; do
+    if [[ ! -d "$pkg" || -e "$pkg/py.typed" ]]; then
+      continue
+    fi
+    if [[ -w "$pkg" ]]; then
+      touch "$pkg/py.typed"
+    else
+      cloud_as_root touch "$pkg/py.typed"
+    fi
+    cloud_log "marked ${pkg}/py.typed"
+  done
+}
+
+cloud_mark_known_pyside_stubs() {
+  local home prefix
+  home="$(cloud_home)"
+  prefix="${FREECAD_DEV_PREFIX:-${home}/opt/freecad}"
+  local roots=()
+  local root
+  for root in \
+    "${prefix}/lib/python3.9/site-packages" \
+    "${FREECAD_10_DEST:-}/usr/lib/python3.11/site-packages" \
+    "${FREECAD_11_DEST:-}/usr/lib/python3.11/site-packages"
+  do
+    [[ -n "$root" && -d "$root" ]] || continue
+    roots+=("$root/PySide2" "$root/PySide6" "$root/shiboken2" "$root/shiboken6")
+  done
+  if ((${#roots[@]})); then
+    cloud_mark_pyside_stubs "${roots[@]}"
+  fi
+}
+
 cloud_verify_runtimes() {
   local home prefix
   home="$(cloud_home)"
@@ -372,6 +456,7 @@ cloud_verify_runtimes() {
   fi
   # FreeCAD treats a long -c string as a filesystem path and fails with
   # "File name too long". Keep each probe to one short statement.
+  cloud_mark_known_pyside_stubs
   cloud_log "FreeCAD 1.0 AppRun"
   "${FREECAD_10_DEST}/AppRun" -c 'import sys,PySide2,FreeCAD; print(sys.version.split()[0], PySide2.__version__, FreeCAD.Version()[:3])'
   cloud_log "FreeCAD 1.1 AppRun"

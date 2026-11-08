@@ -57,3 +57,6 @@ app/ui/icons/installer_icon_*.png
 # pyright, installed by the cloud install script
 node_modules/
 
+
+# Team Sync review screenshots (tools/team_sync_screens.py); evidence lives on prototype/team-sync
+docs/team_sync/screens/
