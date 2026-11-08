@@ -198,9 +198,17 @@ def _classify_import(
             category=CATEGORY_VENDORED_NATIVE,
         )
 
-    # FreeCAD provides the PySide shim, and FreeCAD 1.1 provides PySide6.
-    # Generated forms import PySide6 even when the runtime inventory has not been probed.
-    if module_name in ("PySide", "PySide.QtCore", "PySide.QtGui", "PySide.QtWidgets") or top_level == "PySide6":
+    # FreeCAD provides the PySide shim. A probe that never imported it is not a missing module.
+    if module_name in ("PySide", "PySide.QtCore", "PySide.QtGui", "PySide.QtWidgets"):
+        return ClassifiedModule(
+            module_name=module_name,
+            top_level=top_level,
+            category=CATEGORY_RUNTIME,
+        )
+
+    # Generated forms import PySide6. Assume the runtime has it only when nothing
+    # was probed. A loaded inventory that omits PySide6 (FreeCAD 1.0) is missing it.
+    if top_level == "PySide6" and inventory.state != "loaded":
         return ClassifiedModule(
             module_name=module_name,
             top_level=top_level,

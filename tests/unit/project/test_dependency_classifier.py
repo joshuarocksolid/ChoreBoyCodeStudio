@@ -130,6 +130,31 @@ def test_classify_module_treats_pyside6_as_runtime_without_an_inventory(tmp_path
     assert core.category == CATEGORY_RUNTIME
 
 
+def test_classify_module_reports_pyside6_missing_when_the_loaded_inventory_lacks_it(
+    tmp_path: Path,
+) -> None:
+    known = frozenset({"FreeCAD", "PySide"})
+    widgets = classify_module(
+        project_root=tmp_path,
+        module_name="PySide6.QtWidgets",
+        known_runtime_modules=known,
+    )
+    core = classify_module(
+        project_root=tmp_path,
+        module_name="PySide6",
+        known_runtime_modules=known,
+    )
+    shim = classify_module(
+        project_root=tmp_path,
+        module_name="PySide.QtWidgets",
+        known_runtime_modules=known,
+    )
+
+    assert widgets.category == CATEGORY_MISSING
+    assert core.category == CATEGORY_MISSING
+    assert shim.category == CATEGORY_RUNTIME
+
+
 def test_has_compiled_extension_candidate_detects_top_level_so(tmp_path: Path) -> None:
     (tmp_path / "fastlib.cpython-39-x86_64-linux-gnu.so").write_bytes(b"")
 
