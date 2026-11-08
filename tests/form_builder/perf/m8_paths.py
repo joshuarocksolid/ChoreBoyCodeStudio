@@ -32,7 +32,7 @@ IDLE_LOOPS = 116000
 LOAD_LIMIT = 4.0
 LOAD_WAIT_S = 15 * 60
 ROOT = Path(__file__).resolve().parents[3]
-DEFAULT_RESULTS = ROOT / "docs" / "form_builder" / "orch" / "probe_m8r_vm" / "results"
+DEFAULT_RESULTS = ROOT / "artifacts" / "form_builder" / "probe_m8r_vm" / "results"
 
 
 @dataclass(frozen=True)

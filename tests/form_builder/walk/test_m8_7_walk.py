@@ -2,7 +2,7 @@
 """M8.7 persona walks. Skipped unless CBCS_FB_WALK=1. Not a unit-lane test.
 
 Keys only, on a real MainWindow, over a fresh shop project. Each step writes
-a screenshot and a log line under docs/form_builder/orch/m87_walk/.
+a screenshot and a log line under artifacts/form_builder/m87_walk/.
 """
 
 from __future__ import annotations
@@ -26,7 +26,7 @@ pytestmark = [
 ]
 
 _ROOT = Path(__file__).resolve().parents[3]
-_OUT = _ROOT / "docs" / "form_builder" / "orch" / "m87_walk"
+_OUT = _ROOT / "artifacts" / "form_builder" / "m87_walk"
 _OWNER_JARGON = (
     "cbcs",
     "self.",

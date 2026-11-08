@@ -422,7 +422,7 @@ Each lane's tests are new files named `tests/form_builder/**/test_m7_<lane>_*.py
 | M7.5 | new `qtside/formula/builder/`, the mode switch in `qtside/formula/` (after M7.2b) | `engine/**` | L-builder; K30 |
 | M7.6 | `qtside/preview/child/**` (runs the traced module through `TryStart`, the stand-in window's `_cbcs_trace` and log, window values), `integration/preview_control.py` (asks codegen for `trace=True`), `integration/preview_notice.py`, new `qtside/preview/what_ran.py` | `engine/codegen/**` (report) | L-try-mode |
 | M7.8 | new `qtside/logic_panel/`, new `integration/keys_ext/logic.py`, new `integration/find_ext/forms_logic.py` and `integration/rename_ext/` with their own discovery `__init__.py`, plus one hook each in the shell's project Find and rename-refactor files (the smallest change; name the files in the report), new `engine/logic/uses.py`, new `engine/project/code_connections.py` (FB116), `integration/rename_ext/methods.py`, new `engine/logic/read_as_text.py` | the M7 engine modules (report) | L-logic-panel, L-search, L-read-as-text |
-| M7.R | `tests/form_builder/perf/` (M7 rows), `tests/form_builder/qtside/test_m7_keyboard_scripts.py`, probe updates in `docs/form_builder/orch/` | product files only through fix lanes | ledger audit |
+| M7.R | `tests/form_builder/perf/` (M7 rows), `tests/form_builder/qtside/test_m7_keyboard_scripts.py`. The build trail under `docs/form_builder/orch/` lives on tag `form-builder-trail-m10`. | product files only through fix lanes | ledger audit |
 
 **Order and dependencies.**
 
@@ -466,7 +466,7 @@ Expected size in net lines:
 
 One Opus gate runs at a time. M7.0s goes first, then M7.1a, because M7.1b rebases on it.
 
-M7.6 and M7.R run the §13.4.10 facts on the ChoreBoy VM, using the M6.R probe method in `docs/form_builder/orch/`.
+M7.6 and M7.R run the §13.4.10 facts on the ChoreBoy VM. The build trail under `docs/form_builder/orch/` lives on tag `form-builder-trail-m10`.
 
 **Done when, per lane:** the M6 per-lane rule applies, with these M7 changes:
 - every sentence the lane adds is a §13.4.8 row;
@@ -503,7 +503,7 @@ M7.6 and M7.R run the §13.4.10 facts on the ChoreBoy VM, using the M6.R probe m
 | --- | --- | --- | --- |
 | M8.0s | Seams for M8 (above, and CONTRACTS §19.1's list: close-guard hook, setup-line order, model change signals, settings-page project scope) | G, O-logic | Empty sections register. A form with no data generates byte-identical to M7 |
 | M8.7 | Persona walkthroughs (UX §13.5.10): the shop owner and the Qt developer, keys-only, through Form from a table, lookups, lines, Try and the running app. The dialog can set `main.py` to open the new screen when that file is still the template (UX-TABLE-003) | G, O-UX | Findings fixed or ledgered, with walk shots |
-| M8.R | Review of M8: heuristic pass, K31–K34 together, UX-M8-003 speed rows on the Mac and the VM, the invoice demo on the VM against PostgreSQL 9.3, fix lanes. Carries M7.R's notes (`orch/m7r_notes.md`, "Carried to M8") | G, O-UX + O-logic | APPROVE. Ledger: every M8 row done |
+| M8.R | Review of M8: heuristic pass, K31–K34 together, UX-M8-003 speed rows on the Mac and the VM, the invoice demo on the VM against PostgreSQL 9.3, fix lanes. Carries M7.R's notes ("Carried to M8"). The build trail under `docs/form_builder/orch/` lives on tag `form-builder-trail-m10`. | G, O-UX + O-logic | APPROVE. Ledger: every M8 row done |
 
 ### M9. Hardening and polish
 

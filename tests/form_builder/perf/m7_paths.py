@@ -8,7 +8,7 @@ the FreeCAD python.
 
 20 samples, the first dropped, Hyndman-Fan p50 and p95, process CPU, load on
 every row, and the M6.R idle loop. A miss is profiled into
-``docs/form_builder/orch/m7r_mac/results/``.
+``artifacts/form_builder/m7r_mac/results/``.
 """
 
 from __future__ import annotations
@@ -29,7 +29,7 @@ IDLE_LOOPS = 116000
 LOAD_LIMIT = 4.0
 LOAD_WAIT_S = 15 * 60
 ROOT = Path(__file__).resolve().parents[3]
-RESULTS = ROOT / "docs" / "form_builder" / "orch" / "m7r_mac" / "results"
+RESULTS = ROOT / "artifacts" / "form_builder" / "m7r_mac" / "results"
 TARGET = "field0000"
 PREVIEW_EDIT = "field0096"
 FORMULA = "1" + (" + 1" * 49) + "   "

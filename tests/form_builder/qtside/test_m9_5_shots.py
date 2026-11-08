@@ -2,14 +2,14 @@
 """M9.5 visual tour of the real Code Studio window.
 
 Re-run from the repo root. The command writes
-``docs/form_builder/orch/shots_m9_5/<NN>-<surface>-<state>-<theme>-<scale>.png``
+``artifacts/form_builder/shots_m9_5/<NN>-<surface>-<state>-<theme>-<scale>.png``
 and ``index.html`` beside those files. ``100`` is light, dark, and
 high-contrast dark. ``200`` is light only, and only for the dense surfaces.
 Unset ``CBCS_FB_SCREENSHOT_DIR`` and the test skips.
 
     export PYTHONNOUSERSITE=1 QT_QPA_PLATFORM=offscreen CBCS_DISABLE_BACKGROUND_RUNTIME=1
     export PYTHONPATH="$PWD:/Users/local/Projects/ChoreBoyCodeStudio_artifacts/vendor_py39"
-    export CBCS_FB_SCREENSHOT_DIR="$PWD/docs/form_builder/orch/shots_m9_5"
+    export CBCS_FB_SCREENSHOT_DIR="$PWD/artifacts/form_builder/shots_m9_5"
     /Applications/FreeCAD.app/Contents/Resources/bin/python -s -m pytest \\
         -p no:cacheprovider --import-mode=importlib --timeout 900 -q \\
         tests/form_builder/qtside/test_m9_5_shots.py

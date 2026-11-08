@@ -60,3 +60,6 @@ node_modules/
 
 # Team Sync review screenshots (tools/team_sync_screens.py); evidence lives on prototype/team-sync
 docs/team_sync/screens/
+
+# Form-builder probe output (screenshots, walk logs, perf results).
+/artifacts/

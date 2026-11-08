@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import os
 import sys
+from pathlib import Path
 
 from app.features.form_builder.engine.query.selection import SelectionSource
 from app.features.form_builder.integration.chrome import chrome_for
@@ -40,10 +41,10 @@ def _grab(widget: QWidget, path: str, scale: int) -> None:
 
 
 def main() -> None:
-    folder = os.environ.get(
-        "CBCS_FB_SCREENSHOT_DIR",
-        "/Users/local/Projects/ChoreBoyCodeStudio/docs/form_builder/orch/shots_m4.3b",
-    )
+    default = Path(__file__).resolve().parents[3] / "artifacts" / "form_builder" / "shots_m4.3b"
+    folder_path = Path(os.environ.get("CBCS_FB_SCREENSHOT_DIR", str(default)))
+    folder_path.mkdir(parents=True, exist_ok=True)
+    folder = str(folder_path)
     scale = 2 if os.environ.get("QT_SCALE_FACTOR") == "2" else 1
     app = QApplication.instance() or QApplication(sys.argv)
     session, realizer = realize(_FORM)
