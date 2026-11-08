@@ -20,6 +20,7 @@ from app.features.form_builder.engine.project.packaging import (
     save_form_now,
 )
 from app.features.form_builder.engine.ui4.reader import UiReadError
+from app.features.form_builder.install import form_builder_enabled
 from app.packaging.payload_policy import DEFAULT_PACKAGING_PAYLOAD_POLICY
 
 _FIX_LABEL = "Save the form now"
@@ -35,7 +36,13 @@ def _form_save_available() -> bool:
 
 
 def form_packaging_issues(project_root: str) -> list[RuntimeIssue]:
-    """Blocking problems for stale or missing output, plus degraded loader calls."""
+    """Blocking problems for stale or missing output, plus degraded loader calls.
+
+    ``form_builder_enabled`` is the same gate that hides the feature on PySide2.
+    A hand-written Qt Designer ``.ui`` then packages with no form-file problems.
+    """
+    if not form_builder_enabled():
+        return []
     report = inspect_forms(project_root)
     issues = [_issue_for_file(project_root, item) for item in report.files if item.state != "current"]
     issues.extend(_loader_issues(project_root))

@@ -14,6 +14,7 @@ from app.features.form_builder.engine.project.fs import OsFileSystem
 from app.features.form_builder.engine.project.save import write_generated
 from app.features.form_builder.engine.ui4.reader import read_ui
 from app.features.form_builder.engine.project.packaging import inspect_forms
+from app.features.form_builder.install import form_builder_enabled
 from app.packaging.form_files import form_packaging_issues, save_packaged_form
 from app.packaging.packager import package_project
 
@@ -95,14 +96,16 @@ def test_package_payload_includes_generated_form_files(tmp_path: Path) -> None:
     assert "loadUi(" not in packaged
 
 
-def test_stale_generated_module_stops_export_until_save(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setattr("app.packaging.form_files.select_binding", lambda: "PySide6")
+def test_stale_generated_module_stops_export_until_save(tmp_path: Path) -> None:
     root = _form_project(tmp_path)
     ui_py = root / "forms" / "ui_invoice.py"
     ui_py.write_text(_zero_source_sha(ui_py.read_text(encoding="utf-8")), encoding="utf-8")
     stale = [issue for issue in form_packaging_issues(str(root)) if issue.issue_id == "package.form.stale"]
+    if not form_builder_enabled():
+        assert stale == []
+        result = _package(root, tmp_path / "exports")
+        assert result.success, [issue.summary for issue in result.validation.issue_report.issues]
+        return
     assert [issue.summary for issue in stale] == ["ui_invoice.py is older than invoice.ui."]
     assert stale[0].evidence["fix_label"] == "Save the form now"
     assert stale[0].is_blocking
@@ -112,13 +115,15 @@ def test_stale_generated_module_stops_export_until_save(
     assert [issue for issue in form_packaging_issues(str(root)) if issue.issue_id == "package.form.stale"] == []
 
 
-def test_missing_generated_module_stops_export_until_save(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setattr("app.packaging.form_files.select_binding", lambda: "PySide6")
+def test_missing_generated_module_stops_export_until_save(tmp_path: Path) -> None:
     root = _form_project(tmp_path)
     (root / "forms" / "ui_invoice.py").unlink()
     missing = [issue for issue in form_packaging_issues(str(root)) if issue.issue_id == "package.form.missing"]
+    if not form_builder_enabled():
+        assert missing == []
+        result = _package(root, tmp_path / "exports")
+        assert result.success, [issue.summary for issue in result.validation.issue_report.issues]
+        return
     assert any(issue.summary == "ui_invoice.py is missing." for issue in missing)
     assert missing[0].evidence["fix_action"] == "save_form"
     assert save_packaged_form(str(root), str(root / "forms" / "invoice.ui")) == ""
@@ -126,19 +131,43 @@ def test_missing_generated_module_stops_export_until_save(
     assert [issue for issue in form_packaging_issues(str(root)) if issue.summary == "ui_invoice.py is missing."] == []
 
 
-def test_stale_form_on_pyside2_warns_and_export_continues(
+_DESIGNER_UI = """<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>Invoice</class>
+ <widget class="QLabel" name="logo">
+  <property name="pixmap">
+   <pixmap>img/logo.png</pixmap>
+  </property>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>
+"""
+
+
+def test_pyside2_designer_ui_with_a_pixmap_path_adds_no_form_problems(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr("app.packaging.form_files.select_binding", lambda: "PySide2")
-    root = _form_project(tmp_path)
-    ui_py = root / "forms" / "ui_invoice.py"
-    ui_py.write_text(_zero_source_sha(ui_py.read_text(encoding="utf-8")), encoding="utf-8")
-    stale = [issue for issue in form_packaging_issues(str(root)) if issue.issue_id == "package.form.stale"]
-    assert len(stale) == 1
-    assert stale[0].severity == "degraded"
-    assert stale[0].next_steps == ["Open this project in FreeCAD 1.1 or later and save the form."]
-    assert "fix_action" not in stale[0].evidence
+    monkeypatch.setenv("CBCS_QT_API", "pyside2")
+    monkeypatch.delenv("CBCS_FORM_BUILDER", raising=False)
+    assert form_builder_enabled() is False
+    root = tmp_path / "project"
+    (root / "forms").mkdir(parents=True)
+    (root / "main.py").write_text("print('hello')\n", encoding="utf-8")
+    (root / "cbcs").mkdir()
+    (root / "cbcs" / "project.json").write_text(
+        '{"name":"Demo","schema_version":1}\n',
+        encoding="utf-8",
+    )
+    (root / "forms" / "invoice.ui").write_text(_DESIGNER_UI, encoding="utf-8")
+    assert form_packaging_issues(str(root)) == []
     result = _package(root, tmp_path / "exports")
+    form_issues = [
+        issue
+        for issue in result.validation.issue_report.issues
+        if issue.issue_id.startswith("package.form.")
+    ]
+    assert form_issues == []
     assert result.success, [issue.summary for issue in result.validation.issue_report.issues]
 
 
@@ -167,9 +196,12 @@ def test_runtime_ui_loader_is_a_warning_and_export_continues(tmp_path: Path) -> 
         encoding="utf-8",
     )
     loaders = [issue for issue in form_packaging_issues(str(root)) if issue.issue_id == "package.form.runtime_loader"]
-    assert len(loaders) == 1
-    assert loaders[0].severity == "degraded"
-    assert "loadUi" in loaders[0].summary
+    if form_builder_enabled():
+        assert len(loaders) == 1
+        assert loaders[0].severity == "degraded"
+        assert "loadUi" in loaders[0].summary
+    else:
+        assert loaders == []
     result = _package(root, tmp_path / "exports")
     assert result.success, [issue.summary for issue in result.validation.issue_report.issues]
 
