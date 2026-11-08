@@ -55,6 +55,10 @@ class TeamInfoBar(QFrame):
         self.hide()
 
     def apply_theme(self, tokens: ShellThemeTokens) -> None:
+        from app.qt.qt_compat import wrapper_is_valid
+
+        if not wrapper_is_valid(self._warning):
+            return
         self._tokens = tokens
         self._warning.setPixmap(warning_icon(tokens.diag_warning_color or "#D97706").pixmap(16, 16))
         _polish(self)

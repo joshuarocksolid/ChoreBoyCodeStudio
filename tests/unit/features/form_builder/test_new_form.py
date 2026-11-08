@@ -1301,3 +1301,32 @@ def test_data_sections_stack_and_the_footer_stays_at_the_bottom(tmp_path: Path, 
     finally:
         panel.close()
         session.dispose()
+
+
+def test_the_start_tab_stays_open_while_the_from_table_dialog_is_up(qapp) -> None:  # type: ignore[no-untyped-def]
+    from app.qt.QtWidgets import QDialog
+
+    from app.features.form_builder.integration.new_form import _close_start_tab
+
+    closed = []
+
+    class Workflow:
+        def close_tab_discarding_edits(self, path: str, skip_close_blockers: bool = False) -> None:
+            del skip_close_blockers
+            closed.append(path)
+
+    class Window:
+        _editor_tab_workflow = Workflow()
+
+    dialog = QDialog()
+    dialog.setObjectName("formBuilder.fromTable")
+    dialog.show()
+    try:
+        qapp.processEvents()
+        _close_start_tab(Window(), "/tmp/cbcs-project")
+        qapp.processEvents()
+        assert closed == []
+    finally:
+        dialog.hide()
+        dialog.deleteLater()
+        qapp.processEvents()
