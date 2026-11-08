@@ -1004,6 +1004,15 @@ class FromTableDialog(QDialog):
         spare = viewport - include - type_width - shows - column
         if spare < 64:
             column = max(48, viewport - include - type_width - shows - 64)
+        # The Shows combo's size hint can leave the Label column under 48px.
+        # Stretch then keeps the header text width and the header grows past
+        # the viewport. Take the missing pixels from Shows, then Type.
+        room = viewport - include - column - type_width - shows - 48
+        if room < 0:
+            shows = max(48, shows + room)
+            room = viewport - include - column - type_width - shows - 48
+        if room < 0:
+            type_width = max(16, type_width + room)
         header.setStretchLastSection(False)
         for index, width in ((0, include), (1, column), (2, type_width), (3, shows)):
             header.setSectionResizeMode(index, fixed)
