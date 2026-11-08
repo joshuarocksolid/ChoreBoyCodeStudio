@@ -116,6 +116,20 @@ def test_classify_module_treats_the_freecad_pyside_shim_as_runtime(tmp_path: Pat
     assert printing.category == CATEGORY_MISSING
 
 
+def test_classify_module_treats_future_as_stdlib(tmp_path: Path) -> None:
+    classification = classify_module(project_root=tmp_path, module_name="__future__")
+
+    assert classification.category == CATEGORY_STDLIB
+
+
+def test_classify_module_treats_pyside6_as_runtime_without_an_inventory(tmp_path: Path) -> None:
+    widgets = classify_module(project_root=tmp_path, module_name="PySide6.QtWidgets")
+    core = classify_module(project_root=tmp_path, module_name="PySide6")
+
+    assert widgets.category == CATEGORY_RUNTIME
+    assert core.category == CATEGORY_RUNTIME
+
+
 def test_has_compiled_extension_candidate_detects_top_level_so(tmp_path: Path) -> None:
     (tmp_path / "fastlib.cpython-39-x86_64-linux-gnu.so").write_bytes(b"")
 
