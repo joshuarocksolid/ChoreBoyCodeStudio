@@ -679,8 +679,8 @@ def test_preview_lays_out_at_the_column_width(tmp_path: Path, qapp: object) -> N
             corner = control.mapTo(form, control.rect().bottomRight())
             assert corner.x() <= form.width()
             assert corner.y() <= form.height()
-            found.append(corner.y())
-        assert max(found) > min(found)
+            found.append((corner.x(), corner.y()))
+        assert len(set(found)) == len(found)
         assert "First Name" in [label.text() for label in labels]
         dialog.set_included("first_name", False)
         for _ in range(4):

@@ -145,17 +145,22 @@ class Kb:
     def pump(self, rounds: int = 6) -> None:
         for _ in range(rounds):
             self.qapp.processEvents()
-        # The offscreen platform has no window manager: when a popup closes
-        # no window becomes active again, so focus reads as None although the
-        # window still remembers its focus widget. A real X11 session keeps
-        # the main window active (popups are override-redirect). Emulate that.
+        # Offscreen has no window manager. A popup close drops the active
+        # window, or leaves it active with no focus widget. A real session
+        # keeps the main window active and the focus it had.
         if (
-            QApplication.activeWindow() is None
-            and QApplication.activePopupWidget() is None
+            QApplication.activePopupWidget() is None
             and QApplication.activeModalWidget() is None
             and self.window.isVisible()
+            and (QApplication.activeWindow() is None or QApplication.focusWidget() is None)
         ):
-            self.window.activateWindow()
+            if QApplication.activeWindow() is None:
+                self.window.activateWindow()
+            remembered = self.window.focusWidget()
+            if remembered is not None:
+                remembered.setFocus()
+            elif self.surface is not None and hasattr(self.surface, "_focus_canvas_unless_inside"):
+                self.surface._focus_canvas_unless_inside()
             for _ in range(2):
                 self.qapp.processEvents()
 

@@ -8,7 +8,7 @@ import sys
 
 import pytest
 
-from app.qt.QtGui import QOpenGLContext
+from app.qt.QtGui import QFont, QOpenGLContext
 from app.qt.QtWidgets import QApplication
 from app.features.form_builder.engine.codegen.api import generate_form_module
 from app.features.form_builder.engine.ids import IdAllocator
@@ -89,6 +89,10 @@ def test_a_stand_in_paints_the_spec_colours(high_contrast: bool) -> None:
     holder = QWidget()
     widget = StandInWidget(holder, friendly="OpenGL widget", high_contrast=high_contrast)
     widget.resize(160, 96)
+    font = widget.font()
+    # Subpixel filtering shifts the painted #RRGGBB. The sample is the glyph ink.
+    font.setStyleStrategy(getattr(getattr(QFont, "StyleStrategy", QFont), "NoSubpixelAntialias"))
+    widget.setFont(font)
     image = widget.grab().toImage()
     fill = image.pixelColor(20, 20)
     assert (fill.red(), fill.green(), fill.blue()) == ((255, 255, 255) if high_contrast else (0xF4, 0xF4, 0xF4))

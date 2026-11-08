@@ -74,8 +74,16 @@ def _drive_confirm(kb: Kb, button: str, log: List[str]) -> None:
         if not isinstance(box, QMessageBox):
             QTimer.singleShot(20, step)
             return
+        # Offscreen never activates the modal, so focus stays on the page
+        # under it and Tab never reaches the buttons.
+        QApplication.setActiveWindow(box)
+        default = box.defaultButton()
+        default_text = ""
+        if default is not None:
+            default.setFocus()
+            default_text = default.text()
         log.append(box.text())
-        log.append("default=" + box.defaultButton().text())
+        log.append("default=" + default_text)
         for _ in range(4):
             focus = QApplication.focusWidget()
             if focus is not None and getattr(focus, "text", lambda: "")() == button:
