@@ -1211,6 +1211,14 @@ def test_create_from_dialog_writes_nothing_on_a_clash(tmp_path: Path, qapp: obje
 def test_create_from_dialog_undoes_on_the_editor_tab(tmp_path: Path, qapp: object) -> None:
     import json
 
+    from app.features.form_builder.install import form_builder_enabled
+
+    if not form_builder_enabled():
+        pytest.skip(
+            "Form builder editor tabs are registered on PySide6. "
+            "This coverage lives in the form-builder gate's unit-py311 lane."
+        )
+
     from app.features.form_builder.engine.ids import IdAllocator
     from app.features.form_builder.engine.ui4.reader import read_ui
     from app.features.form_builder.engine.ui4.writer import write_ui

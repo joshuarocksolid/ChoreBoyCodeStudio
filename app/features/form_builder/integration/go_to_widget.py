@@ -6,7 +6,7 @@ from html import escape
 from typing import Callable, List, Sequence, Tuple
 
 from app.qt.QtCore import QEvent, QObject, QPoint, QRect, QSize, Qt
-from app.qt.QtGui import QKeyEvent
+from app.qt.QtGui import QCloseEvent, QKeyEvent
 from app.qt.QtWidgets import QFrame, QLabel, QListWidget, QListWidgetItem, QVBoxLayout, QWidget
 from app.qt.qt_compat import enum_value
 
@@ -109,6 +109,13 @@ class GoToWidgetPicker(QFrame):
         self.rows.setMaximumHeight(_ROW * _ROWS)
         self.setFixedWidth(_WIDTH)
         self._refill()
+
+    def closeEvent(self, event: QCloseEvent) -> None:  # noqa: N802
+        # Leave the parent before deleteLater. PySide2 does not deliver
+        # DeferredDelete from processEvents, so a hidden picker stays
+        # findable and the next open stacks a second one.
+        self.setParent(None)
+        super().closeEvent(event)
 
     def open_in(self, bounds: QRect) -> None:
         """Show near the top centre of ``bounds`` (global) with the search box focused."""

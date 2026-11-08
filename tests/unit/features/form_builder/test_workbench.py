@@ -946,6 +946,7 @@ def test_insert_rail_opens_the_short_drawer(qapp, tmp_path: Path) -> None:  # ty
 def test_go_to_widget_picker_selects_a_widget_and_closes(qapp, tmp_path: Path) -> None:  # type: ignore[no-untyped-def]
     from app.qt.QtCore import Qt as _Qt
     from app.qt.QtTest import QTest
+    from tests.support.qt_wait import qt_wait
 
     text = _FORM.replace(
         "  </layout>",
@@ -984,7 +985,7 @@ def test_go_to_widget_picker_selects_a_widget_and_closes(qapp, tmp_path: Path) -
             again = surface.findChild(QFrame, "formBuilder.goToWidget")
             assert again is not None
             QTest.keyClick(again.findChild(QLineEdit, "formBuilder.goToWidgetSearch"), _Qt.Key.Key_Escape)
-            qapp.processEvents()
+            qt_wait(0)
             assert surface.findChild(QFrame, "formBuilder.goToWidget") is None
     finally:
         surface.release()
