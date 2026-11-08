@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Callable, Optional, Sequence
 
-from app.qt.QtCore import QRectF, Qt, Signal
+from app.qt.QtCore import QRectF, QTimer, Qt, Signal
 from app.qt.QtGui import QColor, QFont, QFontMetrics, QPainter, QPainterPath, QPen, QPixmap
 from app.qt.QtWidgets import QWidget
 from app.qt.qt_compat import enum_value
@@ -100,9 +100,15 @@ class StartCard(QWidget):
         super().leaveEvent(event)  # type: ignore[arg-type]
 
     def mouseReleaseEvent(self, event: object) -> None:  # type: ignore[override]
-        if self.isEnabled() and enum_value(getattr(event, "button")()) == enum_value(Qt.LeftButton):
-            self.activated.emit(self.key)
+        left = self.isEnabled() and enum_value(getattr(event, "button")()) == enum_value(Qt.LeftButton)
+        key = self.key
         super().mouseReleaseEvent(event)  # type: ignore[arg-type]
+        if not left:
+            return
+        # The slot may replace the start page and delete this card. Emit after
+        # the release handler returns so the C++ object is still alive.
+        signal = self.activated
+        QTimer.singleShot(0, lambda: signal.emit(key))
 
     def keyPressEvent(self, event: object) -> None:  # type: ignore[override]
         key = enum_value(getattr(event, "key")())

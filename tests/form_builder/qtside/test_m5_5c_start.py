@@ -13,11 +13,13 @@ pytest.importorskip("app.qt.QtWidgets", exc_type=ImportError)
 from app.features.form_builder.engine.project import user_templates as ut
 from app.features.form_builder.engine.project.fs import OsFileSystem
 from app.features.form_builder.engine.project.templates import template_for, template_keys
+from app.features.form_builder.qtside.start.cards import StartCard
 from app.features.form_builder.qtside.start.panel import RAIL_MIN_WIDTH, RAIL_WIDTH, NewFormPanel
 from app.qt.QtCore import Qt
 from app.qt.QtGui import QColor, QPixmap
 from app.qt.QtTest import QTest
 from app.qt.QtWidgets import QApplication, QLabel, QMenu, QWidget
+from app.qt.qt_compat import delete_now
 from tests.unit.features.form_builder.test_new_form import _chrome
 
 pytestmark = [pytest.mark.unit, pytest.mark.usefixtures("qapp")]
@@ -204,3 +206,20 @@ def test_start_with_20_saved_templates_paints_in_150_ms_of_cpu(tmp_path: Path) -
     elapsed = time.process_time() - started
     assert len(panel.user_template_keys()) == 20
     assert elapsed < 0.15, "%.0f ms of CPU" % (elapsed * 1000)
+
+
+def test_clicking_a_card_that_closes_its_page_does_not_crash() -> None:
+    """A click that replaces the start page deletes the card inside the release handler."""
+    holder = QWidget()
+    card = StartCard("from_table", "Build a form from a table", "", _chrome(), holder)
+    seen: list[str] = []
+
+    def close_page(key: str) -> None:
+        seen.append(key)
+        delete_now(card)
+
+    card.activated.connect(close_page)
+    holder.show()
+    QTest.mouseClick(card, Qt.LeftButton)
+    QApplication.processEvents()
+    assert seen == ["from_table"]
