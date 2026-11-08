@@ -5,8 +5,13 @@
 # then fills repo-local vendor bundles and the pyright npm package.
 set -euo pipefail
 
-# Only the cloud image (.cursor/Dockerfile sets CBCS_RUNTIME_PINS) runs this by default.
-# On any other machine it would install into $HOME; set CBCS_FORCE_CLOUD_SETUP=1 to mean it.
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+# The image exports CBCS_RUNTIME_PINS. A plain pod does not, so use the repo pin file.
+if [[ -z "${CBCS_RUNTIME_PINS:-}" && "$(uname -s)" == "Linux" && -f "${ROOT}/scripts/cloud_runtime_pins.env" ]]; then
+  export CBCS_RUNTIME_PINS="${ROOT}/scripts/cloud_runtime_pins.env"
+fi
+
+# Only Linux (or an explicit force) installs into $HOME. Darwin stays a no-op.
 if [[ "${CBCS_FORCE_CLOUD_SETUP:-}" != "1" ]]; then
   if [[ "$(uname -s)" != "Linux" || -z "${CBCS_RUNTIME_PINS:-}" ]]; then
     echo "cloud_setup_screenshot_runtime.sh sets up the cloud VM only; nothing was changed." >&2
@@ -14,8 +19,6 @@ if [[ "${CBCS_FORCE_CLOUD_SETUP:-}" != "1" ]]; then
     exit 2
   fi
 fi
-
-ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 # shellcheck disable=SC1091
 source "${ROOT}/scripts/cloud_runtime_lib.sh"
 
@@ -33,6 +36,7 @@ if [[ ! -d /home/default ]]; then
   cloud_log "created /home/default for the product state root"
 fi
 cloud_install_apt_packages
+cloud_install_node
 cloud_install_appimages
 cloud_install_conda_freecad
 
@@ -52,6 +56,7 @@ ensure_vendor() {
 
 ensure_vendor py39 tree_sitter jedi setup_vendor_py39.sh
 ensure_vendor py311 tree_sitter jedi setup_vendor_py311.sh
+cloud_install_pgtest
 
 # run_tests.py looks beside the repo when CBCS_ARTIFACTS_DIR is unset.
 conventional="$(dirname "$ROOT")/ChoreBoyCodeStudio_artifacts"
