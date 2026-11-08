@@ -9,6 +9,7 @@ import pytest
 
 pytest.importorskip("app.qt.QtWidgets", exc_type=ImportError)
 
+from app.features.form_builder.install import form_builder_enabled  # noqa: E402
 from app.qt.QtWidgets import QPlainTextEdit, QPushButton  # noqa: E402
 from app.shell.editor_tab_page import EditorTabPage  # noqa: E402
 from app.shell.theme_tokens import tokens_from_palette  # noqa: E402
@@ -29,6 +30,10 @@ def test_edit_anyway_unlocks_only_that_tab(qapp, tmp_path: Path) -> None:  # typ
     page.generated_bar.apply_theme(tokens_from_palette(qapp.palette(), force_mode="light"))
     (tmp_path / "invoice.ui").write_text("<ui/>\n", encoding="utf-8")
     page.show_generated(str(tmp_path / "ui_invoice.py"), "")
+    if not form_builder_enabled():
+        assert not editor.isReadOnly()
+        page.deleteLater()
+        return
     assert editor.isReadOnly()
     assert page.generated_bar.message() == "Generated from invoice.ui. Saving the form overwrites this file."
     logic = page.generated_bar.findChild(QPushButton, "shell.generatedFileBar.openLogic")

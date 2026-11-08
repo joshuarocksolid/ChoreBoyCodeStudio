@@ -9,6 +9,7 @@ import pytest
 pytest.importorskip("app.qt.QtWidgets", exc_type=ImportError)
 
 from app.core.models import LoadedProject, ProjectFileEntry, ProjectMetadata  # noqa: E402
+from app.features.form_builder.install import form_builder_enabled  # noqa: E402
 from app.qt.QtGui import QColor  # noqa: E402
 from app.qt.QtWidgets import QApplication, QTreeWidgetItem  # noqa: E402
 from app.shell.main_window import MainWindow  # noqa: E402
@@ -76,12 +77,16 @@ def test_generated_module_sorts_after_its_form_and_a_helper_stays_plain(
         folder.setExpanded(True)
         window._project_tree_presenter.ensure_children_loaded(folder)  # noqa: SLF001
         names = [folder.child(index).text(0) for index in range(folder.childCount())]
-        assert names.index("ui_invoice.py") == names.index("invoice.ui") + 1
+        helper = _item(window, "forms/ui_helpers.py")
+        generated = _item(window, "forms/ui_invoice.py")
         tokens = window._shell_theme_workflow.resolve_theme_tokens()  # noqa: SLF001
         muted = QColor(tokens.text_muted).name().lower()
-        generated = _item(window, "forms/ui_invoice.py")
-        helper = _item(window, "forms/ui_helpers.py")
-        assert generated.foreground(0).color().name().lower() == muted
         assert helper.foreground(0).color().name().lower() != muted
+        if form_builder_enabled():
+            assert names.index("ui_invoice.py") == names.index("invoice.ui") + 1
+            assert generated.foreground(0).color().name().lower() == muted
+        else:
+            assert names == ["invoice.ui", "readme.txt", "ui_helpers.py", "ui_invoice.py"]
+            assert generated.foreground(0).color().name().lower() != muted
     finally:
         shutdown_main_window_for_test(window, qapp)

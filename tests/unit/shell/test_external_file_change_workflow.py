@@ -359,21 +359,24 @@ def test_check_and_handle_reloads_clean_tab_when_confirmed(tmp_path: Path) -> No
 
 def test_clean_read_only_generated_tab_reloads_without_asking(tmp_path: Path) -> None:
     """A clean generated buffer still showing the banner reloads on disk change."""
+    header = "## Generated from invoice.ui by ChoreBoy Code Studio\n"
     (tmp_path / "invoice.ui").write_text("<ui/>\n", encoding="utf-8")
     file_path = tmp_path / "ui_invoice.py"
     manager = EditorManager()
     sync_host = _RecordingSyncHost()
     external_host = _RecordingExternalHost(confirm_reload=False)
+    old = header + "label = 'old'\n"
+    new = header + "label = 'new'\n"
     tab = _open_tab_with_widget(
         manager,
         file_path,
-        content="label = 'old'\n",
+        content=old,
         mtime=1.0,
         sync_host=sync_host,
         external_host=external_host,
     )
     external_host.widgets[tab.file_path].read_only = True
-    file_path.write_text("label = 'new'\n", encoding="utf-8")
+    file_path.write_text(new, encoding="utf-8")
     workflow = _build_workflows(
         manager,
         sync_host=sync_host,
@@ -388,7 +391,7 @@ def test_clean_read_only_generated_tab_reloads_without_asking(tmp_path: Path) ->
 
     assert outcome is ExternalFileChangeOutcome.RELOADED
     assert external_host.confirm_calls == 0
-    assert tab.current_content == "label = 'new'\n"
+    assert tab.current_content == new
 
 
 def test_editable_generated_tab_still_asks_before_reload(tmp_path: Path) -> None:

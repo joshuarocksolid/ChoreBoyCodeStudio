@@ -421,7 +421,10 @@ def test_the_tree_lock_draws_its_shackle_in_the_muted_token(tmp_path: Path, qapp
     forms = root / "forms"
     forms.mkdir(parents=True)
     (forms / "invoice.ui").write_text(_FORM, encoding="utf-8")
-    (forms / "ui_invoice.py").write_text("label = 1\n", encoding="utf-8")
+    (forms / "ui_invoice.py").write_text(
+        "## Generated from invoice.ui by ChoreBoy Code Studio\nlabel = 1\n",
+        encoding="utf-8",
+    )
     entries = [
         ProjectFileEntry(relative_path="forms", absolute_path=str(forms.resolve()), is_directory=True),
         ProjectFileEntry(

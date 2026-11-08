@@ -1,8 +1,8 @@
 """Generated Python modules the shell opens read-only (UX-GEN-001..003).
 
-A module is generated when it carries the Code Studio header or a sibling
-form or resource file. A name like ``ui_helpers.py`` is ordinary source.
-The form builder does not have to be loaded. PySide2 still shows the banner.
+A module is generated when it carries the Code Studio header. When the form
+builder is on, a sibling ``.ui`` or ``.qrc`` counts too. A name like
+``ui_helpers.py`` is ordinary source.
 """
 
 from __future__ import annotations
@@ -11,6 +11,8 @@ import os
 import re
 from dataclasses import dataclass
 from typing import Optional
+
+from app.features.form_builder.install import form_builder_enabled
 
 _HEADER_SOURCE = re.compile(r"^## Generated from (.+) by ChoreBoy Code Studio", re.MULTILINE)
 _META_FRAGMENT = "/cbcs/form_builder/"
@@ -45,6 +47,9 @@ def generated_source_basename(path: str, text: Optional[str] = None) -> str:
     header = _header_source(path, text)
     if header:
         return os.path.basename(header)
+    # PySide2 users never open the form builder. A neighboring .ui is their own file.
+    if not form_builder_enabled():
+        return ""
     sibling = _sibling_name(os.path.basename(path))
     if not sibling:
         return ""

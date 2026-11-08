@@ -1,10 +1,11 @@
-"""Generated Python buffers are recognized without the form builder."""
+"""Generated Python buffers follow the form-builder on/off decision."""
 
 from __future__ import annotations
 
 import pytest
 
 from app.editors.generated_file import excluded_from_lint, generated_banner, is_generated_module
+from app.features.form_builder.install import form_builder_enabled
 
 pytestmark = pytest.mark.unit
 
@@ -43,8 +44,34 @@ def test_a_sibling_form_marks_the_module_generated(tmp_path) -> None:  # type: i
     (tmp_path / "invoice.ui").write_text("<ui/>\n", encoding="utf-8")
     path = tmp_path / "ui_invoice.py"
     path.write_text("x = 1\n", encoding="utf-8")
-    assert is_generated_module(str(path), "")
-    banner = generated_banner(str(path), "")
+    if form_builder_enabled():
+        assert is_generated_module(str(path), "")
+        banner = generated_banner(str(path), "")
+        assert banner is not None
+        assert banner.source_path.endswith("invoice.ui")
+        return
+    assert not is_generated_module(str(path), "")
+    assert generated_banner(str(path), "") is None
+
+
+def test_sibling_files_stay_ordinary_when_the_binding_is_pyside2(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("CBCS_QT_API", "pyside2")
+    monkeypatch.delenv("CBCS_FORM_BUILDER", raising=False)
+    assert form_builder_enabled() is False
+    (tmp_path / "invoice.ui").write_text("<ui/>\n", encoding="utf-8")
+    ui_py = tmp_path / "ui_invoice.py"
+    ui_py.write_text("x = 1\n", encoding="utf-8")
+    (tmp_path / "icons.qrc").write_text("<RCC/>\n", encoding="utf-8")
+    rc_py = tmp_path / "icons_rc.py"
+    rc_py.write_text("y = 2\n", encoding="utf-8")
+    assert not is_generated_module(str(ui_py), "")
+    assert generated_banner(str(ui_py), "") is None
+    assert not excluded_from_lint(str(ui_py), "")
+    assert not is_generated_module(str(rc_py), "")
+    assert is_generated_module(str(ui_py), _HEADER)
+    banner = generated_banner(str(ui_py), _HEADER)
     assert banner is not None
     assert banner.source_path.endswith("invoice.ui")
 
