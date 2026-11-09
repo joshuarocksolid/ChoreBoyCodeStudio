@@ -1,3 +1,4 @@
+# pyright: reportAttributeAccessIssue=false
 """A blank project's untouched main.py can become the first form's start screen."""
 
 from __future__ import annotations

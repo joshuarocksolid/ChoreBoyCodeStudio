@@ -1,9 +1,10 @@
 """Whether Form from a table may rewrite the project's entry point.
 
-The checkbox starts ticked only when ``main.py`` is missing. A stock template
-stays unticked and names the class that file already opens. A file the person
-has edited stays put. The form command log is one step per form file, so this
-write is not on that undo stack.
+The checkbox starts ticked when ``main.py`` is missing or still the blank
+project placeholder. The dialog passes those placeholder bytes. A stock
+template stays unticked and names the class that file already opens. A file
+the person has edited stays put. The form command log is one step per form
+file, so this write is not on that undo stack.
 """
 
 from __future__ import annotations
@@ -49,16 +50,23 @@ def screen_for(stem: str, make: str) -> StartScreen:
     )
 
 
-def main_kind(project_root: str, template_bytes: Optional[bytes] = None) -> str:
-    """``missing``, ``stock``, or ``own``. Read once when the dialog opens."""
+def main_kind(
+    project_root: str,
+    template_bytes: Optional[bytes] = None,
+    placeholder_bytes: Optional[bytes] = None,
+) -> str:
+    """``missing``, ``stock``, or ``own``. Read once when the dialog opens.
 
-    path = os.path.join(project_root, _ENTRY)
-    if not os.path.isfile(path):
+    ``placeholder_bytes`` is the blank-project ``main.py``. A match counts as
+    ``missing``, so the first form may replace it and the box starts ticked.
+    """
+
+    data = _entry_bytes(project_root)
+    if data is None or _same_bytes(data, placeholder_bytes):
         return "missing"
-    if template_bytes is None:
-        return "own"
-    with open(path, "rb") as handle:
-        return "stock" if handle.read() == template_bytes else "own"
+    if template_bytes is not None and data == template_bytes:
+        return "stock"
+    return "own"
 
 
 def launched_class(template_bytes: Optional[bytes]) -> str:
@@ -97,26 +105,31 @@ def offer(
     stem: str,
     make: str,
     template_bytes: Optional[bytes] = None,
+    placeholder_bytes: Optional[bytes] = None,
 ) -> StartScreen:
     """The checkbox for the ``main.py`` on disk right now.
 
-    ``template_bytes`` is ``templates/<id>/main.py``. The engine does not look
-    up the application root. The dialog passes the bytes.
+    ``template_bytes`` is ``templates/<id>/main.py``. ``placeholder_bytes`` is
+    the blank-project entry. The engine does not look up either file.
     """
 
-    return present(main_kind(project_root, template_bytes), launched_class(template_bytes), stem, make)
+    kind = main_kind(project_root, template_bytes, placeholder_bytes)
+    return present(kind, launched_class(template_bytes), stem, make)
 
 
-def entry_is_stock(project_root: str, template_bytes: Optional[bytes] = None) -> bool:
-    """True when ``main.py`` is missing or matches the template bytes."""
+def entry_is_stock(
+    project_root: str,
+    template_bytes: Optional[bytes] = None,
+    placeholder_bytes: Optional[bytes] = None,
+) -> bool:
+    """True when ``main.py`` is missing or matches the bytes the caller passes."""
 
-    path = os.path.join(project_root, _ENTRY)
-    if not os.path.isfile(path):
+    data = _entry_bytes(project_root)
+    if data is None or _same_bytes(data, placeholder_bytes):
         return True
     if template_bytes is None:
         return False
-    with open(path, "rb") as handle:
-        return handle.read() == template_bytes
+    return data == template_bytes
 
 
 def project_template_id(project_root: str) -> str:
@@ -171,6 +184,18 @@ def apply_start_screen(project_root: str, dialog: object) -> None:
     class_name = dialog.start_class()
     if module and class_name:
         write_start_entry(project_root, module, class_name)
+
+
+def _entry_bytes(project_root: str) -> Optional[bytes]:
+    path = os.path.join(project_root, _ENTRY)
+    if not os.path.isfile(path):
+        return None
+    with open(path, "rb") as handle:
+        return handle.read()
+
+
+def _same_bytes(data: bytes, expected: Optional[bytes]) -> bool:
+    return expected is not None and data == expected
 
 
 def _template_id(project_root: str) -> str:
