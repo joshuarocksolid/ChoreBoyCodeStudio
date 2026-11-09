@@ -3112,11 +3112,11 @@ On screen these words are never used: "query" (except a list screen's own SQL), 
 
 #### 13.5.2 Connections (CONN)
 
-**UX-CONN-001** `M8.1` `[S K]` Settings › Connections is a page in the CBCS settings dialog, project scope only. Without an open project it reads "Open a project to manage its connections." The page has a list on the left (name, then the engine in `fb.faint`: "SQLite · data/shop.db", "PostgreSQL · clerk@192.168.1.20/shop"), [+ Add] [Duplicate] [Remove] under it, and the editor on the right. An empty list reads "No connections yet. Add one to bind forms to a database." with [+ Add SQLite file] and [+ Add PostgreSQL].
+**UX-CONN-001** `M8.1` `[S K]` Settings › Connections is a page in the CBCS settings dialog, project scope only. Without an open project it reads "Open a project to manage its connections." The page has a list on the left. Each connection is one block. The name comes first, and the target sits under it in `fb.faint` at the fine type size when there is one (`data/shop.db`, `clerk@192.168.1.20/shop`, with the port when it is not 5432). A connection with no target shows the name alone. Rows have a gap between them. [+ Add] [Duplicate] [Remove] sit under the list, and the editor is on the right. An empty list reads "No connections yet. Add one to bind forms to a database." with [+ Add SQLite file] and [+ Add PostgreSQL].
 
 **UX-CONN-002** `M8.1` `[S]` The editor's rows:
 - **Name.** The on-screen name, such as "Shop database". Its code name (`shop`), shown under it in `fb.faint`, is derived from the name and editable. It must match `^[a-z_][a-z0-9_]*$`.
-- **SQLite:** File, with [Choose…]. It is stored relative to the project. A file outside the project is refused with "Keep the database inside the project so it is packaged with the app."
+- **SQLite:** File, with [Choose…]. It is stored relative to the project. A file outside the project is refused with "Keep the database inside the project so it is packaged with the app." Choosing a file sets the name from the file stem when the name is still SQLite, and sets the code from that stem when the code is still the generated default (`shop.db` becomes `shop`). A name or code that was typed is kept. The code stays unique.
 - **PostgreSQL:** Host, Port (5432), Database, User, Schema (`public`), Password (Ask when the app starts / Remember on this machine / No password).
 - Setup function: "none" with [Create setup function], or `on_connect` as a link to `connection_setup.py`.
 - In Try, only show the SQL (unticked).
