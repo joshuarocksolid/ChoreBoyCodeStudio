@@ -3112,7 +3112,7 @@ On screen these words are never used: "query" (except a list screen's own SQL), 
 
 #### 13.5.2 Connections (CONN)
 
-**UX-CONN-001** `M8.1` `[S K]` Settings › Connections is a page in the CBCS settings dialog, project scope only. Without an open project it reads "Open a project to manage its connections." The page has a list on the left (name, then the engine in `fb.faint`: "SQLite · data/shop.db", "PostgreSQL · clerk@192.168.1.20/shop"), [+ Add] [Duplicate] [Remove] under it, and the editor on the right. An empty list reads "No connections yet. Add one to bind forms to a database." with [+ Add SQLite file] and [+ Add PostgreSQL].
+**UX-CONN-001** `M8.1` `[S K]` Settings › Connections is a page in the CBCS settings dialog, project scope only. Without an open project it reads "Open a project to manage its connections." The page has a list on the left (the name, then the file path or `user@host/db` in `fb.faint` when that target exists, such as "data/shop.db" or "clerk@192.168.1.20/shop"; a connection with no target yet shows only the name), [+ Add] [Duplicate] [Remove] under it, and the editor on the right. An empty list reads "No connections yet. Add one to bind forms to a database." with [+ Add SQLite file] and [+ Add PostgreSQL].
 
 **UX-CONN-002** `M8.1` `[S]` The editor's rows:
 - **Name.** The on-screen name, such as "Shop database". Its code name (`shop`), shown under it in `fb.faint`, is derived from the name and editable. It must match `^[a-z_][a-z0-9_]*$`.

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import replace
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 from app.qt.QtCore import QEvent, QSize, QThread, Qt, QTimer
 from app.qt.QtGui import QFont, QIcon
@@ -43,6 +43,8 @@ from app.features.form_builder.qtside.theme.chrome import chrome_from_values
 from app.features.form_builder.qtside.theme.items import polish_item_view
 from app.features.form_builder.qtside.theme.metrics import (
     CONNECTION_ROW,
+    ROW,
+    S1,
     S2,
     ICON,
     ICON_BUTTON,
@@ -106,13 +108,60 @@ def open_sessions(project_root: str) -> Dict[str, object]:
     return found
 
 
-def engine_line(connection: Connection) -> str:
+_DEFAULT_SQLITE_TITLE = "SQLite"
+_DEFAULT_POSTGRES_TITLE = "PostgreSQL"
+
+
+def connection_subtitle(connection: Connection) -> str:
+    """File path or ``user@host/db``. Empty means the row has no second line."""
+
     if connection.engine == "sqlite":
-        return "SQLite · %s" % (connection.file or "")
-    host = connection.host or ""
+        return (connection.file or "").strip()
+    user = (connection.user or "").strip()
+    host = (connection.host or "").strip()
+    database = (connection.database or "").strip()
     if connection.port not in (None, 5432):
         host = "%s:%s" % (host, connection.port)
-    return "PostgreSQL · %s@%s/%s" % (connection.user or "", host, connection.database or "")
+    if not user and not host and not database:
+        return ""
+    return "%s@%s/%s" % (user, host, database)
+
+
+def _file_stem(relative: str) -> str:
+    name = relative.replace("\\", "/").rsplit("/", 1)[-1].strip()
+    dot = name.rfind(".")
+    if dot > 0:
+        return name[:dot].strip()
+    return name
+
+
+def _unique_code(base: str, taken: Iterable[str]) -> str:
+    used = set(taken)
+    if base not in used:
+        return base
+    number = 2
+    while "%s_%d" % (base, number) in used:
+        number += 1
+    return "%s_%d" % (base, number)
+
+
+def adopt_sqlite_file_name(
+    title: str,
+    code: str,
+    title_is_default: bool,
+    code_touched: bool,
+    relative_file: str,
+    taken: Iterable[str],
+) -> Tuple[str, str]:
+    """Stem name for a new SQLite row. A typed name or code stays as it is."""
+
+    stem = _file_stem(relative_file)
+    if not stem or not title_is_default:
+        return title, code
+    if code_touched:
+        return stem, code
+    free = [item for item in taken if item != code]
+    return stem, _unique_code(code_name_from_title(stem), free)
 
 
 def remove_sentence(name: str, stems: List[str]) -> str:
@@ -176,11 +225,10 @@ class _Worker(QThread):
 
 
 class _Row(QWidget):
-    def __init__(self, title: str, engine: str, parent: Optional[QWidget] = None) -> None:
+    def __init__(self, title: str, subtitle: str, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
         self._title = title
-        self._engine = engine
-        self.setFixedHeight(CONNECTION_ROW)
+        self._subtitle = subtitle
         self.setMinimumWidth(0)
         self.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Fixed)
         layout = QVBoxLayout(self)
@@ -190,21 +238,30 @@ class _Row(QWidget):
         title_font = QFont(self.title_label.font())
         title_font.setPixelSize(TYPE_BODY)
         self.title_label.setFont(title_font)
-        self.engine_label = QLabel(engine, self)
+        self.engine_label = QLabel(self)
         self.engine_label.setObjectName("formBuilder.connections.engine")
         engine_font = QFont(self.engine_label.font())
         engine_font.setPixelSize(TYPE_FINE)
         self.engine_label.setFont(engine_font)
         for label in (self.title_label, self.engine_label):
             label.setMinimumWidth(0)
-            label.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
+            label.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Fixed)
         layout.addWidget(self.title_label)
         layout.addWidget(self.engine_label)
+        self._apply_subtitle()
 
-    def set_texts(self, title: str, engine: str) -> None:
+    def set_texts(self, title: str, subtitle: str) -> None:
         self._title = title
-        self._engine = engine
+        self._subtitle = subtitle
+        self._apply_subtitle()
         self._elide()
+
+    def _apply_subtitle(self) -> None:
+        show = bool(self._subtitle)
+        self.engine_label.setVisible(show)
+        if not show:
+            self.engine_label.setText("")
+        self.setFixedHeight(CONNECTION_ROW if show else ROW)
 
     def resizeEvent(self, event: QEvent) -> None:  # noqa: N802
         super().resizeEvent(event)  # type: ignore[arg-type]
@@ -216,12 +273,18 @@ class _Row(QWidget):
 
     def _elide(self) -> None:
         room = max(0, self.width() - 16)
+        if not self._subtitle:
+            self.engine_label.setText("")
         if room < 8:
             self.title_label.setText(self._title)
-            self.engine_label.setText(self._engine)
+            if self._subtitle:
+                self.engine_label.setText(self._subtitle)
             return
         elide = getattr(getattr(Qt, "TextElideMode", Qt), "ElideRight")
-        for label, full in ((self.title_label, self._title), (self.engine_label, self._engine)):
+        pairs = [(self.title_label, self._title)]
+        if self._subtitle:
+            pairs.append((self.engine_label, self._subtitle))
+        for label, full in pairs:
             shown = label.fontMetrics().elidedText(full, elide, room)
             if label.text() != shown:
                 label.setText(shown)
@@ -234,6 +297,7 @@ class ConnectionsPage(QWidget):
         self._root = project_root
         self._items: List[Connection] = []
         self._touched: List[bool] = []
+        self._title_default: List[bool] = []
         self._top_unknown: tuple = ()
         self._index = -1
         self._pending = ""
@@ -292,6 +356,7 @@ class ConnectionsPage(QWidget):
         scroll_off = getattr(getattr(Qt, "ScrollBarPolicy", Qt), "ScrollBarAlwaysOff")
         self._list.setHorizontalScrollBarPolicy(scroll_off)
         self._list.setTextElideMode(getattr(getattr(Qt, "TextElideMode", Qt), "ElideRight"))
+        self._list.setSpacing(S1)
         self._list.currentRowChanged.connect(self._on_row)
         left_layout.addWidget(self._list, 1)
         actions = QHBoxLayout()
@@ -525,6 +590,7 @@ class ConnectionsPage(QWidget):
             loaded = ConnectionSet()
         self._items = list(loaded.connections)
         self._touched = [True] * len(self._items)
+        self._title_default = [False] * len(self._items)
         self._top_unknown = loaded.unknown
         self._index = 0 if self._items else -1
         machine = load_project_machine(self._root)
@@ -545,9 +611,9 @@ class ConnectionsPage(QWidget):
                 role = getattr(getattr(Qt, "ItemDataRole", Qt), "AccessibleTextRole", None)
                 if role is not None:
                     item.setData(role, title)
-                row = _Row(connection.title, engine_line(connection), self._list)
+                row = _Row(connection.title, connection_subtitle(connection), self._list)
                 row.setAccessibleName(title)
-                item.setSizeHint(QSize(1, CONNECTION_ROW))
+                item.setSizeHint(QSize(1, row.height()))
                 self._list.addItem(item)
                 self._list.setItemWidget(item, row)
             if 0 <= self._index < self._list.count():
@@ -698,6 +764,7 @@ class ConnectionsPage(QWidget):
     def _on_title(self, _text: str) -> None:
         if self._loading or self._index < 0:
             return
+        self._title_default[self._index] = False
         if not self._touched[self._index]:
             self._loading = True
             self._code.setText(code_name_from_title(self._title.text()))
@@ -729,27 +796,32 @@ class ConnectionsPage(QWidget):
         if not isinstance(widget, _Row):
             return
         connection = self._items[index]
-        widget.set_texts(connection.title, engine_line(connection))
+        widget.set_texts(connection.title, connection_subtitle(connection))
+        item = self._list.item(index)
+        if item is not None:
+            item.setSizeHint(QSize(1, widget.height()))
 
     def _add_connection(self, engine: str) -> None:
         if self._items:
             self._pull(commit_code=False)
         if engine == "sqlite":
-            title = "SQLite"
-            item = Connection(code_name_from_title(title), title, "sqlite")
+            title = _DEFAULT_SQLITE_TITLE
+            item = Connection(
+                _unique_code(code_name_from_title(title), [existing.name for existing in self._items]),
+                title,
+                "sqlite",
+            )
         else:
-            title = "PostgreSQL"
-            item = Connection(code_name_from_title(title), title, "postgres", password="ask")
-        taken = {existing.name for existing in self._items}
-        name = item.name
-        number = 2
-        while name in taken:
-            name = "%s_%d" % (item.name, number)
-            number += 1
-        if name != item.name:
-            item = replace(item, name=name)
+            title = _DEFAULT_POSTGRES_TITLE
+            item = Connection(
+                _unique_code(code_name_from_title(title), [existing.name for existing in self._items]),
+                title,
+                "postgres",
+                password="ask",
+            )
         self._items.append(item)
         self._touched.append(False)
+        self._title_default.append(engine == "sqlite")
         self._index = len(self._items) - 1
         self._refresh_list()
         self._fill()
@@ -768,6 +840,7 @@ class ConnectionsPage(QWidget):
         copy = replace(source, name=candidate, title="Copy of %s" % source.title)
         self._items.append(copy)
         self._touched.append(True)
+        self._title_default.append(False)
         self._index = len(self._items) - 1
         self._refresh_list()
         self._fill()
@@ -786,6 +859,7 @@ class ConnectionsPage(QWidget):
             return
         del self._items[self._index]
         del self._touched[self._index]
+        del self._title_default[self._index]
         self._index = min(self._index, len(self._items) - 1)
         self._refresh_list()
         self._fill()
@@ -810,9 +884,28 @@ class ConnectionsPage(QWidget):
             self._show_refusal(OUTSIDE_PROJECT_SENTENCE)
             return
         self._refusal.hide()
+        index = self._index
+        previous_code = self._code.text()
+        in_range = 0 <= index < len(self._items)
+        title, code = adopt_sqlite_file_name(
+            self._title.text(),
+            previous_code,
+            in_range and self._title_default[index],
+            in_range and self._touched[index],
+            relative,
+            [item.name for item in self._items],
+        )
+        self._loading = True
+        try:
+            self._title.setText(title)
+            self._code.setText(code)
+        finally:
+            self._loading = False
+        if in_range and self._title_default[index] and _file_stem(relative):
+            self._title_default[index] = False
         self._file.setText(relative)
-        self._pull(commit_code=False)
-        self._update_row(self._index)
+        self._pull(commit_code=code != previous_code)
+        self._update_row(index)
 
     def _create_setup(self) -> None:
         ensure_connection_setup(self._root)
