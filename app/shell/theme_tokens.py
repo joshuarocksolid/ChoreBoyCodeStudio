@@ -281,11 +281,14 @@ def tokens_from_palette(
             **syntax_kwargs,
         )
     if is_dark:
-        return _shell_theme_tokens_dark(
+        tokens = _shell_theme_tokens_dark(
             dark_chrome_palette,
             syntax_kwargs=syntax_kwargs,
             ui_font_weight_css=ui_font_weight_css,
         )
+        if dark_chrome_palette == constants.UI_THEME_DARK_CHROME_PALETTE_NEUTRAL_GRAY:
+            return replace(tokens, gutter_text="#979797")
+        return tokens
     return ShellThemeTokens(
         window_bg="#F8F9FA",
         panel_bg="#FFFFFF",
@@ -315,7 +318,7 @@ def tokens_from_palette(
         input_bg="#FFFFFF",
         badge_bg="#E9ECEF",
         diag_error_color="#E03131",
-        diag_warning_color="#D97706",
+        diag_warning_color="#9A3412",
         diag_info_color="#3366FF",
         test_passed_color="#1A7F37",
         popup_bg="#FFFFFF",

@@ -1,0 +1,130 @@
+{
+  "files": [
+    {
+      "path": "malformed/not_xml.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "notes": "Not XML. uic reports Start tag expected. QUiLoader raises Unable to open/read ui device.",
+      "expect": "Start tag expected"
+    },
+    {
+      "path": "malformed/truncated.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "notes": "Truncated document. uic reports Premature end of document.",
+      "expect": "Premature end of document"
+    },
+    {
+      "path": "malformed/wrong_root.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "notes": "Root element is form, not ui. uic reports Unexpected element form.",
+      "expect": "Unexpected element form"
+    },
+    {
+      "path": "malformed/empty_ui.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "notes": "ui element with no widget. uic reports the file is not valid. QUiLoader raises Unable to open/read ui device.",
+      "expect": "not valid"
+    },
+    {
+      "path": "malformed/missing_widget_class.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "notes": "Widget has no class attribute. QUiLoader raises Unable to open/read ui device. uic still emits Python.",
+      "expect": "Unable to open/read ui device"
+    },
+    {
+      "path": "malformed/language_python.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "notes": "language=python is rejected by QUiLoader 6.8.3. The attribute is still legal in the schema. Use language=c++ on forms that must load.",
+      "expect": "created using python"
+    },
+    {
+      "path": "malformed/refused_QColorDialog.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "notes": "QUiLoader 6.8.3 cannot construct QColorDialog. uic may still emit Python.",
+      "expect": "unable to create a widget of the class 'QColorDialog'"
+    },
+    {
+      "path": "malformed/refused_QErrorMessage.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "notes": "QUiLoader 6.8.3 cannot construct QErrorMessage. uic may still emit Python.",
+      "expect": "unable to create a widget of the class 'QErrorMessage'"
+    },
+    {
+      "path": "malformed/refused_QFileDialog.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "notes": "QUiLoader 6.8.3 cannot construct QFileDialog. uic may still emit Python.",
+      "expect": "unable to create a widget of the class 'QFileDialog'"
+    },
+    {
+      "path": "malformed/refused_QFocusFrame.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "notes": "QUiLoader 6.8.3 cannot construct QFocusFrame. uic may still emit Python.",
+      "expect": "unable to create a widget of the class 'QFocusFrame'"
+    },
+    {
+      "path": "malformed/refused_QFontDialog.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "notes": "QUiLoader 6.8.3 cannot construct QFontDialog. uic may still emit Python.",
+      "expect": "unable to create a widget of the class 'QFontDialog'"
+    },
+    {
+      "path": "malformed/refused_QInputDialog.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "notes": "QUiLoader 6.8.3 cannot construct QInputDialog. uic may still emit Python.",
+      "expect": "unable to create a widget of the class 'QInputDialog'"
+    },
+    {
+      "path": "malformed/refused_QMdiSubWindow.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "notes": "QUiLoader 6.8.3 cannot construct QMdiSubWindow. uic may still emit Python.",
+      "expect": "unable to create a widget of the class 'QMdiSubWindow'"
+    },
+    {
+      "path": "malformed/refused_QMessageBox.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "notes": "QUiLoader 6.8.3 cannot construct QMessageBox. uic may still emit Python.",
+      "expect": "unable to create a widget of the class 'QMessageBox'"
+    },
+    {
+      "path": "malformed/refused_QProgressDialog.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "notes": "QUiLoader 6.8.3 cannot construct QProgressDialog. uic may still emit Python.",
+      "expect": "unable to create a widget of the class 'QProgressDialog'"
+    },
+    {
+      "path": "malformed/refused_QRhiWidget.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "notes": "QUiLoader 6.8.3 cannot construct QRhiWidget. uic may still emit Python.",
+      "expect": "unable to create a widget of the class 'QRhiWidget'"
+    },
+    {
+      "path": "malformed/refused_QSplashScreen.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "notes": "QUiLoader 6.8.3 cannot construct QSplashScreen. uic may still emit Python.",
+      "expect": "unable to create a widget of the class 'QSplashScreen'"
+    },
+    {
+      "path": "malformed/refused_QTabBar.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "notes": "QUiLoader 6.8.3 cannot construct QTabBar. uic may still emit Python.",
+      "expect": "unable to create a widget of the class 'QTabBar'"
+    }
+  ]
+}

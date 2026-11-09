@@ -1055,7 +1055,7 @@ Verify the tree-sitter highlighting pipeline delivers rich lexical/locals/inject
 
 1. Open the medium Python file and verify role-based highlighting for imports, decorators, async/await, annotations, constructor/type references, parameters, and local variable references.
 2. Open representative HTML and Markdown fixtures and verify embedded `<script>`, `<style>`, and fenced code blocks render with the injected language colors rather than a single markdown/html fallback color.
-3. Open `.ui`, `pyproject.toml`, and `.desktop` files and confirm they attach the expected XML, TOML, and INI/desktop highlighting modes.
+3. Open `.ui`, `pyproject.toml`, and `.desktop` files and confirm they attach the expected XML, TOML, and INI/desktop highlighting modes. On the visual form builder, XML highlighting is the Design | XML view (Ctrl+Shift+V), the same CodeEditorWidget.
 4. Use `Tools -> Inspect Token Under Cursor` on a highlighted symbol and confirm the dialog reports the language, node, capture, resolved token, and applied color. Then use `Tools -> Set Language Mode...` on a misdetected/unsupported file and confirm the override reattaches highlighting immediately.
 5. Type a short burst of edits and confirm role colors update without visible jitter/freeze.
 6. Open the large file and confirm adaptive mode limits query work while keeping editing responsive.

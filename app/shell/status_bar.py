@@ -8,6 +8,7 @@ This module intentionally stays thin:
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Optional, Protocol, cast
 
@@ -157,6 +158,7 @@ def map_editor_status_view(
     is_dirty: bool,
     *,
     disk_state: str | None = None,
+    sentence: str | None = None,
 ) -> EditorStatusView:
     """Format editor telemetry into deterministic status copy.
 
@@ -164,6 +166,8 @@ def map_editor_status_view(
     version) or ``"missing"`` (the file is gone). A missing file has no saved
     copy, so "missing from disk" replaces modified/saved.
     """
+    if sentence:
+        return EditorStatusView(text=sentence)
     if not file_name:
         return EditorStatusView(text="Editor: no file")
 
@@ -314,6 +318,12 @@ def map_python_tooling_status_view(
     return PythonToolingStatusView(severity=copy.severity, text=copy.text, details=copy.details)
 
 
+def _elide_middle(label: "QLabel", full: str) -> str:
+    """The status label keeps the whole sentence. Screen readers read ``text()``."""
+    del label
+    return full
+
+
 class ShellStatusBarController:
     """Small controller for shell status bar labels."""
 
@@ -328,6 +338,7 @@ class ShellStatusBarController:
         diagnostics_label: "QLabel",
         indent_label: "QLabel",
         completion_mode_label: "QLabel | None" = None,
+        form_timings_label: "QLabel | None" = None,
     ) -> None:
         self._status_bar = status_bar
         self._startup_label = startup_label
@@ -338,6 +349,8 @@ class ShellStatusBarController:
         self._diagnostics_label = diagnostics_label
         self._indent_label = indent_label
         self._completion_mode_label = completion_mode_label
+        self._form_timings_label = form_timings_label
+        self._form_timings_text = ""
         self._runtime_warning_text: str | None = None
 
     def _refresh_widget_style(self, widget: "QLabel") -> None:
@@ -405,6 +418,7 @@ class ShellStatusBarController:
         is_dirty: bool,
         *,
         disk_state: str | None = None,
+        sentence: str | None = None,
     ) -> None:
         """Update current editor telemetry in the status bar."""
         view = map_editor_status_view(
@@ -413,8 +427,11 @@ class ShellStatusBarController:
             column=column,
             is_dirty=is_dirty,
             disk_state=disk_state,
+            sentence=sentence,
         )
-        self._editor_label.setText(view.text)
+        full = view.text
+        self._editor_label.setToolTip(full)
+        self._editor_label.setText(_elide_middle(self._editor_label, full))
 
     def set_completion_mode(self, mode: str, *, scope: str, global_mode: str | None = None) -> None:
         """Update the completion mode chip (mode plus the settings scope it comes from)."""
@@ -471,9 +488,48 @@ class ShellStatusBarController:
         self._run_label.setProperty("runSeverity", run_view.severity)  # type: ignore[arg-type]
         self._refresh_widget_style(self._run_label)
 
+    def set_form_timings(self, text: str, settings: object = None, *, over_budget: bool = False) -> None:
+        """Show a developer timing on the right. Hidden unless the switch is on."""
+        self._form_timings_text = text.strip()
+        label = self._form_timings_label
+        if label is None:
+            return
+        show = bool(self._form_timings_text) and form_timings_enabled(settings)
+        label.setVisible(show)
+        label.setText(self._form_timings_text if show else "")
+        label.setProperty("formTimingSeverity", "warning" if over_budget and show else "")
+        self._refresh_widget_style(label)
+
     @property
     def status_bar(self) -> "QStatusBar":
         return self._status_bar
+
+
+def form_timings_enabled(settings: object = None) -> bool:
+    """True for ``CBCS_FB_TIMINGS=1`` or QSettings ``form_builder/dev/show_timings``."""
+    if os.environ.get("CBCS_FB_TIMINGS") == "1":
+        return True
+    source = settings
+    if source is None:
+        from app.qt.QtWidgets import QApplication
+
+        if QApplication.instance() is None:
+            return False
+        from app.qt.QtCore import QSettings
+
+        source = QSettings()
+    reader = getattr(source, "value", None)
+    if not callable(reader):
+        return False
+    return _timings_flag(reader("form_builder/dev/show_timings"))
+
+
+def _timings_flag(value: object) -> bool:
+    if value is True or value == 1:
+        return True
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes"}
+    return False
 
 
 def create_shell_status_bar(
@@ -517,6 +573,10 @@ def create_shell_status_bar(
     editor_label = QLabel("Editor: no file", status_bar)
     editor_label.setObjectName("shell.editorStatusLabel")
 
+    form_timings_label = QLabel("", status_bar)
+    form_timings_label.setObjectName("shell.formTimingsLabel")
+    form_timings_label.setVisible(False)
+
     indent_label = QLabel("", status_bar)
     indent_label.setObjectName("shell.indentStatusLabel")
     indent_label.setVisible(False)
@@ -538,6 +598,8 @@ def create_shell_status_bar(
     status_bar.addPermanentWidget(completion_mode_label, 0)
     status_bar.addPermanentWidget(indent_label, 0)
     status_bar.addPermanentWidget(editor_label, 0)
+    # Added last so it sits at the far right of the permanent group.
+    status_bar.addPermanentWidget(form_timings_label, 0)
     main_window.setStatusBar(status_bar)
 
     controller = ShellStatusBarController(
@@ -550,6 +612,7 @@ def create_shell_status_bar(
         diagnostics_label,
         indent_label,
         completion_mode_label,
+        form_timings_label,
     )
     controller.set_startup_report(startup_report)
     controller.set_python_tooling_status(runtime_available=False, config_state="no_project")

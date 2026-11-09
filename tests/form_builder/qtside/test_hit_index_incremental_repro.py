@@ -1,0 +1,597 @@
+# pyright: reportAttributeAccessIssue=false
+"""Review repro (M3.7a gate): the ChangeSet-scoped hit index must equal a full rebuild."""
+from __future__ import annotations
+
+import random
+from contextlib import contextmanager
+from typing import Callable, Iterator, List, Tuple
+
+import pytest
+
+from app.qt.QtCore import Qt
+from app.qt.QtWidgets import QApplication, QScrollArea, QWidget
+from app.features.form_builder.engine.commands.catalog import DeleteNodes, SetLayoutStretch, SetProperty
+from app.features.form_builder.engine.events import PRIORITY_HIT_INDEX
+from app.features.form_builder.engine.ids import NodeId
+from app.features.form_builder.engine.query.hit_index import HitIndex
+from app.features.form_builder.engine.session import FormSession
+from app.features.form_builder.engine.ui4.values import NumberValue, SizeValue, StringValue
+from app.features.form_builder.qtside.canvas.geometry import HitIndexInvalidator, LiveGeometrySource
+from app.features.form_builder.qtside.realize import Realizer
+from tests.form_builder.qtside.support import form, opened
+from tests.form_builder.qtside.test_geometry import NESTED
+
+pytestmark = pytest.mark.usefixtures("qapp")
+
+
+@pytest.fixture
+def live() -> Iterator[Tuple[FormSession, Realizer, HitIndex]]:
+    with opened(NESTED) as (session, realizer):
+        root = realizer.root_widget
+        assert root is not None
+        root.show()
+        QApplication.processEvents()
+        index = HitIndex(LiveGeometrySource(realizer))
+        subscription = session.log.subscribe(HitIndexInvalidator(index).on_changeset, priority=PRIORITY_HIT_INDEX)
+        try:
+            index.ensure_fresh()
+            yield session, realizer, index
+        finally:
+            subscription.close()
+            root.hide()
+
+
+def _id(session: FormSession, name: str) -> NodeId:
+    return session.document.by_name(name)[0]
+
+
+def _table(entries) -> List[Tuple[object, str, object, bool, int]]:
+    return sorted(
+        ((entry.node, entry.kind, entry.rect, entry.visible, entry.z) for entry in entries),
+        key=repr,
+    )
+
+
+def _assert_matches_full(realizer: Realizer, index: HitIndex) -> None:
+    index.ensure_fresh()
+    full = HitIndex(LiveGeometrySource(realizer))
+    full.ensure_fresh()
+    assert _table(index._entries) == _table(full._entries)
+
+
+EDITS: List[Tuple[str, Callable[[FormSession], object]]] = [
+    ("label text", lambda s: s.log.execute(SetProperty(_id(s, "label"), "text", StringValue("A much longer label text")))),
+    ("layout spacing", lambda s: s.log.execute(SetProperty(_id(s, "formLayout"), "spacing", NumberValue(40)))),
+    ("layout margin", lambda s: s.log.execute(SetProperty(_id(s, "groupLayout"), "topMargin", NumberValue(40)))),
+    ("layout stretch", lambda s: s.log.execute(SetLayoutStretch(_id(s, "formLayout"), "stretch", "0,4,1"))),
+    ("delete laid label", lambda s: s.log.execute(DeleteNodes((_id(s, "label"),)))),
+    ("tab currentIndex", lambda s: s.log.execute(SetProperty(_id(s, "tabs"), "currentIndex", NumberValue(1)))),
+]
+
+
+@pytest.mark.parametrize(("name", "edit"), EDITS, ids=[name for name, _ in EDITS])
+def test_incremental_index_equals_full_rebuild(live: Tuple[FormSession, Realizer, HitIndex], name: str, edit) -> None:
+    session, realizer, index = live
+    edit(session)
+    _assert_matches_full(realizer, index)
+
+
+@pytest.mark.parametrize(("name", "edit"), EDITS, ids=[name for name, _ in EDITS])
+def test_incremental_index_equals_full_rebuild_after_undo(
+    live: Tuple[FormSession, Realizer, HitIndex], name: str, edit
+) -> None:
+    session, realizer, index = live
+    edit(session)
+    index.ensure_fresh()
+    session.log.undo()
+    _assert_matches_full(realizer, index)
+
+
+def test_random_edits_and_undo_match_a_full_rebuild(live: Tuple[FormSession, Realizer, HitIndex]) -> None:
+    session, realizer, index = live
+    rng = random.Random(37)
+    for _step in range(24):
+        kind = rng.randrange(5)
+        if kind == 0:
+            session.log.execute(SetProperty(_id(session, "label"), "text", StringValue("n%d" % rng.randrange(50))))
+        elif kind == 1:
+            session.log.execute(SetProperty(_id(session, "formLayout"), "spacing", NumberValue(rng.randrange(2, 24))))
+        elif kind == 2:
+            session.log.execute(
+                SetProperty(_id(session, "groupLayout"), "topMargin", NumberValue(rng.randrange(0, 20)))
+            )
+        elif kind == 3:
+            session.log.execute(SetProperty(_id(session, "tabs"), "currentIndex", NumberValue(rng.randrange(2))))
+        elif not session.log.undo():
+            session.log.redo()
+        _assert_matches_full(realizer, index)
+
+
+# --- Review round 2: structural fuzz, several seeds, container compared too. ---
+
+from app.features.form_builder.engine.commands.catalog import InsertFragment, MoveNodes, SetGeometry  # noqa: E402
+from app.features.form_builder.engine.commands.placement import InBoxLayout, InContainer  # noqa: E402
+from app.features.form_builder.engine.ui4.nodes import LayoutNode, WidgetNode  # noqa: E402
+from app.features.form_builder.engine.ui4.spec import Fragment  # noqa: E402
+from app.features.form_builder.engine.ui4.values import RectValue  # noqa: E402
+from tests.form_builder.engine.commands._support import button_spec  # noqa: E402
+
+
+def _full_table(entries):
+    return sorted(
+        ((entry.node, entry.kind, entry.rect, entry.visible, entry.container) for entry in entries),
+        key=repr,
+    )
+
+
+def _step(session: FormSession, rng: random.Random, counter: List[int]) -> None:
+    doc = session.document
+    widgets = [w for w in doc.iter_widgets() if w.id != doc.root.id]
+    layouts = [n for n in doc.iter_preorder() if isinstance(n, LayoutNode)]
+    kind = rng.randrange(10)
+    counter[0] += 1
+    if kind == 0 and widgets:
+        target = rng.choice(widgets)
+        session.log.execute(SetProperty(target.id, "text", StringValue("t" * rng.randrange(1, 30))))
+    elif kind == 1 and layouts:
+        layout = rng.choice(layouts)
+        name = rng.choice(["spacing", "topMargin", "leftMargin", "bottomMargin"])
+        session.log.execute(SetProperty(layout.id, name, NumberValue(rng.randrange(0, 30))))
+    elif kind == 2:
+        tabs = [w for w in widgets if w.class_name == "QTabWidget"]
+        if tabs:
+            session.log.execute(SetProperty(tabs[0].id, "currentIndex", NumberValue(rng.randrange(2))))
+    elif kind == 3 and widgets:
+        session.log.execute(DeleteNodes((rng.choice(widgets).id,)))
+    elif kind == 4 and layouts:
+        layout = rng.choice(layouts)
+        index = rng.randrange(len(layout.items) + 1)
+        session.log.execute(
+            InsertFragment(InBoxLayout(layout.id, index), Fragment(nodes=(button_spec("fz%d" % counter[0]),)))
+        )
+    elif kind == 5 and widgets and layouts:
+        layout = rng.choice(layouts)
+        mover = rng.choice(widgets)
+        session.log.execute(MoveNodes((mover.id,), InBoxLayout(layout.id, rng.randrange(len(layout.items) + 1))))
+    elif kind == 6 and layouts:
+        layout = rng.choice(layouts)
+        session.log.execute(SetLayoutStretch(layout.id, "stretch", ",".join(str(rng.randrange(3)) for _ in layout.items) or None))
+    elif kind == 7:
+        if not session.log.undo():
+            session.log.redo()
+    elif kind == 8:
+        if not session.log.redo():
+            session.log.undo()
+    else:
+        free_host = _id(session, "scrollContents") if session.document.by_name("scrollContents") else None
+        if free_host is not None:
+            session.log.execute(
+                InsertFragment(
+                    InContainer(session.document.root.id, 0, RectValue(rng.randrange(200), rng.randrange(300), 60, 24)),
+                    Fragment(nodes=(button_spec("fr%d" % counter[0]),)),
+                )
+            )
+
+
+@pytest.fixture
+def embedded() -> Iterator[Tuple[FormSession, Realizer, HitIndex]]:
+    """The root under a plain host, as on the canvas: a top-level root resizes asynchronously offscreen."""
+    from app.qt.QtWidgets import QWidget
+
+    with opened(NESTED) as (session, realizer):
+        root = realizer.root_widget
+        assert root is not None
+        host = QWidget()
+        host.resize(1200, 1200)
+        root.setParent(host)
+        host.show()
+        root.show()
+        QApplication.processEvents()
+        index = HitIndex(LiveGeometrySource(realizer))
+        subscription = session.log.subscribe(HitIndexInvalidator(index).on_changeset, priority=PRIORITY_HIT_INDEX)
+        try:
+            index.ensure_fresh()
+            yield session, realizer, index
+        finally:
+            subscription.close()
+            root.setParent(None)
+            host.hide()
+            host.deleteLater()
+
+
+@pytest.mark.parametrize("seed", list(range(1, 121)))
+def test_review_structural_fuzz_matches_a_full_rebuild(embedded: Tuple[FormSession, Realizer, HitIndex], seed: int) -> None:
+    session, realizer, index = embedded
+    rng = random.Random(seed)
+    counter = [0]
+    trail: List[str] = []
+    for step in range(60):
+        try:
+            _step(session, rng, counter)
+        except Exception as exc:  # refused command: not what this test checks
+            trail.append("refused %s" % type(exc).__name__)
+            continue
+        trail.append(session.log.undo_label() or "")
+        # The canvas refreshes from its paint request, after posted events ran.
+        QApplication.processEvents()
+        index.ensure_fresh()
+        full = HitIndex(LiveGeometrySource(realizer))
+        full.ensure_fresh()
+        assert _full_table(index._entries) == _full_table(full._entries), (seed, step, trail[-6:])
+
+
+# Minimum heights are fixed pixels, so the scrollbar threshold does not depend on the font.
+DEFERRED_SCROLL = form(
+    'class="QWidget" name="Form"',
+    """
+  <property name="geometry"><rect><x>0</x><y>0</y><width>400</width><height>300</height></rect></property>
+  <layout class="QVBoxLayout" name="formLayout">
+   <item>
+    <widget class="QTabWidget" name="tabs">
+     <widget class="QWidget" name="first">
+      <attribute name="title"><string>One</string></attribute>
+     </widget>
+     <widget class="QWidget" name="second">
+      <attribute name="title"><string>Two</string></attribute>
+     </widget>
+    </widget>
+   </item>
+   <item>
+    <widget class="QScrollArea" name="scroll">
+     <property name="widgetResizable"><bool>true</bool></property>
+     <widget class="QWidget" name="scrollContents">
+      <property name="minimumSize"><size><width>40</width><height>100</height></size></property>
+      <layout class="QVBoxLayout" name="scrollLayout">
+       <item><widget class="QPushButton" name="inside"><property name="text"><string>Go</string></property></widget></item>
+      </layout>
+     </widget>
+    </widget>
+   </item>
+  </layout>
+""",
+)
+
+
+def test_deferred_scrollbar_on_a_sibling_scroll_area_matches_a_full_rebuild() -> None:
+    """Growing a sibling can leave the scrollbar pending until the next layout.
+
+    The scroll area's rect stays put. The contents width changes by the bar.
+    """
+    with opened(DEFERRED_SCROLL) as (session, realizer):
+        root = realizer.root_widget
+        assert root is not None
+        host = QWidget()
+        host.resize(800, 800)
+        root.setParent(host)
+        host.show()
+        root.show()
+        QApplication.processEvents()
+        index = HitIndex(LiveGeometrySource(realizer))
+        subscription = session.log.subscribe(
+            HitIndexInvalidator(index).on_changeset, priority=PRIORITY_HIT_INDEX
+        )
+        try:
+            index.ensure_fresh()
+            session.log.execute(
+                SetProperty(session.document.by_name("tabs")[0], "minimumSize", SizeValue(10, 200))
+            )
+            QApplication.processEvents()
+            index.ensure_fresh()
+            scroll = realizer.widget_for(session.document.by_name("scroll")[0])
+            contents = realizer.widget_for(session.document.by_name("scrollContents")[0])
+            assert isinstance(scroll, QScrollArea)
+            assert contents is not None
+            area: QScrollArea = scroll
+            assert not area.verticalScrollBar().isVisible()
+            assert contents.height() > area.viewport().height()
+            assert contents.width() == area.viewport().width()
+            session.log.execute(
+                SetProperty(session.document.by_name("tabs")[0], "currentIndex", NumberValue(1))
+            )
+            QApplication.processEvents()
+            assert area.verticalScrollBar().isVisible()
+            index.ensure_fresh()
+            _assert_full(realizer, index)
+        finally:
+            subscription.close()
+            root.setParent(None)
+            host.hide()
+            host.deleteLater()
+
+
+def _assert_full(realizer: Realizer, index: HitIndex) -> None:
+    full = HitIndex(LiveGeometrySource(realizer))
+    full.ensure_fresh()
+    assert _full_table(index._entries) == _full_table(full._entries)
+
+
+# --- M4.2 r3 gate: a scrollbar that appears with no ChangeSet, two containers deep. ---
+
+NESTED_SCROLL = form(
+    'class="QWidget" name="Form"',
+    """
+  <property name="geometry"><rect><x>0</x><y>0</y><width>400</width><height>400</height></rect></property>
+  <layout class="QVBoxLayout" name="formLayout">
+   <item>
+    <widget class="QTabWidget" name="tabs">
+     <widget class="QWidget" name="first">
+      <attribute name="title"><string>One</string></attribute>
+      <layout class="QVBoxLayout" name="firstLayout">
+       <item><widget class="QPushButton" name="plain"><property name="text"><string>Plain</string></property></widget></item>
+      </layout>
+     </widget>
+     <widget class="QWidget" name="second">
+      <attribute name="title"><string>Two</string></attribute>
+      <layout class="QVBoxLayout" name="secondLayout">
+       <item>
+        <widget class="QGroupBox" name="outer">
+         <layout class="QVBoxLayout" name="outerLayout">
+          <item>
+           <widget class="QScrollArea" name="scroll">
+            <property name="widgetResizable"><bool>true</bool></property>
+            <widget class="QWidget" name="scrollContents">
+             <layout class="QVBoxLayout" name="scrollLayout">
+              <item><widget class="QPushButton" name="inside"><property name="text"><string>Go</string></property></widget></item>
+             </layout>
+            </widget>
+           </widget>
+          </item>
+         </layout>
+        </widget>
+       </item>
+      </layout>
+     </widget>
+    </widget>
+   </item>
+  </layout>
+""",
+)
+
+
+@contextmanager
+def _nested_scroll(start_page: int) -> Iterator[Tuple[FormSession, Realizer, HitIndex]]:
+    with opened(NESTED_SCROLL) as (session, realizer):
+        root = realizer.root_widget
+        assert root is not None
+        host = QWidget()
+        host.resize(800, 800)
+        root.setParent(host)
+        host.show()
+        root.show()
+        tabs = session.document.by_name("tabs")[0]
+        if start_page:
+            session.log.execute(SetProperty(tabs, "currentIndex", NumberValue(start_page)))
+        QApplication.processEvents()
+        index = HitIndex(LiveGeometrySource(realizer))
+        subscription = session.log.subscribe(HitIndexInvalidator(index).on_changeset, priority=PRIORITY_HIT_INDEX)
+        try:
+            index.ensure_fresh()
+            yield session, realizer, index
+        finally:
+            subscription.close()
+            current = realizer.root_widget
+            if current is not None:
+                current.setParent(None)
+            host.hide()
+            host.deleteLater()
+
+
+def _late_bar(session: FormSession, realizer: Realizer) -> None:
+    """A later layout pass shows the bar: no ChangeSet, no range change, outer rect still."""
+    scroll = realizer.widget_for(session.document.by_name("scroll")[0])
+    contents = realizer.widget_for(session.document.by_name("scrollContents")[0])
+    assert isinstance(scroll, QScrollArea)
+    assert contents is not None
+    area: QScrollArea = scroll
+    outer = area.geometry()
+    width = contents.width()
+    area.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOn)
+    QApplication.processEvents()
+    assert area.geometry() == outer
+    assert contents.width() < width
+
+
+@pytest.mark.parametrize("start_page", [1, 0], ids=["shown-at-build", "shown-by-page-switch"])
+def test_late_scrollbar_two_containers_deep_matches_a_full_rebuild(start_page: int) -> None:
+    with _nested_scroll(start_page) as (session, realizer, index):
+        if not start_page:
+            # The scroll area enters the index through a scoped page-switch rewalk.
+            session.log.execute(SetProperty(session.document.by_name("tabs")[0], "currentIndex", NumberValue(1)))
+            QApplication.processEvents()
+            index.ensure_fresh()
+        _late_bar(session, realizer)
+        index.ensure_fresh()
+        _assert_full(realizer, index)
+        # A later scoped edit elsewhere must not leave the scroll contents stale either.
+        session.log.execute(SetProperty(session.document.by_name("outer")[0], "title", StringValue("Outer box")))
+        QApplication.processEvents()
+        index.ensure_fresh()
+        _assert_full(realizer, index)
+
+
+def _long_form_xml() -> str:
+    rows = []
+    for index in range(12):
+        rows.append(
+            '<item row="%d" column="0"><widget class="QLabel" name="lab%02d">'
+            '<property name="text"><string>Label %02d</string></property></widget></item>'
+            '<item row="%d" column="1"><widget class="QLineEdit" name="field%02d"/></item>'
+            % (index, index, index, index, index)
+        )
+    return form(
+        'class="QWidget" name="Form"',
+        '<property name="geometry"><rect><x>0</x><y>0</y><width>420</width><height>640</height></rect></property>\n'
+        "  <layout class=\"QFormLayout\" name=\"identityForm\">%s</layout>" % "".join(rows),
+    )
+
+
+def _moved_nodes(before, entries) -> set:
+    moved = set()
+    for entry in entries:
+        old = before.get((entry.node, entry.kind))
+        if old != (entry.rect, entry.visible):
+            moved.add(entry.node)
+    return moved
+
+
+def test_long_form_caption_matches_a_full_rebuild() -> None:
+    """A caption on a long form keeps every rect, including z, and names the rows that moved."""
+    with opened(_long_form_xml()) as (session, realizer):
+        root = realizer.root_widget
+        assert root is not None
+        root.resize(420, 640)
+        root.show()
+        QApplication.processEvents()
+        index = HitIndex(LiveGeometrySource(realizer))
+        subscription = session.log.subscribe(HitIndexInvalidator(index).on_changeset, priority=PRIORITY_HIT_INDEX)
+        try:
+            index.ensure_fresh()
+            before = {(entry.node, entry.kind): (entry.rect, entry.visible) for entry in index._entries}
+            session.log.execute(SetProperty(session.document.by_name("lab00")[0], "text", StringValue("Name 00")))
+            QApplication.processEvents()
+            _assert_matches_full(realizer, index)
+            assert index.last_changed is not None
+            assert set(index.last_changed) == _moved_nodes(before, index._entries)
+        finally:
+            subscription.close()
+            root.hide()
+
+
+def test_long_form_spacing_matches_a_full_rebuild() -> None:
+    """Spacing on a long form remeasures that layout and still matches a rebuild."""
+    with opened(_long_form_xml()) as (session, realizer):
+        root = realizer.root_widget
+        assert root is not None
+        root.resize(420, 640)
+        root.show()
+        QApplication.processEvents()
+        index = HitIndex(LiveGeometrySource(realizer))
+        subscription = session.log.subscribe(HitIndexInvalidator(index).on_changeset, priority=PRIORITY_HIT_INDEX)
+        try:
+            index.ensure_fresh()
+            before = {(entry.node, entry.kind): (entry.rect, entry.visible) for entry in index._entries}
+            session.log.execute(SetProperty(session.document.by_name("identityForm")[0], "spacing", NumberValue(18)))
+            QApplication.processEvents()
+            _assert_matches_full(realizer, index)
+            assert index.last_changed is not None
+            assert set(index.last_changed) == _moved_nodes(before, index._entries)
+            # 12 rows are 24 leaves. A full measure visits every one. The shift path samples a few.
+            assert index.last_visit_count < 24
+        finally:
+            subscription.close()
+            root.hide()
+
+
+def test_a_rebuilt_scroll_area_is_watched_again() -> None:
+    """Re-realize makes new widgets; the watch must follow them, not a reused id()."""
+    with _nested_scroll(1) as (session, realizer, index):
+        for _ in range(3):
+            host = realizer.root_widget.parentWidget() if realizer.root_widget is not None else None
+            realizer.build()
+            root = realizer.root_widget
+            assert root is not None and host is not None
+            root.setParent(host)
+            root.show()
+            QApplication.processEvents()
+            index.invalidate("realize_rebuild")
+            index.ensure_fresh()
+        _late_bar(session, realizer)
+        index.ensure_fresh()
+        _assert_full(realizer, index)
+
+
+def _hbox_with_spacer() -> str:
+    cells = [
+        '<item><widget class="QLabel" name="pinLeft"><property name="text"><string>P</string></property></widget></item>',
+        '<item><widget class="QLabel" name="label1"><property name="text"><string>A</string></property></widget></item>',
+        '<item><widget class="QPushButton" name="btn2"><property name="text"><string>2</string></property></widget></item>',
+        '<item><widget class="QPushButton" name="btn3"><property name="text"><string>3</string></property></widget></item>',
+        """<item><spacer name="gap">
+     <property name="orientation"><enum>Qt::Horizontal</enum></property>
+     <property name="sizeType"><enum>QSizePolicy::Expanding</enum></property>
+     <property name="sizeHint" stdset="0"><size><width>40</width><height>10</height></size></property>
+    </spacer></item>""",
+    ]
+    for number in range(4, 9):
+        cells.append(
+            '<item><widget class="QPushButton" name="btn%d"><property name="text"><string>%d</string></property></widget></item>'
+            % (number, number)
+        )
+    cells.append(
+        '<item><widget class="QLabel" name="pinRight"><property name="text"><string>R</string></property></widget></item>'
+    )
+    return form(
+        'class="QWidget" name="Form"',
+        """
+  <property name="geometry"><rect><x>0</x><y>0</y><width>900</width><height>80</height></rect></property>
+  <layout class="QHBoxLayout" name="row">
+   %s
+  </layout>
+"""
+        % "\n   ".join(cells),
+    )
+
+
+def _form_with_fixed_field() -> str:
+    rows = []
+    for row in range(8):
+        extra = ""
+        if row == 4:
+            extra = (
+                "<property name=\"sizePolicy\"><sizepolicy hsizetype=\"Fixed\" vsizetype=\"Fixed\">"
+                "<horstretch>0</horstretch><verstretch>0</verstretch></sizepolicy></property>"
+                "<property name=\"maximumSize\"><size><width>40</width><height>16777215</height></size></property>"
+            )
+        rows.append(
+            '<item row="%d" column="0"><widget class="QLabel" name="lab%d">'
+            '<property name="text"><string>L%d</string></property></widget></item>'
+            '<item row="%d" column="1"><widget class="QLineEdit" name="field%d">%s</widget></item>'
+            % (row, row, row, row, row, extra)
+        )
+    return form(
+        'class="QWidget" name="Form"',
+        """
+  <property name="geometry"><rect><x>0</x><y>0</y><width>480</width><height>420</height></rect></property>
+  <layout class="QFormLayout" name="formLayout">
+   <property name="horizontalSpacing"><number>6</number></property>
+   %s
+  </layout>
+"""
+        % "\n   ".join(rows),
+    )
+
+
+def test_widening_a_label_beside_an_expanding_spacer_matches_a_full_rebuild() -> None:
+    with opened(_hbox_with_spacer()) as (session, realizer):
+        root = realizer.root_widget
+        assert root is not None
+        root.resize(900, 80)
+        root.show()
+        QApplication.processEvents()
+        index = HitIndex(LiveGeometrySource(realizer))
+        subscription = session.log.subscribe(HitIndexInvalidator(index).on_changeset, priority=PRIORITY_HIT_INDEX)
+        try:
+            index.ensure_fresh()
+            session.log.execute(SetProperty(_id(session, "label1"), "text", StringValue("A much wider caption")))
+            _assert_matches_full(realizer, index)
+        finally:
+            subscription.close()
+            root.hide()
+
+
+def test_spacing_with_a_fixed_field_matches_a_full_rebuild() -> None:
+    with opened(_form_with_fixed_field()) as (session, realizer):
+        root = realizer.root_widget
+        assert root is not None
+        root.resize(480, 420)
+        root.show()
+        QApplication.processEvents()
+        index = HitIndex(LiveGeometrySource(realizer))
+        subscription = session.log.subscribe(HitIndexInvalidator(index).on_changeset, priority=PRIORITY_HIT_INDEX)
+        try:
+            index.ensure_fresh()
+            session.log.execute(SetProperty(_id(session, "formLayout"), "horizontalSpacing", NumberValue(28)))
+            _assert_matches_full(realizer, index)
+        finally:
+            subscription.close()
+            root.hide()

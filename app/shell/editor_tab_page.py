@@ -8,6 +8,8 @@ from typing import Any, Optional
 from app.qt.QtCore import Signal
 from app.qt.QtWidgets import QFrame, QHBoxLayout, QLabel, QPlainTextEdit, QPushButton, QVBoxLayout, QWidget
 
+from app.editors.generated_file import generated_banner
+from app.editors.generated_file_bar import GeneratedFileBar
 from app.shell.editor_tab_bar import TAB_STATE_MISSING, TAB_STATE_STALE, missing_marker_icon, warning_marker_icon
 from app.shell.theme_tokens import ShellThemeTokens
 
@@ -74,12 +76,16 @@ class DiskConflictInfoBar(QFrame):
 
     def set_state(self, state: Optional[str], file_path: str) -> None:
         if state not in (TAB_STATE_STALE, TAB_STATE_MISSING):
+            if self._state is None and not self.isVisible():
+                return
             self._state = None
             self.setVisible(False)
             return
         changed = state != self._state
         self._state = state
-        self._message_label.setText(info_bar_message(state, file_path))
+        message = info_bar_message(state, file_path)
+        if self._message_label.text() != message:
+            self._message_label.setText(message)
         stale = state == TAB_STATE_STALE
         self._reload_button.setVisible(stale)
         self._compare_button.setVisible(stale)
@@ -124,6 +130,8 @@ class EditorTabPage(QWidget):
         self._layout.setSpacing(0)
         self.info_bar = DiskConflictInfoBar(self)
         self._layout.addWidget(self.info_bar, 0)
+        self.generated_bar = GeneratedFileBar(self)
+        self._layout.addWidget(self.generated_bar, 0)
         self._notice_host = QWidget(self)
         self._notice_host.setObjectName("shell.editorTabPage.notices")
         self._notice_layout = QVBoxLayout(self._notice_host)
@@ -142,6 +150,23 @@ class EditorTabPage(QWidget):
 
     def content(self) -> QWidget:
         return self._content
+
+    def show_generated(self, path: str, text: str) -> None:
+        """Read-only banner for a generated module. Ordinary files stay as they are."""
+        banner = generated_banner(path, text)
+        if banner is None:
+            return
+        self.generated_bar.show_banner(banner)
+        editor = page_editor(self)
+        if editor is not None:
+            editor.setReadOnly(True)
+
+    def make_generated_editable(self) -> None:
+        """Edit anyway. This tab's editor becomes writable. The banner stays."""
+        editor = page_editor(self)
+        if editor is not None:
+            editor.setReadOnly(False)
+        self.generated_bar.note_editable()
 
     def add_notice_bar(self, widget: QWidget) -> None:
         """Insert a feature notice under the disk-conflict bar."""

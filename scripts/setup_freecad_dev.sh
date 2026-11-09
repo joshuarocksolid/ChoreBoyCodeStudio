@@ -4,10 +4,21 @@
 set -e
 
 PREFIX="${FREECAD_DEV_PREFIX:-$HOME/opt/freecad}"
+# Cloud pins this to freecad=1.0.0. Local runs keep the unpinned package name.
+FREECAD_CONDA_PKG="${FREECAD_CONDA_PKG:-freecad}"
 
 if ! command -v conda >/dev/null 2>&1; then
   echo "conda not found. Install Miniconda: https://docs.conda.io/en/latest/miniconda.html"
   exit 1
+fi
+
+export CONDA_PLUGINS_AUTO_ACCEPT_TOS="${CONDA_PLUGINS_AUTO_ACCEPT_TOS:-yes}"
+conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/main >/dev/null 2>&1 || true
+conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/r >/dev/null 2>&1 || true
+
+if [[ -x "$PREFIX/AppRun" ]] && "$PREFIX/AppRun" -c "import PySide2, FreeCAD" >/dev/null 2>&1; then
+  echo "FreeCAD dev runtime already present at $PREFIX/AppRun."
+  exit 0
 fi
 
 echo "Setting up FreeCAD 1.0 + Python 3.9 at: $PREFIX"
@@ -15,18 +26,11 @@ if [[ -d "$PREFIX/bin" ]] && [[ -x "$PREFIX/bin/python" ]]; then
   echo "Conda env already exists at $PREFIX. Installing/updating freecad..."
   eval "$(conda shell.bash hook)"
   conda activate "$PREFIX"
-  conda install -c conda-forge freecad -y
+  conda install -c conda-forge "$FREECAD_CONDA_PKG" pyside2 -y
 else
-  echo "Creating conda env with python=3.9 and freecad..."
-  conda create -p "$PREFIX" python=3.9 -y
-  eval "$(conda shell.bash hook)"
-  conda activate "$PREFIX"
-  conda install -c conda-forge freecad -y
+  echo "Creating conda env with python=3.9, ${FREECAD_CONDA_PKG}, and pyside2..."
+  conda create -p "$PREFIX" -c conda-forge python=3.9 "$FREECAD_CONDA_PKG" pyside2 -y
 fi
-
-# Conda FreeCAD 1.0 ships PySide6; the app uses PySide2. Install PySide2 for compatibility.
-echo "Installing PySide2 (app requires it; conda FreeCAD ships PySide6)..."
-conda install -c conda-forge pyside2 -y
 
 FREECADCMD="$PREFIX/bin/freecadcmd"
 if [[ ! -x "$FREECADCMD" ]]; then

@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>TreeWidgetHost</class>
+ <widget class="QTreeWidget" name="TreeWidgetHost">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>640</width>
+    <height>480</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>QTreeWidget</string>
+  </property>
+  <property name="toolTip">
+   <string>QTreeWidget host</string>
+  </property>
+  <column>
+   <property name="text">
+    <string notr="true">1</string>
+   </property>
+  </column>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>

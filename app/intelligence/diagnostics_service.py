@@ -6,6 +6,7 @@ import ast
 from pathlib import Path
 from typing import Any, Mapping
 
+from app.bootstrap.paths import cached_resolve
 from app.core import constants
 from app.core.models import ProjectMetadata
 from app.intelligence.builtin_lint_rules import (
@@ -106,7 +107,9 @@ def analyze_python_file(
     When *source* is provided, it is used instead of reading from disk.
     This enables linting unsaved editor buffer content.
     """
-    path = Path(file_path).expanduser().resolve()
+    from app.editors.editor_manager import normalized_path
+
+    path = Path(normalized_path(file_path))
     if source is None:
         try:
             source = path.read_text(encoding="utf-8")
@@ -144,7 +147,7 @@ def analyze_python_file(
         diagnostics.extend(unreachable_statement_diagnostics(syntax_tree, path))
 
     if project_root:
-        resolved_root = Path(project_root).expanduser().resolve()
+        resolved_root = Path(cached_resolve(str(project_root)))
         layout = resolve_project_import_layout(
             resolved_root,
             project_metadata,

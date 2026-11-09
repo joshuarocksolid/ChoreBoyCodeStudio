@@ -475,7 +475,12 @@ class FileProjectCommandsWorkflow:
         """Status-bar shop chip: open Settings on the General tab at Shop sharing."""
         self._open_settings_dialog(focus="shop_sharing")
 
-    def _open_settings_dialog(self, *, focus: Optional[SettingsFocus] = None) -> None:
+    def _open_settings_dialog(
+        self,
+        *,
+        focus: Optional[SettingsFocus] = None,
+        page_key: Optional[str] = None,
+    ) -> None:
         settings_service = self._host.settings_service()
         global_settings_payload = settings_service.load_global()
         global_snapshot = parse_editor_settings_snapshot(global_settings_payload)
@@ -506,12 +511,20 @@ class FileProjectCommandsWorkflow:
             python_tooling_runtime_details=python_tooling_copy.runtime_details,
             python_tooling_config_text=python_tooling_copy.config_text,
             python_tooling_config_details=python_tooling_copy.config_details,
+            global_settings_payload=global_settings_payload,
+            project_root=project_root,
+            initial_page_key=page_key,
             shop_sharing_group=self._host.shop_sharing_settings_group(),
             initial_scope=(
                 SETTINGS_SCOPE_PROJECT
-                if focus == "completion_mode"
-                and project_root is not None
-                and effective_snapshot.completion_mode != global_snapshot.completion_mode
+                if project_root is not None
+                and (
+                    page_key == "connections"
+                    or (
+                        focus == "completion_mode"
+                        and effective_snapshot.completion_mode != global_snapshot.completion_mode
+                    )
+                )
                 else SETTINGS_SCOPE_GLOBAL
             ),
         )
@@ -524,6 +537,12 @@ class FileProjectCommandsWorkflow:
 
         selected_scope = dialog.selected_scope
         updated_snapshot = dialog.snapshot()
+        # Read the file again: other writers (the form builder's memory, layout and
+        # run history) may have saved keys while the dialog was open, and merging into
+        # the payload read before it opened would drop them.
+        global_settings_payload = settings_service.load_global(force_refresh=True)
+        if project_root is not None:
+            project_settings_payload = settings_service.load_project(project_root, force_refresh=True)
         merged_global_settings, merged_project_settings = merge_editor_settings_snapshot_for_scope(
             scope=selected_scope,
             global_settings_payload=global_settings_payload,
@@ -532,6 +551,7 @@ class FileProjectCommandsWorkflow:
             global_snapshot=dialog.global_scope_snapshot(),
             project_snapshot=dialog.project_scope_snapshot(),
         )
+        merged_global_settings = dialog.apply_feature_pages(merged_global_settings)
         if merged_global_settings != global_settings_payload:
             settings_service.save_global(merged_global_settings)
         if project_root is not None and merged_project_settings != project_settings_payload:

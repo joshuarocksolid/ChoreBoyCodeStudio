@@ -18,11 +18,13 @@ correctly even if config discovery differs. When ``CBCS_PYTEST_WORKERS`` is set
 to a non-zero value and the caller did not provide explicit xdist worker flags,
 the launcher also prepends ``-n <value>``. The launcher also injects
 ``-m "not performance"`` unless the caller already passed ``-m`` or selected a
-path under ``tests/integration/performance/``.
+path under ``tests/integration/performance/``. ``vendor_pgtest`` is added to
+``sys.path`` only when the pytest arguments select the ``pg93`` marker.
 """
 from __future__ import annotations
 
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -85,6 +87,39 @@ def _selects_performance_path(args: list[str]) -> bool:
     return any("tests/integration/performance" in arg for arg in args)
 
 
+def _marker_expressions(args: list[str]) -> list[str]:
+    found: list[str] = []
+    pending = False
+    for arg in args:
+        if pending:
+            found.append(arg)
+            pending = False
+            continue
+        if arg == "-m":
+            pending = True
+            continue
+        if arg.startswith("-m") and len(arg) > 2:
+            found.append(arg[2:])
+    return found
+
+
+def _selects_pg93_marker(args: list[str]) -> bool:
+    """True when a ``-m`` expression names pg93 and does not only exclude it."""
+
+    for expression in _marker_expressions(args):
+        stripped = re.sub(r"\bnot\s+pg93\b", " ", expression)
+        if re.search(r"\bpg93\b", stripped):
+            return True
+    return False
+
+
+def _pg93_path_insert(repo_root: Path, args: list[str]) -> str:
+    if not _selects_pg93_marker(args):
+        return ""
+    root = dev_launch_editor.resolve_artifacts_dir(repo_root) / "vendor_pgtest"
+    return "sys.path.insert(0, %r);" % str(root)
+
+
 def _pythonpath_entries() -> list[str]:
     raw = os.environ.get("PYTHONPATH", "")
     entries: list[str] = []
@@ -113,7 +148,9 @@ def main() -> int:
     )
     repo_root_str = str(repo_root)
     vendor_root = str((repo_root / "vendor").resolve())
-    pytest_args = repr(_pytest_argv())
+    pytest_argv = _pytest_argv()
+    pytest_args = repr(pytest_argv)
+    pg93_insert = _pg93_path_insert(repo_root, pytest_argv)
     # FreeCAD clears PYTHONPATH before the -c payload runs. Reapply the
     # parent's entries ahead of vendor so a runtime tree-sitter site wins.
     runtime_site_inserts = "".join(
@@ -124,6 +161,7 @@ def main() -> int:
         "import sys, os;"
         f"sys.path.insert(0, {repo_root_str!r});"
         f"sys.path.insert(0, {vendor_root!r});"
+        f"{pg93_insert}"
         f"{runtime_site_inserts}"
         f"os._exit(__import__('pytest').main({pytest_args}))"
     )

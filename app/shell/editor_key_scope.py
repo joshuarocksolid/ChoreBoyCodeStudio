@@ -63,10 +63,20 @@ class EditorKeyScope(QObject):
             except RuntimeError:
                 pass
             self._watched = None
-        if new is None or new.window() is not self._window or _is_in_code_editor(new):
+        if new is None or not self._owns(new) or _is_in_code_editor(new):
             return
         new.installEventFilter(self)
         self._watched = new
+
+    def _owns(self, widget: QWidget) -> bool:
+        """This window, or a popup or tool window parented to it (a form builder item editor)."""
+        current: Optional[QWidget] = widget.window()
+        while current is not None:
+            if current is self._window:
+                return True
+            parent = current.parentWidget()
+            current = parent.window() if parent is not None else None
+        return False
 
     def _editor_only_keys(self) -> set[str]:
         keys = set()

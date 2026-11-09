@@ -10,9 +10,15 @@ from app.core import constants
 from app.editors.code_editor_widget import CodeEditorWidget
 from app.editors.editor_tab import DISK_CONFLICT_CHANGED, DISK_CONFLICT_MISSING, EditorTabState
 from app.editors.text_editing import FlatPythonIndentRepairResult
-from app.features.markdown.markdown_editor_pane import MarkdownEditorPane
 from app.shell.editor_tab_bar import MiddleClickTabBar, editor_tab_tooltip, tab_disk_state
 from app.shell.editor_tab_page import EditorTabPage
+
+
+def _themes_as_secondary_surface(content: QWidget) -> bool:
+    """A second group's pane. The registered pane is themed with the other surfaces."""
+    source_editor = getattr(content, "source_editor", None)
+    apply_theme = getattr(content, "apply_theme", None)
+    return callable(source_editor) and callable(apply_theme)
 
 
 def _index_of_buffer(tabs: QTabWidget, buffer_id: str) -> int:
@@ -122,20 +128,27 @@ class EditorTabsCoordinator:
             return
         data = tab_presentation_data(tab_state)
         tab_bar = target.tabBar()
-        # Data first: the label's width depends on the markers it asks for.
-        tab_bar.setTabData(tab_index, data)
         suffix = " *" if tab_state.is_dirty else ""
-        target.setTabText(tab_index, f"{tab_state.display_name}{suffix}")
-        target.setTabToolTip(
-            tab_index,
-            editor_tab_tooltip(
-                tab_state.file_path,
-                is_dirty=tab_state.is_dirty,
-                is_preview=tab_state.is_preview,
-                is_stale=bool(data["is_stale"]),
-                is_missing=bool(data["is_missing"]),
-            ),
+        text = f"{tab_state.display_name}{suffix}"
+        tip = editor_tab_tooltip(
+            tab_state.file_path,
+            is_dirty=tab_state.is_dirty,
+            is_preview=tab_state.is_preview,
+            is_stale=bool(data["is_stale"]),
+            is_missing=bool(data["is_missing"]),
         )
+        # setTabText and setTabToolTip lay out the tab bar, and that request
+        # walks up to the editor host, even when the string did not change.
+        current = tab_bar.tabData(tab_index)
+        same = isinstance(current, dict) and current == data
+        same = same and target.tabText(tab_index) == text and target.tabToolTip(tab_index) == tip
+        if same:
+            return
+        tab_bar.setTabData(tab_index, data)
+        if target.tabText(tab_index) != text:
+            target.setTabText(tab_index, text)
+        if target.tabToolTip(tab_index) != tip:
+            target.setTabToolTip(tab_index, tip)
         page = target.widget(tab_index)
         if isinstance(page, EditorTabPage):
             page.info_bar.set_state(tab_disk_state(data), tab_state.file_path)
@@ -144,7 +157,8 @@ class EditorTabsCoordinator:
     def apply_tab_chrome_theme(self, tokens: Any) -> None:
         """Theme the tab markers, the info bars, and editors shown only as extra views."""
         primary_views = set(map(id, self._window._editor_widgets_by_path.values()))
-        registered_panes = set(map(id, self._window._tab_content_registry.markdown_panes_by_path.values()))
+        panes = getattr(self._window, "_markdown_panes_by_path", None) or {}
+        registered_panes = set(map(id, panes.values()))
         groups = getattr(self._window, "_editor_groups", None)
         if groups is not None:
             groups.apply_theme_colors(accent=tokens.accent)
@@ -162,11 +176,11 @@ class EditorTabsCoordinator:
                 if not isinstance(page, EditorTabPage):
                     continue
                 page.info_bar.apply_theme(tokens)
+                page.generated_bar.apply_theme(tokens)
                 content = page.content()
                 if isinstance(content, CodeEditorWidget) and id(content) not in primary_views:
                     content.apply_theme(tokens)
-                elif isinstance(content, MarkdownEditorPane) and id(content) not in registered_panes:
-                    # A second group's markdown view; registered panes are themed with the rest.
+                elif id(content) not in registered_panes and _themes_as_secondary_surface(content):
                     content.apply_theme(tokens)
 
     def replace_tab_content_widget(self, file_path: str, new_widget: object) -> None:

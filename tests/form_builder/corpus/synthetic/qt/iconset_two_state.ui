@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>IconForm</class>
+ <widget class="QWidget" name="IconForm">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>640</width>
+    <height>480</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>Icons</string>
+  </property>
+  <property name="windowIcon">
+   <iconset>
+    <normaloff>tests/form_builder/corpus/synthetic/qt/normaloff.png</normaloff>
+    <normalon>tests/form_builder/corpus/synthetic/qt/normalon.png</normalon>tests/form_builder/corpus/synthetic/qt/normaloff.png
+   </iconset>
+  </property>
+ </widget>
+</ui>

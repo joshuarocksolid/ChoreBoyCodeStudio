@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: MIT -->
+<ui version="4.0">
+ <class>SliderLab</class>
+ <widget class="QWidget" name="SliderLab">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>640</width>
+    <height>480</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>Sliders</string>
+  </property>
+  <layout class="QHBoxLayout" name="row">
+   <item><widget class="QSlider" name="hSlider"><property name="orientation"><enum>Qt::Horizontal</enum></property></widget></item>
+   <item><widget class="QDial" name="dial"/></item>
+   <item><widget class="QProgressBar" name="progress"/></item>
+   <item><widget class="QLCDNumber" name="lcd"/></item>
+  </layout>
+ </widget>
+
+</ui>

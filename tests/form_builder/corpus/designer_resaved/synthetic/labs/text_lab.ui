@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>TextLab</class>
+ <widget class="QWidget" name="TextLab">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>640</width>
+    <height>480</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>Text</string>
+  </property>
+  <layout class="QVBoxLayout" name="col">
+   <item>
+    <widget class="QLineEdit" name="line"/>
+   </item>
+   <item>
+    <widget class="QTextEdit" name="rich"/>
+   </item>
+   <item>
+    <widget class="QPlainTextEdit" name="plain"/>
+   </item>
+   <item>
+    <widget class="QTextBrowser" name="browser"/>
+   </item>
+  </layout>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>

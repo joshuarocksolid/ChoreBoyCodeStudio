@@ -1,0 +1,6 @@
+<RCC>
+ <qresource prefix="/cbcs">
+  <file>icons/dot.png</file>
+  <file alias="mark">icons/mark.png</file>
+ </qresource>
+</RCC>

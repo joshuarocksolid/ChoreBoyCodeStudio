@@ -6,7 +6,7 @@ import time
 from pathlib import Path
 from typing import Any, cast
 
-from app.qt.QtWidgets import QDialog, QInputDialog, QLineEdit, QMessageBox
+from app.qt.QtWidgets import QApplication, QDialog, QInputDialog, QLineEdit, QMessageBox
 
 from app.shell.problems_panel import ResultItem
 from app.shell.quick_symbol_dialog import QuickSymbolDialog
@@ -23,13 +23,33 @@ class SymbolNavigationWorkflow:
 
     def handle_go_to_definition_action(self) -> None:
         parent = self._host.dialog_parent()
-        loaded_project = self._host.loaded_project()
-        if loaded_project is None:
-            QMessageBox.warning(parent, "Go To Definition", "Open a project first.")
+        finder = getattr(parent, "window", None)
+        window = finder() if callable(finder) else None
+        surface = getattr(window, "_form_undo_surface", None)
+        go = getattr(surface, "go_to_selected_code", None)
+        focus = QApplication.focusWidget()
+        inside = getattr(surface, "isAncestorOf", None)
+        if callable(go) and focus is not None and callable(inside) and inside(focus):
+            go()
             return
+        loaded_project = self._host.loaded_project()
         editor_manager = self._host.editor_manager()
         active_tab = editor_manager.active_tab()
         editor_widget = self._host.active_editor_widget()
+        owner = window if window is not None else getattr(self._host, "_window", None)
+        back = getattr(owner, "_form_return_from_code", None) if owner is not None else None
+        if active_tab is not None and editor_widget is not None and callable(back):
+            if back(
+                owner,
+                str(active_tab.file_path),
+                editor_widget.toPlainText(),
+                editor_widget.word_under_cursor(),
+                editor_widget.textCursor().position(),
+            ):
+                return
+        if loaded_project is None:
+            QMessageBox.warning(parent, "Go To Definition", "Open a project first.")
+            return
         if active_tab is None or editor_widget is None:
             QMessageBox.warning(parent, "Go To Definition", "Open a file tab first.")
             return
@@ -83,6 +103,10 @@ class SymbolNavigationWorkflow:
 
     def handle_goto_symbol_in_file_action(self) -> None:
         parent = self._host.dialog_parent()
+        # A feature tab (the form builder) can claim the key for its own picker.
+        claim = getattr(parent, "_form_builder_go_to_widget", None)
+        if callable(claim) and claim():
+            return
         editor_manager = self._host.editor_manager()
         active_tab = editor_manager.active_tab()
         if active_tab is None:
@@ -162,6 +186,22 @@ class SymbolNavigationWorkflow:
 
     def handle_find_references_action(self) -> None:
         parent = self._host.dialog_parent()
+        finder = getattr(parent, "window", None)
+        window = finder() if callable(finder) else None
+        surface = getattr(window, "_form_undo_surface", None)
+        go = getattr(surface, "go_to_selected_code", None)
+        show = getattr(surface, "show_logic_uses", None)
+        focus = QApplication.focusWidget()
+        inside = getattr(surface, "isAncestorOf", None)
+        if (
+            callable(go)
+            and callable(show)
+            and focus is not None
+            and callable(inside)
+            and inside(focus)
+        ):
+            show()
+            return
         loaded_project = self._host.loaded_project()
         if loaded_project is None:
             QMessageBox.warning(parent, "Find References", "Open a project first.")

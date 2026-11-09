@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: MIT -->
+<ui version="4.0">
+ <class>BackupDialog</class>
+ <widget class="QDialog" name="BackupDialog">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>640</width>
+    <height>480</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>Backup</string>
+  </property>
+  <layout class="QFormLayout" name="formLayout">
+   <item row="0" column="0">
+    <widget class="QLabel" name="label_folderEdit">
+     <property name="text">
+      <string>Folder</string>
+     </property>
+     <property name="buddy">
+      <cstring>folderEdit</cstring>
+     </property>
+    </widget>
+   </item>
+   <item row="0" column="1">
+    <widget class="QLineEdit" name="folderEdit"/>
+   </item>
+   <item row="1" column="0">
+    <widget class="QLabel" name="label_keepEdit">
+     <property name="text">
+      <string>Keep</string>
+     </property>
+     <property name="buddy">
+      <cstring>keepEdit</cstring>
+     </property>
+    </widget>
+   </item>
+   <item row="1" column="1">
+    <widget class="QSpinBox" name="keepEdit"/>
+   </item>
+   <item row="2" column="0">
+    <widget class="QLabel" name="label_compressCheck">
+     <property name="text">
+      <string>Compress</string>
+     </property>
+     <property name="buddy">
+      <cstring>compressCheck</cstring>
+     </property>
+    </widget>
+   </item>
+   <item row="2" column="1">
+    <widget class="QCheckBox" name="compressCheck"/>
+   </item>
+   <item row="3" column="0">
+    <widget class="QLabel" name="label_whenEdit">
+     <property name="text">
+      <string>When</string>
+     </property>
+     <property name="buddy">
+      <cstring>whenEdit</cstring>
+     </property>
+    </widget>
+   </item>
+   <item row="3" column="1">
+    <widget class="QTimeEdit" name="whenEdit"/>
+   </item>
+  </layout>
+ </widget>
+ <tabstops>
+  <tabstop>folderEdit</tabstop>
+  <tabstop>keepEdit</tabstop>
+  <tabstop>compressCheck</tabstop>
+  <tabstop>whenEdit</tabstop>
+ </tabstops>
+</ui>

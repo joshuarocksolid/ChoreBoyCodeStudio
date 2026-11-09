@@ -9,6 +9,9 @@ import pytest
 
 from app.core.errors import AppValidationError
 from app.core.models import LoadedProject, ProjectMetadata
+from app.features.form_builder.engine.project.adoption import adopt_form
+from app.features.form_builder.engine.project.fs import OsFileSystem
+from app.project.project_manifest import load_project_manifest
 from app.project.run_configs import RunConfiguration
 from app.shell.run_config_controller import RunConfigController, tokenize_argv_text
 
@@ -155,3 +158,24 @@ def test_delete_config_removes_entry_and_persists_manifest(tmp_path: Path) -> No
     assert [config.name for config in remaining] == ["Debug"]
     persisted = json.loads(Path(loaded_project.manifest_path).read_text(encoding="utf-8"))
     assert persisted["run_configs"] == [{"name": "Debug", "entry_file": "debug.py", "argv": []}]
+
+
+def test_persisting_run_configs_keeps_a_form_adopted_after_open(tmp_path: Path) -> None:
+    controller = RunConfigController()
+    loaded_project = _loaded_project(tmp_path)
+    root = Path(loaded_project.project_root)
+    ui_path = root / "dialogs" / "invoice.ui"
+    ui_path.parent.mkdir()
+    ui_path.write_text("<ui/>\n", encoding="utf-8")
+    assert loaded_project.metadata.form_builder == {}
+    adopt_form(str(root), str(ui_path), OsFileSystem())
+
+    controller.upsert_config(
+        loaded_project=loaded_project,
+        existing_configs=controller.load_configs(loaded_project),
+        updated_config=RunConfiguration(name="Debug", entry_file="debug.py", argv=[]),
+    )
+
+    manifest = load_project_manifest(loaded_project.manifest_path)
+    assert manifest.form_builder["adopted_forms"] == ["dialogs/invoice.ui"]
+    assert {"name": "Debug", "entry_file": "debug.py", "argv": []} in manifest.run_configs

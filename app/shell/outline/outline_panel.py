@@ -39,6 +39,19 @@ from app.shell.outline.outline_tree import (
 )
 
 
+_FORM_OUTLINE_TEXT = "This form's outline is in the Outline tab."
+_NO_UI_OUTLINE_TEXT = "No outline for .ui files."
+
+
+def _ui_outline_text() -> str:
+    """The form builder owns the outline of a .ui file only when it is registered (PySide6 builds)."""
+    from app.features import FEATURE_SPECS, feature_is_enabled
+
+    spec = next((item for item in FEATURE_SPECS if item.key == "form-builder"), None)
+    available = spec is not None and feature_is_enabled(spec)
+    return _FORM_OUTLINE_TEXT if available else _NO_UI_OUTLINE_TEXT
+
+
 class OutlinePanel(QWidget):
     """Tree of classes/functions/methods/properties for the active editor."""
 
@@ -120,6 +133,8 @@ class OutlinePanel(QWidget):
         self._items_by_qualified_name: dict[str, QTreeWidgetItem] = {}
         self._highlighted_qualified_name: Optional[str] = None
         self._collapsed = False
+        self._ui_hold = False
+        self._ui_prior_collapsed = False
         self._follow_cursor = True
         self._sort_mode = SORT_POSITION
         self._filter_text = ""
@@ -246,6 +261,7 @@ class OutlinePanel(QWidget):
         self._tree.expandAll()
 
     def set_outline(self, symbols: Iterable[OutlineSymbol], file_path: str) -> None:
+        self._release_ui_hold()
         symbol_tuple = tuple(symbols)
         same_file = self._current_file_path == file_path
         expanded_snapshot: set[str] = set()
@@ -268,6 +284,7 @@ class OutlinePanel(QWidget):
             self._apply_filter()
 
     def clear(self) -> None:
+        self._release_ui_hold()
         self._tree.clear()
         self._items_by_qualified_name.clear()
         self._symbols = ()
@@ -284,11 +301,37 @@ class OutlinePanel(QWidget):
         self._current_file_path = None
         self._highlighted_qualified_name = None
         self._header.set_file_label("")
+        if language == "ui" and _ui_outline_text() == _FORM_OUTLINE_TEXT:
+            self._hold_form_outline()
+            return
+        self._release_ui_hold()
         if language == "python":
             self._empty_label.setText("Open a Python file to see its outline.")
+        elif language == "ui":
+            self._empty_label.setText(_NO_UI_OUTLINE_TEXT)
         else:
-            self._empty_label.setText(f"No outline available for {language} files.")
+            self._empty_label.setText("No outline available for %s files." % language)
         self._stack_layout.setCurrentWidget(self._empty_label)
+
+    def _hold_form_outline(self) -> None:
+        """A .ui tab keeps the header and hides the body. The user's open state comes back later."""
+        if not self._ui_hold:
+            self._ui_prior_collapsed = self._collapsed
+            self._ui_hold = True
+        self._collapsed = True
+        self._header.set_collapsed(True)
+        self._apply_collapsed_layout(True, emit=False)
+        self._empty_label.setText("")
+        self._stack_layout.setCurrentWidget(self._empty_label)
+
+    def _release_ui_hold(self) -> None:
+        if not self._ui_hold:
+            return
+        prior = self._ui_prior_collapsed
+        self._ui_hold = False
+        self._collapsed = prior
+        self._header.set_collapsed(prior)
+        self._apply_collapsed_layout(prior, emit=False)
 
     def highlight_symbol_at_line(self, line_number: int) -> None:
         if not self._symbols:

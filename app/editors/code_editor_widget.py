@@ -293,6 +293,10 @@ class CodeEditorWidget(
         previous_highlighter = self._highlighter
         if hasattr(previous_highlighter, "setDocument"):
             previous_highlighter.setDocument(None)  # type: ignore[union-attr]
+            # setDocument(None) clears the document but leaves the highlighter
+            # parented to it, so a second view would see two highlighters.
+            if hasattr(previous_highlighter, "setParent"):
+                previous_highlighter.setParent(None)  # type: ignore[union-attr]
 
         sample_lines: list[str] = []
         block = document.firstBlock()
@@ -398,9 +402,12 @@ class CodeEditorWidget(
 
     def go_to_line(self, line_number: int) -> None:
         safe_line = max(1, line_number)
+        block = self.document().findBlockByNumber(safe_line - 1)
         cursor = self.textCursor()
-        cursor.movePosition(QTextCursor.Start)
-        cursor.movePosition(QTextCursor.Down, QTextCursor.MoveAnchor, safe_line - 1)
+        if block.isValid():
+            cursor.setPosition(block.position())
+        else:
+            cursor.movePosition(QTextCursor.End)
         self.setTextCursor(cursor)
         self.setFocus()
 

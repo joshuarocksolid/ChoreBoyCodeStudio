@@ -45,6 +45,12 @@ Shop settings sharing is now set up from inside Code Studio (Clair Nolt). No poi
 - A v0.4.13 pointer file (`share/Chore_Boy/CBCS/cbcs_state_root`) or a `~/choreboy_code_studio_state` link is read once and turned into the new setting. A relative path in the pointer file now works. Reading these old setups will be removed in v0.4.16.
 - `CBCS_STATE_ROOT` still works for advanced use. Its startup message now says to check that the folder exists on this computer.
 
+## [Unreleased]
+
+### Added
+
+- Visual form builder for data-entry screens such as invoices, customers, and inventory. You lay the form out in the editor, bind it to SQLite or PostgreSQL, and save a window class. Preview can run the form and roll database changes back. The manual is [docs/manual/form_builder/index.md](docs/manual/form_builder/index.md).
+
 ## [0.4.13] - 2026-10-21
 
 Fixes what the LibrePy group reported since v0.4.12, and runs on FreeCAD 1.1 as well as FreeCAD 1.0 from one build. Builds tagged 0.4.13 (21 Sep) and 0.4.14 (24 Sep) were never sent to the list. Their tags are deleted and their changes are in this release, reworked where noted below.

@@ -104,6 +104,20 @@ def _add_menu_action(
     return action
 
 
+def form_adopt_callback(window: Any, absolute_path: str, is_directory: bool) -> Any:
+    """The Adopt this form callback, or None when the path is not a form.
+
+    The feature binds ``_form_builder_adopt_form`` on PySide6. On PySide2 the
+    attribute is absent, so the menu item is absent too.
+    """
+    if is_directory or Path(absolute_path).suffix.lower() != ".ui":
+        return None
+    callback = getattr(window, "_form_builder_adopt_form", None)
+    if not callable(callback):
+        return None
+    return callback
+
+
 def show_single_item_tree_context_menu(
     window: Any,
     position: object,
@@ -115,6 +129,10 @@ def show_single_item_tree_context_menu(
     menu, icons = _new_tree_menu(window)
     shortcuts = _tree_menu_shortcuts(window)
     new_file_action = _add_menu_action(menu, icons["new_file"], "New File…")
+    new_form_opener = getattr(window, "_open_new_form", None)
+    new_form_action = None
+    if callable(new_form_opener):
+        new_form_action = _add_menu_action(menu, icons["new_file"], "New Form…")
     new_folder_action = _add_menu_action(menu, icons["new_folder"], "New Folder…")
     menu.addSeparator()
     rename_action = _add_menu_action(
@@ -183,6 +201,16 @@ def show_single_item_tree_context_menu(
                 "Mark as Sources Root",
                 status_tip="Use this folder as a project source root.",
             )
+    adopt_action = None
+    adopt_callback = form_adopt_callback(window, absolute_path, is_directory)
+    if adopt_callback is not None:
+        menu.addSeparator()
+        adopt_action = _add_menu_action(
+            menu,
+            icons["new_file"],
+            "Adopt this form",
+            status_tip="Generate Python for this form and show the setupUi change to paste.",
+        )
     local_history_action = None
     contributed_actions: list[tuple[Any, Any]] = []
     if not is_directory:
@@ -238,6 +266,13 @@ def show_single_item_tree_context_menu(
 
     if chosen == new_file_action:
         workflow.handle_tree_new_file(absolute_path if is_directory else str(Path(absolute_path).parent))
+    elif (
+        new_form_action is not None
+        and chosen == new_form_action
+        and callable(new_form_opener)
+    ):
+        folder = absolute_path if is_directory else str(Path(absolute_path).parent)
+        new_form_opener(folder)
     elif chosen == new_folder_action:
         workflow.handle_tree_new_folder(absolute_path if is_directory else str(Path(absolute_path).parent))
     elif chosen == rename_action:
@@ -273,6 +308,8 @@ def show_single_item_tree_context_menu(
         window._run_launch_workflow.handle_tree_run_file_with_arguments(absolute_path)
     elif set_entry_point_action is not None and chosen == set_entry_point_action:
         workflow.set_project_entry_point(relative_path)
+    elif adopt_action is not None and chosen == adopt_action and adopt_callback is not None:
+        adopt_callback(absolute_path)
     elif mark_source_root_action is not None and chosen == mark_source_root_action:
         workflow.handle_tree_mark_source_root(relative_path)
     elif unmark_source_root_action is not None and chosen == unmark_source_root_action:

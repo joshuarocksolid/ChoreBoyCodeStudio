@@ -9,6 +9,7 @@ import time
 from app.qt.QtCore import QEvent, QObject, Qt, QTimer
 from app.qt.QtGui import QColor
 from app.qt.QtWidgets import QFrame, QGraphicsDropShadowEffect, QHBoxLayout, QLabel, QPushButton, QWidget
+from app.qt.qt_compat import wrapper_is_valid
 
 from app.shell.theme_tokens import ShellThemeTokens
 
@@ -55,7 +56,9 @@ class Toast(QFrame):
         self.adjustSize()
         self.setMinimumWidth(280)
         self.setMaximumWidth(420)
-        parent.installEventFilter(_ResizeFilter(parent, self))
+        # Parent the filter to the toast. An anchor-owned filter stays installed
+        # after deleteLater, and the next resize calls the deleted toast.
+        parent.installEventFilter(_ResizeFilter(self))
         self._place()
         self.show()
         self.raise_()
@@ -110,15 +113,20 @@ class Toast(QFrame):
 
 
 class _ResizeFilter(QObject):
-    def __init__(self, parent: QWidget, toast: Toast) -> None:
-        super().__init__(parent)
+    def __init__(self, toast: Toast) -> None:
+        super().__init__(toast)
         self._toast = toast
 
     def eventFilter(self, watched: QObject, event: QEvent) -> bool:  # noqa: N802
-        if event.type() == QEvent.Resize:
-            toast = self._toast
-            if toast is not None and not toast.isHidden():
-                toast._place()
+        if event.type() != QEvent.Resize:
+            return False
+        toast = self._toast
+        if not wrapper_is_valid(toast):
+            if wrapper_is_valid(watched):
+                watched.removeEventFilter(self)
+            return False
+        if not toast.isHidden():
+            toast._place()
         return False
 
 

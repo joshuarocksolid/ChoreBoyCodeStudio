@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Callable, Generic, Optional, Protocol, TypeVar
+from typing import Callable, Generic, Optional, Protocol, Sequence, TypeVar
 
 from app.project.import_layout import load_project_import_layout
 from app.project.import_rewrite import ImportRewritePreview, apply_import_rewrites, plan_import_rewrites
@@ -27,26 +27,23 @@ class ProjectTreeController(Generic[W]):
         self,
         deleted_path: str,
         *,
-        open_editor_paths: Callable[[], list[str]],
-        pop_editor_for_path: Callable[[str], Optional[W]],
+        open_tab_paths: Callable[[], Sequence[str]],
         tab_index_for_path: Callable[[str], int],
         remove_tab_at_index: Callable[[int], None],
-        release_editor_widget: Callable[[W], None],
+        release_tab_content: Callable[[str], None],
         close_editor_file: Callable[[str], None],
         breakpoint_store: BreakpointStore,
         refresh_breakpoints_list: Callable[[], None],
         record_deleted_path: Optional[Callable[[str], None]] = None,
     ) -> None:
         deleted_resolved = str(Path(deleted_path).resolve())
-        for open_path in open_editor_paths():
+        for open_path in list(open_tab_paths()):
             if open_path != deleted_resolved and not open_path.startswith(f"{deleted_resolved}/"):
                 continue
             tab_index = tab_index_for_path(open_path)
-            widget = pop_editor_for_path(open_path)
             if tab_index >= 0:
                 remove_tab_at_index(tab_index)
-            if widget is not None:
-                release_editor_widget(widget)
+            release_tab_content(open_path)
             close_editor_file(open_path)
             breakpoint_store.clear_file(open_path)
         refresh_breakpoints_list()
@@ -69,15 +66,26 @@ class ProjectTreeController(Generic[W]):
         maybe_rewrite_imports: Callable[[str, str], None],
         migrate_buffer_state: Optional[Callable[[str, str], None]] = None,
         remap_file_lineage: Optional[Callable[[dict[str, str]], None]] = None,
+        rekey_tab_content: Optional[Callable[[str, str], None]] = None,
+        carry_file_state: bool = True,
     ) -> None:
+        """Point open tabs at ``destination_path``.
+
+        A move carries breakpoints and local-history lineage to the new path.
+        Save As passes ``carry_file_state=False``: the old file still exists and
+        keeps both, and the new file starts with neither.
+        """
         remapped_paths = remap_editor_paths(source_path, destination_path)
         for old_path, new_path in remapped_paths.items():
-            breakpoint_store.remap_paths({old_path: new_path})
+            if carry_file_state:
+                breakpoint_store.remap_paths({old_path: new_path})
             if migrate_buffer_state is not None:
                 migrate_buffer_state(old_path, new_path)
             tab_index = tab_index_for_path(new_path)
             if tab_index >= 0:
                 update_tab_path_and_name(tab_index, new_path)
+            if rekey_tab_content is not None:
+                rekey_tab_content(old_path, new_path)
             widget = widget_for_path(new_path)
             if widget is None:
                 continue
@@ -85,7 +93,7 @@ class ProjectTreeController(Generic[W]):
             update_widget_language(widget, new_path)
 
         refresh_breakpoints_list()
-        if remap_file_lineage is not None and remapped_paths:
+        if carry_file_state and remap_file_lineage is not None and remapped_paths:
             remap_file_lineage(dict(remapped_paths))
         maybe_rewrite_imports(source_path, destination_path)
 

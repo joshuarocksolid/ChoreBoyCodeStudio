@@ -8,6 +8,7 @@ from app.bootstrap.paths import project_manifest_path
 from app.bootstrap.runtime_module_probe import load_cached_runtime_modules
 from app.core.models import RuntimeIssue, RuntimeIssueReport, WorkflowPreflightResult
 from app.packaging.dependency_audit import check_manifest_consistency, run_dependency_audit
+from app.packaging.form_files import form_packaging_issues
 from app.packaging.layout import is_packaging_excluded_path
 from app.packaging.models import (
     DependencyAuditReport,
@@ -54,7 +55,8 @@ def build_package_validation_report(
         project_default_entry=project_default_entry,
         profile=profile,
     )
-    combined_issues = _sort_issues(list(base_preflight.issues) + config_issues)
+    form_issues = form_packaging_issues(resolved_root)
+    combined_issues = _sort_issues(list(base_preflight.issues) + config_issues + form_issues)
     preflight = WorkflowPreflightResult(
         workflow="package",
         issues=combined_issues,

@@ -1,0 +1,106 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>NestedFifteen</class>
+ <widget class="QFrame" name="NestedFifteen">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>640</width>
+    <height>480</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>Nested 15</string>
+  </property>
+  <layout class="QVBoxLayout" name="layOuter">
+   <item>
+    <widget class="QFrame" name="level1">
+     <layout class="QVBoxLayout" name="lay1">
+      <item>
+       <widget class="QFrame" name="level2">
+        <layout class="QVBoxLayout" name="lay2">
+         <item>
+          <widget class="QFrame" name="level3">
+           <layout class="QVBoxLayout" name="lay3">
+            <item>
+             <widget class="QFrame" name="level4">
+              <layout class="QVBoxLayout" name="lay4">
+               <item>
+                <widget class="QFrame" name="level5">
+                 <layout class="QVBoxLayout" name="lay5">
+                  <item>
+                   <widget class="QFrame" name="level6">
+                    <layout class="QVBoxLayout" name="lay6">
+                     <item>
+                      <widget class="QFrame" name="level7">
+                       <layout class="QVBoxLayout" name="lay7">
+                        <item>
+                         <widget class="QFrame" name="level8">
+                          <layout class="QVBoxLayout" name="lay8">
+                           <item>
+                            <widget class="QFrame" name="level9">
+                             <layout class="QVBoxLayout" name="lay9">
+                              <item>
+                               <widget class="QFrame" name="level10">
+                                <layout class="QVBoxLayout" name="lay10">
+                                 <item>
+                                  <widget class="QFrame" name="level11">
+                                   <layout class="QVBoxLayout" name="lay11">
+                                    <item>
+                                     <widget class="QFrame" name="level12">
+                                      <layout class="QVBoxLayout" name="lay12">
+                                       <item>
+                                        <widget class="QFrame" name="level13">
+                                         <layout class="QVBoxLayout" name="lay13">
+                                          <item>
+                                           <widget class="QLabel" name="leaf">
+                                            <property name="text">
+                                             <string>leaf</string>
+                                            </property>
+                                           </widget>
+                                          </item>
+                                         </layout>
+                                        </widget>
+                                       </item>
+                                      </layout>
+                                     </widget>
+                                    </item>
+                                   </layout>
+                                  </widget>
+                                 </item>
+                                </layout>
+                               </widget>
+                              </item>
+                             </layout>
+                            </widget>
+                           </item>
+                          </layout>
+                         </widget>
+                        </item>
+                       </layout>
+                      </widget>
+                     </item>
+                    </layout>
+                   </widget>
+                  </item>
+                 </layout>
+                </widget>
+               </item>
+              </layout>
+             </widget>
+            </item>
+           </layout>
+          </widget>
+         </item>
+        </layout>
+       </widget>
+      </item>
+     </layout>
+    </widget>
+   </item>
+  </layout>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>

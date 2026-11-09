@@ -129,6 +129,15 @@ def _classify_import(
 ) -> ClassifiedModule:
     top_level = module_name.split(".")[0].strip()
 
+    # ``import __future__`` is stdlib. A generated connection module uses it,
+    # and a runtime inventory that was never probed does not list it.
+    if top_level == "__future__":
+        return ClassifiedModule(
+            module_name=module_name,
+            top_level=top_level,
+            category=CATEGORY_STDLIB,
+        )
+
     if inventory.state != "loaded" and top_level in STDLIB_TOP_LEVELS:
         return ClassifiedModule(
             module_name=module_name,
@@ -187,6 +196,23 @@ def _classify_import(
             module_name=module_name,
             top_level=top_level,
             category=CATEGORY_VENDORED_NATIVE,
+        )
+
+    # FreeCAD provides the PySide shim. A probe that never imported it is not a missing module.
+    if module_name in ("PySide", "PySide.QtCore", "PySide.QtGui", "PySide.QtWidgets"):
+        return ClassifiedModule(
+            module_name=module_name,
+            top_level=top_level,
+            category=CATEGORY_RUNTIME,
+        )
+
+    # Generated forms import PySide6. Assume the runtime has it only when nothing
+    # was probed. A loaded inventory that omits PySide6 (FreeCAD 1.0) is missing it.
+    if top_level == "PySide6" and inventory.state != "loaded":
+        return ClassifiedModule(
+            module_name=module_name,
+            top_level=top_level,
+            category=CATEGORY_RUNTIME,
         )
 
     return ClassifiedModule(

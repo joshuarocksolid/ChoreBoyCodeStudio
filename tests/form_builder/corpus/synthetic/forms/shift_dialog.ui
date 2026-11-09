@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: MIT -->
+<ui version="4.0">
+ <class>ShiftDialog</class>
+ <widget class="QDialog" name="ShiftDialog">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>640</width>
+    <height>480</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>Shift</string>
+  </property>
+  <layout class="QFormLayout" name="formLayout">
+   <item row="0" column="0">
+    <widget class="QLabel" name="label_nameEdit">
+     <property name="text">
+      <string>Name</string>
+     </property>
+     <property name="buddy">
+      <cstring>nameEdit</cstring>
+     </property>
+    </widget>
+   </item>
+   <item row="0" column="1">
+    <widget class="QLineEdit" name="nameEdit"/>
+   </item>
+   <item row="1" column="0">
+    <widget class="QLabel" name="label_startEdit">
+     <property name="text">
+      <string>Start</string>
+     </property>
+     <property name="buddy">
+      <cstring>startEdit</cstring>
+     </property>
+    </widget>
+   </item>
+   <item row="1" column="1">
+    <widget class="QTimeEdit" name="startEdit"/>
+   </item>
+   <item row="2" column="0">
+    <widget class="QLabel" name="label_endEdit">
+     <property name="text">
+      <string>End</string>
+     </property>
+     <property name="buddy">
+      <cstring>endEdit</cstring>
+     </property>
+    </widget>
+   </item>
+   <item row="2" column="1">
+    <widget class="QTimeEdit" name="endEdit"/>
+   </item>
+   <item row="3" column="0">
+    <widget class="QLabel" name="label_overnightCheck">
+     <property name="text">
+      <string>Overnight</string>
+     </property>
+     <property name="buddy">
+      <cstring>overnightCheck</cstring>
+     </property>
+    </widget>
+   </item>
+   <item row="3" column="1">
+    <widget class="QCheckBox" name="overnightCheck"/>
+   </item>
+  </layout>
+ </widget>
+ <tabstops>
+  <tabstop>nameEdit</tabstop>
+  <tabstop>startEdit</tabstop>
+  <tabstop>endEdit</tabstop>
+  <tabstop>overnightCheck</tabstop>
+ </tabstops>
+</ui>

@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Mapping, Sequence, TypeVar
 
-from app.bootstrap.paths import PathInput, project_manifest_path
+from app.bootstrap.paths import PathInput, cached_resolve, project_manifest_path
 from app.bootstrap.toml_io import read_toml_mapping
 from app.core import constants
 from app.core.models import ProjectMetadata
@@ -144,7 +144,7 @@ def load_project_import_layout(project_root: PathInput) -> ProjectImportLayout:
     """Load manifest (when present) and resolve the canonical import layout."""
     from app.project.project_manifest import load_project_manifest
 
-    root = Path(project_root).expanduser().resolve()
+    root = Path(cached_resolve(str(project_root)))
     metadata: ProjectMetadata | None = None
     manifest = project_manifest_path(root)
     if manifest.is_file():
@@ -162,7 +162,7 @@ def resolve_project_import_layout(
     manifest_materialized: bool = True,
 ) -> ProjectImportLayout:
     """Build import layout using manifest, pyproject, then auto-detect precedence."""
-    root = Path(project_root).expanduser().resolve()
+    root = Path(cached_resolve(str(project_root)))
     vendor_root = root / "vendor"
 
     if metadata is not None:

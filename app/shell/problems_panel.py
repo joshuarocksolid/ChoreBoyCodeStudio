@@ -6,12 +6,13 @@ renders distinct severity icons (circle/triangle/info-dot).
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from app.qt.QtCore import QPoint, Qt, Signal
-from app.qt.QtGui import QColor, QIcon, QPainter, QPixmap, QPolygon
+from app.qt.QtGui import QColor, QIcon, QPainter, QPalette, QPixmap, QPolygon
 from app.qt.QtWidgets import (
     QHBoxLayout,
     QHeaderView,
@@ -37,6 +38,7 @@ if TYPE_CHECKING:
 ROLE_FILE_PATH = 320
 ROLE_LINE_NUMBER = 321
 ROLE_DIAGNOSTIC_CODE = 322
+ROLE_DETAIL = 323
 
 
 @dataclass(frozen=True)
@@ -220,6 +222,29 @@ class _FilterToggle(QToolButton):
         self.setText(f"{self._base_label}: {self._count}")
 
 
+def row_fixes(detail: dict[str, str]) -> list[tuple[str, str]]:
+    """The fixes a row offers: ``detail["fixes"]`` is JSON ``[[fix id, title], ...]``.
+
+    A feature puts them there (the form builder's Problems bridge does); the
+    panel lists them in the row's context menu and emits ``fix_requested``.
+    Anything malformed offers nothing.
+    """
+    raw = detail.get("fixes")
+    if not raw:
+        return []
+    try:
+        payload = json.loads(raw)
+    except (TypeError, ValueError):
+        return []
+    if not isinstance(payload, list):
+        return []
+    found: list[tuple[str, str]] = []
+    for pair in payload:
+        if isinstance(pair, list) and len(pair) == 2 and all(isinstance(part, str) and part for part in pair):
+            found.append((pair[0], pair[1]))
+    return found
+
+
 # ---------------------------------------------------------------------------
 # ProblemsPanel
 # ---------------------------------------------------------------------------
@@ -231,10 +256,15 @@ class ProblemsPanel(QWidget):
     item_preview_requested: Any = Signal(str, int)
     item_activated: Any = Signal(str, int)
     context_menu_requested: Any = Signal(str, str)
+    #: ``(file path, fix id)`` for a fix a row offers; the row's detail is ``last_fix_detail()``.
+    fix_requested: Any = Signal(str, str)
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setObjectName("shell.problemsPanel")
+        self._last_detail: dict[str, str] = {}
+        self._last_preview_detail: dict[str, str] = {}
+        self._last_fix_detail: dict[str, str] = {}
 
         root_layout = QVBoxLayout(self)
         root_layout.setContentsMargins(0, 0, 0, 0)
@@ -317,16 +347,20 @@ class ProblemsPanel(QWidget):
             DiagnosticSeverity.WARNING: "#D97706",
             DiagnosticSeverity.INFO: "#3366FF",
         }
+        self._code_color = ""
 
     # -- public API --
 
     def apply_theme(self, tokens: ShellThemeTokens) -> None:
         """Update severity icon/row colors from theme tokens."""
+        self._code_color = tokens.text_primary
         self.set_severity_colors(
             tokens.diag_error_color or tokens.accent,
             tokens.diag_warning_color or tokens.text_muted,
             tokens.diag_info_color or tokens.accent,
         )
+        if self._diagnostics or self._runtime_problems:
+            self._rebuild_diagnostics_tree()
 
     def set_severity_colors(
         self,
@@ -442,12 +476,24 @@ class ProblemsPanel(QWidget):
                     child.setIcon(0, severity_icon(entry.severity, color_hex))
                     child.setText(1, entry.message)
                     child.setForeground(1, QColor(color_hex))
-                    child.setText(2, f"Ln {entry.line_number}")
+                    detail = dict(entry.detail) if entry.detail else {}
+                    location = detail.get("location_label") or f"Ln {entry.line_number}"
+                    child.setText(2, location)
                     child.setText(3, entry.code)
-                    child.setToolTip(1, entry.file_path)
+                    source_label = detail.get("source_label") or ""
+                    tip = "%s\n%s" % (source_label, entry.file_path) if source_label else entry.file_path
+                    # A row's fixes are in its context menu; the tooltip names them.
+                    tip += "".join("\nFix: %s" % title for _fix, title in row_fixes(detail))
+                    child.setToolTip(1, tip)
+                    if source_label:
+                        code_color = getattr(self, "_code_color", "") or ""
+                        if not code_color:
+                            code_color = self._tree.palette().color(QPalette.Text).name()
+                        child.setForeground(3, QColor(code_color))
                     child.setData(0, ROLE_FILE_PATH, entry.file_path)
                     child.setData(0, ROLE_LINE_NUMBER, entry.line_number)
                     child.setData(0, ROLE_DIAGNOSTIC_CODE, entry.code)
+                    child.setData(0, ROLE_DETAIL, detail)
                 else:
                     assert isinstance(entry, ProblemEntry)
                     color_hex = self._severity_colors.get(DiagnosticSeverity.ERROR, "#E03131")
@@ -524,6 +570,8 @@ class ProblemsPanel(QWidget):
             resolved_line = int(line_number)
         except (TypeError, ValueError):
             return
+        detail = item.data(0, ROLE_DETAIL)
+        self._last_preview_detail = dict(detail) if isinstance(detail, dict) else {}
         self.item_preview_requested.emit(str(file_path), resolved_line)
 
     def _on_item_activated(self, item: QTreeWidgetItem) -> None:
@@ -535,7 +583,19 @@ class ProblemsPanel(QWidget):
             resolved_line = int(line_number)
         except (TypeError, ValueError):
             return
+        detail = item.data(0, ROLE_DETAIL)
+        self._last_detail = dict(detail) if isinstance(detail, dict) else {}
         self.item_activated.emit(str(file_path), resolved_line)
+
+    def last_activation_detail(self) -> dict[str, str]:
+        return dict(self._last_detail)
+
+    def last_preview_detail(self) -> dict[str, str]:
+        return dict(self._last_preview_detail)
+
+    def last_fix_detail(self) -> dict[str, str]:
+        """The detail of the row whose fix was last chosen."""
+        return dict(self._last_fix_detail)
 
     def _on_context_menu(self, position: "QPoint") -> None:
         item = self._tree.itemAt(position)
@@ -545,12 +605,22 @@ class ProblemsPanel(QWidget):
         file_path = item.data(0, ROLE_FILE_PATH)
         if not file_path:
             return
-        if not self._quick_fixes_enabled:
-            return
-        if diag_code not in {"PY220", "PY221", "PY200"}:
+        raw = item.data(0, ROLE_DETAIL)
+        detail = dict(raw) if isinstance(raw, dict) else {}
+        fixes = row_fixes(detail)
+        safe = self._quick_fixes_enabled and diag_code in {"PY220", "PY221", "PY200"}
+        if not fixes and not safe:
             return
         menu = QMenu(self)
-        action = menu.addAction("Apply Safe Fixes for File")
+        chosen_fix = {menu.addAction(title): fix_id for fix_id, title in fixes}
+        action = None
+        if safe:
+            if fixes:
+                menu.addSeparator()
+            action = menu.addAction("Apply Safe Fixes for File")
         chosen = exec_qt(menu, self._tree.viewport().mapToGlobal(position))
-        if chosen == action:
+        if chosen is not None and chosen in chosen_fix:
+            self._last_fix_detail = detail
+            self.fix_requested.emit(str(file_path), chosen_fix[chosen])
+        elif action is not None and chosen == action:
             self.context_menu_requested.emit(str(file_path), str(diag_code))

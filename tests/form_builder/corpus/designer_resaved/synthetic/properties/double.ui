@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>PropDouble</class>
+ <widget class="QWidget" name="PropDouble">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>640</width>
+    <height>480</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>double</string>
+  </property>
+  <property name="amount" stdset="0">
+   <double>3.140000000000000</double>
+  </property>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>

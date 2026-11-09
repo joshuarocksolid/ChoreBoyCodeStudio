@@ -47,6 +47,7 @@ class _FakeEditorManager:
             current_content=text,
             is_dirty=True,
             display_name=Path(file_path).name,
+            content_source=None,
         )
         self.saved_contents: list[str] = []
         self.stale_paths: list[str] = []

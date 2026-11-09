@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Callable, Optional
 
 from app.qt.QtCore import QEvent, QObject, Signal
 from app.qt.QtGui import QColor, QFont, QHelpEvent, QPalette, QTextCharFormat, QTextCursor
+from app.qt.qt_compat import event_pos
 from app.qt.QtWidgets import (
     QHBoxLayout,
     QLabel,
@@ -159,6 +160,9 @@ class RunLogPanel(QWidget):
     # -- public API --------------------------------------------------------
 
     def eventFilter(self, watched: QObject, event: QEvent) -> bool:  # noqa: N802 - Qt API
+        if watched is self._text.viewport() and event.type() == QEvent.MouseButtonRelease:
+            if self._activate_anchor(event):
+                return True
         if watched is self._text.viewport() and event.type() == QEvent.ToolTip:
             assert isinstance(event, QHelpEvent)
             tip = self._text.cursorForPosition(event.pos()).charFormat().toolTip()
@@ -214,7 +218,7 @@ class RunLogPanel(QWidget):
         for raw_line in text.rstrip().splitlines():
             display = f"{prefix}{raw_line}" if prefix else raw_line
             category, self._in_traceback = _classify_line(display, self._in_traceback)
-            fmt = self._format_for_category(category, display)
+            fmt = self._with_run_link(self._format_for_category(category, display), display)
             if category == "noise" and _SPNAV_CONNECT_FAILED_RE.match(display):
                 self._saw_freecad_window_start = True
 
@@ -332,6 +336,7 @@ class RunLogPanel(QWidget):
                 fmt = fmt_error
             else:
                 fmt = fmt_normal
+            fmt = self._with_run_link(fmt, line)
             if i > 0:
                 cursor.insertText("\n")
             cursor.insertText(line, fmt)
@@ -348,3 +353,48 @@ class RunLogPanel(QWidget):
     def _on_open_clicked(self) -> None:
         if self._log_path:
             self.open_log_requested.emit(self._log_path)
+
+    def activate_run_link(self, line: str) -> bool:
+        """Run the first registered run-link whose ``match`` accepts ``line``."""
+        found = _first_run_link(line)
+        if found is None:
+            return False
+        link, target = found
+        link.activate(target)
+        return True
+
+    def _with_run_link(self, fmt: QTextCharFormat, line: str) -> QTextCharFormat:
+        found = _first_run_link(line)
+        if found is None:
+            return fmt
+        _link, target = found
+        linked = QTextCharFormat(fmt)
+        linked.setAnchor(True)
+        linked.setAnchorHref(target)
+        return linked
+
+    def _activate_anchor(self, event: QEvent) -> bool:
+        cursor = self._text.cursorForPosition(event_pos(event))
+        if not cursor.charFormat().anchorHref():
+            return False
+        return self.activate_run_link(cursor.block().text())
+
+
+_RunLinkResolver = Optional[Callable[[str], Optional[tuple]]]
+_RUN_LINK_RESOLVER: _RunLinkResolver = None
+
+
+def set_run_link_resolver(resolver: _RunLinkResolver) -> None:
+    """Install the form builder's run-link lookup. The shell does not import it."""
+    global _RUN_LINK_RESOLVER
+    _RUN_LINK_RESOLVER = resolver
+
+
+def _first_run_link(line: str) -> Optional[tuple]:
+    resolver = _RUN_LINK_RESOLVER
+    if resolver is None:
+        return None
+    try:
+        return resolver(line)
+    except Exception:
+        return None

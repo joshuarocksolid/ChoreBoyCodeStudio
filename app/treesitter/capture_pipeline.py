@@ -206,39 +206,42 @@ class TreeSitterCapturePipelineMixin:
         return (old_line, new_line)
 
     def _shift_capture_cache_for_line_delta(self, *, pending_edit: _PendingEdit) -> None:
-        if not self._capture_cache:
-            return
+        self._capture_cache = self._shifted_rows(self._capture_cache, pending_edit)
+        self._locals_by_row = self._shifted_rows(self._locals_by_row, pending_edit)
+
+    def _shifted_rows(
+        self,
+        rows: dict[int, list[_CaptureSpan]],
+        pending_edit: _PendingEdit,
+    ) -> dict[int, list[_CaptureSpan]]:
+        if not rows:
+            return rows
         start_line = int(pending_edit.start_point[0])
         reusable_old_line, reusable_new_line = self._first_reusable_line_after_edit(pending_edit=pending_edit)
-        shifted_cache: dict[int, list[_CaptureSpan]] = {}
-        for line_number, spans in self._capture_cache.items():
+        shifted: dict[int, list[_CaptureSpan]] = {}
+        for line_number, spans in rows.items():
             if line_number < start_line:
-                shifted_cache[line_number] = spans
+                shifted[line_number] = spans
                 continue
             if line_number < reusable_old_line:
                 continue
             shifted_line = reusable_new_line + (line_number - reusable_old_line)
             if shifted_line < 0:
                 continue
-            shifted_cache[shifted_line] = spans
-        self._capture_cache = shifted_cache
+            shifted[shifted_line] = spans
+        return shifted
 
     def _rehighlight_window_for_edit(self, *, pending_edit: _PendingEdit, line_delta: int) -> tuple[int, int]:
-        document = _host(self).document()
+        """The edited lines, plus a few lines of context. A line-count change used to
+        extend this to the end of the file whenever the viewport was unset, so one
+        inserted method rehighlighted every block below it.
+        """
+        del line_delta
         start_line = int(pending_edit.start_point[0])
         end_line = int(pending_edit.new_end_point[0])
         rehighlight_start = max(0, start_line - _RANGE_EXPANSION_LINES)
         rehighlight_end = max(rehighlight_start, end_line + _RANGE_EXPANSION_LINES)
-        if line_delta == 0 or document is None:
-            return (rehighlight_start, rehighlight_end)
-
-        viewport_start, viewport_end = _host(self)._viewport_lines
-        if viewport_start != 0 or viewport_end != 0:
-            rehighlight_start = min(rehighlight_start, viewport_start)
-            rehighlight_end = max(rehighlight_end, viewport_end + _RANGE_EXPANSION_LINES)
-        else:
-            rehighlight_end = max(rehighlight_end, max(0, document.blockCount() - 1))
-        return (rehighlight_start, max(rehighlight_start, rehighlight_end))
+        return (rehighlight_start, rehighlight_end)
 
     def _query_window_for_large_modes(self, line_count: int) -> tuple[int, int] | None:
         start_line, end_line = _host(self)._viewport_lines
@@ -402,6 +405,7 @@ class TreeSitterCapturePipelineMixin:
             raw_captures,
             start_line=start_line,
             end_line=end_line,
+            order=getattr(host, "_capture_order", None),
         )
 
     @staticmethod
@@ -410,10 +414,17 @@ class TreeSitterCapturePipelineMixin:
         *,
         start_line: int,
         end_line: int,
+        order: dict[str, int] | None = None,
     ) -> list[tuple[Any, str]]:
         normalized: list[tuple[Any, str]] = []
         if isinstance(raw_captures, dict):
-            for capture_name, nodes in raw_captures.items():
+            items = list(raw_captures.items())
+            if order:
+                # Ties between captures on one node go to the earlier name, so
+                # the winner must not depend on which lines were queried.
+                last = len(order)
+                items.sort(key=lambda item: order.get(item[0], last))
+            for capture_name, nodes in items:
                 for node in nodes:
                     if TreeSitterCapturePipelineMixin._node_intersects_line_range(node, start_line, end_line):
                         normalized.append((node, capture_name))

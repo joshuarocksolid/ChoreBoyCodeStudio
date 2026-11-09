@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: MIT -->
+<ui version="4.0">
+ <class>MessageDialog</class>
+ <widget class="QDialog" name="MessageDialog">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>640</width>
+    <height>480</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>Message</string>
+  </property>
+  <layout class="QFormLayout" name="formLayout">
+   <item row="0" column="0">
+    <widget class="QLabel" name="label_titleEdit">
+     <property name="text">
+      <string>Title</string>
+     </property>
+     <property name="buddy">
+      <cstring>titleEdit</cstring>
+     </property>
+    </widget>
+   </item>
+   <item row="0" column="1">
+    <widget class="QLineEdit" name="titleEdit"/>
+   </item>
+   <item row="1" column="0">
+    <widget class="QLabel" name="label_bodyEdit">
+     <property name="text">
+      <string>Body</string>
+     </property>
+     <property name="buddy">
+      <cstring>bodyEdit</cstring>
+     </property>
+    </widget>
+   </item>
+   <item row="1" column="1">
+    <widget class="QTextEdit" name="bodyEdit"/>
+   </item>
+   <item row="2" column="0">
+    <widget class="QLabel" name="label_urgentCheck">
+     <property name="text">
+      <string>Urgent</string>
+     </property>
+     <property name="buddy">
+      <cstring>urgentCheck</cstring>
+     </property>
+    </widget>
+   </item>
+   <item row="2" column="1">
+    <widget class="QCheckBox" name="urgentCheck"/>
+   </item>
+  </layout>
+ </widget>
+ <tabstops>
+  <tabstop>titleEdit</tabstop>
+  <tabstop>bodyEdit</tabstop>
+  <tabstop>urgentCheck</tabstop>
+ </tabstops>
+</ui>

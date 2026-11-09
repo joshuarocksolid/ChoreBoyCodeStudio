@@ -39,6 +39,15 @@ Dependency Inspector title is **Project Dependencies**. No `#shell.dependency*` 
 | `#shell.welcome` | Welcome pane |
 | `#shell.editorTabs` | Editor tabs |
 | `#shell.editorTabs.textEditor` | Text editor (shared name) |
+| `#shell.editorTabs.uiTextHintFrame` | PySide2 `.ui` notice box (text with Dismiss at its right). |
+| `#shell.editorTabs.uiTextHint` | PySide2 `.ui` notice text. Once per file per window. |
+| `#shell.editorTabs.uiTextHintDismiss` | Focusable Dismiss control on that notice. |
+| `#shell.generatedFileBar` | Read-only banner on a generated `ui_*.py` / `*_rc.py` tab (UX-GEN-001). |
+| `#shell.generatedFileBar.icon` | Lock glyph on that banner. |
+| `#shell.generatedFileBar.message` | Banner sentence naming the source form. |
+| `#shell.generatedFileBar.openSource` | Opens the `.ui` the file is generated from. |
+| `#shell.generatedFileBar.openLogic` | Opens the logic expansion source, when there is one. |
+| `#shell.generatedFileBar.editAnyway` | Makes this tab's buffer writable (UX-GEN-002). |
 | `#shell.bottomRegion.tabs` | Console / Debug / Problems / Run Log |
 | `#shell.statusBar` | Status bar |
 
@@ -98,6 +107,7 @@ Onboarding action buttons share `#shell.welcome.onboardingActionBtn`. Use `text:
 | `#shell.projectStatusLabel` | Project name + `(project overrides)` |
 | `#shell.indentStatusLabel` | Spaces / Tabs |
 | `#shell.editorStatusLabel` | file, line, col, modified/saved, then `changed on disk` (stale tab) or `missing from disk` (missing tab, replaces modified/saved) |
+| `#shell.formTimingsLabel` | Developer form timings. Hidden unless `CBCS_FB_TIMINGS=1` or QSettings `form_builder/dev/show_timings` is on, and a caller passed a line. |
 | `#shell.completionModeStatusLabel` | `Completion: Manual · Ctrl+Space (Global setting)` / `Completion: While typing (Project setting)` / `Completion: Off (Global setting)`. Click opens Settings (`exec_()`, blocks the bridge); read it with `control-cbcs read`. |
 | `#shell.status.shopSharing` | `Settings: shop · <label>` or `Settings: shop offline · copy from <HH:MM>`. Hidden in local and pinned mode. Click opens Settings on the General tab at Shop sharing. |
 | `#shell.statusBar.activeRunConfig` | Default or named config |
@@ -162,6 +172,7 @@ Onboarding action buttons share `#shell.welcome.onboardingActionBtn`. Use `text:
 | `#shell.packageWizard.askInstallLocation` | **Ask the installer for an install folder** (AT-105 when unchecked). Not on page 0 / Step 1. |
 | `#shell.runtimeCenterDialog.copyDetails` | Packaging report only. Copies the report text. Hidden on other Runtime Center reports. |
 | `#shell.runtimeCenterDialog.goToFile` | Packaging report only. Opens the issue file at the reported line. Hidden on other Runtime Center reports. |
+| `#shell.runtimeCenterDialog.saveFormButton` | Packaging report only. Saves the form for the selected stale or missing generated file. Hidden when no form saver is bound, and hidden on other Runtime Center reports. |
 | `#shell.pluginManagerDialog` | Plugin Manager |
 | `#shell.runWithArgumentsDialog` | Run With Arguments |
 | `#shell.runConfigurationsDialog` | Run Configurations |
@@ -175,7 +186,7 @@ Onboarding action buttons share `#shell.welcome.onboardingActionBtn`. Use `text:
 
 ## File actions
 
-`shell.action.file.newProject` · `newWindow` · `newProjectFromTemplate` · `openProject` · `openFile` · `quickOpen` · `recoveryCenter` · `globalHistory` · `save` · `saveAs` · `saveAll` · `autoSave` · `settings` · `exit`
+`shell.action.file.newProject` · `newWindow` · `newProjectFromTemplate` · `newForm` · `openProject` · `openFile` · `quickOpen` · `recoveryCenter` · `globalHistory` · `save` · `saveAs` · `saveAll` · `autoSave` · `settings` · `exit`
 
 ## Edit actions
 
@@ -478,6 +489,35 @@ The Dune checker requires each handle below to match a `setObjectName` call unde
 - `#shell.freecadRequirement.okButton`
 - `#shell.freecadRequirement.section`
 - `#shell.freecadRequirement.works`
+
+## Form builder
+
+Object names use `formBuilder.<area>.<name>`. View XML reuses `#shell.editorTabs.textEditor` through `create_source_editor`.
+
+| Handle | What |
+|--------|------|
+| `formBuilder.surface` | Form tab |
+| `formBuilder.name` | Form name |
+| `formBuilder.viewXml` | View XML toggle |
+| `formBuilder.structure` | Structure tree |
+| `formBuilder.xmlBanner` | View XML notice box (frame; Discard sits inside it on errors) |
+| `formBuilder.xmlBannerText` | View XML notice text |
+| `formBuilder.discardXml` | Discard XML edits |
+| `formBuilder.newForm` | New form tab |
+| `formBuilder.newForm.name` | Name field |
+| `formBuilder.newForm.card.*` | Start cards |
+| `formBuilder.fromTable` | Build a form from a table |
+| `formBuilder.insert` | Insert pane |
+| `formBuilder.insertFilter` | Insert search field ("Search widgets") |
+| `formBuilder.insertSearch` | Insert header search button |
+| `formBuilder.insertMore` | Insert header more menu (Show as icons or list, Expand all, Collapse all, Clear recently used) |
+| `formBuilder.insertBody` | Insert tiles, rows and category headers |
+| `formBuilder.insertCaption` | Insert caption (where the next insert goes) |
+| `formBuilder.insertEmpty` | Insert no-match message |
+| `formBuilder.insertClear` | Insert no-match Clear link |
+| `formBuilder.outlineInsert` | Quick insert popover (`/`) |
+| `formBuilder.outlineInsertFilter` | Quick insert search field |
+| `formBuilder.outlineInsertList` | Quick insert rows |
 
 ## Team Sync
 

@@ -370,3 +370,32 @@ def test_stale_open_paths_records_mtime_when_unknown_and_content_matches(tmp_pat
     tab = manager.get_tab(str(file_path))
     assert tab is not None
     assert tab.last_known_mtime is not None
+
+
+def test_save_after_edit_changes_only_the_edited_line_bytes_for_crlf_file(tmp_path: Path) -> None:
+    target = tmp_path / "tool.py"
+    target.write_bytes(b"import os\r\nvalue = 1\r\nprint(value)\r\n")
+    target.chmod(0o755)
+    manager = EditorManager()
+    tab = manager.open_file(str(target)).tab
+    manager.update_tab_content(str(target), tab.current_content.replace("value = 1", "value = 2"))
+
+    manager.save_tab(str(target))
+
+    assert target.read_bytes() == b"import os\r\nvalue = 2\r\nprint(value)\r\n"
+    assert target.stat().st_mode & 0o7777 == 0o755
+    # The saved CRLF file is not reported as changed on disk, and a re-read matches the tab.
+    assert manager.stale_open_paths() == []
+    assert manager.get_tab(str(target)).is_dirty is False
+
+
+def test_save_keeps_utf8_bom_and_lf_style(tmp_path: Path) -> None:
+    bom_file = tmp_path / "bom.txt"
+    bom_file.write_bytes(b"\xef\xbb\xbfa\nb\n")
+    manager = EditorManager()
+    tab = manager.open_file(str(bom_file)).tab
+    manager.update_tab_content(str(bom_file), tab.current_content + "c\n")
+
+    manager.save_tab(str(bom_file))
+
+    assert bom_file.read_bytes() == b"\xef\xbb\xbfa\nb\nc\n"

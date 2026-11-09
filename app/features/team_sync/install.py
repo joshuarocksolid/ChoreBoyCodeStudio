@@ -4,19 +4,20 @@ from __future__ import annotations
 
 import importlib
 import os
+from typing import TYPE_CHECKING
 
-from app.features.team_sync.ui.controller import IdleTeamSync, TeamSyncController
-from app.features.team_sync.ui.ports import SchedulerPorts, SyncPorts
-from app.features.team_sync.ui.send_sheet import SendToolbarButton
-from app.features.team_sync.ui.team_view import TeamView
-from app.qt.QtGui import QColor
-from app.shell.contributions import ExplorerMenuAction, ShellContributions, SidebarContribution, ToolbarContribution
-from app.shell.events import ProjectOpenedEvent
-from app.shell.icons.activity_bar import team_icon
-from app.shell.shell_composition_context import ShellCompositionContext, bind_private_attrs
+if TYPE_CHECKING:
+    from app.features.team_sync.ui.controller import TeamSyncController
+    from app.features.team_sync.ui.send_sheet import SendToolbarButton
+    from app.features.team_sync.ui.team_view import TeamView
+    from app.qt.QtGui import QColor
+    from app.shell.contributions import ShellContributions
+    from app.shell.shell_composition_context import ShellCompositionContext
 
 
-def _team_icon(normal: QColor, active: QColor):
+def _team_icon(normal: "QColor", active: "QColor"):
+    from app.shell.icons.activity_bar import team_icon
+
     return team_icon(color_normal=normal, color_active=active)
 
 
@@ -25,6 +26,8 @@ def make_team_sync_service() -> tuple[object, bool, bool]:
 
     The real engine is built per open project, not at shell startup.
     """
+    from app.features.team_sync.ui.controller import IdleTeamSync
+
     scenario = os.environ.get("CBCS_TEAM_SYNC_FAKE", "").strip()
     if scenario:
         from app.features.team_sync.core.fake import InMemoryTeamSync
@@ -54,11 +57,13 @@ class TeamSyncShell:
     """Registered at install time. Widgets and the service appear once the shell exists."""
 
     def __init__(self) -> None:
-        self._view: TeamView | None = None
-        self._send: SendToolbarButton | None = None
-        self._controller: TeamSyncController | None = None
+        self._view: "TeamView | None" = None
+        self._send: "SendToolbarButton | None" = None
+        self._controller: "TeamSyncController | None" = None
 
-    def register(self, contributions: ShellContributions) -> None:
+    def register(self, contributions: "ShellContributions") -> None:
+        from app.shell.contributions import ExplorerMenuAction, SidebarContribution, ToolbarContribution
+
         contributions.sidebar.append(
             SidebarContribution(
                 view_id="team",
@@ -79,6 +84,9 @@ class TeamSyncShell:
         contributions.settings_group_factories.append(self._settings_group)
 
     def build(self, window: object) -> None:
+        from app.features.team_sync.ui.controller import TeamSyncController
+        from app.features.team_sync.ui.ports import SchedulerPorts, SyncPorts
+
         service, dormant, fake = make_team_sync_service()
         if os.environ.get("CBCS_TEAM_SYNC_SHOTS"):
             ports: object = SyncPorts()
@@ -106,10 +114,14 @@ class TeamSyncShell:
         )
 
     def _make_view(self, parent):  # type: ignore[no-untyped-def]
+        from app.features.team_sync.ui.team_view import TeamView
+
         self._view = TeamView(parent)
         return self._view
 
     def _make_send(self, parent):  # type: ignore[no-untyped-def]
+        from app.features.team_sync.ui.send_sheet import SendToolbarButton
+
         self._send = SendToolbarButton(parent)
         return self._send
 
@@ -150,7 +162,10 @@ class TeamSyncShell:
         return self._controller.settings_group(parent)
 
 
-def install_team_sync(ctx: ShellCompositionContext) -> None:
+def install_team_sync(ctx: "ShellCompositionContext") -> None:
+    from app.shell.events import ProjectOpenedEvent
+    from app.shell.shell_composition_context import bind_private_attrs
+
     shell = TeamSyncShell()
     bind_private_attrs(ctx.w, {"_team_sync": shell})
     shell.register(ctx.w._shell_contributions)

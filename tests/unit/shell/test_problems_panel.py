@@ -6,6 +6,7 @@ import pytest
 
 pytest.importorskip("app.qt.QtWidgets", exc_type=ImportError)
 
+from app.qt.QtGui import QColor, QPalette  # noqa: E402
 from app.qt.QtWidgets import QApplication  # noqa: E402
 
 from app.intelligence.diagnostics_service import CodeDiagnostic, DiagnosticSeverity  # noqa: E402
@@ -203,3 +204,38 @@ def test_problem_count_reflects_total_across_severities(_ensure_qapp) -> None:  
     panel.set_diagnostics(diagnostics)
 
     assert panel.problem_count() == 3
+
+
+def test_form_code_uses_body_text_not_placeholder(_ensure_qapp) -> None:  # type: ignore[no-untyped-def]
+    panel = ProblemsPanel()
+    panel.apply_theme(  # type: ignore[arg-type]
+        type(
+            "Tokens",
+            (),
+            {
+                "text_primary": "#E9ECEF",
+                "diag_error_color": "#E03131",
+                "diag_warning_color": "#D97706",
+                "diag_info_color": "#748FFC",
+                "accent": "#748FFC",
+                "text_muted": "#ADB5BD",
+            },
+        )()
+    )
+    panel.set_diagnostics(
+        [
+            CodeDiagnostic(
+                code="FB201",
+                severity=DiagnosticSeverity.WARNING,
+                file_path="/project/forms/sale.ui",
+                line_number=4,
+                message="print_receipt is not a method",
+                detail={"source_label": "Form"},
+            )
+        ]
+    )
+    child = panel.tree_widget().topLevelItem(0).child(0)
+    painted = child.foreground(3).color().name().lower()
+    placeholder = panel.tree_widget().palette().color(QPalette.PlaceholderText).name().lower()
+    assert painted == QColor("#E9ECEF").name().lower()
+    assert painted != placeholder

@@ -18,11 +18,13 @@ def resolve_history_subject(
     project_id: Optional[str] = None,
     project_root: Optional[str] = None,
 ) -> ResolvedHistorySubject:
-    normalized_path = str(Path(file_path).expanduser().resolve())
+    from app.editors.editor_manager import normalized_path as _cached_path
+
+    normalized_path = _cached_path(file_path)
     inferred_project_id = project_id.strip() if isinstance(project_id, str) and project_id.strip() else None
     inferred_project_root = None
     if project_root is not None:
-        candidate_root = Path(project_root).expanduser().resolve()
+        candidate_root = Path(_cached_path(project_root))
         try:
             relative_path = Path(normalized_path).relative_to(candidate_root).as_posix()
             inferred_project_root = str(candidate_root)

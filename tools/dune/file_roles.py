@@ -45,13 +45,13 @@ FILE_ROLES = (
     FileRole(
         "app.shell",
         ("app/shell/**",),
-        ("app.runner", "app.packaging"),
+        ("app.runner", "app.packaging", "app.features.markdown", "app.features.form_builder"),
         allowed_imports=_UI_IMPORT_CONTRACTS,
     ),
     FileRole(
         "app.editors",
         ("app/editors/**",),
-        ("app.runner", "app.packaging"),
+        ("app.runner", "app.packaging", "app.features.markdown", "app.features.form_builder"),
         allowed_imports=_UI_IMPORT_CONTRACTS,
     ),
     FileRole("app.runner", ("app/runner/**",), ("app.features",)),
@@ -59,6 +59,98 @@ FILE_ROLES = (
         "app.plugins.host_runtime",
         ("app/plugins/host_runtime.py", "app/plugins/host_runtime/**"),
         ("app.features",),
+    ),
+    FileRole(
+        "form_builder.engine",
+        ("app/features/form_builder/engine/**",),
+        ("app", "PySide2", "PySide6", "shiboken2", "shiboken6"),
+        allowed_imports=(
+            "app.features.form_builder.engine",
+            "app.plugins.rpc_protocol",
+        ),
+    ),
+    FileRole(
+        "form_builder.qtside",
+        ("app/features/form_builder/qtside/**",),
+        (
+            "app.shell",
+            "app.editors",
+            "app.features.form_builder.integration",
+            "app.runner",
+            "app.packaging",
+        ),
+    ),
+    FileRole(
+        "form_builder.canvas_core",
+        ("app/features/form_builder/qtside/canvas/core/**",),
+        ("app", "PySide2", "PySide6", "shiboken2", "shiboken6"),
+        allowed_imports=(
+            "app.features.form_builder.engine",
+            "app.features.form_builder.qtside.canvas.core",
+            "app.features.form_builder.qtside.insert.catalog",
+        ),
+    ),
+    FileRole(
+        "form_builder.insert_catalog",
+        ("app/features/form_builder/qtside/insert/catalog/**",),
+        ("app", "PySide2", "PySide6", "shiboken2", "shiboken6"),
+        allowed_imports=(
+            "app.features.form_builder.engine",
+            "app.features.form_builder.qtside.insert.catalog",
+        ),
+    ),
+    FileRole(
+        "form_builder.canvas_input",
+        ("app/features/form_builder/**",),
+        ("app.features.form_builder.qtside.canvas._input",),
+        allowed_files=frozenset({"app/features/form_builder/qtside/canvas/controller.py"}),
+    ),
+    FileRole(
+        "form_builder.child",
+        ("app/features/form_builder/qtside/preview/child/**",),
+        (
+            "app.shell",
+            "app.editors",
+            "app.features.form_builder.integration",
+            "app.features.form_builder.qtside.canvas",
+            "app.features.form_builder.qtside.inspector",
+            "app.features.form_builder.qtside.outline",
+            "app.run",
+        ),
+    ),
+    FileRole(
+        "form_builder.mutate_guard",
+        ("app/features/form_builder/**",),
+        ("app.features.form_builder.engine.ui4.mutate",),
+        allowed_files=frozenset(
+            {
+                "app/features/form_builder/engine/commands/log.py",
+                "app/features/form_builder/engine/commands/context.py",
+                "app/features/form_builder/engine/ui4/reader.py",
+            }
+        ),
+    ),
+    FileRole(
+        "form_builder.inspector_host",
+        ("app/features/form_builder/integration/**",),
+        ("app.features.form_builder.qtside.inspector",),
+        allowed_imports=(
+            "app.features.form_builder.qtside.inspector.InspectorPane",
+            "app.features.form_builder.qtside.inspector.TabId",
+            "app.features.form_builder.qtside.inspector.api",
+        ),
+    ),
+    FileRole(
+        "form_builder.inspector_contributions",
+        ("app/features/form_builder/qtside/inspector/editors/**",),
+        ("app.features.form_builder.qtside.inspector",),
+        allowed_files=frozenset({"app/features/form_builder/qtside/inspector/editors/__init__.py"}),
+        allowed_imports=(
+            "app.features.form_builder.qtside.inspector.api",
+            "app.features.form_builder.qtside.inspector.editors",
+            "app.features.form_builder.qtside.inspector.rich_html",
+            "app.features.form_builder.qtside.inspector.translatable",
+        ),
     ),
 )
 

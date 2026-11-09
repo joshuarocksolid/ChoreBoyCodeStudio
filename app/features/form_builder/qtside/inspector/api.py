@@ -1,0 +1,483 @@
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from enum import Enum
+from typing import TYPE_CHECKING, Callable, Literal, Mapping, NewType, Optional, Protocol, Sequence, Tuple, Union
+
+from app.features.form_builder.engine.commands.base import Command
+from app.features.form_builder.engine.ids import NodeId
+from app.features.form_builder.engine.ui4.document import UiDocument
+from app.features.form_builder.engine.ui4.values import CStringValue, SetValue, StringValue, Value
+
+if TYPE_CHECKING:
+    from app.features.form_builder.qtside.theme.chrome import FormChrome
+    from app.qt.QtWidgets import QLayout, QWidget
+
+class GroupId(str, Enum):
+
+    CONTENT = "content"
+    PAGES = "pages"
+    INPUT = "input"
+    APPEARANCE = "appearance"
+    SIZE = "size"
+    PLACEMENT = "placement"
+    LAYOUT = "layout"
+    ACCESSIBILITY = "accessibility"
+    ALL = "all"
+
+    @property
+    def title(self) -> str:
+        return "All properties" if self is GroupId.ALL else self.value.capitalize()
+
+
+def _cover(order: Tuple["GroupId", ...]) -> Tuple["GroupId", ...]:
+    if set(order) != set(GroupId) or len(order) != len(set(order)):
+        raise RuntimeError("GROUP_ORDER must list each GroupId once")
+    return order
+
+
+GROUP_ORDER: Tuple["GroupId", ...] = _cover(
+    (
+        GroupId.CONTENT,
+        GroupId.PAGES,
+        GroupId.INPUT,
+        GroupId.APPEARANCE,
+        GroupId.SIZE,
+        GroupId.PLACEMENT,
+        GroupId.LAYOUT,
+        GroupId.ACCESSIBILITY,
+        GroupId.ALL,
+    )
+)
+
+EditorKey = NewType("EditorKey", str)
+
+KEY_SEQUENCE = EditorKey("keysequence")
+ALIGNMENT = EditorKey("alignment")
+STYLESHEET = EditorKey("stylesheet")
+
+_KEY_BY_NAME: Mapping[Tuple[str, str], EditorKey] = {
+    ("shortcut", StringValue.ELEMENT): KEY_SEQUENCE,
+    ("shortcut", CStringValue.ELEMENT): KEY_SEQUENCE,
+    ("keySequence", StringValue.ELEMENT): KEY_SEQUENCE,
+    ("keySequence", CStringValue.ELEMENT): KEY_SEQUENCE,
+    ("alignment", SetValue.ELEMENT): ALIGNMENT,
+    ("labelAlignment", SetValue.ELEMENT): ALIGNMENT,
+    ("formAlignment", SetValue.ELEMENT): ALIGNMENT,
+    ("styleSheet", StringValue.ELEMENT): STYLESHEET,
+}
+
+def editor_key(name: str, element: str) -> EditorKey:
+    return _KEY_BY_NAME.get((name, element), EditorKey(element))
+
+@dataclass(frozen=True)
+class EnumSpec:
+    scope: str
+    type_name: str
+    names: Tuple[str, ...]
+    is_flag: bool
+
+@dataclass(frozen=True)
+class Choice:
+    """One drop-down entry. ``value`` is what a choice writes."""
+
+    label: str
+    value: Value
+
+@dataclass(frozen=True)
+class ValueSpec:
+    """``enum`` is set only when ``element`` is "enum" or "set" and the choices are known.
+
+    ``choices``, when non-empty, is what the choice editor shows. The model fills
+    it from ``RowSpec.choices``.
+    """
+
+    element: str
+    enum: Optional[EnumSpec] = None
+    choices: Tuple[Choice, ...] = ()
+
+@dataclass(frozen=True)
+class Unset:
+    """No owner has an entry. ``default`` is a non-volatile class-table default, or None."""
+
+    default: Optional[Value] = None
+
+@dataclass(frozen=True)
+class Written:
+    """Every owner has an entry, and the entries are equal."""
+
+    value: Value
+
+@dataclass(frozen=True)
+class Mixed:
+    """The owners disagree, and at least one has an entry."""
+
+RowValue = Union[Unset, Written, Mixed]
+
+MIXED_TEXT = "Mixed"
+NOT_SET_TEXT = "\u2014"
+
+MatchWhere = Literal["label", "qt_name", "value", "enum"]
+
+@dataclass(frozen=True)
+class Match:
+
+    where: MatchWhere
+    start: int
+    end: int
+
+class RowWrite(Protocol):
+    def edit(self, value: Value, token: Optional[str]) -> Union[Command, Tuple[Command, ...]]: ...
+
+    def reset(self) -> Union[Command, Tuple[Command, ...]]: ...
+
+@dataclass(frozen=True)
+class OpenRow:
+    key: str
+    label: str
+    qt_name: str
+    help: str
+    value: RowValue
+    spec: ValueSpec
+    editor: EditorKey
+    write: RowWrite
+    #: Declaring class, shown on the Qt-name line when All properties is sorted.
+    origin: str = ""
+    #: A dynamic property (``stdset="0"``). The row offers rename, type and remove.
+    dynamic: bool = False
+    #: A sentence drawn under this row. Empty rows keep the tooltip only.
+    note: str = ""
+    match: Optional[Match] = None
+
+    @property
+    def changed(self) -> bool:
+        return not isinstance(self.value, Unset)
+
+@dataclass(frozen=True)
+class LockedRow:
+    key: str
+    label: str
+    qt_name: str
+    help: str
+    value: RowValue
+    reason: str
+    origin: str = ""
+    match: Optional[Match] = None
+
+    @property
+    def changed(self) -> bool:
+        return not isinstance(self.value, Unset)
+
+Row = Union[OpenRow, LockedRow]
+
+PropKind = Literal["property", "attribute"]
+
+@dataclass(frozen=True)
+class Prop:
+
+    name: str
+    kind: PropKind = "property"
+
+@dataclass(frozen=True)
+class LayoutProp:
+
+    name: str
+
+@dataclass(frozen=True)
+class CellAlignment:
+    pass
+
+
+@dataclass(frozen=True)
+class Note:
+    """A caption with nothing to edit. ``text`` is the sentence under the row."""
+
+    text: str
+
+
+@dataclass(frozen=True)
+class FlagBit:
+    """One bit of a flag set property.
+
+    ``name`` is the property (``features``). ``bit`` is the enumerator
+    (``QDockWidget::DockWidgetClosable``). The row uses the bool editor.
+    """
+
+    name: str
+    bit: str
+
+@dataclass(frozen=True)
+class Summary:
+    """A row with no property behind it. Its editor reads and writes something else.
+
+    The Items row (UX-ITEM-001) shows a summary of the items and opens the item
+    editor. It is never "changed", has no Reset and no Qt name.
+    """
+
+
+RowSource = Union[Prop, LayoutProp, CellAlignment, FlagBit, Note, Summary]
+
+@dataclass(frozen=True)
+class RowSpec:
+    """A curated row. With ``classes`` set, every owner's chain must include one of them.
+
+    ``order`` is a sort key inside the group. ``after`` names the row key this
+    one sits immediately after. ``after`` is applied after ``order``.
+
+    ``parent_classes`` is a parent scope: when set, every owner's nearest parent
+    widget (layouts are skipped) must include one of them in its chain, else the
+    row is hidden. A dock side needs a main window parent; a page attribute needs
+    a tab widget, toolbox or wizard parent.
+    """
+
+    key: str
+    group: GroupId
+    label: str
+    help: str
+    source: RowSource
+    classes: Tuple[str, ...] = ()
+    order: Optional[int] = None
+    after: str = ""
+    parent_classes: Tuple[str, ...] = ()
+    #: When set, the model asks for this editor instead of ``editor_key(name, element)``.
+    editor: str = ""
+    #: Evaluated by the model. The result is ``ValueSpec.choices``.
+    choices: Optional[Callable[[UiDocument, Tuple[NodeId, ...]], Tuple[Choice, ...]]] = None
+    #: Owners whose class chain includes one of these do not see the row.
+    exclude_classes: Tuple[str, ...] = ()
+    #: When set, the row is shown only when this returns true.
+    visible: Optional[Callable[[UiDocument, Tuple[NodeId, ...]], bool]] = None
+    #: Drawn under the row, the way a field caption sits under its editor.
+    note: str = ""
+
+class EditSession(Protocol):
+    """See ``_services.EditSession``: one focus visit or one popover, one undo step."""
+
+    @property
+    def token(self) -> str: ...
+
+    @property
+    def label(self) -> str: ...
+
+    @property
+    def closed(self) -> bool: ...
+
+    def set_label(self, label: str) -> None: ...
+
+    def run(self, commands: Sequence[Command]) -> object:
+        """Run commands inside this session's step. Returns a tuple of results, a rejection or a drop."""
+        ...
+
+    def has_step(self) -> bool: ...
+
+    def undo(self) -> bool: ...
+
+    def revert(self) -> bool: ...
+
+    def close(self) -> None: ...
+
+    def watch(self, on_change: Callable[[], None]) -> Callable[[], None]: ...
+
+class EditorHost(Protocol):
+    def commit(self, value: Value, session: Optional[EditSession] = None) -> None:
+        """Run the row's write. Inside ``session``, it joins that session's one undo step.
+
+        Without a session, the row's focus session is used, so one focus visit is one step.
+        A rejection is shown under the field.
+        """
+        ...
+
+    def begin_session(self, label: str) -> EditSession:
+        """A session for a popover. Its writes are one undo step named ``label``; close it when the popover closes."""
+        ...
+
+    @property
+    def chrome(self) -> "FormChrome":
+        """The builder chrome in effect (UX-TOK-005 tokens come from it)."""
+        ...
+
+    @property
+    def label(self) -> str:
+        """The row's current label. A pooled editor reads this when it is shown again."""
+        ...
+
+    @property
+    def qt_name(self) -> str:
+        """The Qt property name of the row, or "" when the row has none."""
+        ...
+
+    def document(self) -> UiDocument:
+        """The form document. Read-only: an editor does not mutate it."""
+        ...
+
+    def owner_ids(self) -> Tuple[NodeId, ...]:
+        """The nodes this row edits. Read-only."""
+        ...
+
+    def qt_names(self) -> bool:
+        """True when the inspector is showing Qt property names."""
+        ...
+
+    def form_shortcuts(self) -> Mapping[str, str]:
+        """Shortcut text -> owning widget or action name, read from this form's
+        document only (``shortcut`` and ``keySequence``). Read-only and cached
+        per revision; a key-sequence editor uses it for its clash warning."""
+        ...
+
+    @property
+    def row_widget(self) -> QWidget:
+        """The row widget the editor was built into."""
+        ...
+
+    def reset(self) -> None:
+        """Remove this property from the file. One undo step, outside the edit session."""
+        ...
+
+    def invalid(self, message: str) -> None:
+        """Text the editor cannot turn into a Value. Shown under the field. Nothing is written."""
+        ...
+
+    def enum_value(self, enum: EnumSpec, names: Sequence[str]) -> Value:
+        """An EnumValue for one of ``enum``'s names, or a SetValue of flags, spelled in the document's style."""
+        ...
+
+class Editor(Protocol):
+    @property
+    def widget(self) -> QWidget: ...
+
+    def show(self, value: RowValue) -> None:
+        """Paint ``value``. The pane drops any write that this call triggers."""
+        ...
+
+    # Optional: ``is_dirty() -> bool`` when the editor holds uncommitted text,
+    # so Esc reverts it instead of the focus-out committing it.
+    #
+    # Optional: ``caption_widget`` is a QWidget the row places under the line,
+    # at the full row width. Translation uses it so the disclosure is not
+    # squeezed into the editor column.
+
+class EditorFactory(Protocol):
+    def __call__(self, spec: ValueSpec, host: EditorHost, parent: QWidget) -> Editor: ...
+
+class GroupHost(Protocol):
+    @property
+    def document(self) -> UiDocument: ...
+
+    @property
+    def owners(self) -> Tuple[NodeId, ...]: ...
+
+    def run(self, label: str, commands: Sequence[Command]) -> Optional[str]:
+        """One undo step named ``label``. Returns the rejection message, or None."""
+        ...
+
+    def editor_for(self, row: Row, parent: QWidget) -> Editor:
+        """The standard row widget for ``row``, wired to its write, with its caption line."""
+        ...
+
+    @property
+    def qt_names(self) -> bool:
+        """True when the inspector is showing Qt property names."""
+        ...
+
+    def live(self, owner: NodeId) -> Optional[QWidget]:
+        """The realized widget for ``owner``, or None. O(1)."""
+        ...
+
+    def layout(self, owner: NodeId) -> Optional[QLayout]:
+        """The realized layout for ``owner``, or None. O(1)."""
+        ...
+
+class GroupBody(Protocol):
+    @property
+    def widget(self) -> QWidget: ...
+
+    def show(self, rows: Tuple[Row, ...]) -> None:
+        """The group's projected rows. Called once per flush while the group is expanded."""
+        ...
+
+class GroupBodyFactory(Protocol):
+    def __call__(self, host: GroupHost, parent: QWidget) -> GroupBody: ...
+
+class GroupApplies(Protocol):
+    def __call__(self, document: UiDocument, owners: Tuple[NodeId, ...]) -> bool:
+        """True when the group's body shows for ``owners``, even with no curated rows."""
+        ...
+
+class Registrar(Protocol):
+    def editor(self, key: EditorKey, factory: EditorFactory, *, baseline: bool = False) -> None: ...
+
+    def row(self, spec: RowSpec, *, baseline: bool = False) -> None: ...
+
+    def group_body(
+        self,
+        group: GroupId,
+        factory: GroupBodyFactory,
+        *,
+        baseline: bool = False,
+        applies: Optional["GroupApplies"] = None,
+    ) -> None: ...
+
+def mark(widget: QWidget, value: RowValue) -> None:
+    if isinstance(value, Mixed):
+        state = "mixed"
+    elif isinstance(value, Unset):
+        state = "unset"
+    else:
+        state = "set"
+    # The inspector style sheet owns the look of each state, italic included.
+    set_style_flag(widget, "fbState", state)
+
+
+def set_style_flag(widget: QWidget, name: str, value: str) -> None:
+    """Set a dynamic property that a style sheet rule reads, repolishing on change."""
+    if widget.property(name) == value:
+        return
+    widget.setProperty(name, value)
+    style = widget.style()
+    style.unpolish(widget)
+    style.polish(widget)
+
+__all__ = [
+    "ALIGNMENT",
+    "CellAlignment",
+    "Editor",
+    "EditorFactory",
+    "EditorHost",
+    "EditorKey",
+    "EditSession",
+    "EnumSpec",
+    "GroupBody",
+    "GroupApplies",
+    "GroupBodyFactory",
+    "GroupHost",
+    "GroupId",
+    "KEY_SEQUENCE",
+    "LayoutProp",
+    "LockedRow",
+    "MIXED_TEXT",
+    "Match",
+    "Mixed",
+    "NOT_SET_TEXT",
+    "OpenRow",
+    "Prop",
+    "Registrar",
+    "Row",
+    "RowSpec",
+    "RowValue",
+    "RowWrite",
+    "STYLESHEET",
+    "Unset",
+    "ValueSpec",
+    "Written",
+    "editor_key",
+    "mark",
+    "open_state_row",
+]
+
+
+def open_state_row(inspector: object, key: str) -> None:
+    """Open a State row. Property editors use this instead of importing the section."""
+    from app.features.form_builder.qtside.inspector.behavior_ext.state import open_state_row as _open
+
+    _open(inspector, key)

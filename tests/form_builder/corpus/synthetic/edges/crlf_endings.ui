@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: MIT -->
+<ui version="4.0">
+ <class>CrlfForm</class>
+ <widget class="QDialog" name="CrlfForm">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>640</width>
+    <height>480</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>CRLF</string>
+  </property>
+  <widget class="QLabel" name="label"><property name="text"><string>crlf</string></property></widget>
+ </widget>
+
+</ui>

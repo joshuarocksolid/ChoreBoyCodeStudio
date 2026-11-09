@@ -1,0 +1,931 @@
+"""The command log: the only writer of a document (CONTRACTS.md section 3).
+
+One log per open form tab. It is not thread-safe. Callers use the Qt GUI thread.
+"""
+
+from __future__ import annotations
+
+import logging
+import os
+import time
+from contextlib import contextmanager
+from dataclasses import dataclass
+from typing import Any, Callable, ContextManager, Dict, FrozenSet, Iterable, Iterator, List, Optional, Tuple
+
+from app.features.form_builder.engine.commands.base import (
+    Command,
+    CommandOutcome,
+    CommandRejected,
+    ReentrantCommandError,
+    ReplayAllocator,
+)
+from app.features.form_builder.engine.commands.context import ApplyContext
+from app.features.form_builder.engine.commands.ops import (
+    InsertNodeOp,
+    MoveNodeOp,
+    Op,
+    RemoveNodeOp,
+    ReplaceRootOp,
+    SetFieldOp,
+    SetPropertyOp,
+)
+from app.features.form_builder.engine.commands.participants import default_registry
+from app.features.form_builder.engine.events import (
+    Change,
+    ChangeSet,
+    DocumentReplaced,
+    NodeInserted,
+    NodeMoved,
+    NodeRemoved,
+    assemble,
+    change_from_op,
+)
+from app.features.form_builder.engine.ids import IdAllocator, NodeId
+from app.features.form_builder.engine.query.tree import form_collision_groups
+from app.features.form_builder.engine.ui4 import mutate
+from app.features.form_builder.engine.ui4.document import InvariantError, UiDocument
+from app.features.form_builder.engine.ui4.reader import read_ui
+from app.features.form_builder.engine.ui4.spec import PropertyEntry
+
+logger = logging.getLogger(__name__)
+
+#: Entries kept for undo. Past this, the oldest entry is dropped. The state
+#: that entry produced becomes the new bottom. A save point on the previous
+#: bottom is then unreachable.
+DEFAULT_UNDO_LIMIT = 2000
+
+
+@dataclass(frozen=True)
+class SelectionSnapshot:
+    ids: Tuple[NodeId, ...]
+    current: Optional[NodeId]
+
+
+@dataclass(frozen=True)
+class Entry:
+    """One undo step. ``inverse_ops`` lines up with ``ops``, in application order."""
+
+    label: str
+    commands: Tuple[Command, ...]
+    ops: Tuple[Op, ...]
+    inverse_ops: Tuple[Op, ...]
+    allocated: Tuple[NodeId, ...]
+    selection_before: SelectionSnapshot
+    selection_after: SelectionSnapshot
+    merge_key: Optional[object] = None
+    merge_token: Optional[str] = None
+    #: Set by ``execute(..., continue_gesture=True)``. Later commands with the
+    #: same token join this step whatever their merge key is.
+    continue_gesture: bool = False
+    #: ``time.monotonic`` when this step was stored or last absorbed.
+    committed_at: float = 0.0
+    #: A step that changes no fields, so undo still has one unit for closed files.
+    anchor: bool = False
+
+
+@dataclass(frozen=True)
+class Checkpoint:
+    """A marker in the log taken by ``CommandLog.checkpoint`` and consumed by ``rollback``.
+
+    ``depth`` is the undo depth when it was taken. ``tip_token`` names the top
+    undo entry then (the base token when the stack was empty). ``redo`` and
+    ``redo_tokens`` are the redo stack as it stood, and ``save_token`` the save
+    point. Opaque to callers except ``depth``.
+    """
+
+    depth: int
+    tip_token: int
+    redo: Tuple["Entry", ...]
+    redo_tokens: Tuple[int, ...]
+    save_token: Optional[int]
+    saves: int
+
+
+class Subscription:
+    def __init__(self, log: "CommandLog", key: int) -> None:
+        self._log = log
+        self._key = key
+        self._closed = False
+
+    def close(self) -> None:
+        """Idempotent."""
+        if self._closed:
+            return
+        self._closed = True
+        self._log._drop_listener(self._key)
+
+
+class Transaction:
+    def __init__(self, log: "CommandLog") -> None:
+        self._log = log
+
+    def execute(self, command: Command) -> Any:
+        """Apply ``command`` inside the open transaction. Returns its result."""
+        return self._log._execute_open(command)
+
+
+class CommandLog:
+    def __init__(
+        self,
+        doc: UiDocument,
+        allocator: IdAllocator,
+        *,
+        selection_provider: Callable[[], SelectionSnapshot],
+        undo_limit: int = DEFAULT_UNDO_LIMIT,
+    ) -> None:
+        self._doc = doc
+        self._allocator = allocator
+        self._provider = selection_provider
+        self._limit = undo_limit
+        self._undo: List[Entry] = []
+        self._redo: List[Entry] = []
+        self._tokens: List[int] = []
+        self._redo_tokens: List[int] = []
+        self._next_token = 1
+        self._save_token: Optional[int] = 0
+        self._saves = 0
+        self._base_token = 0
+        self._listeners: List[Tuple[int, int, Callable[[ChangeSet], None]]] = []
+        self._listener_seq = 0
+        self._in_listener = False
+        self._txn: Optional[_OpenTxn] = None
+        self._txn_depth = 0
+        self._cells_before: FrozenSet[FrozenSet[NodeId]] = frozenset()
+        self._base_methods: FrozenSet[str] = frozenset()
+        self.selection = selection_provider()
+
+    @property
+    def document(self) -> UiDocument:
+        return self._doc
+
+    def set_base_methods(self, methods: FrozenSet[str]) -> None:
+        """Window method names ``Rename`` refuses. Empty keeps the old refusals."""
+        self._base_methods = frozenset(methods)
+
+    def execute(self, command: Command, *, continue_gesture: bool = False) -> CommandOutcome:
+        """Apply ``command`` as one undo step, or inside the open transaction."""
+        self._reject_reentry()
+        if self._txn is not None:
+            before_ops = len(self._txn.ctx.ops)
+            result = self._execute_open(command)
+            added = len(self._txn.ctx.ops) - before_ops
+            return CommandOutcome(result, self._doc.revision, noop=added == 0)
+        ctx = self._new_context()
+        before = self._provider()
+        ctx.selection_before = before
+        self._snapshot_cells()
+        result = self._apply(command, ctx)
+        self._adopt_replaced_cells(ctx, 0)
+        ctx.commands.append(command)
+        if not ctx.ops:
+            return CommandOutcome(result, self._doc.revision, noop=True)
+        merged = self._store(ctx, before, command, continue_gesture)
+        return CommandOutcome(result, self._doc.revision, merged=merged, noop=False)
+
+    def transaction(
+        self,
+        label: str,
+        *,
+        merge_token: Optional[str] = None,
+        merge_within_s: float = 0.0,
+    ) -> ContextManager[Transaction]:
+        """Group commands into one undo step. Nested transactions join this one.
+
+        ``merge_token`` plus ``merge_within_s`` folds this commit into the
+        previous step when that step carries the same token and the gap since
+        it was stored is inside the window. The window is between presses.
+        """
+        return self._transaction(label, merge_token, merge_within_s)
+
+    @contextmanager
+    def _transaction(
+        self,
+        label: str,
+        merge_token: Optional[str] = None,
+        merge_within_s: float = 0.0,
+    ) -> Iterator[Transaction]:
+        self._reject_reentry()
+        outermost = self._txn is None
+        if outermost:
+            ctx = self._new_context()
+            ctx.selection_before = self._provider()
+            self._snapshot_cells()
+            self._txn = _OpenTxn(label, ctx, merge_token, merge_within_s)
+        self._txn_depth += 1
+        try:
+            yield Transaction(self)
+        except CommandRejected:
+            self._txn_depth -= 1
+            if outermost:
+                self._abort_txn()
+            raise
+        except Exception as exc:
+            self._txn_depth -= 1
+            if outermost:
+                self._abort_txn()
+            logger.exception("form builder transaction failed")
+            raise CommandRejected(
+                "The edit could not be completed.",
+                code="FB999",
+                error=exc,
+            ) from exc
+        except BaseException:
+            self._txn_depth -= 1
+            if outermost:
+                self._abort_txn()
+            raise
+        else:
+            self._txn_depth -= 1
+            if outermost:
+                self._commit_txn()
+
+    def can_undo(self) -> bool:
+        return bool(self._undo)
+
+    def can_redo(self) -> bool:
+        return bool(self._redo)
+
+    def undo(self) -> bool:
+        """Apply the top step's inverses in reverse. False when the stack is empty."""
+        self._reject_reentry()
+        if self._txn is not None:
+            raise CommandRejected("Undo is not available during a transaction.")
+        if not self._undo:
+            return False
+        entry = self._undo.pop()
+        token = self._tokens.pop()
+        changes = _apply_ops(self._doc, reversed(entry.inverse_ops))
+        self._redo.append(entry)
+        self._redo_tokens.append(token)
+        self.selection = _present(self._doc, entry.selection_before)
+        self._emit(assemble(changes, self._doc.revision, "undo", entry.label))
+        return True
+
+    def redo(self) -> bool:
+        """Re-apply the recorded ops. ``apply`` is not re-run."""
+        self._reject_reentry()
+        if self._txn is not None:
+            raise CommandRejected("Redo is not available during a transaction.")
+        if not self._redo:
+            return False
+        entry = self._redo.pop()
+        token = self._redo_tokens.pop()
+        changes = _apply_ops(self._doc, entry.ops)
+        self._undo.append(entry)
+        self._tokens.append(token)
+        self._trim()
+        self.selection = _present(self._doc, entry.selection_after)
+        self._emit(assemble(changes, self._doc.revision, "redo", entry.label))
+        return True
+
+    def mark(self, label: str) -> None:
+        """Push an undo step that does not change the form.
+
+        A rename of closed forms uses this when no open form referred to the
+        method, so one undo still restores every file the rename wrote.
+        """
+
+        self._reject_reentry()
+        if self._txn is not None:
+            raise CommandRejected("A step cannot be marked during a transaction.")
+        before = self._provider()
+        entry = Entry(
+            label=label,
+            commands=(),
+            ops=(),
+            inverse_ops=(),
+            allocated=(),
+            selection_before=before,
+            selection_after=before,
+            anchor=True,
+        )
+        self._drop_redo()
+        token = self._next_token
+        self._next_token += 1
+        self._undo.append(entry)
+        self._tokens.append(token)
+        self._trim()
+        self._emit(assemble((), self._doc.revision, "do", label))
+
+    def undo_label(self) -> Optional[str]:
+        if not self._undo:
+            return None
+        return self._undo[-1].label
+
+    def redo_label(self) -> Optional[str]:
+        if not self._redo:
+            return None
+        return self._redo[-1].label
+
+    def entries(self) -> Tuple[Entry, ...]:
+        """Applied steps, oldest first."""
+        return tuple(self._undo)
+
+    def is_dirty(self) -> bool:
+        """O(1). True unless the undo position is the save point."""
+        if self._save_token is None:
+            return True
+        return self._tip_token() != self._save_token
+
+    def mark_saved(self) -> None:
+        if self._txn is not None:
+            raise CommandRejected("The form cannot be marked saved during a transaction.")
+        self._save_token = self._tip_token()
+        self._saves += 1
+
+    def checkpoint(self) -> Checkpoint:
+        """Remember where the log is now, for ``rollback``. O(redo depth)."""
+        return Checkpoint(
+            depth=len(self._undo),
+            tip_token=self._tip_token(),
+            redo=tuple(self._redo),
+            redo_tokens=tuple(self._redo_tokens),
+            save_token=self._save_token,
+            saves=self._saves,
+        )
+
+    def entries_since(self, tip_token: int) -> Tuple[Entry, ...]:
+        """Undo entries strictly after ``tip_token``.
+
+        Empty when that token is gone and is not the current base. ``has_step``
+        uses this instead of a stored depth, which shifts when the log trims.
+        """
+        if tip_token == self._base_token:
+            start = 0
+        elif tip_token in self._tokens:
+            start = self._tokens.index(tip_token) + 1
+        else:
+            return ()
+        return tuple(self._undo[start:])
+
+    def rollback(self, cp: Checkpoint, token: str) -> bool:
+        """Undo everything written since ``cp`` by steps that carry ``token``, as one change set.
+
+        Refused (False, nothing changed) unless the undo stack below ``cp`` is
+        unchanged and every entry above it carries ``token``, and nothing was
+        redone or undone since (no redo entry may exist while entries sit above
+        ``cp``). On success the inverses of the entries above ``cp`` run in
+        reverse as one change set of origin "undo", the undo stack is back at
+        ``cp``'s depth, the redo stack and its tokens are ``cp``'s, and the save
+        point is ``cp``'s, or None when a ``mark_saved`` happened since ``cp``
+        (the file on disk then holds a state this rollback removes).
+        """
+        self._reject_reentry()
+        if self._txn is not None:
+            raise CommandRejected("Rollback is not available during a transaction.")
+        if cp.tip_token == self._base_token:
+            start = 0
+        elif cp.tip_token in self._tokens:
+            start = self._tokens.index(cp.tip_token) + 1
+        else:
+            return False
+        above = self._undo[start:]
+        if any(entry.merge_token != token for entry in above):
+            return False
+        if above and self._redo:
+            return False
+        if not above:
+            if self._redo:
+                return self._redo_tokens == list(cp.redo_tokens)
+            if cp.redo:
+                # A net-nil write dropped the redo stack without leaving an entry.
+                self._restore_redo(cp, keep_save=self._saves != cp.saves)
+            return True
+        ops: List[Op] = []
+        for entry in reversed(above):
+            ops.extend(reversed(entry.inverse_ops))
+        changes = _apply_ops(self._doc, ops)
+        del self._undo[start:]
+        del self._tokens[start:]
+        self._restore_redo(cp)
+        self.selection = _present(self._doc, above[0].selection_before)
+        self._emit(assemble(changes, self._doc.revision, "undo", above[0].label))
+        return True
+
+    def _restore_redo(self, cp: Checkpoint, *, keep_save: bool = False) -> None:
+        self._redo = list(cp.redo)
+        self._redo_tokens = list(cp.redo_tokens)
+        if keep_save:
+            return
+        saved = cp.save_token
+        if self._saves != cp.saves:
+            saved = None
+        elif saved is not None and saved != self._base_token and saved not in self._tokens and saved not in self._redo_tokens:
+            saved = None
+        self._save_token = saved
+
+    def subscribe(self, listener: Callable[[ChangeSet], None], *, priority: int) -> Subscription:
+        """Run ``listener`` after each committed step, undo and redo."""
+        self._listener_seq += 1
+        key = self._listener_seq
+        self._listeners.append((priority, key, listener))
+        return Subscription(self, key)
+
+    def close(self) -> None:
+        """Drop every listener. Idempotent."""
+        self._listeners = []
+
+    def _execute_open(self, command: Command) -> Any:
+        txn = self._txn
+        if txn is None:
+            raise CommandRejected("There is no open transaction.")
+        start = len(txn.ctx.ops)
+        result = self._apply(command, txn.ctx)
+        self._adopt_replaced_cells(txn.ctx, start)
+        txn.ctx.commands.append(command)
+        return result
+
+    def _apply(self, command: Command, ctx: ApplyContext) -> Any:
+        start = len(ctx.inverses)
+        alloc_start = len(ctx.allocated)
+        try:
+            return command.apply(self._doc, ctx)
+        except CommandRejected:
+            self._rollback_from(ctx, start, alloc_start)
+            raise
+        except Exception as exc:
+            self._rollback_from(ctx, start, alloc_start)
+            logger.exception("form builder command failed")
+            raise CommandRejected(
+                "The edit could not be completed.",
+                code="FB999",
+                error=exc,
+            ) from exc
+        except BaseException:
+            self._rollback_from(ctx, start, alloc_start)
+            raise
+
+    def _store(
+        self,
+        ctx: ApplyContext,
+        before: SelectionSnapshot,
+        command: Command,
+        continue_gesture: bool,
+    ) -> bool:
+        self._reject_invalid(ctx)
+        after = _selection_after(self._doc, before, ctx)
+        merged = self._can_merge(command)
+        if merged:
+            top = self._undo[-1]
+            entry = Entry(
+                label=top.label,
+                commands=top.commands + tuple(ctx.commands),
+                ops=top.ops + tuple(ctx.ops),
+                inverse_ops=top.inverse_ops + tuple(ctx.inverses),
+                allocated=top.allocated + tuple(ctx.allocated),
+                selection_before=top.selection_before,
+                selection_after=after,
+                merge_key=command.merge_key() if command.merge_key() is not None else top.merge_key,
+                merge_token=top.merge_token,
+                continue_gesture=top.continue_gesture or continue_gesture,
+                committed_at=time.monotonic(),
+            )
+            self._undo[-1] = entry
+        else:
+            self._drop_redo()
+            entry = Entry(
+                label=command.label,
+                commands=tuple(ctx.commands),
+                ops=tuple(ctx.ops),
+                inverse_ops=tuple(ctx.inverses),
+                allocated=tuple(ctx.allocated),
+                selection_before=before,
+                selection_after=after,
+                merge_key=command.merge_key(),
+                merge_token=command.merge_token,
+                continue_gesture=continue_gesture,
+                committed_at=time.monotonic(),
+            )
+            token = self._next_token
+            self._next_token += 1
+            self._undo.append(entry)
+            self._tokens.append(token)
+            self._trim()
+        self.selection = after
+        label = self._undo[-1].label if self._undo else command.label
+        if self._undo and _is_net_nil(self._undo[-1], self._doc):
+            popped = self._undo.pop()
+            token = self._tokens.pop()
+            if token == self._save_token:
+                self._save_token = None
+            label = popped.label
+        self._emit(assemble(ctx.changes, self._doc.revision, "do", label))
+        return merged
+
+    def _can_merge(self, command: Command) -> bool:
+        if self._txn is not None or self._redo or not self._undo:
+            return False
+        top = self._undo[-1]
+        if self._save_token is not None and self._tokens[-1] == self._save_token:
+            return False
+        token = command.merge_token
+        if token is None or token != top.merge_token:
+            return False
+        if top.continue_gesture:
+            return True
+        key = command.merge_key()
+        return key is not None and key == top.merge_key
+
+    def _commit_txn(self) -> None:
+        txn = self._txn
+        self._txn = None
+        if txn is None or not txn.ctx.ops:
+            return
+        self._reject_invalid(txn.ctx)
+        before = txn.ctx.selection_before
+        if not isinstance(before, SelectionSnapshot):
+            before = self._provider()
+        after = _selection_after(self._doc, before, txn.ctx)
+        now = time.monotonic()
+        if self._absorb_txn(txn, after, now):
+            self.selection = after
+            if _is_net_nil(self._undo[-1], self._doc):
+                self._undo.pop()
+                dropped = self._tokens.pop()
+                if dropped == self._save_token:
+                    self._save_token = None
+            self._emit(assemble(txn.ctx.changes, self._doc.revision, "do", txn.label))
+            return
+        self._drop_redo()
+        entry = Entry(
+            label=txn.label,
+            commands=tuple(txn.ctx.commands),
+            ops=tuple(txn.ctx.ops),
+            inverse_ops=tuple(txn.ctx.inverses),
+            allocated=tuple(txn.ctx.allocated),
+            selection_before=before,
+            selection_after=after,
+            merge_key=None,
+            merge_token=txn.merge_token,
+            continue_gesture=False,
+            committed_at=now,
+        )
+        token = self._next_token
+        self._next_token += 1
+        self._undo.append(entry)
+        self._tokens.append(token)
+        self._trim()
+        self.selection = after
+        if _is_net_nil(entry, self._doc):
+            self._undo.pop()
+            dropped = self._tokens.pop()
+            if dropped == self._save_token:
+                self._save_token = None
+        self._emit(assemble(txn.ctx.changes, self._doc.revision, "do", txn.label))
+
+    def _absorb_txn(self, txn: "_OpenTxn", after: SelectionSnapshot, now: float) -> bool:
+        token = txn.merge_token
+        if not token or txn.merge_within_s <= 0 or self._redo or not self._undo:
+            return False
+        if self._save_token is not None and self._tokens[-1] == self._save_token:
+            return False
+        top = self._undo[-1]
+        if top.merge_token != token or now - top.committed_at > txn.merge_within_s:
+            return False
+        self._undo[-1] = Entry(
+            label=top.label,
+            commands=top.commands + tuple(txn.ctx.commands),
+            ops=top.ops + tuple(txn.ctx.ops),
+            inverse_ops=top.inverse_ops + tuple(txn.ctx.inverses),
+            allocated=top.allocated + tuple(txn.ctx.allocated),
+            selection_before=top.selection_before,
+            selection_after=after,
+            merge_key=top.merge_key,
+            merge_token=top.merge_token,
+            continue_gesture=top.continue_gesture,
+            committed_at=now,
+        )
+        return True
+
+    def _abort_txn(self) -> None:
+        txn = self._txn
+        self._txn = None
+        if txn is not None:
+            self._rollback(txn.ctx)
+
+    def _snapshot_cells(self) -> None:
+        if _validating():
+            self._cells_before = form_collision_groups(self._doc)
+
+    def _adopt_replaced_cells(self, ctx: ApplyContext, start: int) -> None:
+        if not _validating():
+            return
+        for op in ctx.ops[start:]:
+            if isinstance(op, ReplaceRootOp):
+                self._cells_before = form_collision_groups(self._doc)
+                return
+
+    def _reject_invalid(self, ctx: ApplyContext) -> None:
+        """``validate`` runs once per committed entry, before the entry is stored."""
+        if not _validating():
+            return
+        try:
+            self._doc.validate()
+            after = form_collision_groups(self._doc)
+            added = any(not any(group <= old for old in self._cells_before) for group in after)
+            if added:
+                raise InvariantError("a command put two items in one form cell")
+        except InvariantError as exc:
+            self._rollback(ctx)
+            logger.exception("form builder entry failed validation")
+            raise CommandRejected(
+                "The edit could not be completed.",
+                code="FB999",
+                error=exc,
+            ) from exc
+
+    def _rollback(self, ctx: ApplyContext) -> None:
+        self._rollback_from(ctx, 0, 0)
+
+    def _rollback_from(self, ctx: ApplyContext, start: int, alloc_start: int) -> None:
+        for op in reversed(ctx.inverses[start:]):
+            mutate.apply(self._doc, op)
+        ctx.forget_tail(start, alloc_start)
+
+    def _new_context(self) -> ApplyContext:
+        return ApplyContext(
+            self._doc,
+            self._allocator,
+            default_registry().all(),
+            check_freshness=True,
+            base_methods=self._base_methods,
+        )
+
+    def _drop_redo(self) -> None:
+        if not self._redo:
+            return
+        self._redo.clear()
+        self._redo_tokens.clear()
+        if self._save_token is None:
+            return
+        if self._save_token == self._base_token or self._save_token in self._tokens:
+            return
+        self._save_token = None
+
+    def _trim(self) -> None:
+        while len(self._undo) > self._limit:
+            token = self._tokens.pop(0)
+            self._undo.pop(0)
+            if self._save_token == self._base_token:
+                self._save_token = None
+            self._base_token = token
+
+    def _tip_token(self) -> int:
+        if not self._tokens:
+            return self._base_token
+        return self._tokens[-1]
+
+    def _emit(self, change_set: ChangeSet) -> None:
+        listeners = sorted(self._listeners, key=lambda item: (item[0], item[1]))
+        self._in_listener = True
+        try:
+            for _priority, key, listener in listeners:
+                if not any(item[1] == key for item in self._listeners):
+                    continue
+                try:
+                    listener(change_set)
+                except Exception:
+                    logger.exception("form builder listener failed")
+        finally:
+            self._in_listener = False
+
+    def _drop_listener(self, key: int) -> None:
+        self._listeners = [item for item in self._listeners if item[1] != key]
+
+    def _reject_reentry(self) -> None:
+        if self._in_listener:
+            raise ReentrantCommandError("A change listener cannot edit the form.")
+
+
+@dataclass
+class _OpenTxn:
+    label: str
+    ctx: ApplyContext
+    merge_token: Optional[str] = None
+    merge_within_s: float = 0.0
+
+
+def replay(initial_text: str, entries: Tuple[Entry, ...]) -> UiDocument:
+    """Re-run every command. The op sequence must match the recorded one."""
+    doc = read_ui(initial_text, allocator=IdAllocator()).document
+    for entry in entries:
+        ctx = ApplyContext(
+            doc,
+            ReplayAllocator(entry.allocated),
+            default_registry().all(),
+            check_freshness=True,
+        )
+        for command in entry.commands:
+            command.apply(doc, ctx)
+        if tuple(ctx.ops) != tuple(entry.ops):
+            raise AssertionError("replay produced a different op sequence")
+    return doc
+
+
+def _validating() -> bool:
+    return os.environ.get("CBCS_FB_VALIDATE") == "1"
+
+
+def _apply_ops(doc: UiDocument, ops: Any) -> Tuple[Change, ...]:
+    """Replay ops in order. A run of field writes on distinct siblings (the
+    rows a paste shifted) bubbles their parent once: undoing a paste into a
+    390-row form layout is O(rows + depth), not O(rows x depth)."""
+    changes: List[Change] = []
+    run: List[SetFieldOp] = []
+    for op in ops:
+        if _joins_run(doc, run, op):
+            run.append(op)  # type: ignore[arg-type]
+            continue
+        _flush_run(doc, run, changes)
+        if isinstance(op, SetFieldOp) and _has_parent(doc, op.node):
+            run.append(op)
+            continue
+        changes.append(change_from_op(doc, op))
+        mutate.apply(doc, op)
+    _flush_run(doc, run, changes)
+    return tuple(changes)
+
+
+def _joins_run(doc: UiDocument, run: List[SetFieldOp], op: Any) -> bool:
+    if not run or not isinstance(op, SetFieldOp):
+        return False
+    node = doc.get(op.node)
+    head = doc.get(run[0].node)
+    if node is None or head is None:
+        return False
+    if node.parent_id != head.parent_id or node.parent_slot != head.parent_slot:
+        return False
+    return all(other.node != op.node for other in run)
+
+
+def _flush_run(doc: UiDocument, run: List[SetFieldOp], changes: List[Change]) -> None:
+    if not run:
+        return
+    if len(run) == 1:
+        changes.append(change_from_op(doc, run[0]))
+        mutate.apply(doc, run[0])
+    else:
+        # Siblings of one parent: each change reads only its own node.
+        changes.extend(change_from_op(doc, op) for op in run)
+        mutate.apply_field_batch(doc, run)
+    del run[:]
+
+
+def _has_parent(doc: UiDocument, node_id: NodeId) -> bool:
+    node = doc.get(node_id)
+    return node is not None and node.parent_id is not None and node.parent_slot is not None
+
+
+def _selection_after(
+    doc: UiDocument,
+    before: SelectionSnapshot,
+    ctx: ApplyContext,
+) -> SelectionSnapshot:
+    if ctx.chose_selection and ctx.selection_ids is not None:
+        chosen = _present(doc, SelectionSnapshot(ctx.selection_ids, ctx.selection_current))
+        if chosen.current is None and chosen.ids:
+            return SelectionSnapshot(chosen.ids, chosen.ids[-1])
+        return chosen
+    removed = set()
+    added = set()
+    for change in ctx.changes:
+        if isinstance(change, NodeRemoved):
+            removed.update(change.subtree)
+        elif isinstance(change, DocumentReplaced):
+            removed.update(change.removed)
+        elif isinstance(change, NodeInserted):
+            added.update(change.subtree)
+    gone = removed - added
+    ids = tuple(node_id for node_id in before.ids if node_id not in gone and doc.contains(node_id))
+    current = before.current if before.current in ids else None
+    if current is None and before.current is not None:
+        # The selection model moves a deleted current onto the nearest
+        # surviving ancestor. The snapshot has to name that id, or redo
+        # restores current=None and the model then picks a different one.
+        structure = _structure_dirty(ctx.changes, gone)
+        ancestor = _surviving_ancestor(doc, before.current, ctx.changes, gone, structure)
+        if ancestor is not None:
+            if ancestor not in ids:
+                ids = ids + (ancestor,)
+            current = ancestor
+    if current is None and ids:
+        current = ids[-1]
+    return SelectionSnapshot(ids, current)
+
+
+def _structure_dirty(changes: Tuple[Change, ...], gone: set) -> set:
+    structure = set()
+    for change in changes:
+        if isinstance(change, (NodeInserted, NodeRemoved)):
+            structure.add(change.parent)
+        elif isinstance(change, NodeMoved):
+            structure.add(change.old_parent)
+            structure.add(change.new_parent)
+    return structure - gone
+
+
+def _surviving_ancestor(
+    doc: UiDocument,
+    removed_id: NodeId,
+    changes: Tuple[Change, ...],
+    gone: set,
+    structure: set,
+) -> Optional[NodeId]:
+    """Same walk as SelectionModel: nearest remaining structure-dirty parent."""
+    parent = _removed_parent(changes, removed_id)
+    seen = set()
+    while parent is not None and parent not in seen:
+        seen.add(parent)
+        if parent not in gone and doc.contains(parent):
+            if parent in structure:
+                return parent
+            node = doc.get(parent)
+            parent = None if node is None else node.parent_id
+            continue
+        parent = _removed_parent(changes, parent)
+    return None
+
+
+def _removed_parent(changes: Tuple[Change, ...], node_id: NodeId) -> Optional[NodeId]:
+    fallback: Optional[NodeId] = None
+    for change in changes:
+        if not isinstance(change, NodeRemoved) or node_id not in change.subtree:
+            continue
+        if change.node == node_id:
+            return change.parent
+        if fallback is None:
+            fallback = change.parent
+    return fallback
+
+
+def _present(doc: UiDocument, snapshot: SelectionSnapshot) -> SelectionSnapshot:
+    ids = tuple(node_id for node_id in snapshot.ids if doc.contains(node_id))
+    current = snapshot.current if snapshot.current in ids else None
+    return SelectionSnapshot(ids, current)
+
+
+def _is_net_nil(entry: Entry, doc: UiDocument) -> bool:
+    """True when undoing ``entry`` would leave every touched list and field as it is now.
+
+    An anchor step changes nothing on purpose and must stay on the stack.
+
+    Each touched (owner, kind) entry list is rebuilt by replaying the entry's
+    inverses on a copy, in undo order. That catches a value, a spelling and a
+    position change alike. Cost is O(changed).
+    """
+    if entry.anchor:
+        return False
+    for op in entry.ops:
+        if isinstance(op, (InsertNodeOp, RemoveNodeOp, MoveNodeOp, ReplaceRootOp)):
+            return False
+    touched: Dict[Tuple[NodeId, str], List[SetPropertyOp]] = {}
+    first_field = {}
+    for inverse in entry.inverse_ops:
+        if isinstance(inverse, SetPropertyOp):
+            touched.setdefault((inverse.owner, inverse.kind), []).append(inverse)
+        elif isinstance(inverse, SetFieldOp):
+            key = (inverse.node, inverse.field)
+            if key not in first_field:
+                first_field[key] = inverse
+    for (owner, kind), inverses in touched.items():
+        node = doc.get(owner)
+        if node is None:
+            return False
+        current = node.properties() if kind == "property" else node.attributes()
+        restored = _undo_entries(list(current), reversed(inverses))
+        if restored is None or tuple(restored) != tuple(current):
+            return False
+    for (node_id, field_name), inverse in first_field.items():
+        node = doc.get(node_id)
+        if node is None or node.field(field_name) != inverse.value:
+            return False
+    return True
+
+
+def _undo_entries(
+    entries: List[PropertyEntry],
+    inverses: Iterable[SetPropertyOp],
+) -> Optional[List[PropertyEntry]]:
+    """Apply ``SetPropertyOp`` inverses to a copied entry list, as ``mutate`` would.
+
+    None when an inverse does not fit the list (it then cannot be net nil).
+    """
+    for inverse in inverses:
+        position = None
+        for index, item in enumerate(entries):
+            if item.name == inverse.name:
+                position = index
+                break
+        if inverse.entry is None:
+            if position is None:
+                return None
+            del entries[position]
+        elif position is not None:
+            if inverse.index is not None:
+                return None
+            entries[position] = inverse.entry
+        else:
+            if inverse.index is None or inverse.index < 0 or inverse.index > len(entries):
+                return None
+            entries.insert(inverse.index, inverse.entry)
+    return entries

@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: MIT -->
+<ui version="4.0">
+ <class>SplitEditor</class>
+ <widget class="QSplitter" name="SplitEditor">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>640</width>
+    <height>480</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>Split</string>
+  </property>
+  <property name="orientation"><enum>Qt::Horizontal</enum></property>
+  <widget class="QListView" name="nav"/>
+  <widget class="QPlainTextEdit" name="editor"/>
+ </widget>
+
+</ui>

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Mapping
+from typing import Any, Mapping, Sequence
 
 from app.core import constants
 
@@ -97,10 +97,35 @@ SHORTCUT_COMMANDS: tuple[ShortcutCommand, ...] = (
     ShortcutCommand(_SHORTCUT_ID_KEEP_PREVIEW_OPEN, "Keep Preview Tab Open", "Ctrl+K, Enter", "Editor"),
 )
 
-_KNOWN_SHORTCUT_IDS: frozenset[str] = frozenset(command.action_id for command in SHORTCUT_COMMANDS)
-_CATEGORY_BY_ACTION_ID: dict[str, str] = {
-    command.action_id: command.category for command in SHORTCUT_COMMANDS
-}
+_EXTRA_SHORTCUT_COMMANDS: list[ShortcutCommand] = []
+
+
+def register_shortcut_commands(commands: Sequence[ShortcutCommand]) -> None:
+    """Add commands a feature owns. The same action id replaces its earlier row."""
+    incoming = {command.action_id: command for command in commands}
+    kept = [command for command in _EXTRA_SHORTCUT_COMMANDS if command.action_id not in incoming]
+    kept.extend(incoming.values())
+    _EXTRA_SHORTCUT_COMMANDS[:] = kept
+
+
+def clear_extra_shortcut_commands() -> None:
+    """Drop feature rows. Tests use this so a registration does not leak."""
+    _EXTRA_SHORTCUT_COMMANDS.clear()
+
+
+def iter_shortcut_commands() -> tuple[ShortcutCommand, ...]:
+    """Shell commands, then any feature commands registered for this process."""
+    return SHORTCUT_COMMANDS + tuple(_EXTRA_SHORTCUT_COMMANDS)
+
+
+def _known_shortcut_ids() -> frozenset[str]:
+    return frozenset(command.action_id for command in iter_shortcut_commands())
+
+
+def _category_by_action_id() -> dict[str, str]:
+    return {command.action_id: command.category for command in iter_shortcut_commands()}
+
+
 _SHORTCUT_KEY_ALIASES = {
     "Del": "Delete",
 }
@@ -138,7 +163,7 @@ def project_tree_delete_shortcut_id() -> str:
 
 def default_shortcut_map() -> dict[str, str]:
     """Return default shortcut mapping keyed by action id."""
-    return {command.action_id: command.default_shortcut for command in SHORTCUT_COMMANDS}
+    return {command.action_id: command.default_shortcut for command in iter_shortcut_commands()}
 
 
 def parse_shortcut_overrides(settings_payload: Mapping[str, Any]) -> dict[str, str]:
@@ -151,7 +176,7 @@ def parse_shortcut_overrides(settings_payload: Mapping[str, Any]) -> dict[str, s
         return {}
     overrides: dict[str, str] = {}
     for action_id, shortcut in overrides_payload.items():
-        if action_id not in _KNOWN_SHORTCUT_IDS or not isinstance(shortcut, str):
+        if action_id not in _known_shortcut_ids() or not isinstance(shortcut, str):
             continue
         normalized = normalize_shortcut(shortcut)
         if normalized:
@@ -177,7 +202,7 @@ def build_effective_shortcut_map(overrides: Mapping[str, str] | None = None) -> 
     if overrides is None:
         return effective
     for action_id, shortcut in overrides.items():
-        if action_id not in _KNOWN_SHORTCUT_IDS:
+        if action_id not in _known_shortcut_ids():
             continue
         normalized = normalize_shortcut(shortcut)
         if normalized:
@@ -194,7 +219,7 @@ def find_shortcut_conflicts(shortcuts_by_action: Mapping[str, str]) -> dict[str,
         normalized = normalize_shortcut(shortcut)
         if not normalized:
             continue
-        category = _CATEGORY_BY_ACTION_ID.get(action_id, "")
+        category = _category_by_action_id().get(action_id, "")
         grouped.setdefault((normalized, category), []).append(action_id)
     conflicts: dict[str, tuple[str, ...]] = {}
     for (shortcut, _category), action_ids in grouped.items():

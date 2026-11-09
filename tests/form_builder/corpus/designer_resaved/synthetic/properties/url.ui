@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>PropUrl</class>
+ <widget class="QWidget" name="PropUrl">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>640</width>
+    <height>480</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>url</string>
+  </property>
+  <property name="link" stdset="0">
+   <url>
+    <string>https://example.com/a</string>
+   </url>
+  </property>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>

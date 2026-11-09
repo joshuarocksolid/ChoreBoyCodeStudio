@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: MIT -->
+<ui version="4.0">
+ <class>PropUint</class>
+ <widget class="QWidget" name="PropUint">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>640</width>
+    <height>480</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>uint</string>
+  </property>
+  <property name="bits" stdset="0">
+   <uint>12</uint>
+  </property>
+ </widget>
+
+</ui>

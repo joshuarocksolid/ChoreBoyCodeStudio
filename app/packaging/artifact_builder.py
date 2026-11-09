@@ -30,6 +30,7 @@ from app.packaging.layout import (
     build_installer_launcher_filename,
     paths_overlap,
 )
+from app.packaging.form_files import form_report_dict
 from app.packaging.payload_policy import DEFAULT_PACKAGING_PAYLOAD_POLICY
 from app.packaging.models import (
     DistributionManifest,
@@ -320,6 +321,7 @@ def _write_project_artifact(
         ).to_dict(),
         "package_config": package_config.to_dict(),
         "project_metadata": project_metadata.to_dict(),
+        **form_report_dict(str(project_root)),
     }
     written = write_installable_artifact_tree(
         artifact_root=artifact_root,

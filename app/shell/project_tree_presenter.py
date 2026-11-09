@@ -3,10 +3,14 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import Any, Sequence
 
 from app.qt.QtCore import QTimer
+from app.qt.QtGui import QColor
 from app.qt.QtWidgets import QAbstractItemView, QTreeWidgetItem
+
+from app.editors.generated_file import generated_source_basename, is_generated_module
+from app.editors.generated_file_bar import generated_lock_icon
 
 from app.core.models import LoadedProject
 from app.project.project_tree import build_project_tree
@@ -22,6 +26,22 @@ from app.shell.tree_item_roles import (
     TREE_ROLE_LAZY_UNLOADED,
     TREE_ROLE_RELATIVE_PATH,
 )
+
+
+def _generated_after_source(
+    children: Sequence[ProjectTreeDisplayNode],
+) -> list[ProjectTreeDisplayNode]:
+    """Place each generated module immediately after its ``.ui`` or ``.qrc``."""
+    names = {Path(child.absolute_path).name: index for index, child in enumerate(children)}
+    ranked = []
+    for index, child in enumerate(children):
+        source = generated_source_basename(child.absolute_path)
+        if source and source in names:
+            ranked.append((names[source], 1, index, child))
+        else:
+            ranked.append((index, 0, index, child))
+    ranked.sort()
+    return [item[3] for item in ranked]
 
 
 class ProjectTreePresenter:
@@ -73,7 +93,7 @@ class ProjectTreePresenter:
             return
         item.takeChildren()
         item.setData(0, TREE_ROLE_LAZY_UNLOADED, False)
-        for child_node in display_node.children:
+        for child_node in _generated_after_source(display_node.children):
             item.addChild(self.build_tree_item(child_node, lazy=True))
 
     def capture_view_state(self) -> SessionTreeState:
@@ -181,40 +201,54 @@ class ProjectTreePresenter:
             item.setIcon(0, icon)
 
     def reveal_path(self, file_path: str) -> None:
-        """Select and scroll to the tree item matching ``file_path``."""
+        """Select and scroll to the tree item matching ``file_path``.
+
+        The match is a string. Resolving every row stats each path component,
+        and on ChoreBoy one lstat is about as expensive as the rest of the open.
+        """
         if self._reveal_suppressed:
             return
         window = self._window
         tree = window._project_tree_widget
         if tree is None or not file_path:
             return
-        try:
-            target = str(Path(file_path).expanduser().resolve())
-        except OSError:
+        relative = self._relative_path_for(file_path)
+        if not relative:
             return
-        for item in self.iter_items():
+        self._materialize_path(relative)
+        item = self._find_item_by_relative_path(relative)
+        if item is None:
+            return
+        parent = item.parent()
+        while parent is not None:
+            self.ensure_children_loaded(parent)
+            if not parent.isExpanded():
+                parent.setExpanded(True)
+                if bool(parent.data(0, TREE_ROLE_IS_DIRECTORY)):
+                    self.set_folder_icon(parent, expanded=True)
+            parent = parent.parent()
+        tree.clearSelection()
+        tree.setCurrentItem(item)
+        item.setSelected(True)
+        tree.scrollToItem(item, QAbstractItemView.PositionAtCenter)
+
+    def _relative_path_for(self, file_path: str) -> str:
+        from app.editors.editor_manager import normalized_path
+
+        target = normalized_path(file_path)
+        loaded = getattr(self._window, "_loaded_project", None)
+        root = ""
+        if loaded is not None:
+            root = normalized_path(str(getattr(loaded, "project_root", "") or ""))
+        if root:
+            prefix = root if root.endswith("/") else root + "/"
+            if target.startswith(prefix):
+                return target[len(prefix):]
+        for item in self._item_by_relative_path.values():
             raw = str(item.data(0, TREE_ROLE_ABSOLUTE_PATH) or "")
-            if not raw:
-                continue
-            try:
-                candidate = str(Path(raw).expanduser().resolve())
-            except OSError:
-                continue
-            if candidate != target:
-                continue
-            parent = item.parent()
-            while parent is not None:
-                self.ensure_children_loaded(parent)
-                if not parent.isExpanded():
-                    parent.setExpanded(True)
-                    if bool(parent.data(0, TREE_ROLE_IS_DIRECTORY)):
-                        self.set_folder_icon(parent, expanded=True)
-                parent = parent.parent()
-            tree.clearSelection()
-            tree.setCurrentItem(item)
-            item.setSelected(True)
-            tree.scrollToItem(item, QAbstractItemView.PositionAtCenter)
-            return
+            if raw == target:
+                return str(item.data(0, TREE_ROLE_RELATIVE_PATH) or "")
+        return ""
 
     def iter_items(self) -> list[QTreeWidgetItem]:
         window = self._window
@@ -252,7 +286,7 @@ class ProjectTreePresenter:
                     item.addChild(QTreeWidgetItem([""]))
                     item.setData(0, TREE_ROLE_LAZY_UNLOADED, True)
                 else:
-                    for child_node in node.children:
+                    for child_node in _generated_after_source(node.children):
                         item.addChild(self.build_tree_item(child_node, lazy=False))
         else:
             filename = Path(node.absolute_path).name.lower()
@@ -269,6 +303,15 @@ class ProjectTreePresenter:
                 font.setBold(True)
                 item.setFont(0, font)
                 item.setIcon(0, window._tree_entrypoint_icon)
+            if is_generated_module(node.absolute_path):
+                workflow = getattr(window, "_shell_theme_workflow", None)
+                resolve = getattr(workflow, "resolve_theme_tokens", None)
+                tokens = resolve() if callable(resolve) else None
+                if tokens is not None:
+                    item.setIcon(0, generated_lock_icon(tokens.text_muted))
+                    item.setForeground(0, QColor(tokens.text_muted))
+                else:
+                    item.setIcon(0, generated_lock_icon())
         return item
 
     def selected_paths(self) -> list[tuple[str, str, bool]]:

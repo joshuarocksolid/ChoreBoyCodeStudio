@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>QuoteDialog</class>
+ <widget class="QDialog" name="QuoteDialog">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>640</width>
+    <height>480</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>Quote</string>
+  </property>
+  <layout class="QFormLayout" name="formLayout">
+   <item row="0" column="0">
+    <widget class="QLabel" name="label_customerEdit">
+     <property name="text">
+      <string>Customer</string>
+     </property>
+     <property name="buddy">
+      <cstring>customerEdit</cstring>
+     </property>
+    </widget>
+   </item>
+   <item row="0" column="1">
+    <widget class="QLineEdit" name="customerEdit"/>
+   </item>
+   <item row="1" column="0">
+    <widget class="QLabel" name="label_validEdit">
+     <property name="text">
+      <string>Valid until</string>
+     </property>
+     <property name="buddy">
+      <cstring>validEdit</cstring>
+     </property>
+    </widget>
+   </item>
+   <item row="1" column="1">
+    <widget class="QDateEdit" name="validEdit"/>
+   </item>
+   <item row="2" column="0">
+    <widget class="QLabel" name="label_totalEdit">
+     <property name="text">
+      <string>Total</string>
+     </property>
+     <property name="buddy">
+      <cstring>totalEdit</cstring>
+     </property>
+    </widget>
+   </item>
+   <item row="2" column="1">
+    <widget class="QDoubleSpinBox" name="totalEdit"/>
+   </item>
+   <item row="3" column="0">
+    <widget class="QLabel" name="label_approvedCheck">
+     <property name="text">
+      <string>Approved</string>
+     </property>
+     <property name="buddy">
+      <cstring>approvedCheck</cstring>
+     </property>
+    </widget>
+   </item>
+   <item row="3" column="1">
+    <widget class="QCheckBox" name="approvedCheck"/>
+   </item>
+  </layout>
+ </widget>
+ <tabstops>
+  <tabstop>customerEdit</tabstop>
+  <tabstop>validEdit</tabstop>
+  <tabstop>totalEdit</tabstop>
+  <tabstop>approvedCheck</tabstop>
+ </tabstops>
+ <resources/>
+ <connections/>
+</ui>

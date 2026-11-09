@@ -4,9 +4,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, Generic, Optional, TypeVar
+from typing import Callable, Generic, Optional, Sequence, TypeVar
 
+from app.project.file_operation_models import FileOperationResult
 from app.project.file_operations import copy_path, create_directory, create_file, delete_path, duplicate_path, move_path, rename_path
+from app.project.path_removed import notify_path_removed
+from app.project.path_rename import MoveDone, MoveRefusal, try_move
 from app.shell.breakpoint_store import BreakpointStore
 from app.shell.project_rescan_workflow import RefreshTier
 from app.shell.project_tree_controller import ProjectTreeController, TreeEditorWidget
@@ -30,12 +33,12 @@ class ProjectTreeActionCoordinator(Generic[W]):
         self,
         *,
         project_tree_controller: ProjectTreeController[W],
-        open_editor_paths: Callable[[], list[str]],
+        open_tab_paths: Callable[[], Sequence[str]],
         widget_for_path: Callable[[str], Optional[W]],
-        pop_editor_for_path: Callable[[str], Optional[W]],
         tab_index_for_path: Callable[[str], int],
         remove_tab_at_index: Callable[[int], None],
-        release_editor_widget: Callable[[W], None],
+        release_tab_content: Callable[[str], None],
+        rekey_tab_content: Callable[[str, str], None],
         close_editor_file: Callable[[str], None],
         breakpoint_store: BreakpointStore,
         refresh_breakpoints_list: Callable[[], None],
@@ -50,12 +53,12 @@ class ProjectTreeActionCoordinator(Generic[W]):
         migrate_buffer_state: Optional[Callable[[str, str], None]] = None,
     ) -> None:
         self._project_tree_controller = project_tree_controller
-        self._open_editor_paths = open_editor_paths
+        self._open_tab_paths = open_tab_paths
         self._widget_for_path = widget_for_path
-        self._pop_editor_for_path = pop_editor_for_path
         self._tab_index_for_path = tab_index_for_path
         self._remove_tab_at_index = remove_tab_at_index
-        self._release_editor_widget = release_editor_widget
+        self._release_tab_content = release_tab_content
+        self._rekey_tab_content = rekey_tab_content
         self._close_editor_file = close_editor_file
         self._breakpoint_store = breakpoint_store
         self._refresh_breakpoints_list = refresh_breakpoints_list
@@ -99,10 +102,9 @@ class ProjectTreeActionCoordinator(Generic[W]):
             destination = source.with_name(validated_name)
         except ValueError as exc:
             return f"Invalid name: {exc}"
-        result = rename_path(str(source), str(destination))
-        if not result.success:
-            return result.message
-        self.apply_path_move_updates(str(source), str(destination))
+        error = self._relocate_path(str(source), str(destination), rename_path)
+        if error is not None:
+            return error
         self._refresh(RefreshTier.TREE_ENTRIES)
         return None
 
@@ -111,6 +113,7 @@ class ProjectTreeActionCoordinator(Generic[W]):
         if not result.success:
             return result.message
         self.close_deleted_editor_paths(target_path)
+        notify_path_removed(str(Path(target_path).expanduser().resolve()))
         self._refresh(RefreshTier.TREE_ENTRIES)
         return None
 
@@ -128,6 +131,7 @@ class ProjectTreeActionCoordinator(Generic[W]):
             result = delete_path(target_path)
             if result.success:
                 self.close_deleted_editor_paths(target_path)
+                notify_path_removed(str(Path(target_path).expanduser().resolve()))
                 deleted_paths.append(target_path)
             else:
                 failed.append(f"{Path(target_path).name}: {result.message}")
@@ -159,14 +163,12 @@ class ProjectTreeActionCoordinator(Generic[W]):
             destination = dest_dir / source.name
             if clipboard_cut:
                 try:
-                    result = move_path(str(source), str(destination))
+                    error = self._relocate_path(str(source), str(destination), move_path)
                 except OSError as exc:
                     failed.append(f"{source.name}: {exc}")
                     continue
-                if result.success:
-                    self.apply_path_move_updates(str(source), str(destination))
-                else:
-                    failed.append(f"{source.name}: {result.message}")
+                if error is not None:
+                    failed.append(f"{source.name}: {error}")
             else:
                 try:
                     result = copy_path(str(source), str(destination))
@@ -195,23 +197,40 @@ class ProjectTreeActionCoordinator(Generic[W]):
             else:
                 return "Cannot move a folder into itself."
         try:
-            result = move_path(str(source), str(destination))
+            error = self._relocate_path(str(source), str(destination), move_path)
         except OSError as exc:
             return str(exc)
+        if error is not None:
+            return error
+        self._refresh(RefreshTier.TREE_ENTRIES)
+        return None
+
+    def _relocate_path(
+        self,
+        source: str,
+        destination: str,
+        relocate: Callable[[str, str], FileOperationResult],
+    ) -> Optional[str]:
+        outcome = try_move(source, destination)
+        if isinstance(outcome, MoveRefusal):
+            return outcome.sentence
+        if isinstance(outcome, MoveDone):
+            for old, new in outcome.moved:
+                self.apply_path_move_updates(old, new, rewrite_imports=False)
+            return None
+        result = relocate(source, destination)
         if not result.success:
             return result.message
-        self.apply_path_move_updates(str(source), str(destination))
-        self._refresh(RefreshTier.TREE_ENTRIES)
+        self.apply_path_move_updates(source, destination)
         return None
 
     def close_deleted_editor_paths(self, deleted_path: str) -> None:
         self._project_tree_controller.close_deleted_editor_paths(
             deleted_path,
-            open_editor_paths=self._open_editor_paths,
-            pop_editor_for_path=self._pop_editor_for_path,
+            open_tab_paths=self._open_tab_paths,
             tab_index_for_path=self._tab_index_for_path,
             remove_tab_at_index=self._remove_tab_at_index,
-            release_editor_widget=self._release_editor_widget,
+            release_tab_content=self._release_tab_content,
             close_editor_file=self._close_editor_file,
             breakpoint_store=self._breakpoint_store,
             refresh_breakpoints_list=self._refresh_breakpoints_list,
@@ -224,7 +243,16 @@ class ProjectTreeActionCoordinator(Generic[W]):
         destination_path: str,
         *,
         rewrite_imports: bool = True,
+        carry_file_state: bool = True,
     ) -> None:
+        source_resolved = str(Path(source_path).expanduser().resolve())
+        destination_resolved = str(Path(destination_path).expanduser().resolve())
+        if (
+            source_resolved.lower().endswith(".ui")
+            and Path(source_resolved).parent != Path(destination_resolved).parent
+            and not Path(source_resolved).exists()
+        ):
+            notify_path_removed(source_resolved)
         self._project_tree_controller.apply_path_move_updates(
             source_path,
             destination_path,
@@ -239,6 +267,8 @@ class ProjectTreeActionCoordinator(Generic[W]):
             maybe_rewrite_imports=self._maybe_rewrite_imports if rewrite_imports else lambda _source, _destination: None,
             migrate_buffer_state=self._migrate_buffer_state,
             remap_file_lineage=self._remap_file_lineage,
+            rekey_tab_content=self._rekey_tab_content,
+            carry_file_state=carry_file_state,
         )
 
     def _refresh(self, tier: RefreshTier) -> None:

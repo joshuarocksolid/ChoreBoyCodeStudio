@@ -6,12 +6,14 @@ from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Any, Protocol, cast
+from typing import Any, Iterable, Protocol, cast
 
 from app.qt.QtWidgets import QDialog, QFileDialog, QMessageBox, QWidget
 
 from app.editors.editor_manager import EditorManager
+from app.editors.generated_file import generated_banner
 from app.editors.editor_tab import DISK_CONFLICT_CHANGED, DISK_CONFLICT_MISSING
+from app.shell.document_safety import DocumentCloseIntent, DocumentScope
 from app.shell.disk_conflict_dialogs import (
     DiskChangedChoice,
     DiskChangedDialog,
@@ -25,6 +27,14 @@ from app.shell.editor_sync_workflow import EditorDiskSyncSource, EditorSyncWorkf
 from app.shell.save_workflow import LocalHistoryPort, SaveWorkflowPort
 from app.shell.shell_composition_context import MainWindowCompositionSurface
 from app.qt.qt_compat import exec_qt
+
+
+def _clean_generated_readonly(editor_widget: object, file_path: str, content: str) -> bool:
+    """A clean tab still showing the generated banner reloads without a prompt."""
+    probe = getattr(editor_widget, "isReadOnly", None)
+    if not callable(probe) or not probe():
+        return False
+    return generated_banner(file_path, content) is not None
 
 
 class ExternalFileChangeOutcome(str, Enum):
@@ -161,6 +171,12 @@ class MainWindowExternalFileChangeHost:
     def editor_widget_for_path(self, file_path: str) -> object | None:
         return self._window._workspace_controller.widget_for_path(file_path)
 
+    def surface_for_path(self, file_path: str) -> object | None:
+        registry = getattr(self._window, "_tab_content_registry", None)
+        if registry is None:
+            return None
+        return registry.surface_for_path(file_path)
+
     def confirm_clean_tab_reload(self) -> bool:
         choice = QMessageBox.question(
             self._window,
@@ -227,8 +243,19 @@ class MainWindowExternalFileChangeHost:
         return ask_save_as_path(self._window, file_path)
 
 
+@dataclass(frozen=True)
+class _DirtyReloadPlan:
+    """Resolved reload intent for a dirty sourced tab with no text buffer."""
+
+    apply_reload: bool
+    disk_content: str
+    current_mtime: float
+
+
 class ExternalFileChangeWorkflow:
     """Owns stale-file detection prompts and disk reload application."""
+
+    _RELOAD_ACTION_DESCRIPTION = "reloading this file from disk after an external change"
 
     def __init__(
         self,
@@ -252,6 +279,52 @@ class ExternalFileChangeWorkflow:
         self._editor_manager = editor_manager
         self._editor_sync.set_editor_manager(editor_manager)
 
+    def note_own_writes(self, file_paths: Iterable[str]) -> None:
+        """Record writes this app just made. See ``note_own_write``."""
+        for file_path in file_paths:
+            self.note_own_write(str(file_path))
+
+    def note_own_write(self, file_path: str) -> ExternalFileChangeOutcome:
+        """A write this app just made.
+
+        A clean open tab reloads from disk and the poller does not ask.
+        A tab with unsaved edits is left alone, so the next poll still asks.
+        A closed path is ignored. A change this app did not report still asks.
+        """
+        tab_state = self._editor_manager.get_tab(file_path)
+        if tab_state is None or tab_state.virtual_tab:
+            return ExternalFileChangeOutcome.SKIPPED
+        path = tab_state.file_path
+        current_mtime = self._editor_manager.current_disk_mtime(path)
+        if current_mtime is None:
+            return ExternalFileChangeOutcome.SKIPPED
+        disk_content = self._read_disk_text(path)
+        if disk_content is None:
+            return ExternalFileChangeOutcome.SKIPPED
+        if disk_content == tab_state.current_content:
+            tab_state.mark_saved(last_known_mtime=current_mtime, saved_text=disk_content)
+            self._host.refresh_save_action_states()
+            self._host.refresh_conflict_presentation(path)
+            return ExternalFileChangeOutcome.CONTENT_ALREADY_MATCHES
+        if tab_state.is_dirty:
+            # A write in the same timestamp tick does not move mtime. Keeping
+            # the old snapshot then looks clean, and the poller never asks.
+            tab_state.set_last_known_mtime(None)
+            return ExternalFileChangeOutcome.SKIPPED
+        if not self._editor_sync.apply_disk_content(
+            path,
+            disk_content,
+            source=EditorDiskSyncSource.TOOL_REFRESH,
+            last_known_mtime=current_mtime,
+        ):
+            return ExternalFileChangeOutcome.SKIPPED
+        self._host.refresh_save_action_states()
+        self._host.refresh_conflict_presentation(path)
+        self._host.update_editor_status_for_path(path)
+        if path.lower().endswith(".py"):
+            self._host.render_lint_diagnostics_for_file(path, trigger="tab_change")
+        return ExternalFileChangeOutcome.RELOADED
+
     def check_and_handle(self, file_path: str, *, force: bool = False) -> ExternalFileChangeOutcome:
         if file_path in self._prompting:
             return ExternalFileChangeOutcome.SKIPPED
@@ -269,7 +342,14 @@ class ExternalFileChangeWorkflow:
         """
         tab_state = self._editor_manager.get_tab(file_path)
         editor_widget = self._host.editor_widget_for_path(file_path)
-        if tab_state is None or editor_widget is None:
+        # A lazy sourced surface has no source editor in the widget dict; it is
+        # reached through the provider registry instead (CONTRACTS.md §11.4).
+        surface = getattr(self._host, "surface_for_path", lambda _p: None)(file_path)
+        if tab_state is None or (editor_widget is None and surface is None):
+            return ExternalFileChangeOutcome.SKIPPED
+        # The New form tab is not a file. A missing-file prompt would offer to
+        # save the sentinel path under cbcs/.
+        if tab_state.virtual_tab:
             return ExternalFileChangeOutcome.SKIPPED
 
         current_mtime = self._editor_manager.current_disk_mtime(file_path)
@@ -286,15 +366,41 @@ class ExternalFileChangeWorkflow:
             return ExternalFileChangeOutcome.SKIPPED
 
         if disk_content == tab_state.current_content:
-            tab_state.mark_saved(last_known_mtime=current_mtime)
+            tab_state.mark_saved(last_known_mtime=current_mtime, saved_text=disk_content)
             self._host.refresh_save_action_states()
             self._host.refresh_conflict_presentation(file_path)
             return ExternalFileChangeOutcome.CONTENT_ALREADY_MATCHES
 
+        needs_bar = getattr(surface, "external_change_needs_bar", None)
+        offer_bar = getattr(surface, "offer_external_change", None)
+        if surface is not None and callable(needs_bar) and callable(offer_bar) and needs_bar(disk_content):
+            self._remember_conflict(file_path, DISK_CONFLICT_CHANGED, current_mtime)
+            offer_bar(
+                Path(file_path).name,
+                lambda: self.reload_from_disk(file_path),
+                lambda: None,
+                lambda: self.compare_with_disk(file_path),
+            )
+            return ExternalFileChangeOutcome.DECLINED
+
         should_reload = False
         reload_disk_content = disk_content
         reload_mtime = current_mtime
-        if tab_state.is_dirty:
+        if tab_state.is_dirty and editor_widget is None and tab_state.content_source is not None:
+            dirty_plan = self._resolve_sourced_dirty_reload(
+                file_path,
+                tab_state=tab_state,
+                current_mtime=current_mtime,
+                disk_content=disk_content,
+            )
+            if dirty_plan is None:
+                return ExternalFileChangeOutcome.DECLINED
+            if not dirty_plan.apply_reload:
+                return ExternalFileChangeOutcome.CONTENT_ALREADY_MATCHES
+            should_reload = True
+            reload_disk_content = dirty_plan.disk_content
+            reload_mtime = dirty_plan.current_mtime
+        elif tab_state.is_dirty:
             if not self._dirty_buffer_takes_disk_version(file_path, current_mtime=current_mtime):
                 self._remember_conflict(file_path, DISK_CONFLICT_CHANGED, current_mtime)
                 return ExternalFileChangeOutcome.DECLINED
@@ -312,10 +418,14 @@ class ExternalFileChangeWorkflow:
                 reload_disk_content = refreshed_content
                 reload_mtime = refreshed_mtime
         else:
-            if not self._host.confirm_clean_tab_reload():
+            content = tab_state.current_content if isinstance(tab_state.current_content, str) else ""
+            if _clean_generated_readonly(editor_widget, file_path, content):
+                should_reload = True
+            elif not self._host.confirm_clean_tab_reload():
                 self._remember_conflict(file_path, DISK_CONFLICT_CHANGED, current_mtime)
                 return ExternalFileChangeOutcome.DECLINED
-            should_reload = True
+            else:
+                should_reload = True
 
         if not should_reload:
             return ExternalFileChangeOutcome.DECLINED
@@ -340,6 +450,72 @@ class ExternalFileChangeWorkflow:
         if file_path.lower().endswith(".py"):
             self._host.render_lint_diagnostics_for_file(file_path, trigger="tab_change")
         return ExternalFileChangeOutcome.RELOADED
+
+    def _resolve_sourced_dirty_reload(
+        self,
+        file_path: str,
+        *,
+        tab_state: object,
+        current_mtime: float,
+        disk_content: str,
+    ) -> _DirtyReloadPlan | None:
+        """Three-way prompt for a provider tab that has no text editor to compare."""
+        decision = self._save_workflow.request_unsaved_changes_decision(
+            self._RELOAD_ACTION_DESCRIPTION,
+            scope=DocumentScope.EXTERNAL_RELOAD,
+            allow_keep_for_next_launch=False,
+            dirty_buffers=(tab_state,),
+        )
+        if decision.intent is DocumentCloseIntent.CANCEL:
+            self._remember_conflict(file_path, DISK_CONFLICT_CHANGED, current_mtime)
+            return None
+
+        if decision.intent is DocumentCloseIntent.SAVE:
+            if not self._save_workflow.apply_unsaved_changes_decision(decision):
+                return None
+            try:
+                saved_disk_content = Path(file_path).read_text(encoding="utf-8")
+            except (OSError, UnicodeDecodeError):
+                return None
+            saved_mtime = Path(file_path).stat().st_mtime
+            refreshed_tab = self._editor_manager.get_tab(file_path)
+            if refreshed_tab is not None and saved_disk_content == refreshed_tab.current_content:
+                refreshed_tab.mark_saved(last_known_mtime=saved_mtime)
+                self._host.refresh_save_action_states()
+                return _DirtyReloadPlan(
+                    apply_reload=False,
+                    disk_content=saved_disk_content,
+                    current_mtime=saved_mtime,
+                )
+            return _DirtyReloadPlan(
+                apply_reload=True,
+                disk_content=saved_disk_content,
+                current_mtime=saved_mtime,
+            )
+
+        if decision.intent is DocumentCloseIntent.DISCARD:
+            buffer_content = str(getattr(tab_state, "current_content", ""))
+            self._local_history.record_checkpoint(
+                file_path,
+                buffer_content,
+                source="external_reload_discarded_buffer",
+                label="Discarded buffer during disk reload",
+            )
+            return _DirtyReloadPlan(
+                apply_reload=True,
+                disk_content=disk_content,
+                current_mtime=current_mtime,
+            )
+
+        if decision.intent is DocumentCloseIntent.PROCEED:
+            return _DirtyReloadPlan(
+                apply_reload=True,
+                disk_content=disk_content,
+                current_mtime=current_mtime,
+            )
+
+        self._remember_conflict(file_path, DISK_CONFLICT_CHANGED, current_mtime)
+        return None
 
     def _dirty_buffer_takes_disk_version(self, file_path: str, *, current_mtime: float) -> bool:
         """Ask about a dirty buffer whose file changed; True means Reload from Disk."""
@@ -368,6 +544,8 @@ class ExternalFileChangeWorkflow:
         tab_state = self._editor_manager.get_tab(file_path)
         if tab_state is None:
             return "proceed"
+        if tab_state.virtual_tab:
+            return "abort"
         current_mtime = self._editor_manager.current_disk_mtime(file_path)
         if current_mtime is None:
             conflict = tab_state.disk_conflict

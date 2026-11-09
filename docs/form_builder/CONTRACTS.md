@@ -1,0 +1,1577 @@
+# Form builder architecture contracts (M1.0)
+
+Status: binding for every M1–M3 work package, and for later WPs where a section names them. Revision 1, 2026-10-21. Author: Opus (architect). M6.0 (2026-10-29, Opus) adds §15 (logic storage), §16 (handlers and the window file), the M6 commands, codes and registries. Inputs: `PLAN.md` rev 1, `LOGIC_DESIGN.md`, research R1, R3, C, and the spike on `feat/form-builder-spike`.
+
+This document and the typed stubs under `stubs/app/...` are one contract. The stubs hold the exact names, signatures and field lists. This document holds the rules, the reasons, and the tests that prove the rules. When the two disagree, raise it in the PR. Don't pick one quietly.
+
+**Words.** MUST and MUST NOT are absolute. SHOULD means "do this unless the PR explains why not". "Op" means one of the six primitive ops in §3.3. "Entry" means one undo step. "Session" means one `FormSession`, which is one open form tab.
+
+**Changing this contract.** A WP that needs a contract change opens a separate contract PR (this file plus the stubs). It goes through the O-logic gate before any code that depends on it merges. Additions are cheap. You can add a command module, a diagnostic code, a participant or an expander through registration files without touching shared ones (§1.4). Changing an existing signature or rule costs more.
+
+---
+
+## 0. Decisions on one page
+
+| # | Decision | Replaces |
+| --- | --- | --- |
+| D1 | Node ids are session-local positive ints. They are never reused and never persisted. The object name is the only persistent identity. | Spike `"id12"` strings, looked up by an O(n) tree walk |
+| D2 | One typed node tree that is driven by a schema table (`ui4/schema.py`). It has an O(1) id index, parent map and name index. The XML write order is the ui4.xsd sequence, which is also Designer's output order. | Spike's untyped `body` lists of mixed parts |
+| D3 | Undo records ops, it doesn't take snapshots. Commands run `apply` against the live document and emit **six primitive ops**, each with an exact inverse. Redo re-applies the recorded ops. Replay re-runs `apply` and must reproduce the same ops. Only `ReplaceDocument` stores a snapshot. | Spike stateful commands that captured their own old state; the prior branch's whole-XML snapshot stack |
+| D4 | Ops and the subtrees they carry are frozen `NodeSpec` values. Undo history never shares a live node object with the document. | Spike `copy.deepcopy` of live nodes |
+| D5 | Change events come straight from ops, one change per op, one `ChangeSet` per entry. Realize patches **only** the containers named in `structure_dirty`. | Spike `units(doc)` signature scan over the whole form on every structural edit |
+| D6 | Rapid edits merge only by an explicit UI gesture token. The engine never merges by time. | (new) |
+| D7 | Values are frozen dataclasses for all 33 ui4 value kinds. Anything that doesn't round-trip without loss becomes `OpaqueValue`. Nothing is ever dropped. | Spike's raw `XmlNode` bodies, and its `_norm_text`, which turned `" "` into `""` |
+| D8 | The writer never drops a property that is in the model. The class table (defaults) is used for inspector display, Reset, rank insertion and realize resets, never to decide what gets written. | Spike `defaults.py` omitted "default-valued" properties on write, which caused silent file changes |
+| D9 | The hit index refreshes lazily. Any invalidation is O(1) (an epoch bump), and it refreshes on the next pointer event or paint. Queries walk the hit tree; they don't scan a list. | Spike kept a deferred `index_dirty` flag but did linear hit lists and a 22 ms walk |
+| D10 | The canvas never runs user code, generated code, `*_rc.py` or Designer plugins. Promoted widgets show as stand-ins of their `extends` class. Resources come from an in-memory compiled tree. | Spike ran preview in-process |
+| D11 | The preview child reuses `ProcessSupervisor` (argv list, no shell) and the rpc_protocol JSON-lines encoding. Frames carry a sentinel prefix, and the child moves fd 1 to stderr so its frame stream stays clean. | Plan's "QProcess" wording (see Appendix B) |
+| D12 | The shell seam is a provider registry plus an `EditorTabState.content_source`. Reading `current_content` is the lazy-serialization trigger. | Hard-wired Markdown wrap; `current_content` copied on every keystroke |
+
+---
+
+## 1. Package layout and import rules
+
+### 1.1 Layout
+
+```
+app/features/form_builder/
+  __init__.py        docstring only, imports nothing
+  install.py         form_builder_enabled(), install_form_builder(ctx); light module level
+  engine/            Qt-free
+    ids.py  events.py  diagnostics.py  session.py
+    ui4/             schema, values, opaque, spec, nodes, document, mutate (private),
+                     reader, writer, numfmt, defaults (+ data/qt_classes.json)
+    commands/        ops, base, log, context, placement, catalog, catalog_ext/,
+                     participants/
+    query/           tree helpers, selection model, hit index
+    codegen/         api, logic_hooks, expanders/, resources, window_template
+    logic/           storage codec (M6.0b); language, rules, data (M7, M8)
+    project/         form scope, generated-file policy, connections model
+    ipc/             preview protocol schema and codec
+    diagnostic_codes/  one module per FB range, each one calls diagnostics.declare
+  qtside/            PySide6, imported only through app.qt
+    realize/  canvas/  inspector/  outline/  insert/  start/  dialogs/  theme/  icons/
+    preview/         pool.py (editor side), child/ (child side)
+  integration/       provider, content_source, problems_bridge, settings, theme hook,
+                     run/packaging hooks
+run_form_preview.py  repo root: three-line runpy shim into qtside/preview/child/main.py
+tools/form_builder/dump_qt_classes.py   Qt-side dump script for the class table
+```
+
+### 1.2 Import rules (MUST)
+
+| From \ may import | stdlib | `engine.*` | `qtside.*` | `integration.*` | `app.qt` | `app.shell`, `app.editors` | `app.run`, `app.plugins.rpc_protocol` | `app.bootstrap.qt_binding_choice` |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `engine/**` | yes | yes | **no** | **no** | **no** | **no** | rpc_protocol only | **no** |
+| `qtside/**` (not child) | yes | yes | yes | **no** | yes | **no** | `app.run.process_supervisor`, `app.run.runtime_launch`, rpc_protocol | no |
+| `qtside/preview/child/**` | yes | yes | realize values + theme only | **no** | yes | **no** | rpc_protocol | no |
+| `integration/**` | yes | yes | yes | yes | yes | yes | yes | yes |
+| `install.py` (module level) | yes | yes | **no** | **no** | **no** | **no** (TYPE_CHECKING only) | no | yes |
+| `app/shell/**`, `app/editors/**` | — | **no** | **no** | **no** | — | — | — | — |
+
+Other rules:
+
+- Nothing outside `app/qt/` imports `PySide6`, `PySide2` or `shiboken*` directly. This is the existing dune qt-portability rule, and the feature gets no exemption. The Qt side is PySide6-only at runtime, so it may use Qt 6 APIs freely through `app.qt`.
+- Only `engine/commands/log.py`, `engine/commands/context.py` and `engine/ui4/reader.py` import `engine/ui4/mutate.py`.
+- Engine code stays inside the Python 3.9 grammar and stdlib. That means no `X | Y` unions, `match`, `dataclass(slots=..., kw_only=...)` or `zip(strict=...)`. It also means no third-party packages. `hypothesis` is not vendored, so property tests use seeded `random`.
+
+### 1.3 Mapping to dune (added by M2.1, except where noted)
+
+| Dune artefact | Entry |
+| --- | --- |
+| `dune.yaml` owners | `form-builder: [app/features/form_builder/**]`. Repo-root `run_form_preview.py` is listed under `form-builder` too |
+| `app/features/spec.py` | `FeatureSpec(key="form-builder", ownership_globs=("app/features/form_builder/**",), install=install_form_builder, enabled=form_builder_enabled)`. The key uses a hyphen and the directory an underscore (it has to be importable) |
+| verify-cbcs feature doc | `.cursor/skills/verify-cbcs/features/form-builder.md` with `<!-- dune-owners: form-builder -->` and the form builder AT ids |
+| handles | Widget object names use the prefix `formBuilder.<area>.<name>` and are listed in `handles.md`. The XML view reuses `shell.editorTabs.textEditor` only through `create_source_editor`, so it is still assigned in exactly one place |
+| file role `form_builder.engine` | `app/features/form_builder/engine/**`: denied `("app", "PySide2", "PySide6", "shiboken2", "shiboken6")`, allowed `("app.features.form_builder.engine", "app.plugins.rpc_protocol")` |
+| file role `form_builder.qtside` | `app/features/form_builder/qtside/**`: denied `("app.shell", "app.editors", "app.features.form_builder.integration", "app.runner", "app.packaging")` |
+| file role `form_builder.child` | `app/features/form_builder/qtside/preview/child/**`: additionally denied `app.features.form_builder.qtside.canvas`, `.inspector`, `.outline` |
+| file role `form_builder.mutate_guard` | `app/features/form_builder/**`: denied `app.features.form_builder.engine.ui4.mutate`, allowed_files = the three files in §1.2 |
+| `app.shell` / `app.editors` roles | add `app.features.form_builder` to their denied imports (M2.0 does the same for `app.features.markdown`) |
+| new rule `feature-install-imports` (M2.0) | see §11.5 |
+| composition | install count stays 7. Window fields the install binds are owned through the FeatureSpec globs |
+| reaper | `testing/runtime_child_reaper.py` markers gain `run_form_preview.py` (M2.5) |
+
+### 1.4 Registries without shared-file edits
+
+Registries discover modules in a package in sorted module-name order. Each module exposes `register(registry)`. A WP adds its own module and never edits another WP's module or the package `__init__`.
+
+| Registry | Package | Seam WP |
+| --- | --- | --- |
+| Extra commands | `engine/commands/catalog_ext/` | M1.2 |
+| Rename/delete participants | `engine/commands/participants/` | M1.2 |
+| Diagnostic codes | `engine/diagnostic_codes/` | M1.0 seeds `fb0xx.py`, `fb5xx.py`, `fb6xx.py`, `fb9xx.py` |
+| Codegen expanders | `engine/codegen/expanders/` | M1.3 |
+| Property editors | `qtside/inspector/editors/` and `qtside/inspector/api.py` (`RowSpec.editor`, `Choice` / `ValueSpec.choices` / `RowSpec.choices`, `FlagBit` (bool row over one bit; multi-owner edit is one step, reset restores the bit and deletes the property when the set equals the default), `RowWrite.edit`/`reset` may return a tuple of commands run as one step, read-only `EditorHost.document` / `owner_ids` / `qt_names` / `form_shortcuts` (shortcut text → owning widget or action name, from the form document's `shortcut` and `keySequence` only, cached per revision), optional `Editor.caption_widget`) | M3.1b |
+| Widget catalog entries | `qtside/insert/catalog/` (Qt-free data) | M4.1 |
+| Context-menu contributors | `integration/menu_ext/` (groups "first", "structure", "last"; `MenuContext.at`, `source` `"canvas"` or `"outline"`, `live(node_id)`, `run(command)`; UX-CONT-020) | M4.0s |
+| Tab-content providers | registered at install (shell registry) | M2.0 |
+| Behavior tab sections | `qtside/inspector/behavior_ext/` (order, predicate on the selection, widget; UX-BEH-001) | M6.0s |
+| Canvas double-click contributors | `integration/activate_ext/` (`claims(doc, node_id) -> Optional[hover words]`, pure; `activate(surface, node_id)`; asked before the canvas's own text and items double-click; never for Enter) | M6.0s |
+| Overlay kinds | `integration/overlays.py` gains a kind registry (`integration/overlay_ext/`): banner text, toolbar toggle, layer name, and an optional link gesture (press-drag or Enter-arrows-Enter from a widget to a widget or the form, ending in `link(source, target)`) | M6.0s |
+| Step intents | `engine/logic/intents/` (Qt-free; `Intent(sender_classes, event, words, needs_target, steps(...))`; rule intents from M7.2) | M6.0s (package), M6.1a (M6 intents) |
+| Codegen expanders | `engine/codegen/expanders/` (package created by M6.0s; `steps.py` M6.1a) | M1.3, M6.0s |
+| Handler service | `integration/handlers.py` protocol (`make_method`, `go_to`, `methods`) with a default that only commits steps and opens files; M6.2b registers `handlers_code.py` | M6.0s |
+
+---
+
+## 2. Node identity and the document model
+
+### 2.1 Node identity
+
+1. `NodeId` is a positive `int`. `DOCUMENT_ID = 0` is the `<ui>` node. The session's `IdAllocator` hands out ids from 1 upwards, in order.
+2. The reader allocates ids in pre-order, in schema slot order. Reading the same text with a fresh allocator always gives the same ids. Replay depends on this.
+3. Ids are **never reused** within a session. That holds across undo, redo and `ReplaceDocument`. An id that has left the document never names a different node later. This rules out ABA bugs in maps the Qt side keeps.
+4. Ids never appear in the `.ui`, the generated module, the clipboard, the preview IPC, Problems rows or settings. Anything that persists or crosses a process uses **object names**, and diagnostics add a `key`.
+5. An object name is an identity, but it isn't guaranteed unique. Files on disk can contain duplicates, and that shows up as FB010, not as an invariant failure. Commands never create a duplicate.
+6. After `ReplaceDocument`, every id except 0 is fresh. Views carry selection across by object name (§3.10).
+
+### 2.2 The typed ui4 tree
+
+The kinds are `ui`, `widget`, `layout`, `layoutitem`, `spacer`, `action`, `actiongroup`, `actionref`, `item`, `header`, `buttongroup`, `connection`, `customwidget`, `include`, `resource` and `opaque` (`schema.NodeKind`). For each kind, `schema.SCHEMA` defines:
+
+- the **fields**: immutable scalars, tuples, or frozen dataclasses such as `LayoutDefault`, `SlotsDecl`, `HeaderDecl` and `ConnectionHint`
+- the **slots**: ordered child lists, each with the kinds it accepts and a maximum length
+- whether the kind carries `<property>` and `<attribute>` lists
+- the **write order** of its content groups, and the **attribute order**
+
+The full field lists are in the stub. Elements that only hold values become fields: `<tabstops>`, `<zorder>`, `<slots>`, `<class>`, `<author>`, `<comment>`, `<exportmacro>`, `<layoutdefault>`, `<layoutfunction>` and `<pixmapfunction>`. `<designerdata>` and `<images>` are kept verbatim as `OpaqueElement` fields.
+
+Wrapper elements that Designer writes even when they're empty (`<resources/>`, `<connections/>`) are tracked in the `ui` field `present_wrappers`. That way a document whose last connection was deleted still writes `<connections/>`, the way Designer does.
+
+Write order follows the ui4.xsd `xs:sequence` of each element. That's the order Qt's generated `Dom*::write` emits, so it's also Designer's resave order. For a widget it's: properties, attributes, rows, columns, items, layout, child widgets, actions, action groups, addactions, zorder. The M0.4b Designer-resave corpus is the oracle. If it disagrees with this table, the table changes (with a test).
+
+**The spike was right about** keeping the `.ui` itself as the model instead of a JSON layout file, keeping a single owner of the tree, and keeping unknown content in place. **The spike was wrong about** mixed untyped `body` lists, O(n) `find_node`/`locate`, and having no parent pointers. Production keeps a schema-typed tree with `UiDocument.node(id)`, `parent(id)` and `by_name(name)`, all O(1).
+
+### 2.3 Unknown-content preservation (MUST)
+
+| Input | Model | Output |
+| --- | --- | --- |
+| Unknown child element of a known element | `OpaqueNode` in that node's `opaque` slot, with `anchor = (group, n)`: `group` is the write-order group it sits in or follows in the input (`""` means before the first group), and `n` is the number of typed entries of that group that came before it | Written at that exact position: after the `n`-th typed entry of `group`. Among opaque siblings with the same anchor, input order is kept. If the group has fewer than `n` entries after edits, it's written at the end of the group |
+| Unknown attribute on a known element | `extra_attrs`, in input order | Written after the known attributes, in input order |
+| Known value tag whose text doesn't parse without loss (`<bool>1</bool>`, `<double>1e-400</double>`, a `<number>` out of range) | `OpaqueValue` + FB005 (Info) | Byte-identical content |
+| Unknown value tag inside `<property>` | `OpaqueValue` + FB005 | Same |
+| A second `<property>` with the same name on one node | The **last** copy is the typed entry, because Qt applies properties in order and the last one wins. Earlier copies go to `opaque` + FB007, anchored `("properties", n)` | Same positions: an earlier duplicate stays before the typed entry |
+| Unknown `cbcs*` dynamic property, or unknown keys inside logic JSON | Kept as a normal `StringValue` entry. The logic codec keeps unknown keys verbatim | Same text |
+| XML comments and PIs outside preserved subtrees | Dropped (Designer drops them too) | — |
+| Comments, PIs and mixed text inside an opaque subtree | Kept | Kept |
+| `<designerdata>`, `<images>`, deprecated `<script>`/`<widgetdata>`/custom-widget `<properties>` | Opaque | Kept |
+
+The rule behind every row: **`write(read(x))` loads in Qt to the same widget tree as `x`.** Structure that Qt would see is never dropped. The QUiLoader oracle tests this.
+
+### 2.4 Property values
+
+`values.py` has one frozen dataclass for each of the 33 ui4 value elements (R3 283–315), plus `OpaqueValue`. Values are shared by reference across the document, ops, events and undo. Nobody copies them.
+
+1. **Lossless parse rule.** The reader parses each value element into its class only if formatting it again gives the same value. In particular, `parse_real(format_real(v)) == v` must hold for every real. Otherwise the element becomes `OpaqueValue`. This is checked per value, so one odd value never makes a whole property opaque.
+2. **Strings are exact.** No stripping and no newline changes inside `<string>`, `<cstring>`, `<enum>`, `<set>` and the like. The spike's `_norm_text` turned whitespace-only strings into empty strings. That was a bug, and it's banned.
+3. **Enums and sets by name.** `EnumValue.text` and `SetValue.text` are stored exactly as written. Comparisons use `key()`/`keys()`, which normalise away the enum-type qualifier (`Qt::Horizontal` matches `Qt::Orientation::Horizontal`). New values that commands create use `UiDocument.enum_style()`: the spelling most of that document's enums use, or `DEFAULT_ENUM_STYLE` (set from what Designer 6.8 writes in the M0.4b corpus). Ints never stand in for enums anywhere in the engine.
+4. **Translatable strings.** `notr`, `comment` (disambiguation), `extracomment` (translator comment) and `id` are all typed, and each is kept only when present.
+5. **Logic properties** (LOGIC_DESIGN §6.1) are `PropertyEntry(kind="property", stdset="0", value=StringValue(text, notr=True))`. They're written after every standard property, in `logic.storage.LOGIC_PROPERTY_ORDER` (§2.5 rank group 2). The layout key `cbcsSplitterSizes` (§9.3) has the same storage shape and sorts first in group 2, but it isn't logic: it's set with `SetProperty`, never adds `cbcsLogic`, and FB402 doesn't make it read-only.
+6. `semantic_equal` defines when an edit is a no-op. `value_to_json`/`value_from_json` is the one JSON form, used for IPC and traces.
+
+### 2.5 The class table (defaults)
+
+`engine/ui4/data/qt_classes.json` is committed. It's produced by `tools/form_builder/dump_qt_classes.py`, which runs under FreeCAD 1.1 PySide6 offscreen. Its shape is in `defaults.py`: per class, the super class, flags, properties in property-sheet order (kind, default, designable, stored, volatile, enum type), signals, slots and the default signal; plus an enum table. The engine reads the JSON lazily, once per process, and never imports Qt.
+
+The table is used for exactly these things:
+
+- inspector display of unset values
+- Reset (which removes the entry)
+- **rank insertion** of new property entries: `property_rank` gives a group (0 Qt, 1 other dynamic, 2 `cbcs*`), then a rank, then a name
+- realize's "reset to default" for non-volatile properties
+- multi-select applicability
+- MorphWidget keep/drop decisions
+- signal and slot pickers, and FB015/FB202 checks
+- container flags
+
+It's **never** used to decide whether a property gets written. "Changed" (bold in the inspector, R3 146) means "an entry exists". A property that's set to its default value is still written. That's Designer parity: Designer tracks changed-ness, not value equality.
+
+Volatile defaults (font, palette, geometry, sizeHint and anything else that depends on style or platform) are never shown as "the default" and never compared.
+
+Rules the dump and the loader follow, all checked against the Designer-resaved corpus:
+
+- `rank` counts across the class chain (QObject first). A class that declares a property again (`QDialog.modal`, `QDockWidget.windowTitle`, `QGridLayout.spacing`) owns that property's position, because Designer writes it there.
+- Designer's sheet has properties Qt's meta-object lacks: the legacy layout `margin` (uic still honours it), the four layout margins and `QLabel.buddy`. The dump lists them after the class's own properties with `"extra": true` and no default. A grid or form layout declares `spacing` again so it follows the margins; box layouts write it before them.
+- A subclass that changes an inherited default lists it in `"defaults"` (for example `QLineEdit.cursor`). The committed table is dumped on Linux (the ChoreBoy platform) and records `platform`. The dump runs three passes (Fusion/en_US, Windows/de_DE with a bigger font, and every widget built with a parent). A default that differs between passes, depends on the clock, locale, installed fonts or platform is `volatile` and has none.
+- A name the table knows ranks as a Qt property even when the entry says `stdset="0"`. Designer writes that for any property whose setter is not `set<Name>` (`isWrapping`).
+
+A test re-runs the dump against the running Qt and fails on any difference, naming the class and property (§13). If FreeCAD moves to a new Qt minor version, the JSON is regenerated in its own PR.
+
+### 2.6 Mutation
+
+Only the command log changes a document (§3). Node accessors return immutable data: tuples, frozen values and nodes. The mutate guard file role (§1.3) enforces this. The O-logic gate checks it, and so does the property test that fingerprints the document before and after every read-only API call in a random session.
+
+### 2.7 Integrity invariants (`UiDocument.validate`, MUST hold after every entry)
+
+1. Every id in the index is unique. The index holds exactly the nodes reachable from `ui`.
+2. `parent(child)` and `parent_slot` agree with the slot that holds the child. The `ui` node has no parent.
+3. Every child's kind is accepted by its slot, and single-child slots hold at most one child.
+4. There's exactly one root widget.
+5. The name index equals a recomputation from the tree. So do the per-node property name maps.
+6. Every field holds a value of its declared type. Required fields are set.
+7. No `PropertyEntry` identity `(kind, name)` repeats on a node.
+8. `revision` is never lower than any previously observed revision.
+
+Semantic problems are **diagnostics**, never invariant failures. That covers duplicate names, dangling buddies, overlapping grid cells and missing connection endpoints. Files on disk contain them, and so may documents that are in the middle of an edit. `CBCS_FB_VALIDATE=1` runs `validate()` after every entry. It's always on in tests.
+
+A QFormLayout cell is (row, role): colspan 2 is the spanning role and covers both cells; column 0 is the label role, any other column the field role; rowspan is ignored. Files may contain two items in one cell (FB023, a diagnostic). Commands never create one; the log checks this after every entry when `CBCS_FB_VALIDATE=1`.
+
+### 2.8 Read-only query helpers
+
+These are in `document.py` and `query/tree.py`: traversal, name lookups and `unique_name` (Designer's `_2`, `_3` suffix rule), grid occupancy, the next free cell, form rows, visual children, reading order, the effective tab order and tab-order splicing (the spike's rule, kept), the real child stacking order (pain 24), native references to a name, page children, container tests and form kind. Each one states its complexity. All are pure.
+
+---
+
+## 3. The command log
+
+### 3.1 Strategy (decided)
+
+**Record ops, don't take snapshots.** A command's `apply(doc, ctx)` reads the live document and calls `ctx.do(op)` for each primitive change. Each op is applied right away, so later reads inside `apply` see it. The mutation primitive returns the exact inverse. The log records `(ops, inverse_ops, allocated_ids)`.
+
+- **Undo** applies `inverse_ops` in reverse order.
+- **Redo** re-applies `ops` exactly. It never re-runs `apply`.
+- **Replay** (tests and traces) re-runs every command's `apply`, with an allocator that hands back `allocated_ids` in order. It asserts that the produced op sequence equals the recorded `ops`. That proves planners are deterministic.
+
+Why: every structural command, from wrap and morph to paste and rename, reduces to six ops whose inverses can be tested on their own. Entries cost O(changed) memory. Events fall out of the ops mechanically. Snapshotting is kept only for `ReplaceDocument`, where the whole document really is the change.
+
+**The spike was right** that every mutation goes through one history and that structural edits should be patches. **The spike was wrong** to have commands capture state on their first `redo` and keep it in mutable fields. That made correctness depend on call order and needed deep copies. It's replaced by recorded frozen ops.
+
+### 3.2 The Command protocol
+
+A command is a `@dataclass(frozen=True)` with JSON-able fields and a stable `command_type`. `apply` MUST:
+
+- be a pure function of `(document content, its parameters, the ids ctx.alloc() returns, the class table)`. No clock, no environment, no Qt, no set iteration order, and no randomness.
+- get every Qt-measured quantity (rects, size hints, visual order) as a parameter.
+- raise `CommandRejected` for illegal or stale requests. The log then rolls back whatever `apply` already did.
+- report the selection it wants afterwards through `ctx.select`.
+
+### 3.3 The six primitive ops
+
+| Op | Meaning | Inverse | Precondition (`OpError` before any change) |
+| --- | --- | --- | --- |
+| `InsertNodeOp(parent, slot, index, spec)` | Insert a subtree | `RemoveNodeOp(spec.id)` | Slot exists and accepts `spec.kind`; `0 <= index <= len`; a single-child slot is empty; every id in `spec` is set and not present in the document |
+| `RemoveNodeOp(node)` | Remove the subtree | `InsertNodeOp(old parent, old slot, old index, snapshot)` | Node exists and isn't `ui` or the root widget |
+| `MoveNodeOp(node, parent, slot, index)` | Re-parent or reorder, keeping ids. `index` counts **after** the node has left its old list | `MoveNodeOp` back to the old position | Target accepts the kind; target isn't inside the node's own subtree; index in range |
+| `SetPropertyOp(owner, kind, name, entry, index)` | `entry=None` removes. An existing entry is replaced in place (`index` must be None). A new entry is inserted at `index`, which the planner computes by rank insertion | Restore the old entry at its old index, or remove it | Kind is allowed on the owner; `index` is valid when inserting |
+| `SetFieldOp(node, field, value)` | Set a scalar field | `SetFieldOp(old value)` | Field exists, type is valid, a required field isn't cleared |
+| `ReplaceRootOp(spec)` | Replace the whole `ui` node | `ReplaceRootOp(old snapshot)` | `spec.kind == "ui"`, `spec.id == 0`, every other id in `spec` is set and not present in the document (except 0) |
+
+Rules for entries: (a) an id removed inside an entry MUST NOT be inserted again in the same entry (use `MoveNodeOp`); `ctx.do` enforces this. (a2) **Freshness** (every id an `InsertNodeOp`/`ReplaceRootOp` inserts came from `ctx.alloc()` in this entry) is checked by `ctx.do` on forward application only. `mutate`, undo and redo never check it, because undo re-inserts old ids and redo re-applies ids allocated earlier. (b) Each op bumps `revision` by one. (c) `apply(op)` then `apply(inverse)` restores `fingerprint()` exactly (§13).
+
+### 3.4 Placement
+
+`commands/placement.py` defines the targets in visual terms: `InBoxLayout`, `InGridCell` (with `mode` cell, insert_row or insert_column), `InFormRow` (role label, field or spanning, with `insert_row`), `InContainer` (pages, panes, free children with optional geometry), `AsMainWindowPart` and `InActionList`. The planner converts these into op indexes. For a move inside one list, the placement index is the position the user saw before the drag. The planner adjusts it to the post-removal index. Putting this adjustment in one place removes the spike's scattered `if src_index < index: index -= 1`.
+
+### 3.5 The command catalog
+
+Owner WP in brackets. The stub `commands/catalog.py` has the fields and full semantics. Every command rejects stale ids.
+
+| Command | Parameters | Key semantics | Selection after | Merge key |
+| --- | --- | --- | --- | --- |
+| `InsertFragment` [M1.2] | placement, fragment, auto_layout | Covers insert, paste, duplicate, Alt-drag clone, palette drop and templates. Names get the suffix rule. References inside the fragment follow renames; references to outside names stay (LOGIC 2.13). A connection whose both ends are in the fragment is kept and rewritten. A connection with one end outside the fragment is kept only when that end does not name a widget on the target, and then it is FB014. An outside end that already exists on the target is dropped. Custom-widget and resource declarations are merged. An empty container with no layout gets a QVBoxLayout first (pain 1). A container that already has free children keeps them and takes the paste as another free child | inserted top-level nodes | — |
+| `DeleteNodes` [M1.2] | ids | Descendants of other deleted ids are ignored. Box layout items are removed; **grid and form cells are left empty**. The same entry removes native references: connections, tab stops, zorder, addaction refs, buddy cstrings, `buttonGroup` attributes. **Logic references are kept** and become FB101 | nearest surviving sibling, else parent | — |
+| `MoveNodes` [M1.2] | ids, placement | Moves keep ids. A grid move changes only the moved items' cells (pain 21). Emptied layouts stay | moved | `("move", ids)` |
+| `Wrap` [M1.2] | ids, container_class or None, layout_class, cells | Siblings only. The new container takes the first item's place. Order is kept. `cells` comes from the live geometry for grids | new container or layout | — |
+| `Unwrap` [M1.2] | id | Children go back to the parent layout at the container's position, in visual order. Rejected for the root and for page containers | children | — |
+| `ApplyLayout` [M1.2] | widget, layout_class, order, cells | Lay out a container that has no layout. Removes child `geometry` | layout | — |
+| `BreakLayout` [M1.2] | layout, geometries | Keeps sizes (R3 41, pain 5), using geometries measured from Qt. A nested layout's items move up instead | owner | — |
+| `MorphLayout` [M1.2] | layout, new_class | Designer morph rules (R3 54) | layout | — |
+| `MorphWidget` [M1.2] | id, new_class | Keeps properties the new class has (class table) and reports the ones it drops | widget | — |
+| `SimplifyGrid` [M1.2] | layout | Removes empty rows and columns | layout | — |
+| `AdjustSize` [M1.2] | id, size | Size is measured as the sizeHint | — | — |
+| `SetZOrder` [M1.2] | parent, order | `order` comes from `child_stack_order`, the real child list (pain 24). Document order clears the field | — | — |
+| `SetProperty` [M1.2] | owner, name, value or None, kind, stdset, merge_token | None means Reset (removes the entry). A semantically equal value is a no-op. Rank insertion | — | `("set_property", owner, kind, name)` |
+| `SetPropertyMany` [M1.2] | owners, … | R3 147. Owners without the property are skipped and reported | — | `("set_many", owners, kind, name)` |
+| `Rename` [M1.2] | id, new_name | Rejects invalid names, keywords, names starting with `cbcs`, reserved formula names and names already used (FB011, FB106, FB010). Updates every native reference, and `<class>` when the old root name matched it. Participants add logic ops. User code isn't touched | — | — |
+| `SetLayoutCell` [M1.2] | item, row, column, spans, alignment | Rejects grid overlaps and form cells that are taken. | — | — |
+| `SetLayoutStretch` [M1.2] | layout, field, value | Comma-list text | — | `("layout_stretch", layout, field)` |
+| `SetGeometry` [M1.2] | id, rect | Free widgets and resizing the root page edge | — | `("geometry", id)` |
+| `MovePage` [M4.2] | container, from, to | Keeps the current page current | page | — |
+| `InsertPage` [M3.2, M4.2] | container, index, fragment or existing | Writes the page title where the container's loader reads it: tab `title` attribute, toolbox `label` attribute, wizard `title` property on a `QWizardPage`, MDI `windowTitle` property, stacked none (UX-CONT-001). New page gets a vertical layout. Keeps `currentIndex` on the same page | new page | — |
+| `DeletePage` [M4.2] | container, index | Deletes the page and its subtree with DeleteNodes reference rules; keeps `currentIndex` on the same page, else clamps | next page, else previous, else container | — |
+| `SetItems` [M4.4] | widget, items, rows, columns, merge_token | Replaces the whole item list. One item-editor session merges into one entry (UX-ITEM-007) | — | `("set_items", widget)` with the session token |
+| `CreateAction`, `AddActionRef`, `CreateMenu` [M5.1] | spec/placement/name/title | "Type here", dragging an action onto a toolbar (pain 17) | new node | — |
+| `AddConnection`, `EditConnection`, `MoveConnection` [M6.1a] | fields | Signatures are normalised the way Designer writes them. Used by `SetEventSteps` planning and by tests; the UI goes through `SetEventSteps` | connection | — |
+| `SetEventSteps` [M6.1a] | sender, signal_name, steps or (), merge_token | §15.6: one event's steps; the planner chooses native connections or a `cbcsOn<Signal>` list, keeps unchanged connection elements and hints, adds `<slots>` declarations, keeps `cbcsLogic` in step. Rejected under FB402 and for layouts and spacers | — | `("event", sender, signal_name)` |
+| `MergeEventStorage` [M6.1a] | sender, signal_name | FB404's fix (§15.6) | — | — |
+| `SetTabStops` [M5.6] | names or None | None removes the element | — | — |
+| `SetBuddy` [M5.6] | label_widget, target | Sets the `buddy` cstring | — | — |
+| `SetButtonGroup` [M5.1] | buttons, group or None | Creates the group, or removes it once it's empty | — | — |
+| `SetFormSlots` [M6.2b] | signals, slots | `<slots>`. Removing a declaration never touches the window file | — | — |
+| `Promote`, `SetCustomWidget` [M5.4] | ids, class_name, declaration | Demoting removes declarations nobody uses | — | — |
+| `SetResourceIncludes` [M5.2] | locations | — | — | — |
+| `SetFormField` [M5.5b] | field, value | Form settings, includes | — | — |
+| `ReplaceDocument` [M2.2] | text, reason | §3.10 | matched by name | — |
+| `SetLogic` [M6.0b] | owner, key, text or None, merge_token | Uses the logic codec (§15.4): stores the canonical text, rejects text the codec can't read for a typed key, and text outside XML `Char`. Keeps `cbcsLogic` in step. Rejected with FB402 when the logic is read-only (§15.7) | — | `("logic", owner, key)` |
+
+Compound gestures are **transactions** of these commands, not new commands. Examples: "Pair labels with their fields", a double-click stub plus its connection (M6.2b, where the user-file edit is a paired text edit outside the log; see §16.3), and a drop that also wraps.
+
+### 3.6 Participants
+
+`RenameParticipant.rename_ops(doc, renames, scope)` and `.references(doc, name)`, plus `DeleteParticipant.delete_ops`. These are discovered from `participants/` and sorted by `participant_id`. M6.0b adds the formula, step-target and error-label participants (§15.8). Participants are pure and add ops to the same entry.
+
+- `renames` is a tuple of `(old, new)` pairs applied **simultaneously** (one pass, so `x→x_2` and `x_2→x_3` in the same map never chain). `scope: Optional[FrozenSet[NodeId]]` limits the rewrite to owners inside the set; None means the whole document.
+- `Rename` calls participants with a one-pair map and `scope=None`.
+- `InsertFragment` computes its **whole** rename map before inserting, against `doc.names()` plus the names it has already chosen for this fragment. It rewrites native references inside the fragment specs before insertion, then calls participants with `scope` = the inserted subtree ids, so references to the original nodes outside the fragment stay unchanged.
+- **Shared names (FB010).** When the old name is used by more than one node, references are ambiguous. `Rename` renames the node and rewrites **no** references; `DeleteNodes` removes **no** references to that name. Both add the existing FB010 to the result so the UI can say so.
+- `Rename` also rewrites `buttonGroup` attribute values on buttons when a button group is renamed.
+
+### 3.7 Ownership
+
+One `FormSession` per tab owns: the `UiDocument`, the `IdAllocator`, the `CommandLog`, the `SelectionModel`, the `DiagnosticsStore` and the `SerializationCache`. Sessions never share any of these. The shell already de-duplicates tabs by path, so one file is never open in two sessions. The clipboard is process-wide and carries fragment XML (`writer.write_fragment`) plus the MIME type `application/x-cbcs-form-fragment`. It never carries node objects or ids. Cross-form paste is `read_fragment` followed by `InsertFragment`.
+
+### 3.8 Execution rules
+
+- **No-op.** A command or transaction that applies zero ops pushes nothing and emits nothing.
+- **Failure.** Any exception rolls back every op of the entry (or the whole transaction), emits nothing and re-raises. Non-`CommandRejected` exceptions are logged and wrapped with FB999. The document is byte-identical to its state before.
+- **Merge.** Merge into the top entry only when all of these hold: same non-None `merge_key()`, same non-None `merge_token`, not inside a transaction, the top entry isn't the save point, and the redo stack is empty. The merged entry is: `ops = top.ops + new.ops`, `inverse_ops = top.inverse_ops + new.inverse_ops` (undo still applies them in reverse), `commands = top.commands + (new,)`, `allocated = top.allocated + new allocated`, `selection_before` from the top entry and `selection_after` from the new command. **Net nil** means every touched `(owner, kind, name)` property and every touched `(node, field)` now equals the value its **first** inverse op restores, and the entry contains no insert, remove, move or replace op. A net-nil entry is popped, and the ChangeSet is still emitted.
+- **Gesture continuation.** `log.execute(cmd, continue_gesture=True)` opens an entry that absorbs every later command carrying the same non-None `merge_token`, **whatever its `merge_key()`**, under the same other conditions (no transaction, not the save point, empty redo stack). That serves UX-FORML-002: the drop and the label text typed right after it are one undo step. The first command with a different or absent token closes the gesture.
+- **Gesture tokens.** The Qt side sends one token per gesture: from an editor getting focus to its commit, a scrub drag, a handle drag, a page-edge drag, a drop that continues into in-place editing, and a **nudge burst**: repeated Alt+arrow moves (or arrow nudges) where each press comes within **1 s** of the previous press (UX-NUDGE-001's window; the **UI** owns that timer). The engine has no timers.
+- **Transactions.** `with log.transaction(label):` joins nested transactions into the outermost one. Committing produces one entry and one ChangeSet. **Every Qt-measured parameter** (`Wrap.cells`, `BreakLayout.geometries`, `ApplyLayout.order`/`cells`, `AdjustSize.size` and any other) is measured **before the transaction opens**, because realize doesn't run until commit. A planner that needs measurements of nodes created or moved earlier in the same transaction raises `CommandRejected` instead of guessing.
+- **Re-entrancy.** `execute`, `undo` and `redo` raise `ReentrantCommandError` when called from a ChangeSet listener. Listeners schedule follow-up work on the Qt event loop.
+- **Save point.** `is_dirty()` is O(1). Undoing past the save point and then executing makes the save point unreachable. `mark_saved()` moves it. When the undo limit (2000) drops the save-point entry, the save point becomes unreachable.
+- **Undo, redo and selection.** Undo restores `selection_before`; redo restores `selection_after`. Both are filtered to ids that are present.
+
+### 3.9 Invariants (tested, §13)
+
+1. **Single writer.** Every document mutation goes through `CommandLog`. Nothing else imports `mutate`.
+2. **Replay equals live.** `replay(initial_text, log.entries())` reproduces the recorded ops exactly, and `fingerprint()` equals the live document's (ids included).
+3. **Undo-all equals original.** Undoing every entry restores `fingerprint()` and `write_ui` bytes to the state after the read.
+4. **Redo-all equals final.** Redoing everything afterwards restores the final fingerprint.
+5. **Round trip per op.** For every op type and random preconditions, applying the op and then its inverse is the identity.
+6. **Events are complete.** A `ShadowTree` listener that uses only ChangeSets to maintain parent/slot/children and property maps equals the document after every entry, undo and redo (§4.4).
+7. **Atomicity.** A failed command or transaction leaves the bytes unchanged and emits zero ChangeSets.
+
+### 3.10 ReplaceDocument
+
+This covers View XML commit, draft restore, local-history restore, and external reload ("take theirs"). It parses with the reader. On a parse error it raises `CommandRejected` carrying `UiReadError` (code, line, column), and the caller keeps both texts. On success it applies one `ReplaceRootOp` with fresh ids, and the inverse holds the old snapshot. So undoing a View XML edit, a restore or a reload is one step. Selection is carried across by object name, with the root as fallback.
+
+External reload of a clean tab is `ReplaceDocument(reason="reload")` followed by `mark_saved()`. Of a dirty tab it's the three-way choice: keep mine (no change), take theirs (the reload path), or compare (open a diff). This is M2.2's UI.
+
+---
+
+## 4. Change events
+
+### 4.1 Schema
+
+The shape is in `events.py`. Changes are `NodeInserted`, `NodeRemoved`, `NodeMoved`, `PropertyChanged`, `FieldChanged` and `DocumentReplaced`. `NodeInserted` and `DocumentReplaced` carry `spec: NodeSpec`, the subtree taken from the op (do, redo) or from its inverse (undo), shared by reference, so a listener can rebuild from ChangeSets alone. Each carries a `category`: `node`, `property`, `layout`, `item`, `page`, `action`, `connection`, `logic`, `form`, `name` or `document`. A `ChangeSet` adds the derived sets `removed`, `added`, `structure_dirty`, `property_dirty` (net), `renamed` and `categories`, plus `replaced`. They're computed once per set, in O(changes).
+
+### 4.2 Category rules (deterministic, from the op and the document at apply time)
+
+- `PropertyChanged` on a `cbcs*` name is `logic`, except the layout keys in `logic.storage.CBCS_LAYOUT_KEYS` (`cbcsSplitterSizes`), which are `property`. On an `item` or `header` owner it's `item`. Otherwise it's `property`.
+- Insert, remove or move of `item`/`header` is `item`. Of a `widget` whose parent is a page container's `children` slot it's `page`. Of `action`/`actiongroup`/`actionref` it's `action`. Of `connection` it's `connection`. Of `customwidget`/`include`/`resource`/`buttongroup` it's `form`. Everything else is `node`.
+- `FieldChanged`: `object_name`/`name` is `name`. Layout item cell and alignment fields, layout stretch fields, and a layout's `class_name` are `layout`. `ui` fields are `form`. Connection fields are `connection`. A widget's `class_name` (morph) is `node`. `zorder` is `node`.
+
+### 4.3 Delivery and batching
+
+- One ChangeSet per committed entry: a single command, a merged command or a transaction. One per undo and one per redo. Origin is `do`, `undo` or `redo`. A transaction never emits partial sets.
+- It's delivered synchronously after the entry has been applied in full. The document is consistent and `validate()` passes.
+- Order of delivery: ascending priority (`PRIORITY_MODEL_CACHES` 0, `SELECTION` 5, `DIAGNOSTICS` 8, `REALIZE` 10, `HIT_INDEX` 20, `VIEWS` 30, `SHELL` 40), then subscription order.
+- Listeners MUST NOT mutate (they get `ReentrantCommandError`), MUST be O(changes) or schedule heavier work for later, and MUST treat `DocumentReplaced` as "rebuild everything". A listener exception is logged and doesn't stop the other listeners. The realizer recovers on its own (§5.2).
+- Subscribe with `log.subscribe(fn, priority=...)`, which returns a `Subscription` with `close()`. `FormSession.dispose()` closes everything.
+
+### 4.4 Consistency guarantee
+
+Because changes come from ops one-to-one, replaying a ChangeSet stream on a mirror rebuilds the document's structure. That's the test in §3.9 item 6. It's also what lets realize, the outline and the hit index trust events without rescanning the form.
+
+---
+
+## 5. Realize patch protocol
+
+### 5.1 Mapping events to patches
+
+| Change | Patch |
+| --- | --- |
+| `PropertyChanged` on a widget, layout, spacer or action | Re-read the **current** entry from the document and apply it. Patching never uses the event's `new` value, so it's idempotent and safe in any order. A removed entry restores the class-table default. Volatile defaults come from a cached fresh instance of that class, created once per class per process |
+| Insert, remove or move (any category except connection and form) | Add the parent to the dirty-container set |
+| `FieldChanged` on a layout item cell or alignment, or a layout stretch field | Reconcile that layout |
+| `FieldChanged` `class_name` (morph) | Rebuild that node's object and reuse its child widgets from the pool |
+| `FieldChanged` `object_name`/`name` | `setObjectName`, then re-resolve buddies that name either the old or new name |
+| Connections, tab stops, form slots, includes | Nothing (the canvas never wires connections and never sets focus order) |
+| Custom widget `extends` changed | Rebuild the widgets of that class |
+| `FieldChanged` `zorder` | Restack that parent's child widgets (`raise_()` in `child_stack_order`) |
+| Attribute change on a page (`title`, `label`, `icon`, `toolTip`, `whatsThis` of a tab, toolbox or wizard page) | Patch the parent container's tab/item text, icon or tip for that page index |
+| `PropertyChanged` `cbcsSplitterSizes` on a QSplitter | `setSizes(...)` after the splitter's panes are in place (§9.3) |
+| `DocumentReplaced` | `build()` |
+
+### 5.2 Reconcile and fallback
+
+Reconcile runs in three phases per ChangeSet:
+
+1. **Detach moves.** Every object named by a `NodeMoved` is detached into a pool keyed by node id, wherever it currently is. This matters when a node moves into a container that comes earlier in the top-down order than the one it left.
+2. **Reconcile structure.** For each id in `structure_dirty`, top-down by depth: detach that container's remaining live children (layout, page container, menu, or layout-less widget) into the pool, then re-attach the model's children in model order, taking objects from the pool and constructing only ids that aren't in it.
+3. **Destroy and purge.** Destroy pooled objects whose ids are in `changeset.removed`, then remove every id in each `NodeRemoved.subtree` from the id maps (descendants included, not only the subtree root).
+
+That's the spike's approach of moving live widgets instead of rebuilding a subtree, which was **kept**. It's now driven by `structure_dirty` instead of a scan over the whole form. Main-window chrome (menubar, menus, toolbars, docks) is reconciled the same way, per container. The spike's "structural edits to a main window rebuild the whole canvas" is **replaced**.
+
+Fallback: any exception inside a patch rebuilds the nearest ancestor widget subtree and increments `PatchStats.fallback_rebuilds`. If that rebuild also fails, it runs `build()`. Fallbacks are logged with the change that caused them (FB901 in debug). The standard command set MUST run with zero fallbacks (§13).
+
+### 5.3 Identity mapping and lifecycle
+
+- Every realized QObject carries the dynamic property `_cbcsNodeId`. The `Realizer` keeps id-to-object dicts, so `widget_for`, `layout_for` and `object_for` are O(1). `node_for(obj)` walks up to the nearest tagged ancestor, which covers internal children such as a spin box's line edit.
+- `Realizer.refused(node_id, name) -> Optional[str]` (M4.2, for UX-PED-009) is O(1): the reason the canvas widget did not take the value of `name`, set when `setProperty` returns False for a real Qt property or the setter raises, cleared when the property is next applied or the node is removed. `problems()` stays the flat build log. A reset to a fresh widget's value passes enums and flags as their number, which PySide6's `setProperty` requires.
+- Removed objects are destroyed **immediately** through an immediate-delete helper in `app/qt` (M2.1 adds it, wrapping shiboken's delete). Never `deleteLater`: the spike found deferred deletes never ran under nested `processEvents`, and memory grew by 30 MB.
+- Realized widgets never receive input or focus. They get focus policy `NoFocus` and `WA_TransparentForMouseEvents`, and the overlay gets every event. There are no per-widget event filters (the spike measured about 20 ms per open for them).
+- The realizer never connects `<connections>`. It never imports or runs user code, generated modules, `*_rc.py` or Designer plugins. Promoted widgets become their `extends` class, with a "custom" badge drawn by the overlay. `:/` paths resolve through `codegen.resources.compile_resource_tree` registered with `QResource.registerResourceData`.
+
+### 5.4 Runtime palette isolation (MUST)
+
+The canvas shows the shipped app's look, never the chrome theme (`qtside/theme/runtime.py`):
+
+1. The form root lives in a `QGraphicsProxyWidget`. It's never a QWidget descendant of the main window, so `window.setStyleSheet(...)` doesn't cascade into it.
+2. The scene gets `setStyle(Fusion)` and `setPalette(Fusion standard palette)`. No realized widget gets a chrome palette, font or style sheet. The form's own `styleSheet` property is applied as authored.
+3. While the feature is enabled, the application-level style sheet may contain only `QToolTip` rules. Today that's `set_app_tooltip_style_sheet`. A test parses it.
+4. A shell theme switch never touches the scene. A test compares the realized palette's window and text colors before and after a dark/high-contrast switch with a reference realized in a bare QApplication.
+
+### 5.5 Hit-test index
+
+The index is Qt-free logic in `engine/query/hit_index.py`, fed by the `qtside/canvas/geometry.py` `LiveGeometrySource`.
+
+- **Invalidation is O(1)**: it bumps an epoch. Triggers are every ChangeSet (subscriber at `PRIORITY_HIT_INDEX`), zoom, root resize, page switch, scroll-area scroll, splitter move, text-size preview, style/palette/DPI change, realize rebuild, and showing or hiding a realized widget. Nothing else invalidates it.
+- **Refresh is lazy.** It runs only in `ensure_fresh()` at the start of a pointer event, a keyboard navigation that needs rectangles, or the view's `UpdateRequest`/pre-paint hook. **`settle()` never runs inside `paintEvent`** (activating layouts there would schedule another paint); the overlay's `paintEvent` only reads an index that was made fresh before the paint. It never runs in a listener or on a timer. A refresh is `settle()` (synchronous root-layout activation) followed by one pre-order walk that adds up parent offsets (no per-widget `mapTo`). Budget: 4 ms at 300 widgets.
+- **Query** goes O(depth × siblings) down the hit tree and returns the deepest visible entry plus its path. That replaces the spike's linear `hits` list.
+- **Drag** state is set through the controller seam (plan gate 10). The index isn't invalidated mid-drag except by zoom or scroll.
+
+---
+
+## 6. Selection and focus
+
+### 6.1 The model
+
+There's one `SelectionModel` per session, shared by canvas, outline and inspector. No view keeps its own selection.
+
+- `SelectionState(ids, current)`: ids are ordered and unique, all present in the document. `current` is None exactly when `ids` is empty, and otherwise is a member of `ids`. An empty selection means the inspector shows the form (spike DESIGN: never empty).
+- Mixed kinds are allowed. The inspector shows the properties common to all selected nodes. Rubber band selects widgets only.
+- Every change carries a `SelectionSource`: canvas, outline, inspector, command, undo, prune or program.
+
+### 6.2 Rules
+
+- Selection by itself isn't undoable. Each entry snapshots it, so undo and redo restore it (O-UX check 4).
+- `apply_changeset` runs at `PRIORITY_SELECTION` (5): the **state** is updated there, so later listeners read the new selection. It restores a snapshot when one applies, otherwise it prunes removed ids. If `current` was removed, it moves to the nearest surviving ancestor.
+- Selection **subscribers** are notified after the last log listener for that ChangeSet (`PRIORITY_SELECTION_NOTIFY`, 100), so realize (10), the hit index (20) and views (30) have already run. Changes made outside a ChangeSet (clicks) notify immediately.
+- Unknown ids passed to `set` are dropped silently, since stale UI is normal.
+- Hover is local to each view and isn't part of the model.
+
+### 6.3 Focus contract
+
+- Keyboard focus belongs to exactly one of: the canvas view, the outline tree, an inspector editor, the XML editor, or a popover.
+- **A selection change never moves keyboard focus.** Only the user's own input in a view, or an explicit focus command, moves it: Shift+F2 goes to the inspector name field, Alt+B to Behavior, Esc from the inspector returns focus to the view that had it last.
+- Renaming in the outline keeps focus in the outline (pain 25). Committing an inspector edit keeps focus in that editor. Undo and redo keep focus where it is.
+- **Reveal:** on a change from source X, every other view reveals `current`. The outline expands and scrolls to it. The canvas scrolls it into view only for sources outline, program or undo. The inspector shows `current`. The view that made the change doesn't re-scroll itself.
+- The inspector rebuilds at most once per event-loop turn (coalesced). The outline and canvas overlay update synchronously within budget (§12).
+
+---
+
+## 7. Diagnostics
+
+### 7.1 Record
+
+`FormDiagnostic(code, severity, message, location, source, fixes)` and `key`. `DiagnosticLocation(node_id, object_name, property, rule_path, span, line)` points at a node, a property or attribute, a path inside logic JSON (`("cbcsValidate", 1, "pattern")`) or a connection index, a span inside a formula, and the XML line. `QuickFix` holds either an engine `command` (run through the log; if planning rejects it the fix is shown disabled) or a Qt-side `action` id (`open-raw`, `go-to-code`, `refresh-schema`, `create-method`…). Messages use LOGIC_DESIGN §2.9's plain voice.
+
+### 7.2 Codes
+
+The ranges are in `diagnostics.py`. Codes 101–402 come from LOGIC_DESIGN §2.9 and keep its numbers and meanings. New codes:
+
+| Code | Severity | Meaning |
+| --- | --- | --- |
+| FB001 | Error | Malformed XML (line, column). Blocks the visual editor; the file opens as text |
+| FB002 | Error | Not a `<ui>` document, or no root widget. Blocks the visual editor |
+| FB003 | Warning | `<ui version>` isn't 4.x |
+| FB004 | Error | DOCTYPE or entity declaration refused. Blocks the visual editor |
+| FB005 | Info | A value was kept exactly as written (shown read-only) |
+| FB006 | Info | An unknown element was kept as written |
+| FB007 | Warning | A property was given twice; the last one is used, the earlier one kept |
+| FB008 | Error | File too large or too deeply nested. Blocks the visual editor |
+| FB010 | Error | Two objects share a name |
+| FB011 | Error | A name isn't a valid Python identifier |
+| FB012 | Warning | A buddy names a missing widget |
+| FB013 | Warning | A tab stop names a missing widget |
+| FB014 | Error | A connection's sender or receiver is missing |
+| FB015 | Warning | A connection's signal or slot isn't on that class (class table; user slots go to FB2xx) |
+| FB020 | Warning | Grid items overlap |
+| FB021 | Warning | A widget sits outside the layout of a laid-out container (the broken-layout marker, R3 34) |
+| FB022 | Info | An empty layout |
+| FB023 | Warning | Two items share a form cell |
+| FB030 | Warning | A promoted class is used but not declared (Info when declared but unused) |
+| FB106 | Error | A widget uses a name reserved for formulas (`form`, `record`, `window`, `cbcs…`, function names). LOGIC 4.5 said FB101; FB101 stays "unknown name in a formula" |
+| FB203 | Info | (LOGIC §2.9's meaning; severity Info, UX D15) The method is still empty |
+| FB208 | Warning | An `on_{x}_{y}` method looks auto-connected but `{x}` or `{y}` doesn't match (UX-CODE-011) |
+| FB209 | Info | The window file couldn't be read or has a syntax error, so handlers aren't checked |
+| FB210 | Warning | The window file has no window class |
+| FB211 | Info | Connect slots by name is off and `on_` methods exist |
+| FB212 | Info | A method comes from a base class that can't be read |
+| FB213 | Error | A called method is a staticmethod, classmethod or property |
+| FB402 | Warning | (LOGIC §2.9's meaning; severity Warning, UX D15) Logic from a newer version, or an unreadable marker; logic is read-only |
+| FB403 | Error | A step verb this build doesn't know; the event generates nothing |
+| FB404 | Warning | An event stored as native connections and as a step list |
+| FB405 | Error | A step acts on a widget that isn't on the form |
+| FB501 | Warning | `ui_<name>.py` had been edited by hand; a copy was saved before regenerating |
+| FB502 | Error | A construct can't be generated (the node is named) |
+| FB503 | Error | A resource file is missing |
+| FB504 | Warning | A promoted class's header isn't an importable Python module path |
+| FB505 | Warning | A generated file is out of date with its form |
+| FB506 | Info | The form isn't part of a project, so no Python is generated |
+| FB507 | Error | The form's file name can't be a Python module name |
+| FB508 | Warning | A `<connection>` names a signal the sender's class doesn't have. A plain Qt sender's line is left out; a `Gui::`, promoted or C++ `::` sender keeps uic's line (§9.3) |
+| FB509 | Error | A generated file could not be written |
+| FB601 | Error | The preview process stopped unexpectedly (stderr tail attached) |
+| FB602 | Warning | A custom widget couldn't load in the preview; the base class was used |
+| FB603 | Error | Preview protocol version mismatch |
+| FB604 | Error | An exception happened in Try mode (traceback mapped to the rule) |
+| FB605 | Warning | Preview is off after repeated crashes (Retry) |
+| FB901 | Info | A realize fallback happened (debug builds only) |
+| FB999 | Error | An internal error in a command (shown as a status message, logged) |
+
+### 7.3 Rules
+
+- **No diagnostic blocks saving** (test). Only FB001, FB002, FB004 and FB008 can block **opening the visual editor**, and the file then opens as text.
+- A logic error generates no code for that rule. The rest of the form generates and runs (LOGIC 2.9).
+- **Producers** publish per `source` into `DiagnosticsStore`, which replaces atomically. Cheap producers (names, references, layout sanity) run synchronously at `PRIORITY_DIAGNOSTICS` and are O(changed): they work from `added`, `removed`, `renamed` and `property_dirty`. Expensive producers (formula type-check, parsing handler files, schema checks) are coalesced to idle by the Qt side. Full revalidation happens only on open and on `DocumentReplaced`.
+- Codes are declared once in `diagnostic_codes/`. Emitting an undeclared code fails a test.
+
+### 7.4 Reaching the Problems panel
+
+`integration/problems_bridge.py` maps each record to `CodeDiagnostic`:
+
+- code: the FB code
+- severity: the same value
+- file_path: the `.ui` path
+- line_number: `location.line` or 1. The line comes from the last serialization's line map, or the reader's
+- message: `"<object>: <message>"`
+- detail: `to_problem_detail`, which carries `fb_key`, `fb_object`, `fb_property`, `fb_rule_path` and `fb_source`, **never the node id**
+
+The bridge pushes through `ProblemsController.apply_lint_diagnostics_result`, coalesced to one push per event-loop turn. `.ui` files aren't linted, so the form owns that path's slot. A double-click calls `TabSurface.reveal(line, detail)`, which selects the node by `fb_key` (falling back to the object name) and opens the property or rule.
+
+---
+
+## 8. Serialization
+
+### 8.1 Reader
+
+`read_ui(text, allocator=..., source_path=...)` returns `ReadResult(document, diagnostics, line_map)`, or raises `UiReadError(code, message, line, column)`.
+
+- It uses `xml.parsers.expat` directly: positions for every element, faster than building an ElementTree first, and DOCTYPE and entity declarations refused (FB004). Inputs over 16 MB or nested deeper than 256 levels are refused (FB008). A leading BOM is ignored. CRLF and CR are accepted.
+- Whitespace-only text between elements is ignored. Text in value leaves is exact (§2.4.2).
+- It follows the preservation table in §2.3 and the lossless parse rule in §2.4.1.
+- **Fuzz contract:** for any input string, `read_ui` returns or raises `UiReadError`. Nothing else, and no hang: it's linear in the input.
+
+### 8.2 Writer byte rules (`write_ui`, MUST)
+
+1. The first line is `<?xml version="1.0" encoding="UTF-8"?>`. Line endings follow the Appendix E "Line endings" row. The file ends with `</ui>\n`. There's no trailing whitespace on any line outside text content (text content is exact, §2.4.2).
+2. Indentation is one space per level, Designer's QXmlStreamWriter auto-format.
+3. Element order follows `schema.write_order`, with opaque children after their anchor (§2.3). Attribute order follows `schema.attr_order`, then unknown attributes in input order.
+4. *(Provisional until M0.4b.)* An element with no content is written `<x/>`. Designer writes empty strings as `<string/>` and `<string notr="true"/>` (verified by the gate reviewer). Elements Designer writes through `writeTextElement` with empty text come out as `<x></x>`. The writer keeps one table, element by element, of which empty form to use; M0.4b fills it from the corpus (see the table below).
+5. Escaping: in text and attributes, `&`→`&amp;`, `<`→`&lt;`, `>`→`&gt;`, `"`→`&quot;` (QXmlStreamWriter's set). In attributes, tab, LF and CR are also written as `&#9;`, `&#10;`, `&#13;`. A CR in **text** is written as `&#13;` so it survives the reader's newline normalisation; that's a deliberate deviation from Qt and goes on the M0.4b diff allowlist. Non-ASCII is written as raw UTF-8, never as character references. This **corrects LOGIC_DESIGN §6.3**, which said `>` is left unescaped. Designer files contain `&lt;html&gt;…`. `SetProperty`, `SetPropertyMany` and `SetLogic` reject (`CommandRejected`) any text containing characters outside the XML 1.0 `Char` range, so the writer never has to emit an unloadable file.
+6. *(Provisional until M0.4b.)* Numbers go through `numfmt`. Ints are plain. `<double>` and double-valued children are `format(v, ".15f")` (Designer's `'f', 15`). `<float>` is likely 8 decimals, not 15, so `numfmt` has separate `format_double` and `format_float` functions. How `-0` is written is pinned by M0.4b (provisionally `0.000000000000000`). Booleans are `true`/`false`. No locale and no `str(float)` anywhere in the writer.
+7. Logic JSON text is written exactly as the codec produced it (LOGIC 6.3 canonical form). The writer doesn't reformat it.
+
+**M0.4b must pin** (rules 3, 4 and 6 and §2.4.3 stay provisional until each row has a corpus-backed answer and a writer test):
+
+| Question | Provisional answer |
+| --- | --- |
+| Empty form for each element (`<x/>` or `<x></x>`), per element and per attribute set | `<string/>`, `<string notr="true"/>` verified; others per corpus |
+| `<float>` precision | 8 decimals |
+| `<double>` precision | 15 decimals |
+| How `-0` is written | `0.000000000000000` |
+| `DEFAULT_ENUM_STYLE` | `qualified` |
+| Whether Designer writes empty `<resources/>` and `<connections/>` | yes (kept through `present_wrappers`) |
+| Where Designer places `stdset="0"` `cbcs*` entries, and whether it keeps `notr` on them | after standard properties; `notr` kept |
+| Attribute order on `<property>` (`name`, `stdset`) and on `<string>` (`notr`, `comment`, `extracomment`, `id`) | as listed |
+
+### 8.3 Determinism (MUST; tested on macOS and Linux, under `C` and `de_DE`, with `PYTHONHASHSEED` 0, 1 and random)
+
+- `write_ui` is a pure function of document content. Ids are excluded.
+- No clock, no environment variables, no locale, no `hash()` and no set iteration in any output path. Sets are sorted before output.
+- Dicts are iterated only where insertion order is itself deterministic.
+- Double save gives identical bytes: `write(read(write(read(x)))) == write(read(x))`.
+- The same holds for codegen output, `*_rc.py` and IPC frames.
+
+### 8.4 Lazy serialization
+
+XML exists only when someone reads it, through `SerializationCache.text(doc)`, memoized by `revision`. The triggers are:
+
+| Trigger | How it reads |
+| --- | --- |
+| Save | `EditorTabState.current_content` → `FormContentSource.current_text()` |
+| Local-history snapshot | Same |
+| Draft autosave | The shell's lazy draft path: on debounce, if `content_source.revision()` changed since the last draft, read `current_text()` (§11.2) |
+| View XML | `session.text()` once, on entering XML mode |
+| Preview load of an external form | `session.text()` for `LoadForm.ui_xml` |
+
+Codegen works from the in-memory document and never re-reads the XML. A test (§13) runs 200 edits and asserts `serialize_count == 0`.
+
+### 8.5 Malformed input
+
+When a file won't open, the provider declines (§11). The file opens as text with an info bar: "This form can't be opened in the form builder: <reason> (line N)." The Problems panel gets FB001, FB002, FB004 or FB008. Leaving View XML with text that doesn't parse keeps XML mode with the same banner and keeps both versions (§11.2). A newer `cbcsLogic` makes the logic read-only (FB402). The layout stays editable, and the logic is written back untouched.
+
+---
+
+## 9. Codegen
+
+### 9.1 Entry points
+
+| Function | Input | Output |
+| --- | --- | --- |
+| `generate_form_module(doc, scope, source_bytes, options)` | Document, `FormScope`, `source_bytes: Optional[bytes]` (the exact `.ui` bytes just written; None for preview, which writes no source hash line), `CodegenOptions` (the uic flags relevant to Python, R3 322–330) | `CodegenResult(text or None, diagnostics, attribute_names, resource_modules, uses_freecadgui, header)` |
+| `render_header`, `read_header`, `is_hand_edited`, `is_stale` | — | Header handling (§9.2) |
+| `read_qrc`, `compile_resource_tree`, `render_rc_module` | `.qrc` text, a file reader | `ResourceTree` (also used for in-editor resources), `*_rc.py` text |
+| `render_window_class(doc, scope)` | — | The initial `<stem>_window.py` |
+| `plan_stub(window_source, …)` | User file text (parsed with `ast`, never executed) | `StubPlan(TextEdit, stub_text, method_name)` |
+| `LogicExpander.contribute(doc, ctx)` | — | `Contribution` (§9.4) |
+
+### 9.2 Header and hash scheme
+
+`render_header` gives the exact text. It's the LOGIC 7.1 banner plus three machine lines: `## cbcs-codegen: 1`, `## cbcs-source-sha256: <hex>` and `## cbcs-body-sha256: <hex>`. The body is every byte after the header. There are no timestamps and no Qt or host versions in the header, so it's deterministic across machines.
+
+- **Hand-edit detection.** Before overwriting, if the existing file's header is missing or its body hash doesn't match, the file is copied to `<project>/cbcs/form_builder/hand_edits/<name>.<body8>.py.txt`. The `.txt` suffix keeps it from being imported, linted or collected as Python. M2.4 adds `cbcs/form_builder` to the pruned subtrees in `app/packaging/payload_policy.py`, next to `cbcs/runs`, `cbcs/logs` and `cbcs/cache`, so it never ships. M2.3 also excludes `cbcs/form_builder/**` from lint, project search, pytest collection and Jedi indexing. Then it's overwritten and FB501 is raised with "Open the saved copy". User work is never lost.
+- **Staleness.** `is_stale(text, ui_bytes)` compares the source hash and the codegen version. Packaging (M2.4) flags FB505, and so does opening a form whose generated file is stale.
+
+### 9.3 Body shape
+
+- It's the shape `uic -g python` 6.8.3 writes: the same statement order and names, `retranslateUi`, `QMetaObject.connectSlotsByName` (unless `-a` or `connectslotsbyname="false"`), and form-slot connections written as `Form.method` exactly the way uic writes them (LOGIC 3.5).
+- **Imports** are `from PySide6.QtCore import (...)` and so on, the same as uic. They're never the FreeCAD `PySide` shim.
+- **FreeCAD `Gui::` classes** use the spike's guarded import, which was right and is kept: `try: import FreeCADGui as _cbcs_FreeCADGui` / `except ImportError: _cbcs_FreeCADGui = None`. A helper creates the widget through `FreeCADGui.UiLoader().createWidget(class, parent, name)` and falls back to the `extends` Qt class.
+- **Promoted Python classes** are imported from their header's module path (`from <header module> import <Class>`).
+- Resource modules are imported in uic style, subject to the import-style options.
+- Output is Python 3.9-parseable (`ast.parse(..., feature_version=(3, 9))`). This **corrects LOGIC 7.1 rule 4**, which said "Python 3.11". The plan's fixed decision says 3.9.
+- Node ids never appear in the output.
+- **Names that can't be generated.** An object name on disk that isn't a valid identifier, is a Python keyword, or clashes with `setupUi`, `retranslateUi` or a `_cbcs_*`/`cbcs_*` name gives **FB502 Error naming the node**. `text` is None and the old file on disk stays.
+- **String literals** use one deterministic rule that doesn't depend on the Python version's Unicode tables: `u"` + text + `"`, where `\` → `\\`, `"` → `\"`, LF → `\n`, CR → `\r`, tab → `\t`, other code points below U+0020 and U+007F → `\xNN`, surrogates U+D800–U+DFFF → `\uNNNN`, and every other character (all other non-ASCII included) written as raw UTF-8. Never `repr()`.
+- **Splitter sizes.** A QSplitter with a `cbcsSplitterSizes` dynamic property (comma-separated ints, `stdset="0"`, written through plain `SetProperty`, not `SetLogic`; it doesn't add `cbcsLogic`) gets `self.<splitter>.setSizes([...])` at the end of `setupUi`, before `retranslateUi`, emitted by the core through a fixed helper. This is the stored-sizes mechanism UX-SPLIT-002 refers to: release of a handle drag is one `SetProperty`, and double-click writes equal sizes measured by the Qt side. The uic oracle ignores this one call.
+- Every generated output is also `compile()`d under the real Python 3.9 AppRun in the gate runner (`testing/run_form_builder_checks.py`, lane `syntax-py39`), in addition to `ast.parse(feature_version=(3, 9))`.
+- The oracle is tree equality with uic's module on every corpus file, plus a reported text diff (M1.3).
+
+### 9.4 Logic expansion hooks
+
+The core owns everything uic emits, which covers Level 1 and Level 2 native connections. Expanders, discovered from `codegen/expanders/` and ordered by `order` (built-ins: 100 step lists, 200 state rules and values, 300 checks, 400 data), contribute `imports`, `setup_lines`, `methods` and `helpers`. When any expander contributes setup lines, `setupUi` ends with `self._cbcs_setup(<form>)` after `connectSlotsByName`. Generated names start with `cbcs_` or `_cbcs_`. Each method begins with a comment that quotes its source rule (`source_ref`), so tracebacks map back to the rule. Helpers come from a fixed table, are emitted once each, in table order. A rule that errors contributes nothing and reports a diagnostic. Expanders never raise. `Method.params` (M6.0s, default empty) lets a generated method take parameters (`*args` for step lists, §15.6).
+
+### 9.5 Scope, window class, stubs
+
+- Generation runs only when `FormScope.generates` is true: the form is under `<project>/forms/` or adopted (`classify_form`). External forms are edited without writing anything beside them (FB506 Info).
+- The window class file is created once (`render_window_class`) and never overwritten. It uses an absolute import from the project root, and `forms/__init__.py` is created when it's missing.
+- Stub insertion (M6.2b) is a line-boundary `TextEdit` applied through the code bridge (§16.2, §16.4): the open code tab's document when there is one (so it lands in that tab's undo), or written to the file otherwise.
+- The M6.2b compound "write code for" pairs a log transaction (the step) with that text edit. Undo removes the stub only while its text still hashes to `stub_hash` (§16.3, LOGIC 2.13).
+
+### 9.6 Save pipeline (integration, M2.2)
+
+1. Get `current_text()` and atomically write the `.ui`.
+2. `mark_saved`.
+3. If the scope generates and the text parses: `generate_form_module(doc, source_bytes=<the bytes from step 1>)`, run the hand-edit check, and atomically write `ui_<name>.py`, plus `*_rc.py` for any changed `.qrc`.
+
+A codegen failure never fails the save; it reports FB5xx. Steps 1–3 take ≤ 50 ms CPU at 300 widgets.
+
+---
+
+## 10. Preview and Try-mode IPC
+
+### 10.1 Transport and framing
+
+- The editor side (`qtside/preview/pool.py`) uses `app.run.process_supervisor.ProcessSupervisor`: an argv list, no shell, `start_new_session=True`, killpg on stop, and a sanitized AppRun environment. The command is `[AppRun, "-c", build_runpy_bootstrap_payload(script_path=<repo>/run_form_preview.py, ...)]` with `CBCS_QT_API=pyside6`. Supervisor events arrive on reader threads, and a queued Qt signal marshals them to the GUI thread before anything decodes or touches widgets.
+- The child keeps both frame streams private. At startup it does `requests = os.fdopen(os.dup(0))` then `os.dup2(<devnull>, 0)`, so user code reading stdin gets EOF instead of eating frames; and `frames = os.fdopen(os.dup(1))` then `os.dup2(2, 1)`. User `print` becomes `Log` frames, and Qt messages become `Log(stream="qt")`.
+- A frame is `FRAME_PREFIX` (`"\x1eCBFP1 "`) followed by the JSON and a newline. The JSON is `rpc_protocol.encode_message` semantics (`sort_keys=True`), and the line is pure ASCII. Lines without the prefix become `NoiseLine`s, which go to the debug log. Prefixed garbage is a `ProtocolViolation`; three in one session restart the child. Frames are limited to 32 MB.
+
+### 10.2 Messages (version 1; schema in `engine/ipc/protocol.py`)
+
+| Direction | Message | Purpose |
+| --- | --- | --- |
+| child→host | `ready` | QApplication is up: pid, Python, Qt and PySide versions, whether FreeCADGui is available |
+| host→child | `hello` | Protocol name, version, session token, host pid. A mismatch gets `error="protocol_mismatch"`, the child exits 3, and the host raises FB603 and opens the circuit |
+| host→child | `load_form` | Open or replace a view. Project forms send `module_source` (generated **in memory** from the current, possibly unsaved, document, with `source_bytes=None`); external forms send `ui_xml` (QUiLoader with plugin paths cleared, plus a `createWidget` override). Also `resource_modules` (name and in-memory `*_rc.py` source, registered first), `promoted` (class, header module, extends), `sys_path`, `appearance`, `keep_values`, `revision`. The child pre-imports each promoted class; on failure it installs a stub class of that name subclassing `extends` and reports FB602, so the form still loads. Before each `load_form` the child drops every `sys.modules` entry whose file lives under the previous project root, so edited user modules are re-imported |
+| host→child | `update_form` | Property-only patches by object name since `base_revision`, only for nodes whose object name is unique in the document. Anything structural, a rename, a duplicate-named node, or an unpatchable property gets a full `load_form` instead. The child answers `stale` when it isn't at `base_revision`. At most one request per view is in flight; newer ones coalesce |
+| host→child | `set_appearance` | Palette (default runtime), style, scale, font scale, device profile |
+| host→child | `try_start` / `try_stop` | Run the generated module with a stand-in window class and window values (LOGIC 2.10). The data plan covers SQLite scratch copies and PostgreSQL `rollback` (SET LOCAL statement and lock timeouts) or `would_run` |
+| child→host / host→child | `need_secret` / `provide_secret` | Passwords are only sent on request, per connection, and are never written to logs |
+| host→child | `grab`, `close_view`, `ping`, `shutdown` | — |
+| child→host | `response` | `rpc_protocol.build_response` shape. Errors use `ERROR_CODES` |
+| child→host | `log`, `view_closed`, `error`, `crash` | Logs (including Try-log lines with a `SourceRef`), view closed, survived failures (FB602, FB604) with frames mapped to rules, and a best-effort crash report |
+
+Versioning: a change that breaks compatibility bumps `PROTOCOL_VERSION` and `FRAME_PREFIX` together. Adding an optional field doesn't need a bump, and receivers ignore unknown fields.
+
+### 10.3 Lifecycle
+
+- There's **one warm child per editor process**, shared by every form tab. Each tab is a `view_id`. **Pre-warm is on by default**: the child is spawned when the first form opens (a setting can turn this off, and then it starts on the first request).
+- The handshake times out after 30 s (a cold AppRun start is included). A request times out after 20 s. While views are open the host sends `ping` every 5 s; the child answers on its GUI thread, so a stuck event loop is noticed.
+- **Hang.** A request timeout, or two missed pings in a row, means the child is hung. The host kills the process group and treats it exactly like a crash (FB601, backoff below).
+- **Crash-loop backoff.** A crash happens when the child exits while views are open, when it hangs (above), or after three protocol violations. Every view's session gets FB601 with the last 40 stderr lines. Restarts wait 0, 1, 4 and 15 s for consecutive crashes within 120 s. After that the circuit opens (FB605), and the user's Retry closes it. Views reload after a restart.
+- The child exits by itself on `shutdown`, on stdin EOF (the host died), or after 600 s with no views.
+- When the editor exits it sends `shutdown`, then `supervisor.stop()` (SIGTERM to the process group, then SIGKILL). `tests/conftest.py` reaps by the `run_form_preview.py` marker.
+
+### 10.4 Security rule (MUST)
+
+User code runs **only** in the child. That includes window classes, promoted and custom widget classes, user modules, `window.method()`, generated `ui_*.py` and `*_rc.py`. The editor process may `ast.parse` user files but never imports or runs them. It also never loads Designer plugins and never calls `QUiLoader` on project files. The child never imports `app.shell`, `app.editors` or `integration` (file role `form_builder.child`). Secrets cross the pipe only in answer to `need_secret`.
+
+---
+
+## 11. Tab-content provider seam (M2.0)
+
+### 11.1 Protocols (stubs `app/shell/tab_content_providers.py`, `app/editors/tab_content_source.py`)
+
+- `TabContentProvider(provider_id, priority, matches(path, ctx), create_surface(request))`. `matches` is a pure path test. `create_surface` may raise `ProviderDeclined(reason)`, in which case the shell opens a text tab with an info bar.
+- `TabSurfaceRequest` gives the provider the path, the initial text, the parent, the theme, `open_linked_file`, the project root, and `create_source_editor()`. That builds a **fully bound** `CodeEditorWidget` (the same code path as text tabs, including the `shell.editorTabs.textEditor` object name and workspace registration). It can be called at most once. Markdown calls it eagerly. The form builder calls it on the first View XML, which keeps a ~100 KB XML editor out of the 150 ms open budget.
+- `TabSurface` has `widget()`, `content_source()`, `source_editor()`, `apply_theme`, `set_diagnostics`, `reveal(line, detail)`, `restore_text(text, reason)`, `close_blockers()`, `file_path_changed`, `focus_primary` and `release`.
+- `TabContentProviderRegistry` has `register`, `provider_for`, `surface_for_path`, `surfaces` and `apply_all_themes`. It's a committed window field bound by the platform. Features call `register` from `install`.
+
+### 11.2 Dirty source and lazy text
+
+- `EditorTabState` gains `content_source: Optional[TabContentSource]`. `current_content` becomes a property that delegates when a source is attached. `is_dirty` delegates too. `update_content` on a sourced tab raises `ValueError`. `mark_saved` passes the exact saved text through.
+- **Save transforms.** Sourced tabs skip every save transform (trailing-whitespace trim, final newline, format on save). Save writes `current_text()` encoded as UTF-8 with no BOM.
+- **Registry field.** The committed window field `_tab_content_registry` becomes the `TabContentProviderRegistry`. It's bound in `install_editors`, before the `FEATURE_SPECS` loop, so feature installs can register into it. `_markdown_panes_by_path` moves under markdown's ownership globs.
+- **Late services.** Feature install runs before `install_run_debug`, so the form builder's Run and packaging hooks look up their services lazily (at first use), never during install.
+- The shell's draft autosave gains a lazy path for sourced tabs. The source's `subscribe_changed` schedules the debounce, and when it fires the shell reads `current_text()` only if `revision()` changed. Text widgets keep today's push path.
+- `FormContentSource` (integration, Qt-free) has visual mode and XML mode, with exact rules in its stub. Saving in XML mode writes the typed text verbatim. Leaving XML mode commits one `ReplaceDocument`, or stays in XML mode with the error and both versions kept.
+
+### 11.3 FeatureSpec.enabled
+
+`FeatureSpec(..., enabled: Optional[Callable[[], bool]] = None)`. The composition loop calls `enabled()` once per process before `install`. The predicate must not import Qt and must not raise (an exception counts as False). The form builder's predicate is `CBCS_FORM_BUILDER != "0"` and `qt_binding_choice.select_binding() == "PySide6"`, the import-free equivalent of `IS_QT6`. Under PySide2, `.ui` files open as XML text exactly as they do today, plus the hint "The visual form builder needs FreeCAD 1.1" (M2.1).
+
+### 11.4 Shell call sites M2.0 routes through `TabSurface` when a provider owns the tab
+
+These are: `EditorTabFactory._materialize_opened_editor_tab` (asks the registry first); `wrap_tab_content_if_markdown`, which is deleted and replaced by the Markdown provider; `ProblemsController.push_diagnostics_to_editor` (`set_diagnostics`); the theme appliers (`apply_all_themes`); `LocalHistoryWorkflow.maybe_restore_draft` and history restore (`restore_text`); external file change (`restore_text("external_reload")` or the three-way prompt); close prompts (`close_blockers` in addition to the standard dirty prompt); rename and move (`file_path_changed`); Problems navigation (`reveal`); and release on close. M2.0 audits every `_editor_widgets_by_path` user. Each one either keeps working with the source editor or calls the surface, and the PR lists them.
+
+AT-32: on PySide6, step 3 ("Open `.ui` … expected XML highlighting") is done through View XML, which is the same `CodeEditorWidget` with the XML grammar. M2.2 amends AT-32's wording to say so. On PySide2 nothing changes.
+
+### 11.6 Round 2 seam corrections
+
+These are the behaviours the v0.4.13 sync has to keep.
+
+- The project-tree coordinator reads open tab paths from the live `EditorManager`. `reset_editor_tabs()` replaces that manager on project switch. A method bound at composition time is stale, and a delete in the new project would leave the tab open.
+- Replacing a preview releases the closed preview's surface by path and buffer id. The editor manager has already dropped that tab. A lazy surface never registered a source editor, so popping by buffer id alone leaves the path bound.
+- Cancelling the three-way reload prompt on a dirty sourced tab with no source editor marks the tab changed on disk and returns declined. The stale bar stays. The next save still prompts. Acknowledging the mtime and returning cancelled hides both.
+- `close_group` asks `close_blockers` once, for the paths shown only in that group, before the unsaved-changes prompt. The closes that follow pass `skip_close_blockers`. A No leaves the group as it was.
+- The second editor group's markdown pane is built and adopted by the markdown feature (`build_secondary_pane`, `adopt_secondary_pane`). That feature owns `_markdown_panes_by_path`.
+- A tab whose provider declined is a text editor inside a notice container. The container's `source_editor()` returns that editor, so the tab can be split. It does not implement `apply_theme`, `set_mode`, or `toggle_preview`.
+
+### 11.5 Dune rule `feature-install-imports` (M2.0)
+
+For `app/features/spec.py`, every `app/features/*/install.py` and every `app/features/*/__init__.py`: module-level imports outside `if TYPE_CHECKING:` must come from the stdlib, `typing`, `app.bootstrap.qt_binding_choice`, `app.features.spec`, or the feature's own `engine` subpackage. Imports inside functions are unrestricted. Markdown's `install.py` moves its pane and registry imports into `install_markdown`. The proof is a runtime test, not the lint: a subprocess installs a `sys.meta_path` finder that only **records** import attempts (it never raises, so a lazy import elsewhere can't change behaviour), then imports `app.features.spec` and calls every `enabled()`. It asserts that no `PySide6`/`shiboken6` entry is in `sys.modules` and none was recorded. On a PySide6 machine it also asserts `form_builder_enabled()` is True. It runs on machines without PySide2 too. With `CBCS_QT_API=pyside2` where PySide2 exists, the editor starts and `PySide6` is not in `sys.modules`.
+
+---
+
+## 12. Performance contracts
+
+These are measured as process CPU time, p95, n = 15 after warmup, on the Mac baseline, using the M1.5 harness. They're re-checked on the VM and on the CPU-capped profile (plan §1). "300w" means the 300-widget reference form.
+
+| Contract point | Complexity | Budget |
+| --- | --- | --- |
+| `read_ui` | O(input) | 25 ms (300w) |
+| Class table first load | once per process | 25 ms |
+| `Realizer.build` | O(form) | 90 ms (300w) |
+| Outline full build | O(form) | 15 ms |
+| **Open total** (read + build + outline + inspector + first index) | — | **150 ms** (plan) |
+| One command (apply + ops + ChangeSet derivation + engine listeners) | **O(changed)** | 2 ms at 300w, 3 ms at 1000w |
+| Realize patch per ChangeSet | **O(changed widgets + reconciled children)** | 8 ms |
+| Hit index invalidate | O(1) | — |
+| Hit index refresh | O(visible nodes) | 4 ms (300w), 12 ms (1000w) |
+| Hit query | O(depth × siblings) | 0.2 ms |
+| Overlay paint | O(visible) | 4 ms |
+| Outline patch per ChangeSet | **O(changed)** | 2 ms |
+| **Edit total** (command → repainted canvas, outline, coalesced inspector) | — | **16 ms** (plan) |
+| Selection change → canvas overlay + outline | O(selection) | 8 ms. Inspector repopulate ≤ 16 ms, may lag one frame |
+| `is_dirty`, `revision` | O(1) | — |
+| Cheap diagnostics producers | **O(changed)** | 2 ms |
+| `write_ui` | O(form), lazy only | 10 ms (300w) |
+| `generate_form_module` | O(form), on save | 30 ms (300w, no logic) |
+| **Save total** | — | **50 ms** (plan) |
+| Memory | — | ≤ 30 MB extra per open form, ≤ 60 MB with three forms. The undo log grows O(changed): 500 property edits ≤ 2 MB |
+| Preview warm update (`update_form` → child repaint) | O(patches) | 100 ms wall |
+| Preview cold start | — | Measured and reported against the M0.7 fact; no budget |
+| `SetEventSteps` with a storage conversion (M6) | O(event + its connections) | 2 ms at 300w |
+| Logic codec parse + write, 50 steps | O(text) | 1 ms |
+| `read_window` pre-scan + parse, 100 KB / 1 MB; cached | O(text); O(1) | 30 ms / 250 ms, idle only; 1 ms |
+| `check_handlers` against a cached reading | O(connections + methods) | 5 ms |
+
+**O(form) is allowed only for:** read, build, `ReplaceDocument`, serialize, codegen, `validate`, fingerprints, hit-index refresh, full diagnostic revalidation (on open or replace only), reading-order and effective tab order (tab-order mode and codegen only), and `Rename`/`DeleteNodes` reference scans (3 ms at 1000w). Everything else on the edit path is O(changed). Adding an O(form) step to the edit path is a contract violation even when it fits the budget at 300w.
+
+---
+
+## 13. Test contracts (feed the O-logic gate)
+
+Generators live in `tests/support/form_builder/gen.py`: random documents over every node kind and value kind, random valid command sequences generated against the live document, and byte-level mutators for fuzzing. They use seeded `random`. The seed and the case count are printed on failure, and `FB_SEED=<n>` reproduces a run. The fast lane runs 200 sequences × 30 commands. The gate run (O-logic evidence) runs 5,000 sequences × 50 commands plus 20,000 fuzz inputs. Tests assert behaviour, never constants (see `.cursor/rules/test_anti_patterns.mdc`).
+
+| Module (WP) | Invariants and property tests a PR MUST include |
+| --- | --- |
+| `ui4.values`, `numfmt` (M1.1b) | Every value kind: `value_from_json(value_to_json(v)) == v`; read → write → read equality; the lossless rule sends non-round-trippable reals and bools to `OpaqueValue`; `semantic_equal` on enum spellings; real formatting is identical under `de_DE` and `C` |
+| `ui4.reader`/`writer` (M1.1a–c) | Corpus round trip 100% (structure fingerprint plus QUiLoader tree equality); double save byte-identical across machines, locales and hash seeds; the Designer-resave zero-diff oracle (allowlist kept in the ledger); random unknown elements and attributes injected anywhere are preserved in place; fuzz contract (only `UiReadError`, linear time, no hang); DOCTYPE refused; line maps point at start tags |
+| `ui4.document` (M1.1a) | `validate()` passes after every random op; name index equals recomputation; the API never mutates (fingerprint before and after every read call in random sessions) |
+| `ui4.defaults` (M1.1b) | Dump-vs-runtime equality under the current Qt (fails naming the class and property); `property_rank` gives a total order; rank insertion keeps Designer-saved files' property order unchanged |
+| `commands.ops` + `mutate` (M1.2) | Every op type: apply then inverse is the identity (fingerprint); each `OpError` precondition leaves the document untouched |
+| `commands.log` (M1.2) | §3.9 invariants 1–7 over random sequences, including interleaved undo and redo; merge (one gesture's edits undo to the value before the gesture; returning to the original pops the entry and restores clean state); save point (dirty after undo past save then edit); transaction rollback (exception mid-transaction gives identical bytes and zero ChangeSets); `ReentrantCommandError` |
+| `commands.catalog` (M1.2 and owners) | For each command: a semantics test for its documented rules (for example DeleteNodes removes native references but keeps logic references; a grid move changes only the moved cells; Rename updates every reference kind in `references_to`); random use inside the log-level property tests; planner determinism through replay |
+| `events` (M1.2) | ShadowTree equality (§4.4); `property_dirty` is net (set then reset in one transaction is absent); category rules for every op and kind pair |
+| `query.selection` (M3.1) | After any entry, `ids` ⊆ document and `current` ∈ `ids` or is None; undo and redo restore snapshots; no listener moves focus for a change from another source (Qt test) |
+| `query.hit_index` (M3.1) | After random edits, zoom and page switches, `query` equals a brute-force oracle over live widgets (`childAt` plus layout geometry); refresh count is exactly one per invalidated paint; zero refreshes inside listeners |
+| `qtside.realize` (M3.1) | **Patch equals rebuild:** after each random command, undo and redo, `Realizer.signature()` equals a fresh `build()` signature; `fallback_rebuilds == 0` for the standard set; destroyed-widget count equals removed widget ids; no user or generated code imported (an `import` hook records the modules loaded during a session over a project with promoted classes); runtime palette unchanged across theme switches |
+| `codegen` (M1.3) | uic tree equality on every corpus file plus the text diff; `ast.parse(feature_version=(3, 9))` on every output; determinism (bytes identical across hash seeds); header round trip; `is_hand_edited` and `is_stale` truth tables; ids absent (generate from two documents with different ids and the same content, compare bytes); an expander that raises or errors leaves the core output plus the other rules intact; evaluator ≡ generated code (M7.1) |
+| `codegen.resources` (M5.2) | Our `*_rc.py` and rcc's register identical path → bytes maps; bytes independent of mtimes and zlib |
+| `project.forms` (M1.4) | Classification truth table; external scope never writes beside the form |
+| `diagnostics` (M1.0 codes, all producers) | Unique codes; no undeclared code emitted; no diagnostic blocks save (save succeeds with every code present); incremental producers equal full revalidation after random sequences |
+| `ipc.protocol` (M2.5) | `decode_line(encode_frame(m)) == m` for random messages; noise lines interleaved at random never break decoding; prefixed garbage gives `ProtocolViolation`; frames are ASCII-only |
+| `preview.pool` (M2.5) | With a fake clock and fake supervisor: the backoff schedule, the circuit, coalescing (one in flight per view), handshake mismatch gives FB603; with a real child: kill -9 mid-session leaves the editor alive and the reaper clean; cold and warm timings recorded |
+| `logic.codec` (M6.0b) | §15.4 rule 7 both ways over random values with unknown keys and every string class (controls, U+FFFE, surrogates, non-ASCII); 20,000 fuzz texts give a result or FB401 and never raise; marker truth table (§15.2); bytes identical across macOS and Linux, `C` and `de_DE` |
+| Logic participants (M6.0b) | Rename and paste rewrite exactly the NAME tokens of §15.8 (a table of formulas with strings, attributes, keyword arguments, comments); `InsertFragment` scope keeps outside references; FB402 refuses renames whose name is in logic text; undo-all equals original |
+| `SetEventSteps` (M6.1a) | Storage invariant after random sequences: all-plain events are native only, others list only; unchanged connection elements (and hints) are the same nodes; other events' connections never move; `<slots>` gains declarations and never loses them; replay equals live |
+| Step-list expander (M6.1a) | 3.9-parseable; under PySide6 offscreen the steps run in order, off steps don't run, `call` gets `args` values, `is False` stops the list; uic tree equality unchanged for forms without lists |
+| `window_file`, `plan_stub`, `plan_unstub`, `check_handlers` (M6.2a) | Never imports (import hook); pre-scan refusals for the crafted-line set, run under the Python 3.9 AppRun lane without a crash; insertion fixture set of UX-CODE-006 (exact line insertion, undo restores bytes); naming over the corpus (UX-CODE-001); one fixture per FB2xx row and its clean twin |
+| Provider seam (M2.0, M2.2) | The Qt import-blocker test (§11.5); Markdown behaviour unchanged (existing tests); dirty comes from the log; `serialize_count == 0` over 200 edits; draft restore and history restore are each one undoable ReplaceDocument; malformed `.ui` opens as text with FB001; AT-32 still passes |
+
+The PR body for any logic WP lists: the invariants touched, the seeds and case counts, the oracle results, double-save hashes from macOS and Linux, and the failure-mode table (malformed input, newer format version, missing method, missing driver, lost connection).
+
+---
+
+## 14. Per-user settings keys (M5.5c)
+
+The form builder's per-user choices live in the `form_builder` object of the global settings file (`settings.json` in the Code Studio settings folder). Settings > Form designer (UX-TMPL-006, `integration/settings_page.py`) writes the first six; the Aa menu writes `preview_style`, `preview_screen` and `preview.profiles` (one value for both places, absent when default). Lanes read them from the file each time the choice matters (`load_global(force_refresh=True)`), so a change in either place shows without a restart, with the defaults below, treating a missing or wrongly typed value as the default.
+
+| Key | Values | Default (absent) | Read by |
+| --- | --- | --- | --- |
+| `preview_style` | a `QStyleFactory` style name | Fusion, as on ChoreBoy | M5.5a preview (UX-PREV-001) |
+| `preview_screen` | `small` (1024 × 600), `full_hd` (1920 × 1080), or the name of one of the user's screens in `preview.profiles` (written by the Aa menu; a name that is not a profile is the default) | the ChoreBoy screen, 1366 × 768 | M5.5a preview (UX-PREV-001) |
+| `preview_prewarm` | bool | `true` | preview process start (§10.3) |
+| `insert.view` | `icons`, `list` | Automatic | Insert pane (UX-M5 Insert) |
+| `qt_names` | bool | `false` | inspector (UX-INSP-005) |
+| `template_scope` | `user`, `project` | `user` ("All my projects") | Save as template (UX-TMPL-001) |
+| `preview.profiles` | list of `{name, width, height, font, font_size, scale}` | none | M5.5a Aa menu > Screen > Add a screen… |
+
+Other lanes keep their own keys in the same object (`workbench`, `insert.recent`, …). Writing rules (MUST): every write goes through `SettingsService.update_global` with an updater that changes only its own keys. `update_global` re-reads the file before applying the updater, so a builder write and a shell write never drop each other's keys, whichever `SettingsService` instance makes them. Settings dialog pages register with `app/shell/settings_pages.py` (`SettingsPage(key, title, build, apply)`): the dialog builds them from the payload it opened with and, after OK, passes them the re-read payload it is about to save, so the page's keys and the shell's are one write.
+
+## 15. Logic storage (M6.0b, M6.1a)
+
+Binding for M6 and for every later logic WP. It refines LOGIC_DESIGN §6; where the two differ this section wins, and LOGIC_DESIGN's "Changes recorded by M6.0" lists each difference. UX clauses are in UX_SPEC §13.3.
+
+### 15.1 Property names
+
+Every logic property is a dynamic property on the widget, action or root it belongs to: `PropertyEntry(kind="property", stdset="0", value=StringValue(text, notr=True))` (§2.4 rule 5). The known names, in `logic.storage.LOGIC_PROPERTY_ORDER`:
+
+`cbcsSplitterSizes` (a layout key, not logic, §9.3), `cbcsLogic`, `cbcsEnabledWhen`, `cbcsVisibleWhen`, `cbcsReadOnlyWhen`, `cbcsValue`, `cbcsDefault`, `cbcsKind`, `cbcsFormat`, `cbcsValidate`, `cbcsErrorLabel`, `cbcsErrorSummary`, **`cbcsOn*`**, `cbcsData`, `cbcsBind`, `cbcsBindMode`, `cbcsLookup`, `cbcsRows`, `cbcsChoice`.
+
+- `cbcsOn<Signal>` is `cbcsOn` plus the signal name with its first letter upper-cased (`clicked` → `cbcsOnClicked`); `signal_property(name)` and `signal_of_property(key)` are exact inverses over names that start with a lower-case ASCII letter. All `cbcsOn*` entries of one owner rank at the `cbcsOn*` position, among themselves by property name in code-point order. Form events (`cbcsOnOpened` …, M7.4) use the same position. `LOGIC_PROPERTY_ORDER` is a plain tuple holding the literal `cbcsOn*`; `logic_rank(name)` (None for an unknown name) is the one rank lookup, and `property_rank` uses it.
+- **Rank** applies only when CBCS inserts a new entry (§2.5). Entries read from a file keep their order on save, and an edited entry is replaced in place (§3.3 `SetPropertyOp`). A save never re-sorts properties (UX D21).
+- An unknown `cbcs*` name (not in the list and not `cbcsOn*`) is kept exactly, ranks after every known name, and is reported by nothing. `is_logic_key` stays the one test of "logic" (§4.2).
+
+### 15.2 The version marker
+
+- The root's `cbcsLogic` holds the logic schema version. CBCS writes the exact text `{"version":1}` (no spaces), as `logic_version_text()` does today. This amends LOGIC_DESIGN §6.1, which said `<number>1</number>`.
+- Readers accept a JSON object with an integer `version` (any whitespace, other keys kept), a bare integer in a `<string>` (`1`), or a `<number>` element (what Qt Designer writes for an int dynamic property). Booleans are not versions.
+- No marker and no logic property: no logic. No marker but a logic property: version 1; the marker is added by the next logic edit (`_sync_logic_marker`). The marker is removed when the last logic property goes.
+- A marker that can't be read (none of the forms above) is treated as **newer**: FB401 on `cbcsLogic` and FB402 for the form. Version > `SUPPORTED_LOGIC_VERSION` is FB402.
+- **When the version goes up.** Only for a change an older editor would misread: a key removed or renamed, a meaning changed, a value form changed. Adding an optional key or a new step verb keeps version 1, because older editors keep unknown keys and show unknown verbs read-only (FB403).
+
+### 15.3 JSON values (schema version 1)
+
+LOGIC_DESIGN §6.2's shapes stand, with these M6 additions to `Step` (LOGIC §4.12):
+
+```ts
+type Step = {do: StepVerb, when?: Formula, enabled?: false, ...verb fields}
+
+// M6 verbs (plain steps when they have no `when` and no `enabled`):
+{do: "slot", target: ObjectName, slot: Signature, hints?: HintPoints}
+                                                         // a Qt slot on a widget, action or the form
+{do: "call", method: Identifier, args?: number}          // your method on the window; args = how many
+                                                         // of the signal's values it gets (default 0)
+
+type HintPoints = { [type: Identifier]: [x: int32, y: int32] }
+                                                         // key order is the <hint> order
+
+type StepList = Step[]                                   // cbcsOn<Signal>, the overload with the most arguments
+              | {signal: Signature, steps: Step[]}       // only when another overload is meant (UX D24)
+```
+
+- `target` is an object name or the root's object name. `slot` is written the way Designer writes signatures (`clear()`, `setChecked(bool)`, `setCurrentIndex(int)`): no spaces, Qt type names.
+- `hints` on a `slot` step stores a connection's `<hints>`: an object from hint type to `[x, y]`. The types `sourcelabel` and `destinationlabel` are the usual ones. Any other type is kept verbatim when it is an identifier of at most 64 characters (`[A-Za-z_][A-Za-z0-9_]*`). Coordinates are int32, and a step holds at most 64 points, in `<hint>` order. An empty object is omitted. A `hints` value that is not that shape makes the whole list FB401 (kept as read, generating nothing). `hints` is a known key, so a step whose only extra key is a valid `hints` stays plain. Generated code ignores `hints`.
+- A `slot` step passes the first *k* signal values, where *k* is the slot's parameter count. A `call` step passes `args` values.
+- `enabled` is written only as `false`; on is the absence of the key. `when` (M7.1) is a formula string.
+- Keys of a step are known per verb. In a `slot` or `call` step, a `when` that isn't text or an `enabled` that isn't `true`/`false` makes the list FB401 (it must not pass for a plain step). Any problem in a typed step makes the **whole list** FB401, kept byte-for-byte and generating nothing (UX-LST-002); there is no per-step recovery, because a list with a hole can't keep its run order. M6.0b types `slot` and `call`; every other verb (LOGIC §4.12, M7, M8) is parsed as an ordered key/value list and kept exactly, and the editor shows it read-only with FB403 until its lane types it.
+- `Check`, `Data`, `Lookup` and `Rows` are parsed by M6.0b only as far as the codec needs (valid JSON, an array or object at the top); M7 and M8 type them. Unknown keys anywhere are kept.
+
+### 15.4 Canonical text (MUST)
+
+The codec (`engine/logic/codec.py`) writes, and `SetLogic` stores, exactly this:
+
+1. **Arrays of objects** (step lists, checks, grid columns): `[` newline; each item on its own line, indented two spaces, followed by `,` except the last; newline; `]`. One item still takes three lines. An empty array is never written: the property is removed.
+2. **Objects** are written on one line: `{` key `": "` value, joined by `", "`, `}`. Nested arrays of scalars inline: `["a", "b"]`. An object inside an object inline. The `{signal, steps}` wrapper is `{"signal": "valueChanged(int)", "steps": [` newline, items as rule 1, newline, `]}`.
+3. **Key order:** the schema order of LOGIC_DESIGN §6.2 and §15.3 for known keys (`do` first, then `when`, then `enabled`, then the verb's fields in the order listed), then unknown keys in the order they were read.
+4. **Strings:** `json.dumps(..., ensure_ascii=False)` escaping, plus `\uXXXX` for U+007F–U+009F, U+FFFE, U+FFFF and lone surrogates, so the text is always XML 1.0 `Char` data (§8.2 rule 5). No trailing spaces anywhere. Line ends are LF.
+5. **Numbers:** integers without `.0` (an integral float is written as an integer); other floats with `repr()`; `NaN` and infinities are refused (`CommandRejected`). `true`, `false`. `null` is never written: an absent optional key is left out.
+6. **Formulas** are stored as the editor normalised them (LOGIC §6.3, M7.1); the codec never rewrites formula text.
+7. `parse(write(x)) == x` for every value, and `write(parse(t)) == t` for canonical `t`. A non-canonical text read from a file is kept byte-for-byte until CBCS edits that property.
+
+### 15.5 Codec API (`engine/logic/codec.py`, Qt-free)
+
+- `parse_steps(text) -> StepsRead(steps, signal, error)` where `steps` is a tuple of frozen `Step(verb, when, enabled, fields, unknown)` and `error` is None or `(line, message)` for FB401. `write_steps(steps, signal=None) -> str`.
+- `parse_json(text)` / `write_json(value)` for the other list and object properties, over an ordered, frozen JSON model (`JsonObject(pairs)`, tuples for arrays) so key order and unknown keys survive.
+- `read_marker(entry) -> MarkerRead(version, readable)`.
+- All functions are pure, total on any `str` (no exception escapes), and linear in the input. Input larger than 1 MB is FB401, never parsed.
+
+### 15.6 Events: from steps to storage (M6.1a)
+
+An **event** is (sender object name, signal name). Its steps, in run order, are the union of: native connections from that sender with that signal name, in `<connections>` order; methods Qt connects by name (shown, never stored); the `cbcsOn<Signal>` list.
+
+`SetEventSteps(sender, signal_name, steps, merge_token)` is the only command the Events list, the pickers, the canvas link and the method gesture use to change an event:
+
+1. Rejected with FB402 when the form's logic is read-only (§15.2), and when `sender` is a layout or spacer (UX D23).
+2. **Storage choice.** If every step is plain (`slot` or `call`, no `when`, not turned off, no unknown key; a valid `hints` on a `slot` step does not count), the event is written as native connections: one `<connection>` per step, sender `sender`, signal the overload with the fewest arguments that covers the step (a `slot` step's parameter count, a `call` step's `args`), receiver `target` (or the root for `call`), slot `slot` (or `method(` + the first `args` signal types + `)`). Otherwise the event is one `cbcsOn<Signal>` list and all its native connections are removed.
+3. **Minimal diff.** Existing connection elements of the event are matched to the new steps in order by (receiver, slot); a matched element is kept (fields and `<hints>` unchanged) and moved only if its relative order changed (`MoveConnection`); unmatched ones are removed; new ones are inserted after the event's last kept connection, else after the sender's last connection, else at the end of `<connections>`. Connections of other events never move.
+4. **Declarations.** Every method a `call` step names gets a `<slots><slot>` entry with the signature of rule 2 when the form has none of that name. Removing a step never removes a declaration (Designer keeps them); `SetFormSlots` does (UX-BEH-017).
+5. Hints of a connection or step whose sender, receiver, or slot changes are dropped (UX D7). Changing only the slot drops them, because that is a different arrow end. Reordering keeps them. A step rebuilt with the same receiver and slot keeps its `hints`.
+6. The whole change is one log entry, with `SetLogic` / `SetPropertyOp` and connection ops mixed; `cbcsLogic` follows §15.2.
+
+`MergeEventStorage(sender, signal_name)` (FB404's fix) is `SetEventSteps` with the native steps first, then the list's steps.
+
+**What conversion keeps.** One `SetEventSteps` is one undo entry, so Undo restores the previous bytes exactly. A `slot` step carries `hints` (the connection's `<hints>`, in document order). A native → list conversion copies each connection's typed `<hints>` onto that step. A later list → native conversion writes those `<hints>` on each new `<connection>`. A step whose only extra key is a valid `hints` stays plain, so the conversion is allowed. Hints copied onto a different receiver or slot are dropped (rule 5). Reordering keeps them. List → native still places new elements by rule 3. It does not restore the old element's position. Byte-exact restore remains Undo's job. A list → native conversion keeps no wrapper key (`signal`, unknown keys). It is written only when every step is plain. A step with an unknown key other than `hints` is not plain. A malformed `hints` makes the whole list FB401, kept as read and generating nothing.
+
+**Names.** A `slot` step's `target` and slot name and a `call` step's `method` must be ASCII identifiers that are not Python keywords, and `slot` must be `name(types)` (`compat.is_name`, `compat.is_signature`). `SetEventSteps` refuses others; a list read from a file that holds one generates nothing (like FB403), so no text of a `.ui` file reaches generated Python except as a one-line comment.
+
+**Intents** (`engine/logic/intents/m6.py`) return schema mappings with two routing keys that are never stored: `event` (the signal) and `sender` (only when the step goes on another object's event, the second half of "Keep *a* and *b* in step"). A `slot` mapping without `target` acts on the form.
+
+**Event picker.** Two entries in `qtside/pickers`. Esc on the first page writes nothing. The pages do not call the log; only a finished choice does. Code actions are installed with `set_method_actions`, because `qtside` cannot import `integration`.
+
+`open_event_picker(host, source, target="") -> EventPicker`. `host` is the widget that gets focus back. `source` is a sender object name, or a `PickerSource` (sender, signal, replace index). `target` is the receiver object name, or empty. Services are resolved from `host`'s inspector ancestors.
+
+`open_for_link(surface, source_id, target_id=None, *, at=None, caption=None) -> EventPicker`. `source_id` and `target_id` are node ids on `surface.session`. Services are resolved from the surface. `at` is a global `QPoint` or `None` (the picker opens under the surface). `caption` defaults to `"Connect {sender} to {receiver}"`. A finished drag calls this with `at` at the drop point.
+
+`open_for_step(surface, source_id, signal, index, *, at=None, caption=None) -> EventPicker`. Double-click on an arrow. `signal` is Designer text or the bare name, `index` is that step. The picker opens on the page that made the step. Choosing the same slot writes nothing. A different choice is one undo entry, "Change {old} to {new}". Esc writes nothing.
+
+**Native overloads in generated Python.** uic 6.8 writes `["types"]` after `clicked(...)` of a button (a class deriving from `QAbstractButton`, not that class itself) and `triggered(...)` of a `QToolButton` or `QAction` when the signature has arguments, because PySide6's bare `clicked`/`triggered` is the zero-argument overload and a Qt slot that needs `checked` would raise. The core emitter does the same (`_overload_selector`, checked against uic for every widget class of the table).
+
+**Signal compatibility** (`engine/logic/compat.py`): a slot or method with parameter types *p* fits a signal overload with types *s* when *p* is a prefix of *s* after normalising (`const T&` → `T`, whitespace removed, Qt 6 aliases `qreal` → `double`). The event's overloads come from the class table; own classes from the registry and `<customwidget><slots>`.
+
+**Step-list code** (expander `codegen/expanders/steps.py`, order 100). Generated code ignores `hints`. A list with hints and the same list without them emit the same Python, including the `setProperty` of the step list. The banner's `cbcs-source-sha256` still hashes the `.ui` bytes, so that one line differs when the file kept the hints. `_cbcs_setup` gets `self._form = {form}` once, then one `self.{sender}.{signal}{[types] when not PySide's default}.connect(self._cbcs_{sender}_{signal})` per list, in document order of the senders. Each list becomes `def _cbcs_{sender}_{signal}(self, *args):` (suffixed `_{types}` only when two overloads both have lists), its first comment the source line `# {sender}: When {signal}`, then per step a comment `#   {n}. {words}` and: `slot` → `self.{target}.{slot}(*args[:k])` (the root target is `self._form`); `call` → `self._form.{method}(*args[:args])`, or `if self._form.{method}(...) is False: return` when a later step is on; a turned-off step is a comment `#   {n}. (off) …` only. A list with FB401 or FB403 contributes nothing. `Method` gains `params: str = ""` (M6.0s) so the core renders `def name(self, *args):`.
+
+### 15.7 Read-only logic (FB402)
+
+When `session.logic_read_only()`: `SetLogic`, `SetEventSteps`, `MergeEventStorage`, `AddConnection`, `EditConnection`, `MoveConnection` and `SetFormSlots` are rejected with FB402, and so is `SetProperty` / `SetPropertyMany` of any logic key (`is_logic_key`; `cbcsSplitterSizes` stays editable); `Rename` is rejected when the old name, or the new one, occurs as a whole identifier anywhere in any `cbcs*` text (`refs.opaque_mentions`: strings, keys and sentences too, since newer text is searched, never interpreted) or in any connection; `logic_diagnostics` gives FB402 (and FB401 for an unreadable marker) only; `DeleteNodes` runs (native references go as usual, logic text is untouched). `InsertFragment` keeps logic text as copied. Every logic entry, `<connections>` and `<slots>` are written back byte-identical.
+
+### 15.8 References across rename, paste and delete (M6.0b participants)
+
+Participants in `engine/commands/participants/` (discovered, §3.6) add ops to the same entry:
+
+- **Step targets:** `target` of `slot` steps, and the object-name fields of later verbs as each lane declares them (`field`, `fields[]`, `grid`, `form` is a module name and is not renamed).
+- **Error labels:** `cbcsErrorLabel`, `cbcsErrorSummary`.
+- **Formula tokens:** in `cbcsEnabledWhen`, `cbcsVisibleWhen`, `cbcsReadOnlyWhen`, `cbcsValue`, `cbcsDefault`, and the `when`, `formula`, `default`, `min` and `max` strings inside JSON. The text is tokenized with the standard library `tokenize`; a `NAME` token equal to the old name is replaced when the previous significant token is not `.` and the next is not `=` inside a call's parentheses (a keyword argument). Strings, comments and attribute names are never changed. Only the token's span is replaced, so spacing is kept. Text that doesn't tokenize is left unchanged.
+- **Paste:** `InsertFragment` calls these with its whole rename map and `scope` = the inserted subtree (§3.6), so references inside the paste follow the copies and references outside stay. A fragment carries its source form's logic version as a dynamic property `cbcsLogic` (the marker text of §15.2; an unreadable source marker travels as `SUPPORTED_LOGIC_VERSION + 1`) on **each copied top-level element**, never as an XML attribute: Qt's ui4 reader (Designer, `uic`, `QUiLoader`) refuses unknown attributes ("Unexpected attribute", verified with `QUiLoader`), and per element it survives the fragment rebuilds of placement, duplicate and drop. `InsertFragment` reads the highest one anywhere in the fragment and strips them all before inserting, so it never reaches a form. Pasting a newer one raises the target's marker in the same entry (UX D20) **only when the pasted subtree carries a logic property** (`is_user_logic_key`: a step list, formula, check …); plain widgets copied from a newer form leave the target's marker alone.
+- **Delete:** logic references are kept and show FB405 (steps) or FB101 (formulas, M7).
+- All participants are pure, deterministic, and O(form) only inside `Rename`, `InsertFragment` and `DeleteNodes` (§12).
+
+### 15.9 Diagnostics
+
+FB401 (Error): a logic property that is not valid JSON, not the expected top-level shape, larger than 1 MB, or a marker that can't be read; location `property` and `rule_path`, the line inside the text. FB402 (Warning): logic version newer than supported or unreadable marker; one per form. FB403 (Error): a step verb this build doesn't type; the event generates nothing. FB404 (Warning): an event with both native connections and a step list. FB405 (Error): a step whose `target` is not an object on the form. All come from `diagnostic_codes/fb4xx_logic.py` (M6.0b; FB404 and FB405's producer is M6.1a's). No logic diagnostic blocks saving (§7.3).
+
+## 16. Handlers and the window file (M6.0s, M6.2a, M6.2b)
+
+### 16.1 Reading the window file (`engine/project/window_file.py`, Qt-free)
+
+`read_window(project_root, relative, text=None) -> WindowRead`:
+
+1. **Source.** `text` when the file is open in a tab (its current buffer), else the file: a regular file inside the project, at most 1 MB, opened non-blocking and checked with `fstat` (M5.4's `_read_regular` rules; a symlink that leaves the project is refused), decoded with `tokenize.detect_encoding`; a NUL byte or an undecodable file is refused.
+2. **Pre-scan.** One pass of `tokenize.generate_tokens` over the text. Refused when a logical line has more than 2,000 tokens, when bracket depth exceeds 100, when indentation exceeds 100 levels, or when the code inside one f-string's `{}` fields is longer than 2,000 characters (`tokenize` sees an f-string as one token, and Python 3.9 parses its fields with no stack limit). Lines end at CRLF, CR or LF, as the parser counts them (never `str.splitlines`, which also splits at form feed, NEL and U+2028). A `TokenError` or `IndentationError` is a syntax error at that line. The pre-scan is linear and runs no parser.
+3. **Parse.** `ast.parse(text, type_comments=False)` only after the pre-scan passed. `SyntaxError`, `ValueError`, `RecursionError` and `MemoryError` become a refusal with the line.
+4. **Result.** `WindowRead(status, reason, line, facts)`: `status` is `ok`, `missing`, `refused`, `syntax_error`; `facts` is a frozen `WindowFacts` (M6.0s stub `engine/project/window_facts.py`): the window class (name, line, base names, the class's last line per UX-CODE-005, indent unit, blank-line style, line ending), and per method `MethodFacts(name, line, end_line, params, required, has_varargs, decorators, slot_types, kind ("method", "staticmethod", "classmethod", "property"), body_is_empty, source_hash)`.
+5. **Cache** by `(abs path, mtime_ns, size)` for files and by sha256 of `text` for buffers; at most 64 entries.
+6. Base classes named by `from <module> import <Name>` at the top of the file are read the same way, up to three files deep and at most eight base files per read; anything else is unknown (FB212). A cached read is used only while the base files it followed are unchanged.
+
+Nothing here imports, executes or `compile()`s user code. The window class rule is UX-CODE-010.
+
+### 16.2 Planning a method (`engine/codegen/window_template.py`)
+
+`plan_stub(read, *, method_name, params, sender, event_words) -> StubPlan` replaces today's character-offset plan: it returns `TextEdit(start, end, text)` where `start == end` is the offset of a **line start** (the line after the class's last line, or the end of the text with a newline added first when the file doesn't end in one), `text` is whole lines in the file's line ending and indentation (UX-CODE-004, 005), and `stub_hash` = sha256 of the method lines from `def` to the last line, LF-normalised. It refuses (ValueError with the UX-CODE-006 sentence) when `read.status != "ok"`, there is no window class, or the method exists. `plan_unstub(read, method_name, stub_hash, blank_lines) -> Optional[TextEdit]` removes the method's lines and the blank lines before it only when the current method's `source_hash == stub_hash`; else None.
+
+`render_window_class` is unchanged except that its methods use the UX-CODE-004 docstring.
+
+### 16.3 The method gesture (M6.2b, `integration/handlers_code.py`)
+
+Order, all on the GUI thread: (1) `read_window` and `plan_stub`; on refusal stop. (2) Apply the `TextEdit` through `code_bridge.apply(path, edit)` (§16.4). (3) `with log.transaction("Write code for …")`: `SetEventSteps` (and nothing else). (4) On a `CommandRejected` in (3), `code_bridge.apply` the inverse edit (exact, since nothing ran between) and report. (5) Record on the log entry, outside the document, `HandlerMemo(path, method_name, stub_hash, blank_lines, created_file)`. Undo of that entry calls `plan_unstub` against the current text and applies it when not None; redo calls `plan_stub` again when the class lacks the method. The memo is session-only and never written to the `.ui`. When the window file is missing and the form generates (UX D9), step (1) first writes `render_window_class(doc, scope)` through the bridge, `created_file=True`; undo never deletes it.
+
+### 16.4 The code bridge (M6.0s, `integration/code_bridge.py`)
+
+One Qt-side service per window: `text_of(path) -> Optional[str]` (the open tab's buffer or None), `apply(path, edit) -> BridgeResult` (open tab: one edit of its document, one undo step there, and a save when the tab was clean before; closed file: atomic write keeping the mode bits, reported to `external_file_change_workflow.note_own_write`), `open_at(path, line, select=(start_col, end_col) or None)` (the shell's `open_file_at_line`, reusing a tab), and a signal `saved(path)` the checks listen to. It never runs code and never touches files outside the project.
+
+### 16.5 Checks (M6.2a, `engine/project/handler_checks.py`)
+
+`check_handlers(doc, read, *, classes, registry, inherited, connect_by_name) -> Tuple[FormDiagnostic, ...]` is pure. `inherited` is the frozen set of public attribute names of the window's stock Qt base class, computed once per process by the Qt side (`dir()` of the stock class) and passed in, so the engine stays Qt-free (§3.2's rule for Qt-measured inputs). The rules are UX-CODE-011's table. While `read.status` is not `ok`, it returns only FB209 or FB210.
+
+### 16.6 Preview stand-ins (M6.2b)
+
+`load_form` gains the optional field `form_methods: [[name, n_params], …]` (no version bump, §10.2). The child's host class gains a method per name that takes `*args`, does nothing, and sends `log` with `kind="would_call"` and `method`; the editor turns it into UX-CODE-016's status sentence, naming the event when exactly one event of the form calls that method. The child still never imports the window file.
+
+## 17. Formulas (M7.1)
+
+Binding for M7 and M8. This section refines LOGIC_DESIGN §4.1–4.8 and §4.10. Where they differ, this section wins, and LOGIC_DESIGN's "Changes recorded by M7.0" lists each difference. The UX clauses are in UX_SPEC §13.4.
+
+### 17.1 Package and layering
+
+`engine/logic/formula/` is Qt-free and pure. It never imports PySide6, never touches the filesystem, and never runs user code.
+
+| Module | Owner | Contents |
+| --- | --- | --- |
+| `nodes.py` | M7.1a | The typed tree (§17.3), `Span`, and `FormulaProblem` |
+| `types.py` | M7.1a | `FType` and the widget value table (§17.4) |
+| `env.py` | M7.1a | `FormulaEnv`, `WidgetFacts`, `MethodFacts` lookup, and `SlotKind` (§17.5) |
+| `parse.py` | M7.1a | The guards, the Excel recognisers, `ast` lowering and the allowlist (§17.2, §17.7) |
+| `check.py` | M7.1a | Names, types and blank rules (§17.4, §17.6) |
+| `normalize.py` | M7.1a | Canonical formula text (§17.8) |
+| `library.py` | M7.1a (signatures), M7.1b (bodies) | The function table (§17.9) |
+| `compile.py` | M7.1b | Typed tree to Python source (§17.10) |
+| `runtime.py` | M7.1b | The helper sources and live helpers made from the same text (§17.11) |
+| `evaluate.py` | M7.1b | Design-time evaluation for "now:" values (§17.12) |
+| `diagnostic_codes/fb1xx_formula.py` | M7.1a | FB101–FB119 (§17.13) |
+
+The public entry points are `analyze(text, env, slot) -> Analysis` (parse plus check plus fixes, in M7.1a) and `compile_formula(analysis, env) -> Emitted` (in M7.1b). UI and codegen lanes call only these two, plus `normalize` and `evaluate`.
+
+### 17.2 Parsing
+
+1. **Guards.** These run before anything else. Text longer than 2,000 characters, or with more than 400 `tokenize` tokens, is FB111 and never parsed. Bracket depth over 32 is FB111. The `tokenize` pass is the M6 pre-scan idea (§16.1 step 2). It bounds the parser's work, so `ast.parse` can't overflow the C stack on Python 3.9. After parsing, an **iterative** walk measures the `ast`'s own depth (bracket depth doesn't bound `not not … x` or a long `+` chain), and a depth over 64 is FB111. Only then do the recursive passes (lowering, checking, compiling) run.
+2. **Excel recognisers** run on the raw text (§17.7). Each produces an FB107 problem with a `Fix`. When the text does not parse as Python but one or more fixes apply, the analysis reports only the fixes, never a bare syntax error.
+3. **Parse.** `ast.parse(text, mode="eval")`. A `SyntaxError` becomes FB108. `SyntaxError.offset` is already counted in characters, so it is used as it is. A node's `col_offset` is in UTF-8 bytes and is converted to characters. Shown text is always measured in characters.
+4. **Lowering.** The `ast` is lowered to the typed tree of §17.3, using LOGIC_DESIGN §4.2's allowlist. Any other node is FB103, with that clause's message. A subscript, a keyword argument, `**`, `//`, `%`, `is`, an f-string, a comprehension or `lambda` is FB103. An attribute chain longer than two is FB114.
+5. **Literals.** A number literal is lowered from its **source text**, never from the `ast` float: `1.1` becomes `Decimal("1.1")`, and an integer stays `int`. `1_000` is allowed, and so is an exponent (`1e3`). Every non-integer value is built with `Decimal(text.replace("_", ""))`. Hex, octal, binary and imaginary literals are FB103. A `%` suffix is only an Excel recogniser (§17.7). Strings follow Python rules, except that **a string with a raw line break in it (a triple-quoted string spanning lines) is FB103**, because generated comments and code must stay one line per formula line. Bytes are FB103.
+
+### 17.3 The typed tree (`nodes.py`)
+
+Frozen dataclasses. Every node has `span: Span(start, end)` in characters of the original text, plus `type: FType` (filled in by the checker).
+
+- `Lit(value)`: `Decimal`, `int`, `str`, `bool` or `None`.
+- `Ref(name)`: a widget's main value, or a page name.
+- `Attr(base, name, sub=None)`: `widget.text`, `combo.terms_days`, `grid.selected.qty`, `form.isNew`, `record.status`.
+- `Call(func, args)`: a library function.
+- `WindowCall(method, args)`.
+- `Unary(op, x)`, `Bin(op, a, b)`, `Bool(op, values)`, `Compare(first, pairs)` (chains kept), `IfElse(test, then, other)`, `ListLit(items)` (only on the right of `in` / `not in`).
+
+`Analysis(text, tree, type, problems, fixes, reads, window_calls)`:
+- `reads`: a frozenset of the widget object names the formula reads (dependency edges).
+- `window_calls`: the method names it calls on the window.
+- `problems`: a tuple of `FormulaProblem(code, span, message, fix_id)`.
+- `tree` is None when parsing failed.
+
+### 17.4 Types (`types.py`)
+
+`FType`: `TEXT`, `WHOLE`, `NUMBER`, `MONEY`, `YESNO`, `DATE`, `TIME`, `DATETIME`, `PAGE`, `ANY`, `BLANK` (the literal `None`), plus `choice(T)` and `column(T)`. `WHOLE ⊂ NUMBER`, `MONEY ⊂ NUMBER` for comparisons, and arithmetic follows LOGIC §4.4's table exactly.
+
+The widget value table is LOGIC §4.3's table as data: `VALUE_TABLE: Mapping[class name, ValueSpec(type_rule, read, blank_rule, write)]`. It also covers the M4 catalog's subclasses: a class resolves to its nearest base in the table, using the M4 class table's inheritance. A FreeCAD widget with no entry has no main value, so `Ref` to it is FB114, "{display} has no value a formula can read".
+
+Kinds (`cbcsKind`) apply to `QLineEdit`, `QLabel` and `QPlainTextEdit`: `text`, `whole`, `number:N` (N from 0 to 6), `money`, `percent`, `date`, `time`. An unknown kind is FB118 (Warning), and the widget reads as `text`.
+
+### 17.5 The environment (`env.py`)
+
+`FormulaEnv` is a frozen snapshot that the caller builds once per document revision and window-file reading:
+- `widgets: Mapping[name, WidgetFacts]`. `WidgetFacts` holds class, kind, decimals, prefix, tristate, allow_blank, `has_items_data`, pages, and the lookup `also` columns (empty until M8).
+- `methods: Mapping[name, MethodFacts]`, from §16.1.
+- `reserved`: `form`, `record`, `window`, `True`, `False`, `None`, the function names, and anything starting with `cbcs`.
+- `data`: None until M8. While it is None, `form.*`, `record.*`, `grid.*` and `combo.<column>` are FB115, "Connect this form to a table first (coming with data forms)".
+
+`SlotKind` says what a slot needs, and the checker enforces it:
+- `CONDITION`: YesNo. A blank counts as no.
+- `VALUE(target)` and `DEFAULT(target)`: assignable to the target widget's type. Whole fits Number. Number to Money rounds. Anything to Text needs `text()`, and that error is FB102.
+- `CHECK`: YesNo.
+- `WHEN`: YesNo.
+- `SET(target)`: like `VALUE`.
+- `MESSAGE`: Text.
+- `RANGE_BOUND(target)`.
+
+Building the environment is O(form). It is cached on `(doc.revision, window reading token)`.
+
+### 17.6 Names and blanks
+
+- Name lookup goes in this order: reserved word, widget object name, page name. Then FB101 with the closest object name or display name, within an edit distance of 2 or as a case-insensitive match. A display name that matches exactly gives the FB107 "These are labels" fix (LOGIC §4.10, last row).
+- A widget named with a reserved word is FB108 on the widget (Error), with a rename offered. It is reported once per form, not per formula.
+- `window.m(...)`. The method must exist in the window class reading. If it doesn't, that's FB109, with "Create method" offered by M7.2b, which reuses the M6 method gesture. Its return annotation, read as a source string, sets the type: `bool`, `int`, `Decimal`, `float` (as Number), `str` or `date`. Anything else, or no annotation, is ANY. ANY in a CONDITION slot is wrapped in `_cbcs_bool()` with FB110 (Info). The argument count is checked against `required`/`params` (FB112).
+- The blank rules are LOGIC §4.6, with one refinement: `x == None` and `x == ""` normalize to `is_blank(x)` only through the FB107 fix. The checker accepts them as written, with the same meaning.
+
+### 17.7 Excel recognisers (`parse.py`)
+
+Each recogniser has a stable `fix_id`, a message and a replacement computed on the raw text. They cover exactly LOGIC §4.10's rows, plus a `;` argument separator, which becomes `,`. All of them are FB107 (Error), because they are not valid formulas as typed.
+
+The fixes are applied one at a time, and Ctrl+. applies the first. "Fix all" applies them left to right and re-analyzes after each one. Each fix is pure, so `apply(text, fix)` gives a new text. Two applications of the same fix never stack.
+
+### 17.8 Canonical text (`normalize.py`)
+
+`normalize(text) -> str` re-emits the token stream from `tokenize`:
+- one space around binary and comparison operators, and around `and`, `or`, `not`, `if`, `else` and `in`;
+- none inside brackets or before a comma, and one space after a comma;
+- unary minus attached to its operand.
+
+Strings and numbers are copied character for character. Line breaks (Shift+Enter) are kept as one `\n` plus a four-space indent inside brackets. Outside brackets, a break is collapsed to one space.
+
+`normalize` is idempotent: `normalize(normalize(t)) == normalize(t)`. It keeps meaning: `ast.dump` is equal before and after for every text that parses. It is applied when a formula is committed. The stored text is the normalized text (§15.4 rule 6).
+
+### 17.9 The function library (`library.py`)
+
+The table is LOGIC §4.8, as `FUNCTIONS: Mapping[name, FunctionSpec(params, varargs, result_rule, helper_id, doc)]`. `result_rule` computes the result type from the argument types. An argument of the wrong type is FB102. A wrong argument count is FB112. `matches(x, pattern)` needs a literal pattern, compiled at analysis time with `re.compile`, with no flags and length ≤ 200. A bad pattern is FB105.
+
+Every function is **total**: it returns blank instead of raising. `round` rounds half up. `min`, `max`, `sum`, `avg` and `count` follow the blank rules. Aggregates over `column(T)` exist only once M8 provides grids. Until then a column argument is FB115.
+
+### 17.10 Compiling (`compile.py`)
+
+`compile_formula(analysis, env, *, self_name="self") -> Emitted(source, helpers, imports)`:
+
+- `source` is one Python expression. It reads widgets with exactly the `read` column of the value table, as `self.<name>.<accessor>`. It is 3.9-parseable, and it uses no f-strings, no walrus and no `match`. A line is at most 100 characters. When it is longer, the caller wraps it in brackets.
+- **Plain operators** are used for `+ - *` and comparisons where the types prove neither side can be blank (LOGIC §7.1 rule 1). Otherwise the `_cbcs_*` helpers are used: `_cbcs_add`, `_cbcs_sub`, `_cbcs_mul`, `_cbcs_lt`, and so on. **`/` always compiles to `_cbcs_div`**, because a plain `/` turns two ints into a float and raises on zero instead of giving blank (LOGIC §4.6).
+- A read whose Qt accessor can raise or needs parsing goes through a `_cbcs_read_*` helper (for example `_cbcs_read_list(self.itemsList)` for `currentItem()`, which is None when there is no current item, and the kind parsers). The plain `Read` column is used only where it can't raise.
+- String literals are re-emitted with `repr()`, never copied from the source.
+- Decimal literals are written `Decimal("1.1")`, and `imports` holds `("decimal", "Decimal")`.
+- `WindowCall` compiles to `self._form.<method>(...)`. `_form` is the window object `_cbcs_setup` stores (LOGIC §7.2).
+- Compiling an analysis with any Error problem raises `ValueError`. The callers (codegen expanders) never compile a broken formula: they emit the skip comment of §18.2.
+
+### 17.11 Helpers (`runtime.py`)
+
+`HELPERS: Tuple[(helper_id, source), ...]` is the helper table, in fixed order. It fills `codegen/logic_hooks.HELPER_TABLE`.
+
+`live_helpers()` builds a namespace by `exec`-ing **the same source strings** once, into a private module dict that holds `Decimal`, `ROUND_HALF_UP`, `date`, `datetime`, `time` and `re`. It returns **only the `_cbcs_*` names** from that dict, never the dict itself, because `exec` puts the real `__builtins__` into it. That way the evaluator and the generated module share one definition of every helper (LOGIC §2.10: one compiler, one meaning). A test compares `inspect.getsource`-free behavior: each helper's live result equals the generated module's result on the conformance cases.
+
+### 17.12 Design-time evaluation (`evaluate.py`)
+
+`evaluate(emitted, reader, window_values) -> Value | EvalBlank(reason)` runs `eval(compile(source, "<formula>", "eval"), {**live_helpers(), "Decimal": Decimal, "__builtins__": {}}, {"self": reader})`. `__builtins__` goes last so nothing overrides it.
+
+**The safety rule is in the compiler, not the sandbox.** Compiled source contains only: the name `self`; names starting with `_cbcs_`; `Decimal`; literals; `self.<widget>.<accessor>(...)` where the accessor is in the value table's read set; and `self._form.<method>(...)` for a method in the window reading. A test walks the `ast` of every compiled formula in the conformance suite and the fuzzer and fails on anything else. Generated code never uses a bare builtin (`bool`, `int`, `round`): it uses the `_cbcs_` helper.
+
+- `reader` is a Qt-side object whose attributes are the **canvas's real widgets**, plus `_form`, a stand-in whose methods return `window_values[name]`, or raise `_NeedsValue`.
+- The source can only contain allowlisted constructs, so evaluation calls only the value table's read accessors and the helpers.
+- `_NeedsValue` gives `EvalBlank("needs a window value")`. Any other exception gives `EvalBlank(str(e))` and is logged at debug level, because helpers are total, so an exception is a bug to report rather than a user error.
+- The evaluation runs on the GUI thread with no timeout. That is safe because the language has no loops, and each formula is bounded at 400 tokens. `matches` is the one helper that could take long (regex backtracking). At design time, `evaluate` passes it at most the first 1,000 characters of the text, and the pattern is capped at 200 characters (§17.9).
+
+### 17.13 FB101–FB119 (`diagnostic_codes/fb1xx_formula.py`)
+
+| Code | Severity | Meaning (message in UX §13.4.8) | Fix |
+| --- | --- | --- | --- |
+| FB101 | Error | Unknown name | Replace with the suggestion |
+| FB102 | Error | Type mismatch (including a slot's type) | Wrap (`text()`, `number()`), set the kind, or remove |
+| FB103 | Error | Not available in formulas | "Move this into a method" (creates a stub) |
+| FB104 | Error | Circular values (the rule graph, §18.1) | Select the cycle |
+| FB105 | Error | Bad pattern | — |
+| FB106 | Error | A widget uses a reserved name. This is **already declared** by `query/name_policy.py` (M3) with this meaning; M7 reuses it and doesn't declare it again | Rename |
+| FB107 | Error | Excel habit (§17.7) | The recogniser's fix |
+| FB108 | Error | Syntax error | — |
+| FB109 | Error | `window.m()` is not in the window class | Create method |
+| FB110 | Info | A window value has no type; `bool()` is used | Add `-> bool` (Go to code) |
+| FB111 | Error | Formula too long or nested too deep | — |
+| FB112 | Error | Wrong number of values for a function or method | — |
+| FB113 | Error | A column outside an aggregate (M8) | — |
+| FB114 | Error | That widget has no such value or attribute | — |
+| FB115 | Error | Needs a data form (until M8) | — |
+| FB116 | — | Not used. LOGIC's "your code sets a rule's property" stays **FB207**, already declared by M6.2a (`fb2xx_code.py`); M7.8 produces it | — |
+| FB117 | Warning | A one-off step changes a property a rule controls | Show the rule |
+| FB118 | Warning | Unknown kind or format code; text is used | Pick a kind |
+| FB119 | Info | A check has no error label; the message shows only as a tooltip and an outline | Add label |
+
+**One declaration per code.** `fb1xx_formula.py` (M7.1a) declares every FB1xx code M7 uses, including FB104, FB117, FB119 and FB120 ("That form isn't in this project's forms folder", for `openForm`), even when a later lane produces them. Producer lanes import the codes; they never declare them again. FB106 and FB207 are reused, not redeclared. FB120 is a step problem kept in this range because it is about a formula-like reference, and the range table in `diagnostics.py` is updated to say "Formulas and step references".
+
+### 17.14 Conformance (MUST)
+
+`tests/form_builder/engine/logic/formula/` holds a table-driven suite of at least 400 cases. Each case is `(text, env fixture, slot) -> (type | problem codes, normalized text, compiled source, value for given widget values)`. It covers every row of LOGIC §4.2–4.10 and every function.
+
+Two fuzzers run on every PR:
+- Random token streams over the grammar: never an exception, and `analyze` is linear in tokens.
+- For every formula that analyzes clean, `normalize` keeps `ast.dump`, and `evaluate` equals running the compiled source inside a generated module under PySide6, for 20 random widget states.
+
+Both lanes run the suite under the Python 3.9 AppRun lane as well as 3.11.
+
+## 18. Rules, checks, formats and steps in generated code (M7.2–M7.4)
+
+### 18.1 The rule graph (`engine/logic/rules.py`, M7.2a)
+
+`rule_graph(doc, env) -> RuleGraph`. The nodes are `(widget, key)` for `cbcsValue`, `cbcsDefault`, `cbcsEnabledWhen`, `cbcsVisibleWhen` and `cbcsReadOnlyWhen`.
+
+- **Edges.** For every rule node R and every widget W that R's formula reads: when W has a `cbcsValue` node V, there is an edge V → R (V must be computed before R). Reading a widget with no Value rule adds no edge. `cbcsDefault` nodes are not in the refresh order: defaults run once, before the first refresh, in tree order, and their formulas may read only widgets without a Value rule (FB104 otherwise, "A default can't read a calculated field").
+- `order()` is a topological order of the Value nodes, then the state nodes. Ties are broken by widget tree order (LOGIC §7.1 rule 3).
+- `cycles()` lists the strongly connected components. Every node in a cycle gets FB104, and the whole cycle generates nothing.
+- The graph is rebuilt incrementally: only the edited nodes, keyed on `doc.structure_revision` and the touched logic properties, as M6.R's event splice did. Building the whole graph of a 300-widget form with 100 rules costs at most 5 ms on the Mac.
+
+### 18.2 Expanders (`engine/codegen/expanders/`, order per `logic_hooks`)
+
+| Order | Expander | Owner | Emits |
+| --- | --- | --- | --- |
+| 100 | `steps.py` (exists) | M7.4 extends | `_cbcs_<sender>_<signal>`, now with every verb of §18.4 and `when` |
+| 200 | `rules.py` | M7.2a | `cbcs_refresh` (LOGIC §7.1 rule 6, §7.2–7.3), `_cbcs_apply_defaults()`, and the setup lines `self._cbcs_apply_defaults()` then `self.cbcs_refresh()` (defaults first, in this one expander, so the order can't depend on expander numbers) |
+| 900 | `form_events.py` | M7.4 | `cbcsOnOpened`'s call as the **last** setup line, after every other expander's setup; `cbcsOnClosing` through `_CbcsCloseGuard` (LOGIC §7.7) |
+| 300 | `checks.py` | M7.3a | `_cbcs_check_<w>`, touch and recheck, `cbcs_validate` (LOGIC §7.4) |
+| 350 | `formats.py` | M7.3a | Formats applied on leaving a line edit, and in a Value write (`_cbcs_money`, and the rest) |
+
+- Each rule block starts with `# {widget}: {Rule words} = {formula text}`, the source reference that "Open rule" uses (§18.5). **Every piece of text that goes into a generated comment is passed through one sanitizer** (M6's `steps._one_line`, moved to the core by M7.0s): line breaks become spaces and the result is one line. A formula with line breaks is shown on one line in the comment.
+- `_cbcs_setup` joins expanders' setup lines in expander order (`emit.py`). Expanders that need an order relative to each other put those lines in one expander (rules does defaults then refresh) or use order 900+ for "after everything".
+- A rule with an Error emits, at its place in `cbcs_refresh`, exactly `# {widget}: {Rule words} skipped ({FBcode}: see Problems)`. It emits nothing else.
+- Connects go through the core, not each expander. A `Contribution` lists `connects: ((widget, handler_method), ...)`; the core looks up each widget's change signal in one table, `CHANGE_SIGNALS` (`engine/codegen/change_signals.py`, owned by M7.0s), and emits each `(widget, handler)` connect once, in a stable order. Rules connect to `cbcs_refresh`; checks to their touch and recheck methods. Examples of the table: `QLineEdit.textChanged`, `QSpinBox.valueChanged`, `QCheckBox.toggled`, `QComboBox.currentIndexChanged`, `QDateEdit.dateChanged`.
+- A widget is connected once, however many rules read it.
+- **Generated code for a form with no M7 logic is byte-identical to M6's.** Golden tests prove it on the whole M6 corpus.
+
+### 18.3 Run-time behavior (MUST)
+
+- `cbcs_refresh()` keeps its re-entrancy flag (LOGIC §7.1 rule 6). Writing a calculated widget does not mark the form dirty (that matters in M8).
+- **A rule wins over the Qt property at run time. The Qt property stays the design-time default** (LOGIC P3). The generator never removes or changes the Qt property.
+- A Value target is shown "Calculated" in the inspector. Its value property can't be edited there (UX §13.4).
+- A blank Value writes the widget's blank form: empty text, the special-value minimum, or index −1. Division by zero writes blank and sets the target's tooltip to "Can't divide by zero" (LOGIC §2.11).
+- Checks follow LOGIC §4.9 timing exactly:
+  - on leaving a field once it has been touched;
+  - live re-check only to clear;
+  - "Check all fields" covers every field;
+  - cross-field checks re-run when any field they read changes, while the check is showing.
+- Each field shows only its first failing message. `cbcsInvalid` and the tooltip are set as in §7.4.
+
+### 18.4 Step verbs (M7.4)
+
+M7.4 types these verbs in the codec (§15.3) and in a verb registry, `engine/logic/verbs/` (M7.0s), so the codec, codegen and the step picker learn each verb from one entry. The verbs: `validate`, `set`, `clear`, `focus`, `enable`, `disable`, `show`, `hide`, `message`, `ask`, `stop`, `page`, `openForm`, `close`, `call` (now with `when`), `slot` (now with `when`). Their fields are LOGIC §4.12's.
+
+M8 adds `new`, `save`, `delete`, `revert`, `reload`, `first`, `previous`, `next`, `last`, `find`, `showAll`, `refreshLookups`, `addRow`, `deleteRow` and `openRecord` (§19.12). Until then they stay FB403 (read-only, kept).
+
+- A step with `when` is wrapped in `if <compiled formula>:`, and the step's lines are indented under it. A `when` with an Error makes **only that step** skip: it is emitted as a one-line comment `# step {n} skipped ({code}: see Problems)`. The rest of the list still runs. This differs from §15.3's whole-list FB401, which is about JSON shape, not formula meaning.
+- `call`: the M6 rule stands unchanged: `if self._form.<m>(...) is False: return` when a later step is on, else a plain call (byte-identical to M6 for M6 lists).
+- `openForm` imports the target form's window module inside the step function, not at module top: `from forms.<stem>_window import <Class>`. In dialog mode it uses `exec()`. A target form that doesn't generate is FB120, "That form isn't in this project's forms folder", which M7.4 declares in its own module.
+- `close` runs the close guard (M8 adds the unsaved prompt). With no data, it is `self._form.accept()`, `reject()` or `close()`.
+
+### 18.6 Codegen core changes (M7.0s)
+
+M7.0s makes these changes in `engine/codegen/logic_hooks.py`, `emit.py`, `api.py` and `api_types.py`, so the M7 expanders get what they need without editing the core:
+
+- `CodegenContext` gains:
+  - `window: Optional[WindowFacts]` (the §16.1 reading of the window file at generate time; None when there is no window file);
+  - `formats: FormatSettings` (the project's Formats, UX E12, defaulting to US English);
+  - `widgets: Mapping[name, WidgetFacts]` (CONTRACTS §17.5's facts, built once per generate);
+  - `trace: bool` (below).
+- `Contribution` gains `needs_form: bool` and `connects` (§18.2). When any contribution sets `needs_form`, the core emits `self._form = {form_param}` once, at the place the steps expander emits it today. The steps expander sets `needs_form` instead of emitting it, so M6 output stays byte-identical.
+- **Trace (for Preview only).** `generate(..., trace=False)` by default. With `trace=True`, expanders emit one extra line per rule, check and step: `self._cbcs_trace("{kind}", "{source ref}", {value expr})`, where kind is `rule`, `check` or `step`. The core adds a `_cbcs_trace` method that calls `self._form._cbcs_trace(...)` when the form has one, and otherwise does nothing. Saved `ui_<stem>.py` files never have trace lines. Only Preview asks for `trace=True` (it sends the traced module in `TryStart.module_source`, §10, which already carries `window_values` and the stand-in class). The stand-in window class's `_cbcs_trace` turns each call into a `log` message of the matching kind (M7.6).
+- `steps._one_line` moves into the core as the single comment sanitizer (§18.2).
+- **Verb hooks.** The verb registry (§18.4) is read in every place M6 hard-codes `slot` and `call`:
+  - `codec.TYPED_VERBS` becomes a derived constant;
+  - `events_codec.PLAIN_VERBS` and `EventStep`;
+  - `events_catalog.step_words`;
+  - `behavior_ext/_rows.py`, which decides whether a step row is editable or read-only;
+  - `steps._generates`, which today requires `when is None`.
+
+  After M7.0s, a verb module can register words, editability, codec typing and emit without editing any of these files.
+
+### 18.5 "Open rule" links
+
+The run console turns a traceback frame inside `ui_<stem>.py` into a link when the line falls in a block whose first comment is a source reference. The block's lines are found by scanning back from the frame line to the nearest `# {widget}: ` comment at the method's indent. Activating the link opens the form and selects that widget's rule row. M7.3b owns the run-console link through a new `integration/run_links_ext/` contributor. If the shell's console has no extension point, M7.0s adds a minimal one.
+
+## 19. Data (M8)
+
+This section binds M8. It refines LOGIC_DESIGN §5, §6.1–6.2 (data shapes) and §7.6–7.7, with owner decisions 1 and 2 of 2026-10-20 applied. Where LOGIC_DESIGN differs, this section wins, and LOGIC_DESIGN's "Changes recorded by M8.0" lists each difference. The UX clauses are in UX_SPEC §13.5.
+
+### 19.1 Package and layering
+
+`engine/data/` is Qt-free. It never imports a PostgreSQL driver, and it touches the filesystem only through the functions named below.
+
+| Module | Owner | Contents |
+| --- | --- | --- |
+| `connections.py` | M8.1 | `Connection`, `ConnectionSet`, read and write of `connections.json` (§19.2), and code-name rules |
+| `machine.py` | M8.1 | The machine file path and read/write with mode 0600 (§19.3) |
+| `connections_module.py` | M8.1 | Generates `cbcs_connections.py` text from a `ConnectionSet` (§19.4) |
+| `schema.py` | M8.6 (model by M8.0s) | `Schema`, `Table`, `Column`, the cache file (§19.6), and staleness |
+| `types.py` | M8.0s | Column type → kind, suggested widget class, words, and value conversion (LOGIC §5.3) |
+| `source.py` | M8.0s | Typed codecs for `cbcsData`, `cbcsBind`, `cbcsBindMode`, `cbcsLookup` and `cbcsRows`, with canonical JSON (LOGIC §6.3) |
+| `sql.py` | M8.2 | Statement builders per dialect (§19.5). The only place SQL text is made |
+| `check.py` | M8.0s (frame), each lane its rows | Design-time data diagnostics, FB3xx (§19.8) |
+| `helper/` | M8.6 | The schema helper's request handlers, run in the child (§19.7) |
+| `diagnostic_codes/fb3xx_data.py` | M8.0s | FB301–FB3xx declarations (§19.8) |
+
+Codegen expanders (`engine/codegen/expanders/`, ordered per `logic_hooks`):
+
+| Order | Expander | Owner | Emits |
+| --- | --- | --- | --- |
+| 380 | `lookups.py` | M8.3a | `cbcs_load_lookups`, the `_CBCS_ALSO_ROLE` items, and `_cbcs_also` |
+| 400 | `record.py` | M8.2 | `cbcs_open`, `_cbcs_show`, `_cbcs_start_new`, the read/write/snapshot methods, verbs, the dirty prompt (through the close-guard hook), and `form.*` / `record.*` support. Its "open at start" setup line is contributed at order **890**, after every model and lookup is built and before form events (900) |
+| 420 | `rows.py` | M8.3b | The lines model, delegates, aggregates, and line save inside the record transaction |
+| 430 | `listing.py` | M8.3c | List-screen search, limit label, and open-record |
+
+Qt side:
+- `qtside/data_panel/` is the left-pane Data tab;
+- `qtside/inspector/data_ext/` is the inspector Data tab sections;
+- `integration/settings_ext/connections_page.py` is Settings › Connections, through the shell's settings-page registry, as UX-TMPL-006 joined;
+- `qtside/dialogs/from_table.py` is extended by M8.3d.
+
+M8.0s provides the registries and empty shells every lane fills, as M7.0s did:
+- the verbs of §18.4's M8 list, as read-only FB403 entries until each lane types them;
+- a **close-guard hook** in `form_events.py` (M7's `_CbcsCloseGuard`): an ordered list of guard contributions, so the record expander adds the dirty prompt without editing that file. A setup-line order on `Contribution` lines, so an expander can place one setup line at 890;
+- `CHANGE_SIGNALS` entries for the generated lines model (`dataChanged`, `rowsInserted`, `rowsRemoved`), so line edits run `cbcs_refresh` and Save's Enabled rule updates;
+- project scope for settings pages, with an `apply` that can refuse with a sentence and keep the dialog open (today's `apply` only logs exceptions);
+- the data names in `FormulaEnv` (§19.9);
+- both Data tabs with registered sections;
+- the FB3xx module;
+- `types.py`;
+- `source.py`.
+
+After M8.0s, lanes never edit each other's files.
+
+### 19.2 `connections.json` (version 1)
+
+```json
+{"version": 1,
+ "connections": [
+  {"name": "shop", "title": "Shop database", "engine": "sqlite", "file": "data/shop.db"},
+  {"name": "office", "title": "Office", "engine": "postgres", "host": "192.168.1.20", "database": "shop", "user": "clerk", "password": "ask", "setup": "on_connect"}
+ ]}
+```
+
+- `password` is one of `ask`, `machine` or `none`. It is absent for SQLite. No other secret key exists, and the reader rejects a file that has a `"secret"` or `"pw"` key, or a `password` value that isn't one of the three (FB302 is file-level; the settings page shows the sentence).
+- `file` is relative to the project root, with forward slashes, and must stay inside the project.
+- `name` matches `^[a-z_][a-z0-9_]*$` and is unique.
+- The JSON is canonical, with one connection per line as in LOGIC §6.3: keys in the order shown, and absent at default (`port` 5432, `schema` public, `setup` none, `tryShowSqlOnly` false).
+
+### 19.3 The machine file
+
+The path is `{state_root}/connections/{project_slug}.json`, where `state_root` is CBCS's state root (`app/core/constants.py` `GLOBAL_STATE_DIRNAME` under the home folder) and `project_slug` is the project manifest's name, slugified. The generated module embeds the slug as `_CBCS_PROJECT`, so the packaged app finds the same file. The format:
+
+```json
+{"version": 1, "connections": {"office": {"password": "…", "host": "…", "port": 5433}}}
+```
+
+`host` and `port` are optional per-machine overrides. Entries are keyed by connection code name. A code-name rename in Settings moves this machine's entry; other machines ask again. With the `machine` policy and no entry yet, the app's prompt (§19.4) has "Remember on this machine" ticked, and OK writes the entry. The file is written with mode 0600, and its folder with 0700. On read, a file whose mode allows group or other access is still used. The settings page shows "This password file can be read by other users of this computer. [Fix]" (FB321). The machine file is never in the project tree, and the packager has a test that it is never in a package.
+
+### 19.4 `cbcs_connections.py` (generated)
+
+The header is the generated-file header of §6, plus "Edit connections in Settings › Connections." The public API, documented as stable:
+- `open_connection(name)` returns the DB-API connection;
+- `set_password(name, password)`;
+- `dialect(name)` returns `"sqlite"` or `"postgres"`;
+- `close_all()`.
+
+Behaviour (MUST):
+- **One connection per name per process** (Try overrides this per session, §19.10). SQLite opens its file with `detect_types=0`, then runs `PRAGMA foreign_keys = ON`, so "points to" errors fire on SQLite too. `PROJECT_ROOT` is the folder of `cbcs_connections.py`, or `_CBCS_PROJECT_ROOT` when the helper set it (§19.7).
+- **Seed data.** Run from the project, SQLite uses `PROJECT_ROOT/file`. Run as an installed package (the packager writes `cbcs_installed.json` beside the module), SQLite uses `{state_root}/apps/{project_slug}/{file}`, copied from the packaged file on first run and never overwritten.
+- **PostgreSQL drivers** are tried in `_CBCS_DRIVERS = ("psycopg", "pg8000")` order (UX F4). The first that imports and connects wins. Failing all, it raises `CbcsConnectionError` naming each driver and its import error.
+- **After connect,** for PostgreSQL: `SET client_encoding TO 'UTF8'`, then `SET search_path TO "{schema}"` when the schema isn't `public`, then the setup function when named: `connection_setup.on_connect(name, connection)` (the owner's `on_connect(conn)` gains the name, so one function can serve several connections). Then a commit.
+- **Password resolution:**
+  1. `set_password`;
+  2. the machine file (policy `machine`);
+  3. a small generated prompt (a `QDialog` with a hidden-echo field, plus "Remember on this machine" for policy `machine`). It needs a `QApplication`, otherwise `CbcsConnectionError`. The answer is kept in memory for the process;
+  4. none.
+
+  Host and port overrides from the machine file apply for every policy.
+- **Every database path ends its transaction.** The module provides `work(name)`, a context manager yielding the connection. It commits on success, and on any exception it rolls back and re-raises (pitfalls E-1). Every generated database access runs inside one `with cbcs_connections.work(name) as conn:` block: verbs, and also reads (key load, lookups, lines load, list search). So no path leaves a connection idle in a transaction, holding locks. For psycopg the connection runs with `autocommit = False`, and pg8000's default is the same. **Nested blocks join the outer one:** a `work()` entered while another is open on the same connection yields it, and only the outermost block commits or rolls back. That lets `rows.py` save lines inside the record's save without splitting it.
+- **Reached through the module.** Generated code and ejected code (M8.5) write `import cbcs_connections` and call `cbcs_connections.work(...)` at call time, never `from cbcs_connections import …`. Try substitutes the module (§19.10), and nothing can hold a stale reference to the real one.
+- **Bytes guard.** Values that come back as `bytes` or `memoryview` for text columns are decoded as UTF-8 (pitfalls B-2).
+- **No other imports.** The module imports nothing from Code Studio, since it ships alone (no runtime library).
+
+### 19.5 Generated data code and SQL
+
+- **The dialect is fixed at generate time** from the source's connection engine. A form whose connection changes engine is regenerated (FB305 until it is). `sql.py` returns `Statement(text, params_order, caption)`. The record expander and Show SQL both call it, so the two never differ (UX-DATA-006).
+- **Statements** follow LOGIC §5.8 exactly:
+  - double-quoted identifiers; a name `quote_ident` accepts (spaces and hyphens included) is usable, and FB307 fires only when `quote_ident` refuses it;
+  - placeholders `?` or `%s`;
+  - `RETURNING` for PostgreSQL inserts, `lastrowid` for SQLite;
+  - no upsert;
+  - `IS` or `IS NOT DISTINCT FROM` in conflict checks;
+  - `LIKE … ESCAPE '\'` or `ILIKE … ESCAPE '\'` in searches.
+- **Types** (`types.py`). timestamp maps to `QDateTimeEdit`, time to `QTimeEdit`, float and real to `QDoubleSpinBox`, numeric(p,s) to a field whose decimals are at least s (fewer is FB304), and text to a line edit with `maxLength`. uuid, json, bytea, arrays and intervals bind read-only by default, shown in a line edit. A writable binding of those is FB304.
+- **Values.** Python `Decimal` goes to SQLite as `str` and to PostgreSQL as `Decimal`. Dates go to SQLite as ISO text and to PostgreSQL as `date`, converted explicitly in both directions. Blank text is saved as NULL, or `''` for a NOT NULL text column.
+- **Only changed columns are written.** An UPDATE sets only the bound columns whose read-back value differs from the snapshot, so a value the field can't show exactly is never rewritten unless the person changed it. The conflict check compares the loaded values of the same bound columns. An update with no changed column is skipped.
+- **New keys.** PostgreSQL uses `RETURNING`. SQLite uses `lastrowid` only when the key is an INTEGER PRIMARY KEY (rowid alias). Any other SQLite key must be bound to a field and typed in, or the source is FB306. Booleans go as 0/1 or `boolean`.
+- **Keys.** `cbcs_open` selects keys only (LOGIC §5.5), with `ORDER BY` the source order and the key last as the tie-breaker. Positions come from the key list. `find` narrows the list, and `form.isFiltered` is true until Show all.
+- **Dirty.** `_cbcs_snapshot` holds the values as written into the fields after load, read back through `cbcs_read_fields`, so formatting round-trips never look dirty. `_cbcs_is_dirty()` compares `cbcs_read_fields()` with it, plus the lines' snapshot, in ≤ 1 ms on the Mac for 20 fields and 20 lines (UX-M8-003). Calculated fields and read-only bindings are never in the comparison. `form.isDirty` reads it, and the rule graph re-runs dirty-dependent rules on each field change through the existing `cbcs_refresh` connects.
+- **Save.**
+  1. Checks.
+  2. `cbcsOnBeforeSave`, then the `beforeSave` hook. `False` cancels either.
+  3. Insert or update the record, with the conflict check when `conflicts` is `check`.
+  4. Lines: deletes, updates, then inserts. Position renumbering writes only rows whose position changed. When the schema shows a UNIQUE constraint over (link, position), the changed rows are first moved to negative positions, then to their final ones, in the same transaction.
+  5. Re-read the record and its lines.
+  6. End the block: commit in the app (rollback in Try, §19.10).
+  7. The new snapshot.
+  8. `cbcsOnAfterSave`, then the `afterSave` hook.
+
+  Steps 3–6 are one `work()` block, so the re-read sees the saved row in the app and in Try alike. A conflict (0 rows updated) rolls back and returns the conflict to the prompt of UX F10. A row that no longer exists gives "deleted by someone else". Database errors map to field labels per LOGIC §5.8 (SQLite message text, PostgreSQL SQLSTATE 23505, 23502, 23503), or else a message box with the database's text. Fields keep their values.
+- **Close guard.** The record expander registers the unsaved prompt (UX F9) through the close-guard hook (§19.1). It runs before `cbcsOnClosing`.
+- **List screens' own SQL** is wrapped as LOGIC §5.7 says. On PostgreSQL every `%` in the person's SQL is doubled before wrapping, because the drivers' `format` style treats it as a placeholder.
+- **Generated code for a form with no data properties is byte-identical to M7's.** Golden tests prove it on the M7 corpus.
+
+### 19.6 The schema cache
+
+The cache is `cbcs/schema/{connection}.json`, version 1, canonical. It is excluded from packages and listed in the project's ignore defaults.
+
+```json
+{"version": 1, "connection": "office", "engine": "postgres", "server": "9.3.25",
+ "readAt": "2026-11-02T14:02:11", "driver": "psycopg",
+ "tables": [
+  {"name": "invoices", "key": "id", "triggers": false, "rows": 100000,
+   "columns": [
+    {"name": "id", "type": "integer", "nullable": false, "default": "nextval('invoices_id_seq'::regclass)", "unique": true},
+    {"name": "customer_id", "type": "integer", "nullable": false, "references": {"table": "customers", "column": "id"}}
+   ]}
+ ]}
+```
+
+- **`key`** is the single-column primary key, or absent.
+- **`rows`** is a count capped at 100,000: `SELECT count(*) FROM (SELECT 1 FROM t LIMIT 100001) AS c`, run on both engines for tables used as a lookup or source, and `reltuples` for the others on PostgreSQL (a never-analyzed table's 0 is replaced by the capped count). 100,001 means "more than 100,000". The lookup advice (UX-LKP-001) uses it.
+- **Types** are lower-case as the server reports them. For SQLite this is the declared type, with affinity applied by `types.py`.
+- **SQLite** is read in the editor process with `sqlite3.connect("file:…?mode=ro", uri=True)`, using `PRAGMA table_info`, `foreign_key_list`, `index_list` and `index_info`, and `sqlite_master` for triggers.
+- **PostgreSQL** is read by the helper (§19.7) from `pg_catalog` only: `pg_class`, `pg_namespace`, `pg_attribute`, `pg_attrdef`, `pg_constraint`, `pg_index` and `pg_trigger` (not internal). Not `information_schema`, whose constraint views hide tables the login doesn't own, so a clerk login would see no keys or references. Only queries valid on 9.3 are used.
+- **Staleness.** The cache is stale after 7 days (FB310, Info). A missing cache is FB309 (Info). Design-time checks run against whatever cache exists, and never block opening a form.
+
+### 19.7 The schema helper
+
+The helper is a child process started the same way the preview child is: `ProcessSupervisor` on AppRun with the short `runpy` stub (§10.1), using the same framed stdio JSON. Passwords follow §10.4: the helper asks with `need_secret` and the editor answers with `provide_secret`. A request never carries a password unasked. It lives only for one request batch. Messages, version 1:
+
+| Request | Fields | Response |
+| --- | --- | --- |
+| `test` | `connection` (the §19.2 object). The password comes only through `need_secret`, never on argv or in the environment | `{ok, server, driver, tables}` or `{ok: false, kind, message}`, where `kind` is one of `auth`, `unreachable`, `no_database`, `no_driver`, `other` |
+| `schema` | `connection` | `{ok, schema}`, where `schema` is the §19.6 object |
+| `probe_select` | `connection`, `sql` | `{ok, columns: [{name, type}]}`. Runs `SELECT * FROM (<sql>) AS q LIMIT 0` inside a read-only transaction (`SET TRANSACTION READ ONLY`) that is rolled back (UX-LIST-001) |
+| `cancel` | — | The child exits |
+
+- The helper connects with the same code the app uses: it writes `connections_module`'s text for the connection under test to a temp folder, with `_CBCS_PROJECT_ROOT` set to the real project root, and puts the project root on `sys.path` so `connection_setup` imports.
+- **Timeouts:** 10 s to connect, 20 s for the batch. At the timeout the editor kills the child and reports `unreachable` or "took too long".
+- **Classification:** auth errors (SQLSTATE 28P01, 28000), unreachable (socket errors), and no database (3D000) are mapped. Everything else is `other`, with the first line of the driver's message.
+
+### 19.8 FB301–FB3xx (`diagnostic_codes/fb3xx_data.py`, M8.0s)
+
+LOGIC §2.9's FB301–FB303 examples are superseded: their cases are FB303 (missing column), FB310 (stale schema) and FB311 (lookup without a key) below.
+
+| Code | Severity | When | Sentence or source |
+| --- | --- | --- | --- |
+| FB301 | Error | The source names a connection that isn't in `connections.json` | "This form uses the connection {name}, which this project doesn't have." Fix: pick one |
+| FB302 | Error | `connections.json` can't be read, or breaks §19.2 (secrets included) | The reason |
+| FB303 | Warning | A bound column isn't in the cached schema | UX "Bind, missing" |
+| FB304 | Warning | A binding's widget doesn't fit the column type | UX "Bind, type". Fixes per UX-BIND-002 |
+| FB305 | Warning | `cbcs_connections.py`, or a form's generated data code, was generated from a different `connections.json`. Each generated file embeds the hash of the canonical `connections.json` it came from, never file times (git checkouts change those) | Regenerated on the next save. The note says so |
+| FB306 | Error | The source table has no single-column key | UX-DATA-002 sentence |
+| FB307 | Error | `quote_ident` refuses the table or column name | "{name} can't be used as a table or column name." |
+| FB308 | Warning | Two fields bound to one column | "{column} is bound to both {a} and {b}." |
+| FB309 | Info | No schema cache for the connection | "Columns haven't been read yet. [Read now]" |
+| FB310 | Info | The schema cache is stale | UX "Schema, stale" |
+| FB311 | Error | A lookup's table, key, show or also column is missing | The missing name |
+| FB312 | Info | A lookup table has over 2,000 rows | UX-LKP-001 sentence |
+| FB313 | Error | A lines link column doesn't point to the form's table | "{link} in {table} doesn't point to {source table}." |
+| FB314 | Error | A list screen's own SQL isn't a single SELECT, `probe_select` failed, or pg8000 would still be inside a quote when the search placeholders follow | UX-LIST-001 sentence, the database's message, or the §13.5.9 pg8000 scan sentence |
+| FB315 | Warning | A list's search box isn't a line edit, or a filter widget can't give a value | The widget and the reason |
+| FB316 | Warning | A data hook names a method the window file doesn't have | As FB209's style, with Create method |
+| FB317 | Warning | A connection's setup function isn't in `connection_setup.py` | Create function |
+| FB318 | Error | A Records step on a form with no data source | "Records steps need this form connected to a table." |
+| FB319 | Warning | A NOT NULL column with no default isn't bound on a record form | "Saving a new {record} will fail: {column} is required and no field is bound to it." |
+| FB320 | Error | A second lines grid, or a nested one | UX-LINES-003 sentence |
+| FB321 | Warning | The machine file can be read by other users | §19.3 sentence |
+| FB322 | Warning | A list opens a record form by a column that is not that form's key | "{form} is keyed by {target}, not {key}." |
+
+Codes run in `check.py` against the document, the connection set and the cache. They are cheap: ≤ 5 ms on the Mac for a 40-field form, and they reuse the structure memo as M7 does.
+
+### 19.9 Data names in formulas
+
+`FormulaEnv` gains, for a bound form:
+- `form` facts: `position` whole, `count` whole, `isNew` yes/no, `isDirty` yes/no, `isFiltered` yes/no;
+- `record` facts, one per table column, typed by `types.py`;
+- `also` facts on lookup combos;
+- grid facts: the column names for aggregates, and the row's columns inside a grid column formula.
+
+The compiler emits `self._cbcs_form_position()` and its siblings for `form.*`, and `self._cbcs_record.get("{column}")` for `record.*`. `form.*` and `record.*` on an unbound form stay FB115 (§17.5), with its sentence shortened to "Connect this form to a table first." The rule graph treats `form.*` and `record.*` as inputs that change on load, New, save and every field change for `isDirty`. Rules that read them refresh through `cbcs_refresh`, which `_cbcs_show` and `_cbcs_start_new` call.
+
+### 19.10 Try with data (M8.4)
+
+`TryStart` (§10.2) gains `data: {connection_name: {"mode": "scratch"|"rollback"|"would_run", "scratch": path?}}`, the mode names §10.2 already uses.
+
+- **Substitution.** Before the child imports the form module or anything from the project, it puts a Try module into `sys.modules["cbcs_connections"]`. It has the same API, and its connections and scratch copies belong to the Try session: they are opened per session and closed on `try_stop`, never shared between two forms' Try sessions in the warm child. Generated and ejected code reach the database only through the module (§19.4), so nothing bypasses it.
+- **Own connection hook.** A source whose hooks name `connection` gets no data in Try. Every statement is logged as "Would run" with UX's "own connection" sentence, because Code Studio can't wrap a connection your code makes.
+- **`scratch`** copies the SQLite file to the session's temp folder at Try start, using SQLite's backup API, not a file copy, so a WAL file is captured too. Connections point there. The copy is deleted at the end unless "Keep scratch copy" is set. Everything else behaves as in the app.
+- **`rollback`** opens a real PostgreSQL connection. `work()` starts each block with `SET LOCAL statement_timeout = '5s'` and `SET LOCAL lock_timeout = '2s'` (both exist in 9.3), and **ends every block with a rollback, never a commit**. The Try connection's own `commit()` also rolls back, so a hook that calls `open_connection(name)` and commits writes nothing, and `try_stop` rolls back anything still open. A verb's save, its re-read and its lines all run inside one `work()` block (§19.5 steps 3–6 are one block), so the form shows what the database returned before the rollback.
+  - A record created in rollback mode keeps `form.isNew` after its save. Its key isn't added to the key list. What ran says "Saved, then rolled back". Leaving the record discards it.
+  - An update or delete leaves the key list alone. The next show re-reads the real row.
+  - SQLSTATE 55P03 (lock timeout) and 57014 (statement timeout) map to the UX sentences.
+- **`would_run`** runs reads normally. Writes are logged and not run, and the verb reports success with the values unchanged.
+- **Every statement** is traced as kind `sql`, with its text and values.
+- **Side-effect warnings.** A sequence is used when an INSERT leaves out a column whose default calls `nextval(`, for any column, not only the key. Triggers come from the cache's `triggers` flag. Each warning appears once per Try session.
+
+### 19.11 Test databases
+
+- **SQLite.** `tests/form_builder/fixtures/m8/make_shop.py` builds `shop.db` deterministically: customers, products, invoices, invoice_lines, with keys, references, NOT NULL and UNIQUE. It builds the small fixture by default and the UX-M8-003 reference with `--reference`. The fixture is generated, not committed.
+- **PostgreSQL 9.3.** A local container per the `local-dev-data` rules (`--label dev.lease=run`, removed in teardown), image `postgres:9.3`. Tests carry the marker `pg93` and read `CBCS_PG93_DSN`. Without it they skip, with the reason "set CBCS_PG93_DSN to run PostgreSQL 9.3 tests". The gate's `pg93` lane starts the container, runs the marker, and removes the container.
+- **Both drivers.** psycopg and pg8000 each run the `pg93` suite, parametrized by `_CBCS_DRIVERS` order (UX §13.5.11).
+- **Driver versions.** M8.1 records the exact psycopg, pg8000 and scramp versions in FreeCAD 1.1's `/opt/freecad` on the VM, in PLAN Appendix A. The Mac's FreeCAD.app ships neither driver. M8.1 installs the VM's versions into a test-only folder, `ChoreBoyCodeStudio_artifacts/vendor_pgtest/`: pg8000 and scramp pure-Python, psycopg with its macOS binary. `run_tests.py` adds that folder to the path only for the `pg93` marker. The folder is never a product dependency, and never in `vendor/` or a package. When the VM's psycopg can't reach 9.3, the order flip of UX F4 is recorded there too.
+
+### 19.12 Shape changes to LOGIC §6.2
+
+- `Data` (record form) gains `recordWord?: string`. It is written only when it differs from the default singular (UX F9).
+- `Data` (list) renames `query` to `sql`. The reader accepts `query` and writes `sql`.
+- Step verbs gain `addRow`, `deleteRow`, `showAll` and `openRecord` (`{"do": "openRecord", "which": "new"|"selected"}`, for list screens) next to §18.4's M8 list. `delete` asks its own question, so the record toolbar's delete button has no separate `ask` step.
+- `recordWord` sits after `table` in key order. Its default is the table name made singular by these rules, in order: "ies" → "y", "sses" → "ss", "xes" → "x", otherwise a final "s" is dropped. Any other plural is typed in by hand.
+- Each shape is decoded by `source.py` into frozen dataclasses. Unknown keys are kept on read and written back after the known keys, so a newer file survives an older Code Studio (LOGIC §6.5's rule).
+
+## Appendix A. Spike: kept, replaced, dropped
+
+| Spike element | Verdict | Production |
+| --- | --- | --- |
+| `.ui` as the model, a single owner of the tree, unknown elements kept | **Keep** | §2 |
+| `History` + command classes, every edit through history | **Keep the rule, replace the mechanism** | Recorded frozen ops with inverses; redo re-applies ops; replay verified (§3) |
+| Commands that capture state on first `redo` and `deepcopy` nodes | **Replace** | Frozen `NodeSpec` ops (D4) |
+| `find_node`/`locate` tree walks (O(n) per lookup) | **Replace** | O(1) indexes (§2.2) |
+| Untyped `body` lists of mixed parts | **Replace** | Schema-typed slots, ui4.xsd write order (§2.2) |
+| `_norm_text` stripping whitespace-only text | **Drop (bug)** | Exact value text (§2.4) |
+| `defaults.py` omitting "default" properties on write | **Drop (lossy)** | The writer writes every entry; the class table drives Reset only (D8) |
+| Deterministic writer, one-space indent, `\n` | **Keep** | Pinned byte rules (§8.2) |
+| Realize moving live widgets instead of rebuilding | **Keep** | §5.2 |
+| `units(doc)` signature scan on every structural edit | **Replace** | `structure_dirty` from events (D5) |
+| Main-window structural edits rebuilding the whole canvas | **Replace** | Per-container reconcile |
+| `_reset_property` constructing a fresh widget per reset | **Replace** | Class-table default; one cached instance per class for volatile defaults |
+| Overlay as a child of the view, on top of the proxy | **Keep** | §5.3 |
+| Deferred hit index | **Keep the laziness, replace the structure** | O(1) epoch invalidation, hit tree queries (§5.5) |
+| Removing the per-widget event filter, freeing replaced forms at once | **Keep** | §5.3 |
+| Chrome style sheet never on the app, explicit runtime palette | **Keep and strengthen** | Scene-level style and palette plus tests (§5.4) |
+| Guarded FreeCADGui import for `Gui::` widgets | **Keep** | §9.3 |
+| Preview inside the editor process | **Drop** | Child process only (§10.4) |
+| Tab order splicing, next free cell, buddy pairing | **Keep as query helpers / transactions** | §2.8, §3.5 |
+| Spike UI (canvas, inspector, outline) | **Redesign** | From the UX spec (M0.9), not from these contracts |
+
+## Appendix B. Corrections to upstream documents (folded in, no decision needed)
+
+1. **LOGIC_DESIGN §6.3** says `>` is written unescaped "as Qt does". QXmlStreamWriter escapes `>` as `&gt;` (Designer files show `&lt;html&gt;`). §8.2 rule 5 is the rule.
+2. **LOGIC_DESIGN §7.1 rule 4** says "Python 3.11 and PySide6 only". The plan's fixed decision says generated code is Python 3.9-parseable. §9.3 follows the plan.
+3. **LOGIC_DESIGN §4.5** gives reserved widget names code FB101. That's now **FB106**; FB101 keeps the meaning "unknown name in a formula".
+4. **PLAN §3** says the preview child is "started with QProcess". CBCS's existing supervision code, which the plan also says to reuse, is `ProcessSupervisor` (`subprocess.Popen`, argv list, no shell, process group). It's already proven on ChoreBoy for the runner and the plugin host. §10.1 uses it. The M0.7 probe should confirm the AppRun cold start through the same path.
+5. **PLAN §3 (`__init__.py` FeatureSpec)**: the predicate lives in `install.py` and uses `qt_binding_choice.select_binding()`, so importing `app.features` never imports a binding (§11.3).
+6. **AT-32** step 3 on PySide6 is done through View XML. M2.2 amends the wording (§11.4).
+
+## Appendix C. Open questions for the orchestrator
+
+1. **Generation options storage.** The uic-flag equivalents (`CodegenOptions`) need a home. This contract puts them in project settings (`cbcs/project.json`, a per-project default with per-form overrides), not in the `.ui` file, because Designer has no place for them and uic takes them as command-line flags. M5.5b needs a yes or no before it writes settings keys. Nothing in M1–M3 depends on it.
+1. **Generation options storage.** The uic-flag equivalents (`CodegenOptions`) need a home. This contract puts them in project settings (`cbcs/project.json`, a per-project default with per-form overrides), not in the `.ui` file, because Designer has no place for them and uic takes them as command-line flags. M5.5b needs a yes or no before it writes settings keys. Nothing in M1–M3 depends on it.
+
+## Appendix D. Gate responses (O-logic review of M1.0, 18 items)
+
+1. Done (§3.3, `ops.py`): presence is the op precondition; freshness is checked by `ctx.do` on forward application only.
+2. Done (§3.8, `log.py`): concatenated ops and inverses, appended commands, new `selection_after`, net-nil defined against first inverses (and only for property/field-only entries).
+3. Done (§3.5, §3.8, `catalog.py`, `log.py`): `MoveNodes` key `("move", ids)`; `execute(..., continue_gesture=True)`. Nudge window: **1 s between presses**, matching UX-NUDGE-001 as written, so **no UX_SPEC clause text changes**; the contract's old "500 ms after release" is removed. Extra: `cbcsSplitterSizes` added (§2.4, §4.2, §5.1, §9.3, `storage.py`); UX-SPLIT-002's "mechanism per CONTRACTS.md" now resolves to it.
+4. Done (§3.8): measure before the transaction opens; planners needing in-transaction measurements reject.
+5. Done (`events.py`, §4.1): `spec` on NodeInserted and DocumentReplaced.
+6. Done (§5.1, §5.2, `realize/api.py`): three phases; zorder, page-attribute and splitter-size rows added.
+7. Done (§6.2, `selection.py`, `events.py`): state at 5, notification at `PRIORITY_SELECTION_NOTIFY` = 100.
+8. Done (§5.5, `hit_index.py`, `geometry.py`).
+9. Done with one addition (§3.6, `participants/__init__.py`): besides `scope`, `rename_ops` takes the whole rename map applied simultaneously, because InsertFragment's map can contain chains (`x→x_2` while the fragment's own `x_2→x_3`), which sequential one-pair calls would double-rename.
+10. Done (§2.3, `schema.py`, `nodes.py`): `anchor = (group, n)`.
+11. Done (§8.2 rules 1 and 5, `catalog.py`).
+12. Done (§8.2 rules 4 and 6 provisional, M0.4b table, `numfmt.py` split into `format_double`/`format_float`).
+13. Done (§10.1, §10.2, §10.3, `protocol.py`, `pool.py`, `child/main.py`): (a)–(f) as written; ping is answered on the child GUI thread so hangs in user code are caught.
+14. Done (§9.1, `codegen/api.py`).
+15. Done (§11.2, `tab_content_source.py`, `tab_content_providers.py`).
+16. Done (§11.5): recording-only finder plus the two assertions.
+17. Done (§9.3, `codegen/api.py`): FB502 for unusable names; pinned string-literal rule (independent of Python's Unicode tables, so 3.9 and 3.11 give the same bytes); `syntax-py39` compile lane.
+18. Done (§9.2, `codegen/api.py`): `.py.txt` backup name; M2.3 exclusions.
+
+Nothing was rejected.
+
+## Orchestrator resolution of open questions (2026-10-21)
+
+- **Codegen options (uic-flag equivalents):** stored in project settings (`cbcs/project.json`), with a per-project default and per-form overrides, as proposed. They only affect M5.5b.
+- **Stub location:** the typed stubs live in `docs/form_builder/contracts/stubs/` as the reference. Each work package copies the stubs it owns into `app/...` and implements them; it does not import from `docs/`.
+
+## Appendix E. Writer pins from the Designer resave corpus (M0.4b, fixed 2026-10-21)
+
+Source: `tests/form_builder/corpus/designer_resaved/FINDINGS.md` (Qt Designer 6.8.3 from the FreeCAD 1.1.4 AppImage re-saved 209 forms). These replace every "provisional" rule in §8.2.
+
+**Policy.** The writer's target is Designer's bytes for every construct Designer keeps. Where Designer drops data, our writer stays lossless, and the difference goes on an allowlist. The oracle `test_designer_resave_diff.py` turns from xfail into a hard gate once only allowlisted differences remain (WP M1.1d).
+
+| Rule | Fixed value |
+| --- | --- |
+| Empty elements | Self-closing `<x/>` when present and empty, `<string/>` and `<string notr="true"/>` included. Empty `<author>`, `<comment>` and `<exportmacro>` are omitted. |
+| `<double>` | 15 fraction digits everywhere, including inside pointf, rectf, sizef and gradient stops. `-0` is written `0.000000000000000`. |
+| `<float>` | Designer drops floats on save. We keep them, written with 8 fraction digits; `-0` is written `0.00000000`. Allowlisted. |
+| Enums | Written qualified: `Qt::Orientation::Horizontal`, `QFrame::Shape::Box`. Single-token attribute enums such as `TopToolBarArea` stay as they are. Values read unqualified are written qualified, as Designer does. |
+| Unknown dynamic enums and sets | Designer drops them. We keep them verbatim. Allowlisted. |
+| `<resources/>` and `<connections/>` | Always written, self-closed when empty. The `name` attribute on `<resources>` is dropped, as Designer does. |
+| Dynamic `cbcs*` properties | Written after the widget's standard properties, with `stdset="0"` and attribute order `name`, `stdset`. `notr` is kept when present and never added. |
+| Attribute order | `<property name stdset>`; `<string notr comment extracomment id>`; the same for `<stringlist>`. |
+| Tag spellings | `longLong`, `UInt`, `uLongLong`, `gradientstop`, `cursorShape` (named shape). Reading stays case-insensitive. |
+| `<sizepolicy>` | Attribute form: `hsizetype="Preferred" vsizetype="Preferred"`, with `horstretch` and `verstretch` children. |
+| `stdset` | `stdset="1"` is omitted; `stdset="0"` is written. Layout `margin` is stored with `stdset="0"`. |
+| Redundant `objectName` | Omitted when it only repeats the widget or layout `name`. |
+| `<iconset>` | One line: `<iconset [theme=…]><normaloff>a</normaloff>[<normalon>b</normalon>…]a</iconset>`. The normal path is written once as text after the last state. Designer drops `resource` and `alias`; we keep them (allowlisted). |
+| `<script>`, `<widgetdata>`, `<propertyspecifications>`, `<images>`, `<addpagemethod>` | Designer drops them. We keep them (allowlisted, §2.2 MUST). |
+| Comments | Comments inside opaque subtrees are kept. Comments outside them are dropped (§2.3). |
+| Palette | Stored roles only. Legacy `<color>` lists are kept verbatim and never converted. No roles are added from the live palette. A `<color>` without `alpha` stays without `alpha` (Designer writes `alpha="0"`, which reloads as transparent). |
+| Line endings | Preserved per file: LF stays LF, and a CRLF source is written CRLF on every line. |
+| Indentation and declaration | One space per level, no trailing whitespace, final newline. `<?xml version="1.0" encoding="UTF-8"?>` is always written first. |
+| Text escaping | `"` in text becomes `&quot;` (already §8.2.5). |

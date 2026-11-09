@@ -18,10 +18,12 @@ class EditorConfigIndentation:
 
 def resolve_editorconfig_indentation(file_path: str, *, project_root: str | None = None) -> EditorConfigIndentation | None:
     """Resolve nearest `.editorconfig` indentation values for target file."""
-    target = Path(file_path).expanduser().resolve()
+    from app.editors.editor_manager import normalized_path
+
+    target = Path(normalized_path(file_path))
     if not target.exists():
         return None
-    search_stop = None if project_root is None else Path(project_root).expanduser().resolve()
+    search_stop = None if project_root is None else Path(normalized_path(project_root))
     editorconfig_path = _find_nearest_editorconfig(target.parent, stop_dir=search_stop)
     if editorconfig_path is None:
         return None

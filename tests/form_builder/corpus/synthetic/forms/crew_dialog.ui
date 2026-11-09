@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: MIT -->
+<ui version="4.0">
+ <class>CrewDialog</class>
+ <widget class="QDialog" name="CrewDialog">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>640</width>
+    <height>480</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>Crew</string>
+  </property>
+  <layout class="QFormLayout" name="formLayout">
+   <item row="0" column="0">
+    <widget class="QLabel" name="label_leadEdit">
+     <property name="text">
+      <string>Lead</string>
+     </property>
+     <property name="buddy">
+      <cstring>leadEdit</cstring>
+     </property>
+    </widget>
+   </item>
+   <item row="0" column="1">
+    <widget class="QLineEdit" name="leadEdit"/>
+   </item>
+   <item row="1" column="0">
+    <widget class="QLabel" name="label_sizeEdit">
+     <property name="text">
+      <string>Size</string>
+     </property>
+     <property name="buddy">
+      <cstring>sizeEdit</cstring>
+     </property>
+    </widget>
+   </item>
+   <item row="1" column="1">
+    <widget class="QSpinBox" name="sizeEdit"/>
+   </item>
+   <item row="2" column="0">
+    <widget class="QLabel" name="label_shiftCombo">
+     <property name="text">
+      <string>Shift</string>
+     </property>
+     <property name="buddy">
+      <cstring>shiftCombo</cstring>
+     </property>
+    </widget>
+   </item>
+   <item row="2" column="1">
+    <widget class="QComboBox" name="shiftCombo"/>
+   </item>
+   <item row="3" column="0">
+    <widget class="QLabel" name="label_onCallCheck">
+     <property name="text">
+      <string>On call</string>
+     </property>
+     <property name="buddy">
+      <cstring>onCallCheck</cstring>
+     </property>
+    </widget>
+   </item>
+   <item row="3" column="1">
+    <widget class="QCheckBox" name="onCallCheck"/>
+   </item>
+  </layout>
+ </widget>
+ <tabstops>
+  <tabstop>leadEdit</tabstop>
+  <tabstop>sizeEdit</tabstop>
+  <tabstop>shiftCombo</tabstop>
+  <tabstop>onCallCheck</tabstop>
+ </tabstops>
+</ui>

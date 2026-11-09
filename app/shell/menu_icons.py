@@ -80,6 +80,7 @@ _ACTION_ICON_BUILDERS: dict[str, MenuIconBuilder] = {
     "shell.action.file.newProject": lambda c: icon_provider.project_new_icon(c.primary, c.accent),
     "shell.action.file.newWindow": lambda c: icon_provider.new_window_icon(c.primary, c.accent),
     "shell.action.file.newProjectFromTemplate": lambda c: icon_provider.template_icon(c.primary, c.accent),
+    "shell.action.file.newForm": lambda c: icon_provider.file_icon(c.primary),
     "shell.action.file.openProject": lambda c: icon_provider.project_icon(c.primary),
     "shell.action.file.openFile": lambda c: icon_provider.file_icon(c.primary),
     "shell.action.file.quickOpen": lambda c: icon_provider.search_icon(c.primary),

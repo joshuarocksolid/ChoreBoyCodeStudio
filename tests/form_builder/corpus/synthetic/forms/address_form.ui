@@ -1,0 +1,106 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: MIT -->
+<ui version="4.0">
+ <class>AddressForm</class>
+ <widget class="QDialog" name="AddressForm">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>640</width>
+    <height>480</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>Address</string>
+  </property>
+  <layout class="QFormLayout" name="formLayout">
+   <item row="0" column="0">
+    <widget class="QLabel" name="label_line1Edit">
+     <property name="text">
+      <string>Line 1</string>
+     </property>
+     <property name="buddy">
+      <cstring>line1Edit</cstring>
+     </property>
+    </widget>
+   </item>
+   <item row="0" column="1">
+    <widget class="QLineEdit" name="line1Edit"/>
+   </item>
+   <item row="1" column="0">
+    <widget class="QLabel" name="label_line2Edit">
+     <property name="text">
+      <string>Line 2</string>
+     </property>
+     <property name="buddy">
+      <cstring>line2Edit</cstring>
+     </property>
+    </widget>
+   </item>
+   <item row="1" column="1">
+    <widget class="QLineEdit" name="line2Edit"/>
+   </item>
+   <item row="2" column="0">
+    <widget class="QLabel" name="label_cityEdit">
+     <property name="text">
+      <string>City</string>
+     </property>
+     <property name="buddy">
+      <cstring>cityEdit</cstring>
+     </property>
+    </widget>
+   </item>
+   <item row="2" column="1">
+    <widget class="QLineEdit" name="cityEdit"/>
+   </item>
+   <item row="3" column="0">
+    <widget class="QLabel" name="label_regionEdit">
+     <property name="text">
+      <string>Region</string>
+     </property>
+     <property name="buddy">
+      <cstring>regionEdit</cstring>
+     </property>
+    </widget>
+   </item>
+   <item row="3" column="1">
+    <widget class="QLineEdit" name="regionEdit"/>
+   </item>
+   <item row="4" column="0">
+    <widget class="QLabel" name="label_postalEdit">
+     <property name="text">
+      <string>Postal</string>
+     </property>
+     <property name="buddy">
+      <cstring>postalEdit</cstring>
+     </property>
+    </widget>
+   </item>
+   <item row="4" column="1">
+    <widget class="QLineEdit" name="postalEdit"/>
+   </item>
+   <item row="5" column="0">
+    <widget class="QLabel" name="label_countryCombo">
+     <property name="text">
+      <string>Country</string>
+     </property>
+     <property name="buddy">
+      <cstring>countryCombo</cstring>
+     </property>
+    </widget>
+   </item>
+   <item row="5" column="1">
+    <widget class="QComboBox" name="countryCombo"/>
+   </item>
+  </layout>
+ </widget>
+ <tabstops>
+  <tabstop>line1Edit</tabstop>
+  <tabstop>line2Edit</tabstop>
+  <tabstop>cityEdit</tabstop>
+  <tabstop>regionEdit</tabstop>
+  <tabstop>postalEdit</tabstop>
+  <tabstop>countryCombo</tabstop>
+ </tabstops>
+</ui>

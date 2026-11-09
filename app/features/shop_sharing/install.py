@@ -2,14 +2,18 @@
 
 from __future__ import annotations
 
-from app.shell.shell_composition_context import ShellCompositionContext, bind_private_attrs
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from app.shell.shell_composition_context import ShellCompositionContext
 
 
-def install_shop_sharing(ctx: ShellCompositionContext) -> None:
+def install_shop_sharing(ctx: "ShellCompositionContext") -> None:
     """Runs before the status bar exists. ``build()`` in finalize creates the chip and the prompt."""
     from app.features.shop_sharing.service import shop_sharing_service
     from app.features.shop_sharing.window import ShopSharingShell, ShopSharingWindowPorts
     from app.shell.main_window_panels import _restore_python_console_history
+    from app.shell.shell_composition_context import bind_private_attrs
 
     w = ctx.w
     bind_private_attrs(

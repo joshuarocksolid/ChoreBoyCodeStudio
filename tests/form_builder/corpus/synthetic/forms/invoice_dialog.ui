@@ -1,0 +1,120 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: MIT -->
+<ui version="4.0">
+ <class>InvoiceDialog</class>
+ <widget class="QDialog" name="InvoiceDialog">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>640</width>
+    <height>480</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>Invoice</string>
+  </property>
+  <layout class="QFormLayout" name="formLayout">
+   <item row="0" column="0">
+    <widget class="QLabel" name="label_customerEdit">
+     <property name="text">
+      <string>Customer</string>
+     </property>
+     <property name="buddy">
+      <cstring>customerEdit</cstring>
+     </property>
+    </widget>
+   </item>
+   <item row="0" column="1">
+    <widget class="QLineEdit" name="customerEdit"/>
+   </item>
+   <item row="1" column="0">
+    <widget class="QLabel" name="label_numberEdit">
+     <property name="text">
+      <string>Number</string>
+     </property>
+     <property name="buddy">
+      <cstring>numberEdit</cstring>
+     </property>
+    </widget>
+   </item>
+   <item row="1" column="1">
+    <widget class="QLineEdit" name="numberEdit"/>
+   </item>
+   <item row="2" column="0">
+    <widget class="QLabel" name="label_issuedEdit">
+     <property name="text">
+      <string>Issued</string>
+     </property>
+     <property name="buddy">
+      <cstring>issuedEdit</cstring>
+     </property>
+    </widget>
+   </item>
+   <item row="2" column="1">
+    <widget class="QDateEdit" name="issuedEdit"/>
+   </item>
+   <item row="3" column="0">
+    <widget class="QLabel" name="label_dueEdit">
+     <property name="text">
+      <string>Due</string>
+     </property>
+     <property name="buddy">
+      <cstring>dueEdit</cstring>
+     </property>
+    </widget>
+   </item>
+   <item row="3" column="1">
+    <widget class="QDateEdit" name="dueEdit"/>
+   </item>
+   <item row="4" column="0">
+    <widget class="QLabel" name="label_notesEdit">
+     <property name="text">
+      <string>Notes</string>
+     </property>
+     <property name="buddy">
+      <cstring>notesEdit</cstring>
+     </property>
+    </widget>
+   </item>
+   <item row="4" column="1">
+    <widget class="QPlainTextEdit" name="notesEdit"/>
+   </item>
+   <item row="5" column="0">
+    <widget class="QLabel" name="label_totalEdit">
+     <property name="text">
+      <string>Total</string>
+     </property>
+     <property name="buddy">
+      <cstring>totalEdit</cstring>
+     </property>
+    </widget>
+   </item>
+   <item row="5" column="1">
+    <widget class="QDoubleSpinBox" name="totalEdit"/>
+   </item>
+   <item row="6" column="0">
+    <widget class="QLabel" name="label_taxableCheck">
+     <property name="text">
+      <string>Taxable</string>
+     </property>
+     <property name="buddy">
+      <cstring>taxableCheck</cstring>
+     </property>
+    </widget>
+   </item>
+   <item row="6" column="1">
+    <widget class="QCheckBox" name="taxableCheck"/>
+   </item>
+  </layout>
+ </widget>
+ <tabstops>
+  <tabstop>customerEdit</tabstop>
+  <tabstop>numberEdit</tabstop>
+  <tabstop>issuedEdit</tabstop>
+  <tabstop>dueEdit</tabstop>
+  <tabstop>notesEdit</tabstop>
+  <tabstop>totalEdit</tabstop>
+  <tabstop>taxableCheck</tabstop>
+ </tabstops>
+</ui>

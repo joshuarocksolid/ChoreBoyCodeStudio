@@ -1,0 +1,192 @@
+"""Chip labels and the sentences the canvas speaks."""
+
+from __future__ import annotations
+
+from typing import Optional, Tuple
+
+from app.features.form_builder.engine.ids import NodeId
+from app.features.form_builder.engine.query.selection import SelectionState
+from app.features.form_builder.engine.ui4.document import UiDocument
+from app.features.form_builder.engine.ui4.nodes import LayoutItemNode, LayoutNode, SpacerNode, WidgetNode
+from app.features.form_builder.qtside.canvas.core.structure import effective_class, effective_selection
+from app.features.form_builder.qtside.insert.catalog import load_catalog
+
+ELIDE_AT = 24
+
+FIRST_FOCUS_HINT = (
+    "Tab moves between widgets. Alt+4 goes to the inspector, Alt+1 to the outline."
+)
+GIVEN_SIZE = "Layouts and spacers take the room their container gives them. Drag a widget's handle instead."
+
+_LAYOUT = {
+    "QHBoxLayout": ("Horizontal", "Horizontal layout"),
+    "QVBoxLayout": ("Vertical", "Vertical layout"),
+    "QGridLayout": ("Grid", "Grid layout"),
+    "QFormLayout": ("Form", "Form layout"),
+}
+
+
+def elide_middle(name: str, limit: int = ELIDE_AT) -> str:
+    if len(name) <= limit:
+        return name
+    if limit < 2:
+        return name[:limit]
+    keep = limit - 1
+    left = keep // 2
+    right = keep - left
+    return name[:left] + "…" + name[-right:]
+
+
+def chip_text(
+    document: UiDocument,
+    state: SelectionState,
+    sizing: Optional[Tuple[Optional[str], Optional[str]]],
+) -> str:
+    shown = effective_selection(document, state)
+    current = document.get(shown.current) if shown.current is not None else None
+    name = elide_middle(_name(current))
+    if len(state.ids) > 1:
+        return "%s + %d more" % (elide_middle(_name(document.get(state.current))), len(state.ids) - 1)
+    if isinstance(current, LayoutNode):
+        phrase = _layout_words(current.class_name)[1]
+        count = sum(1 for item in current.items if item.content is not None)
+        noun = "item" if count == 1 else "items"
+        return "%s · %s · %d %s" % (name, phrase, count, noun)
+    if isinstance(current, WidgetNode) and current.layout is not None:
+        return "%s · %s" % (name, _layout_words(current.layout.class_name)[0])
+    if sizing is not None:
+        words = [word for word in sizing if word]
+        if words:
+            return "%s · %s" % (name, " × ".join(words))
+    return name
+
+
+def no_layout_text() -> str:
+    return "No layout"
+
+
+# A page container's root holds pages, not a layout. "No layout" would be wrong.
+_PAGE_ROOTS = frozenset({"QWizard", "QTabWidget", "QToolBox", "QStackedWidget", "QMdiArea"})
+
+
+def page_chip_label(document: UiDocument, fallback_name: str) -> str:
+    """``Name · Vertical layout`` above the page."""
+    root = document.root
+    name = root.object_name or fallback_name or "Form"
+    if isinstance(root, WidgetNode) and root.class_name in _PAGE_ROOTS and root.layout is None:
+        return name
+    # A main window never has a layout. The chip names the window, not the absence.
+    if isinstance(root, WidgetNode) and root.class_name == "QMainWindow" and root.layout is None:
+        return "%s · %s" % (name, _friendly(document, root))
+    layout = root.layout
+    if isinstance(layout, LayoutNode) and layout.class_name:
+        phrase = _layout_words(layout.class_name)[1]
+    else:
+        phrase = no_layout_text()
+    return "%s · %s" % (name, phrase)
+
+
+def hover_sentence(document: UiDocument, node: NodeId, double_click_edits: bool, claimed: Optional[str] = None) -> str:
+    # ``claimed`` is a double-click contributor's hover words (``integration/activate_ext``).
+    # It wins over text editing: the double-click goes to the contributor, and the
+    # sentence says so after "click to select".
+    found = document.get(node)
+    if claimed:
+        action = "click to select · %s" % claimed
+    else:
+        action = "double-click to edit text" if double_click_edits else "click to select"
+    return "%s · %s · %s" % (_name(found), _friendly(document, found), action)
+
+
+def describe_selection(document: UiDocument, state: SelectionState) -> str:
+    shown = effective_selection(document, state)
+    pieces = []
+    for node_id in shown.ids:
+        found = document.get(node_id)
+        if found is None:
+            continue
+        place = _place(document, found)
+        text = "%s, %s" % (_name(found), _friendly(document, found).lower())
+        if place:
+            text = "%s, %s" % (text, place)
+        pieces.append(text)
+    if not pieces:
+        return "Selected: form"
+    return "Selected: %s" % "; ".join(pieces)
+
+
+def zoom_label(factor: float) -> str:
+    return "%d%%" % int(round(factor * 100))
+
+
+def _name(node: object) -> str:
+    if isinstance(node, WidgetNode):
+        return node.object_name or "widget"
+    if isinstance(node, LayoutNode):
+        return node.object_name or "layout"
+    if isinstance(node, SpacerNode):
+        return node.name or "spacer"
+    return "item"
+
+
+def _friendly(document: UiDocument, node: object) -> str:
+    if isinstance(node, LayoutNode):
+        return _layout_words(node.class_name)[1]
+    if isinstance(node, SpacerNode):
+        return "Spacer"
+    if isinstance(node, WidgetNode):
+        class_name = effective_class(document, node)
+        known = load_catalog().friendly_for_class(class_name)
+        if known:
+            return known
+        return _split_class(class_name)
+    return "Item"
+
+
+def _layout_words(class_name: str) -> Tuple[str, str]:
+    return _LAYOUT.get(class_name, (class_name or "Layout", class_name or "Layout"))
+
+
+def _split_class(class_name: str) -> str:
+    bare = class_name[1:] if class_name.startswith("Q") and len(class_name) > 1 else class_name
+    chars = []
+    for index, char in enumerate(bare):
+        if char.isupper() and index and bare[index - 1].islower():
+            chars.append(" ")
+        chars.append(char)
+    return "".join(chars)
+
+
+def _place(document: UiDocument, node: object) -> str:
+    if not isinstance(node, (WidgetNode, SpacerNode, LayoutNode)):
+        return ""
+    parent = document.parent(node.id)
+    if not isinstance(parent, LayoutItemNode):
+        return ""
+    layout = document.parent(parent.id)
+    if not isinstance(layout, LayoutNode):
+        return ""
+    contents = []
+    for item in layout.items:
+        content = item.content
+        if content is not None:
+            contents.append(content)
+    index = next((pos for pos, content in enumerate(contents) if content.id == node.id), None)
+    if index is None:
+        return ""
+    if layout.class_name == "QVBoxLayout":
+        axis = "row"
+    elif layout.class_name == "QHBoxLayout":
+        axis = "column"
+    else:
+        axis = "item"
+    return "%s %d of the %s" % (axis, index + 1, _spaced(layout.object_name or "layout"))
+
+
+def _spaced(name: str) -> str:
+    chars = []
+    for index, char in enumerate(name):
+        if char.isupper() and index and (name[index - 1].islower() or name[index - 1].isdigit()):
+            chars.append(" ")
+        chars.append(char.lower())
+    return "".join(chars)

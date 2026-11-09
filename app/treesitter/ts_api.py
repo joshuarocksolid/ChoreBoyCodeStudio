@@ -10,6 +10,9 @@ from __future__ import annotations
 
 from typing import Any
 
+# The 0.23 ``Query`` carries its own range. This is the whole document again.
+_FULL_RANGE = ((0, 0), (0xFFFFFFFF, 0xFFFFFFFF))
+
 
 def make_parser(language: Any) -> Any:
     """Return a parser bound to ``language``."""
@@ -38,6 +41,32 @@ def compile_query(language: Any, source: str) -> Any:
     return Query(language, source)
 
 
+def _run_in_range(
+    query: Any,
+    method: Any,
+    node: Any,
+    start_point: tuple[int, int],
+    end_point: tuple[int, int],
+) -> Any:
+    """Run ``method`` over a point range on a binding whose methods take no range.
+
+    The 0.23 ``Query`` has ``set_point_range`` and its ``captures`` and ``matches``
+    take only the node. Without it, every call walks the whole document and the
+    caller filters.
+    """
+    set_range = getattr(query, "set_point_range", None)
+    if not callable(set_range):
+        return method(node)
+    try:
+        set_range((start_point, end_point))
+    except (TypeError, ValueError):
+        return method(node)
+    try:
+        return method(node)
+    finally:
+        set_range(_FULL_RANGE)
+
+
 def captures(
     query: Any,
     node: Any,
@@ -58,7 +87,7 @@ def captures(
         try:
             return capture_method(node, start_point=start_point, end_point=end_point)
         except TypeError:
-            return capture_method(node)
+            return _run_in_range(query, capture_method, node, start_point, end_point)
     from tree_sitter import QueryCursor
 
     cursor = QueryCursor(query)
@@ -82,7 +111,7 @@ def matches(
         try:
             return match_method(node, start_point=start_point, end_point=end_point)
         except TypeError:
-            return match_method(node)
+            return _run_in_range(query, match_method, node, start_point, end_point)
     from tree_sitter import QueryCursor
 
     cursor = QueryCursor(query)

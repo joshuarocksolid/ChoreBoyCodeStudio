@@ -1,0 +1,93 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>ItemEditor</class>
+ <widget class="QDialog" name="ItemEditor">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>640</width>
+    <height>480</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>Item</string>
+  </property>
+  <layout class="QFormLayout" name="formLayout">
+   <item row="0" column="0">
+    <widget class="QLabel" name="label_skuEdit">
+     <property name="text">
+      <string>SKU</string>
+     </property>
+     <property name="buddy">
+      <cstring>skuEdit</cstring>
+     </property>
+    </widget>
+   </item>
+   <item row="0" column="1">
+    <widget class="QLineEdit" name="skuEdit"/>
+   </item>
+   <item row="1" column="0">
+    <widget class="QLabel" name="label_descriptionEdit">
+     <property name="text">
+      <string>Description</string>
+     </property>
+     <property name="buddy">
+      <cstring>descriptionEdit</cstring>
+     </property>
+    </widget>
+   </item>
+   <item row="1" column="1">
+    <widget class="QLineEdit" name="descriptionEdit"/>
+   </item>
+   <item row="2" column="0">
+    <widget class="QLabel" name="label_qtyEdit">
+     <property name="text">
+      <string>Quantity</string>
+     </property>
+     <property name="buddy">
+      <cstring>qtyEdit</cstring>
+     </property>
+    </widget>
+   </item>
+   <item row="2" column="1">
+    <widget class="QSpinBox" name="qtyEdit"/>
+   </item>
+   <item row="3" column="0">
+    <widget class="QLabel" name="label_priceEdit">
+     <property name="text">
+      <string>Price</string>
+     </property>
+     <property name="buddy">
+      <cstring>priceEdit</cstring>
+     </property>
+    </widget>
+   </item>
+   <item row="3" column="1">
+    <widget class="QDoubleSpinBox" name="priceEdit"/>
+   </item>
+   <item row="4" column="0">
+    <widget class="QLabel" name="label_taxableCheck">
+     <property name="text">
+      <string>Taxable</string>
+     </property>
+     <property name="buddy">
+      <cstring>taxableCheck</cstring>
+     </property>
+    </widget>
+   </item>
+   <item row="4" column="1">
+    <widget class="QCheckBox" name="taxableCheck"/>
+   </item>
+  </layout>
+ </widget>
+ <tabstops>
+  <tabstop>skuEdit</tabstop>
+  <tabstop>descriptionEdit</tabstop>
+  <tabstop>qtyEdit</tabstop>
+  <tabstop>priceEdit</tabstop>
+  <tabstop>taxableCheck</tabstop>
+ </tabstops>
+ <resources/>
+ <connections/>
+</ui>

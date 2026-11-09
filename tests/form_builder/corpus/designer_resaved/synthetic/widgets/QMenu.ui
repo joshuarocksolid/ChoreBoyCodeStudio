@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>MenuHost</class>
+ <widget class="QMenu" name="MenuHost">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>132</width>
+    <height>50</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>QMenu</string>
+  </property>
+  <property name="toolTip">
+   <string>QMenu host</string>
+  </property>
+  <property name="title">
+   <string/>
+  </property>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>

@@ -1,0 +1,166 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>Form</class>
+ <widget class="QWidget" name="Form">
+  <property name="windowFilePath">
+   <string/>
+  </property>
+  <property name="enabled">
+   <bool>true</bool>
+  </property>
+  <property name="size" stdset="0">
+   <size>
+    <width>640</width>
+    <height>480</height>
+   </size>
+  </property>
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>640</width>
+    <height>480</height>
+   </rect>
+  </property>
+  <property name="tabletTracking">
+   <bool>false</bool>
+  </property>
+  <property name="pos" stdset="0">
+   <point>
+    <x>0</x>
+    <y>0</y>
+   </point>
+  </property>
+  <property name="objectName">
+   <string notr="true">Form</string>
+  </property>
+  <property name="toolTipDuration">
+   <number>-1</number>
+  </property>
+  <property name="font">
+   <font/>
+  </property>
+  <property name="toolTip">
+   <string/>
+  </property>
+  <property name="cursor">
+   <cursorShape>IBeamCursor</cursorShape>
+  </property>
+  <property name="accessibleDescription">
+   <string/>
+  </property>
+  <property name="maximumHeight">
+   <number>16777215</number>
+  </property>
+  <property name="maximumWidth">
+   <number>16777215</number>
+  </property>
+  <property name="windowModified">
+   <bool>false</bool>
+  </property>
+  <property name="acceptDrops">
+   <bool>false</bool>
+  </property>
+  <property name="windowIconText">
+   <string/>
+  </property>
+  <property name="visible">
+   <bool>false</bool>
+  </property>
+  <property name="locale">
+   <locale language="English" country="UnitedStates"/>
+  </property>
+  <property name="sizePolicy">
+   <sizepolicy hsizetype="Preferred" vsizetype="Preferred">
+    <horstretch>0</horstretch>
+    <verstretch>0</verstretch>
+   </sizepolicy>
+  </property>
+  <property name="baseSize">
+   <size>
+    <width>0</width>
+    <height>0</height>
+   </size>
+  </property>
+  <property name="accessibleName">
+   <string/>
+  </property>
+  <property name="maximumSize">
+   <size>
+    <width>16777215</width>
+    <height>16777215</height>
+   </size>
+  </property>
+  <property name="autoFillBackground">
+   <bool>false</bool>
+  </property>
+  <property name="styleSheet">
+   <string notr="true"/>
+  </property>
+  <property name="palette">
+   <palette>
+    <active>
+     <colorrole role="Window">
+      <brush brushstyle="LinearGradientPattern">
+       <gradient startx="0.000000000000000" starty="0.000000000000000" endx="1.000000000000000" endy="1.000000000000000" type="LinearGradient" spread="PadSpread" coordinatemode="LogicalMode">
+        <gradientstop position="0.000000000000000">
+         <color alpha="255">
+          <red>255</red>
+          <green>0</green>
+          <blue>0</blue>
+         </color>
+        </gradientstop>
+        <gradientstop position="1.000000000000000">
+         <color alpha="128">
+          <red>0</red>
+          <green>0</green>
+          <blue>255</blue>
+         </color>
+        </gradientstop>
+       </gradient>
+      </brush>
+     </colorrole>
+    </active>
+    <inactive/>
+    <disabled/>
+   </palette>
+  </property>
+  <property name="whatsThis">
+   <string/>
+  </property>
+  <property name="minimumHeight">
+   <number>0</number>
+  </property>
+  <property name="mouseTracking">
+   <bool>false</bool>
+  </property>
+  <property name="windowTitle">
+   <string/>
+  </property>
+  <property name="sizeIncrement">
+   <size>
+    <width>0</width>
+    <height>0</height>
+   </size>
+  </property>
+  <property name="minimumSize">
+   <size>
+    <width>0</width>
+    <height>0</height>
+   </size>
+  </property>
+  <property name="updatesEnabled">
+   <bool>true</bool>
+  </property>
+  <property name="windowOpacity">
+   <double>1.000000000000000</double>
+  </property>
+  <property name="statusTip">
+   <string/>
+  </property>
+  <property name="minimumWidth">
+   <number>0</number>
+  </property>
+ </widget>
+ <connections/>
+</ui>

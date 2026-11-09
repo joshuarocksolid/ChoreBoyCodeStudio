@@ -1,0 +1,107 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>CustomerDialog</class>
+ <widget class="QDialog" name="CustomerDialog">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>640</width>
+    <height>480</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>Customer</string>
+  </property>
+  <layout class="QFormLayout" name="formLayout">
+   <item row="0" column="0">
+    <widget class="QLabel" name="label_nameEdit">
+     <property name="text">
+      <string>Name</string>
+     </property>
+     <property name="buddy">
+      <cstring>nameEdit</cstring>
+     </property>
+    </widget>
+   </item>
+   <item row="0" column="1">
+    <widget class="QLineEdit" name="nameEdit"/>
+   </item>
+   <item row="1" column="0">
+    <widget class="QLabel" name="label_phoneEdit">
+     <property name="text">
+      <string>Phone</string>
+     </property>
+     <property name="buddy">
+      <cstring>phoneEdit</cstring>
+     </property>
+    </widget>
+   </item>
+   <item row="1" column="1">
+    <widget class="QLineEdit" name="phoneEdit"/>
+   </item>
+   <item row="2" column="0">
+    <widget class="QLabel" name="label_emailEdit">
+     <property name="text">
+      <string>Email</string>
+     </property>
+     <property name="buddy">
+      <cstring>emailEdit</cstring>
+     </property>
+    </widget>
+   </item>
+   <item row="2" column="1">
+    <widget class="QLineEdit" name="emailEdit"/>
+   </item>
+   <item row="3" column="0">
+    <widget class="QLabel" name="label_cityEdit">
+     <property name="text">
+      <string>City</string>
+     </property>
+     <property name="buddy">
+      <cstring>cityEdit</cstring>
+     </property>
+    </widget>
+   </item>
+   <item row="3" column="1">
+    <widget class="QLineEdit" name="cityEdit"/>
+   </item>
+   <item row="4" column="0">
+    <widget class="QLabel" name="label_activeCheck">
+     <property name="text">
+      <string>Active</string>
+     </property>
+     <property name="buddy">
+      <cstring>activeCheck</cstring>
+     </property>
+    </widget>
+   </item>
+   <item row="4" column="1">
+    <widget class="QCheckBox" name="activeCheck"/>
+   </item>
+   <item row="5" column="0">
+    <widget class="QLabel" name="label_sinceEdit">
+     <property name="text">
+      <string>Since</string>
+     </property>
+     <property name="buddy">
+      <cstring>sinceEdit</cstring>
+     </property>
+    </widget>
+   </item>
+   <item row="5" column="1">
+    <widget class="QDateEdit" name="sinceEdit"/>
+   </item>
+  </layout>
+ </widget>
+ <tabstops>
+  <tabstop>nameEdit</tabstop>
+  <tabstop>phoneEdit</tabstop>
+  <tabstop>emailEdit</tabstop>
+  <tabstop>cityEdit</tabstop>
+  <tabstop>activeCheck</tabstop>
+  <tabstop>sinceEdit</tabstop>
+ </tabstops>
+ <resources/>
+ <connections/>
+</ui>

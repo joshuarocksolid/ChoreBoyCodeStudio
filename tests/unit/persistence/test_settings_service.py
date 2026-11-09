@@ -110,3 +110,17 @@ def test_recent_argv_history_enforces_history_limit(tmp_path: Path) -> None:
     assert len(history) == limit
     assert history[0] == f"--run-{limit + 4}"
     assert history[-1] == f"--run-{5}"
+
+
+def test_update_global_keeps_keys_another_writer_saved_after_this_one_loaded(tmp_path: Path) -> None:
+    """Two services on one file (the shell's and the form builder's): a cached read must not drop keys."""
+    root = tmp_path / "state"
+    shell = SettingsService(state_root=root)
+    shell.load_global()
+    SettingsService(state_root=root).update_global(lambda payload: {**payload, "form_builder": {"qt_names": True}})
+
+    shell.update_global(lambda payload: {**payload, "run": {"recent_argv": ["-v"]}})
+
+    on_disk = SettingsService(state_root=root).load_global()
+    assert on_disk["form_builder"] == {"qt_names": True}
+    assert on_disk["run"] == {"recent_argv": ["-v"]}

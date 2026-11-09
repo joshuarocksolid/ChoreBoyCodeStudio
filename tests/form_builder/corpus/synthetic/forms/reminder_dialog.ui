@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: MIT -->
+<ui version="4.0">
+ <class>ReminderDialog</class>
+ <widget class="QDialog" name="ReminderDialog">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>640</width>
+    <height>480</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>Reminder</string>
+  </property>
+  <layout class="QFormLayout" name="formLayout">
+   <item row="0" column="0">
+    <widget class="QLabel" name="label_titleEdit">
+     <property name="text">
+      <string>Title</string>
+     </property>
+     <property name="buddy">
+      <cstring>titleEdit</cstring>
+     </property>
+    </widget>
+   </item>
+   <item row="0" column="1">
+    <widget class="QLineEdit" name="titleEdit"/>
+   </item>
+   <item row="1" column="0">
+    <widget class="QLabel" name="label_atEdit">
+     <property name="text">
+      <string>At</string>
+     </property>
+     <property name="buddy">
+      <cstring>atEdit</cstring>
+     </property>
+    </widget>
+   </item>
+   <item row="1" column="1">
+    <widget class="QDateTimeEdit" name="atEdit"/>
+   </item>
+   <item row="2" column="0">
+    <widget class="QLabel" name="label_repeatCombo">
+     <property name="text">
+      <string>Repeat</string>
+     </property>
+     <property name="buddy">
+      <cstring>repeatCombo</cstring>
+     </property>
+    </widget>
+   </item>
+   <item row="2" column="1">
+    <widget class="QComboBox" name="repeatCombo"/>
+   </item>
+   <item row="3" column="0">
+    <widget class="QLabel" name="label_enabledCheck">
+     <property name="text">
+      <string>Enabled</string>
+     </property>
+     <property name="buddy">
+      <cstring>enabledCheck</cstring>
+     </property>
+    </widget>
+   </item>
+   <item row="3" column="1">
+    <widget class="QCheckBox" name="enabledCheck"/>
+   </item>
+  </layout>
+ </widget>
+ <tabstops>
+  <tabstop>titleEdit</tabstop>
+  <tabstop>atEdit</tabstop>
+  <tabstop>repeatCombo</tabstop>
+  <tabstop>enabledCheck</tabstop>
+ </tabstops>
+</ui>

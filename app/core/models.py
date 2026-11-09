@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -197,6 +198,7 @@ class ProjectMetadata:
     project_notes: str = ""
     exclude_patterns: list[str] = field(default_factory=list)
     source_roots: list[str] = field(default_factory=list)
+    form_builder: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         """Return a JSON-serializable representation with explicit defaults."""
@@ -216,6 +218,8 @@ class ProjectMetadata:
             payload["exclude_patterns"] = list(self.exclude_patterns)
         if self.source_roots:
             payload["source_roots"] = list(self.source_roots)
+        if self.form_builder:
+            payload["form_builder"] = copy.deepcopy(self.form_builder)
         return payload
 
 

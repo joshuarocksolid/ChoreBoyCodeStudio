@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import Any, Callable, Mapping, Protocol, Sequence, cast
 
-from app.qt.QtWidgets import QMessageBox, QWidget
+from app.qt.QtCore import QTimer
+from app.qt.QtWidgets import QFileDialog, QMessageBox, QWidget
 
 from app.core import constants
 from app.editors.editor_manager import EditorManager
+from app.editors.generated_file import is_generated_module
 from app.editors.editor_tab import DiskConflict
 from app.intelligence.cache_controls import should_refresh_index_after_save
 from app.editors.formatting_service import format_text_basic
@@ -28,11 +31,16 @@ from app.shell.document_safety import (
     DocumentScope,
     dirty_buffer_snapshots,
 )
+from app.shell.idle_turn import run_when_idle
 from app.shell.shell_composition_context import MainWindowCompositionSurface
+from app.shell.tab_close_blockers import confirm_tab_close_blockers
 from app.shell.unsaved_changes_dialog import prompt_for_unsaved_changes
 
 
 PYTHON_STYLE_SAVE_GUARDRAIL_CHAR_LIMIT = 250_000
+
+
+logger = logging.getLogger(__name__)
 
 
 class SaveWorkflowPort(Protocol):
@@ -202,6 +210,9 @@ class MainWindowSaveDocumentHost:
     def editor_manager(self) -> EditorManager:
         return self._window._editor_manager
 
+    def tab_content_registry(self) -> Any:
+        return getattr(self._window, "_tab_content_registry", None)
+
     def editor_exit_behavior(self) -> str:
         return self._window._editor_exit_behavior
 
@@ -284,6 +295,15 @@ class MainWindowSaveDocumentHost:
         if test_runner_workflow is not None:
             test_runner_workflow.refresh_discovery()
 
+    def retarget_open_path(self, source_path: str, destination_path: str) -> None:
+        # Save As copies: the old file keeps its breakpoints and history.
+        self._window._project_tree_action_coordinator.apply_path_move_updates(
+            source_path,
+            destination_path,
+            rewrite_imports=False,
+            carry_file_state=False,
+        )
+
 
 class SaveWorkflow:
     """Owns save, autosave-to-file, and style-on-save coordination."""
@@ -304,7 +324,22 @@ class SaveWorkflow:
     def _editor_manager(self) -> EditorManager:
         return self._host.editor_manager()
 
+    def _confirm_close_blockers(self, file_paths: Sequence[str]) -> bool:
+        registry_getter = getattr(self._host, "tab_content_registry", None)
+        if not callable(registry_getter):
+            return True
+        registry = registry_getter()
+        if registry is None:
+            return True
+        return confirm_tab_close_blockers(self._host.dialog_parent(), registry, file_paths)
+
     def confirm_proceed_with_unsaved_changes(self, action_description: str) -> bool:
+        flush = getattr(self._local_history, "flush_pending_autosaves", None)
+        if callable(flush):
+            flush()
+        open_paths = [tab.file_path for tab in self._editor_manager().all_tabs()]
+        if not self._confirm_close_blockers(open_paths):
+            return False
         decision = self.request_unsaved_changes_decision(
             action_description,
             scope=DocumentScope.PROJECT,
@@ -320,13 +355,17 @@ class SaveWorkflow:
     ) -> bool:
         normalized_paths = [str(Path(path).expanduser().resolve()) for path in target_paths]
         affected_tabs: list[object] = []
+        affected_paths: list[str] = []
         for tab in self._editor_manager().all_tabs():
             tab_path = str(Path(tab.file_path).expanduser().resolve())
             for target_path in normalized_paths:
                 if tab_path == target_path or tab_path.startswith(f"{target_path}/"):
+                    affected_paths.append(tab.file_path)
                     if tab.is_dirty:
                         affected_tabs.append(tab)
                     break
+        if not self._confirm_close_blockers(affected_paths):
+            return False
         if not affected_tabs:
             return True
         decision = self.request_unsaved_changes_decision(
@@ -397,6 +436,46 @@ class SaveWorkflow:
         if active_tab is None:
             return False
         return self.save_tab(active_tab.file_path)
+
+    def handle_save_as_action(self) -> bool:
+        """Write the active tab under a new path. A form regenerates beside that path."""
+        active_tab = self._editor_manager().active_tab()
+        if active_tab is None:
+            return False
+        source = str(Path(active_tab.file_path).expanduser().resolve())
+        destination = self._ask_save_as_path(source)
+        if not destination:
+            return False
+        destination = str(Path(destination).expanduser().resolve())
+        if destination == source:
+            return self.save_tab(source)
+        if self._editor_manager().get_tab(destination) is not None:
+            QMessageBox.warning(
+                self._host.dialog_parent(),
+                "Save As",
+                "That file is already open.",
+            )
+            return False
+        retarget = getattr(self._host, "retarget_open_path", None)
+        if not callable(retarget):
+            return False
+        retarget(source, destination)
+        return self.save_tab(destination, check_stale_disk=False)
+
+    def _ask_save_as_path(self, file_path: str) -> str:
+        ui_form = file_path.lower().endswith(".ui")
+        name_filter = "UI forms (*.ui)" if ui_form else "All files (*)"
+        destination, _chosen = QFileDialog.getSaveFileName(
+            self._host.dialog_parent(),
+            "Save As",
+            file_path,
+            name_filter,
+        )
+        if not destination:
+            return ""
+        if ui_form and not destination.lower().endswith(".ui"):
+            destination = destination + ".ui"
+        return destination
 
     def handle_save_all_action(self) -> bool:
         any_failure = False
@@ -471,6 +550,58 @@ class SaveWorkflow:
             return "proceed"
         return resolver(file_path)
 
+    def _notify_form(self, path: str) -> None:
+        host = self._host
+        bridge = getattr(host, "_form_builder_code_bridge", None)
+        if bridge is None:
+            bridge = getattr(getattr(host, "_window", None), "_form_builder_code_bridge", None)
+        notify = getattr(bridge, "notify_saved", None)
+        if callable(notify):
+            notify(path)
+
+    def _lint_and_notify(self, path: str) -> None:
+        host = self._host
+        if path.lower().endswith(".py"):
+            host.render_lint_for_file(path, trigger="save")
+            host.refresh_test_discovery()
+        self._notify_form(path)
+
+    def _defer_followups(
+        self,
+        path: str,
+        content: str,
+        source: str,
+        *,
+        index_root: str | None,
+        inventory: object,
+    ) -> None:
+        history = self._local_history
+        intelligence = self._intelligence_cache
+
+        def write() -> None:
+            try:
+                history.record_checkpoint(path, content, source=source)
+            except Exception:
+                logger.exception("deferred local-history checkpoint failed for %s", path)
+            try:
+                if path.lower().endswith(".py"):
+                    self._host.render_lint_for_file(path, trigger="save")
+                    self._host.refresh_test_discovery()
+            except Exception:
+                logger.exception("deferred save follow-up failed for %s", path)
+            if index_root is None:
+                return
+            try:
+                intelligence.start_symbol_indexing(index_root, inventory_snapshot=inventory)
+            except Exception:
+                logger.exception("deferred symbol index failed for %s", path)
+
+        # The form hears about the save on the next pump. That call is a
+        # check, not a parse. Lint, history, and the symbol index wait until
+        # the loop is about to block, so this pump does not run them.
+        QTimer.singleShot(0, lambda: self._notify_form(path))
+        run_when_idle(write)
+
     def save_tab(
         self,
         file_path: str,
@@ -479,8 +610,12 @@ class SaveWorkflow:
         checkpoint_source: str = "save",
         apply_transforms: bool = True,
         check_stale_disk: bool = True,
+        defer_history: bool = False,
     ) -> bool:
         host = self._host
+        flush = getattr(self._local_history, "flush_pending_autosaves", None)
+        if callable(flush):
+            flush((file_path,))
         stale_decision = (
             self._decide_stale_save(file_path, prompt=apply_transforms)
             if check_stale_disk
@@ -491,6 +626,16 @@ class SaveWorkflow:
         if stale_decision == "already_synced":
             return True
         path_existed_before_save = Path(file_path).expanduser().resolve().exists()
+        tab_state = self._editor_manager().get_tab(file_path)
+        locked = None if tab_state is None else getattr(tab_state, "byte_lock_reason", None)
+        if locked:
+            if checkpoint_source != "auto_save_to_file":
+                QMessageBox.warning(host.dialog_parent(), "Save", str(locked))
+            return False
+        source = None if tab_state is None else tab_state.content_source
+        prepare_save = getattr(source, "prepare_save", None)
+        if callable(prepare_save) and prepare_save() is False:
+            return False
         if apply_transforms:
             self.apply_save_transforms(file_path, show_style_warnings=show_style_warnings)
         try:
@@ -505,29 +650,49 @@ class SaveWorkflow:
             host.refresh_tab_presentation(saved_tab.file_path)
 
         self._local_history.discard_pending_autosave(saved_tab.file_path)
-        self._local_history.record_checkpoint(
-            saved_tab.file_path,
-            saved_tab.current_content,
-            source=checkpoint_source,
-        )
         self._local_history.delete_draft(saved_tab.file_path)
         project_id, _project_root = self._local_history.local_history_context_for_path(saved_tab.file_path)
         loaded_project = host.loaded_project()
-        if not path_existed_before_save and project_id is not None:
+        index_root = None
+        inventory = None
+        notice = getattr(source, "save_notice", None)
+        wrote_generated = getattr(notice, "kind", "") == "generated"
+        if project_id is not None and (not path_existed_before_save or wrote_generated):
             host.rescan_project_from_disk(reload_plugins=False, reindex=True)
         elif should_refresh_index_after_save(
             host.intelligence_runtime_settings(),
             has_loaded_project=loaded_project is not None,
         ) and loaded_project is not None:
-            self._intelligence_cache.start_symbol_indexing(
-                getattr(loaded_project, "project_root"),
-                inventory_snapshot=host.project_inventory_snapshot(),
+            index_root = getattr(loaded_project, "project_root")
+            inventory = host.project_inventory_snapshot()
+        if defer_history:
+            # The file is already on disk and the tab is already clean. The
+            # checkpoint, lint, symbol index, and test refresh run when the
+            # event loop next waits. A crash before that loses a history row
+            # of text that is already the file, and a Problems refresh, not
+            # the save.
+            self._defer_followups(
+                saved_tab.file_path,
+                saved_tab.current_content,
+                checkpoint_source,
+                index_root=index_root,
+                inventory=inventory,
             )
+        else:
+            self._local_history.record_checkpoint(
+                saved_tab.file_path,
+                saved_tab.current_content,
+                source=checkpoint_source,
+            )
+            if index_root is not None:
+                self._intelligence_cache.start_symbol_indexing(
+                    index_root,
+                    inventory_snapshot=inventory,
+                )
         host.refresh_save_action_states()
         host.update_editor_status_for_path(saved_tab.file_path)
-        if saved_tab.file_path.lower().endswith(".py"):
-            host.render_lint_for_file(saved_tab.file_path, trigger="save")
-            host.refresh_test_discovery()
+        if not defer_history:
+            self._lint_and_notify(saved_tab.file_path)
         getattr(host.logger(), "info")("Saved file: %s", saved_tab.file_path)
         notifier = getattr(host, "notify_file_saved", None)
         if callable(notifier):
@@ -567,10 +732,14 @@ class SaveWorkflow:
     def apply_save_transforms(self, file_path: str, *, show_style_warnings: bool) -> None:
         host = self._host
         tab_state = self._editor_manager().get_tab(file_path)
-        if tab_state is None:
+        # A content source owns the bytes Save writes. Trim, a final newline,
+        # and the Python formatters would change them.
+        if tab_state is None or tab_state.content_source is not None:
             return
 
         original_text = tab_state.current_content
+        if is_generated_module(file_path, original_text):
+            return
         transformed_text = format_text_basic(
             original_text,
             trim_trailing_whitespace=host.editor_trim_trailing_whitespace_on_save(),

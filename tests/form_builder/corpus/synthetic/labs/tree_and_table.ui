@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: MIT -->
+<ui version="4.0">
+ <class>TreeAndTable</class>
+ <widget class="QWidget" name="TreeAndTable">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>640</width>
+    <height>480</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>Trees</string>
+  </property>
+  <layout class="QHBoxLayout" name="row">
+   <item><widget class="QTreeWidget" name="tree"><column><property name="text"><string>Node</string></property></column></widget></item>
+   <item><widget class="QTableWidget" name="table"/></item>
+  </layout>
+ </widget>
+
+</ui>

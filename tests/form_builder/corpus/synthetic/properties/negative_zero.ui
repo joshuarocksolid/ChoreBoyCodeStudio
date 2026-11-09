@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: MIT -->
+<ui version="4.0">
+ <class>NegativeZero</class>
+ <widget class="QWidget" name="NegativeZero">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>320</width>
+    <height>160</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>negative zero</string>
+  </property>
+  <property name="negDouble" stdset="0">
+   <double>-0</double>
+  </property>
+  <property name="negFloat" stdset="0">
+   <float>-0</float>
+  </property>
+  <property name="third" stdset="0">
+   <double>0.1</double>
+  </property>
+  <property name="tiny" stdset="0">
+   <float>1.23000001</float>
+  </property>
+ </widget>
+</ui>

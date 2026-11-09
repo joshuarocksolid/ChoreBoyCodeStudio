@@ -1,0 +1,3435 @@
+# Form builder: UX specification
+
+Version 1 (work package M0.9). Author: Opus, lead UX designer. Date: 2026-10-21.
+Status: draft for approval. Binding for M2 (shell integration) and M3 (canvas and layout editing). Section 13.2 (M5) gives the structure and the key decisions only, and will be deepened before that milestone starts.
+
+Version 2 (work package M4.0, 2026-10-28, Opus). Section 13.1 is now the full M4 specification (areas CAT, CONT, PED, ITEM, plus UX-TOK-005 and UX-ICON-005), binding for M4. Section 12 gains the M4 screenshot states, keyboard scripts K9–K15, checks and the M4 persona walkthrough.
+
+Version 3 (work package M5.0, 2026-10-29, Opus). Section 13.2 is now the full M5 specification (areas MAIN, RES, STYLE, CUST, PREV, FSET, TMPL, MODE, plus UX-TOK-006 and the shared rules UX-M5-007 … 010), binding for M5, with 25 design decisions in 13.2.1. Section 12 gains the M5 screenshot states, keyboard scripts K16–K23, checks and the M5 persona walkthrough. UX-KEY-004 gains the M5 keys; UX-START-007 is amended by UX-TMPL-004.
+
+Version 4 (work package M6.0, 2026-10-29, Opus). Section 13.3 is the full M6 specification (areas BEH, PICK, ARR, CODE, LST, plus UX-TOK-007 and the shared rules UX-M6-001 … 006), binding for M6, with 24 design decisions in 13.3.1. Section 12 gains the M6 screenshot states, keyboard scripts K24–K26, checks and the M6 persona walkthroughs. UX-KEY-004 gains the M6 keys and UX-KEY-005 is resolved; UX-INSP-013, UX-EMPTY-005 and UX-OVL-009 are replaced (13.3.7).
+
+Inputs: `PLAN.md` (§1 fixed decisions, §2a O-UX gate, M2–M5), `SPIKE_DESIGN.md`, `research/P_user_pain_points.md`, `research/R3_designer_parity_checklist.md` ("Where Designer's UX is weak"), `research/A_market_survey.md` ("Patterns the best builders share"), `LOGIC_DESIGN.md` §2, the spike on `feat/form-builder-spike` (README, DESIGN, decisions.tsv, the 22 screenshots, plus five extra offscreen captures of the spike at 1100×640 and 1366×768), and the CBCS shell on `feat/form-builder` (`app/shell/theme_tokens.py`, `theme_dark_chrome_presets.py`, `style_sheet_sections_*.py`, `shortcut_preferences.py`, the menu builders, `status_bar.py`, `features/markdown/markdown_editor_pane.py`).
+
+---
+
+## 0. How to use this document
+
+### 0.1 Clause ids
+
+Every binding rule is a clause with a stable id: `UX-<AREA>-<NNN>`. Ids are never renumbered or reused. A removed clause keeps its id with the text "Withdrawn in vN". New clauses take the next free number in their area.
+
+Each clause line carries three things after the id:
+
+- the work package that implements it (for example `M3.1`), and
+- the evidence codes a gate uses to verify it (section 12.1), and
+- the rule itself, in the imperative ("must" is implied; "should" marks a strong default that a PR may deviate from with a written reason).
+
+Example (see section 5.1 for the real clause): `UX-SEL-004` `M3.1` `[K]` Esc … selects the parent.
+
+PRs list the clause ids they implement. The O-UX gate checks those clauses one by one and cites ids in a CHANGES list. A finding that cannot cite a clause or a failing test is not a blocking finding (PLAN §2 bounded fix loop).
+
+### 0.2 Areas
+
+| Prefix | Area | Section |
+| --- | --- | --- |
+| PRIN | Design principles | 1 |
+| TOK, TYPE, GRID, ELEV, ICON, MOTION, ISO | Visual language | 2 |
+| SHELL, XML, GEN, PROB, RUN, KEY, PS2 | CBCS integration | 3 |
+| START, TABLE, WB, EMPTY, RESP | Screens and regions | 4 |
+| SEL, HOV, FRAME, CHIP, DND, BOX, GRIDL, FORML, SPLIT, PAGES, BARE, AUTO, MOVE, GAP, RESIZE, TEXT, WRAP, CLIP, NUDGE, ZOOM, WIDTHS, SCALE | Canvas | 5 |
+| OUT | Outline | 6 |
+| INSP, SIZE | Inspector | 7 |
+| OVL | Overlays (tab order, buddies, connections) | 8 |
+| FEED, COPY | Feedback, errors, copy | 9 |
+| A11Y | Accessibility | 10 |
+| CAT | Insert catalog and search | 13.1.2 |
+| CONT | Containers and pages | 13.1.3 |
+| PED | Property editors | 13.1.4 |
+| ITEM | Item editors | 13.1.5 |
+| M4 | M4 shared rules (M4-005 … 007; M4-001 … 004 withdrawn in v2) | 13.1.1 |
+| M5 | M5 shared rules (M5-007 … 010; M5-001 … 006 withdrawn in v3) | 13.2.1 |
+| MAIN | Main windows, menus, toolbars and actions | 13.2.2 |
+| RES | Resources and pictures | 13.2.3 |
+| STYLE | Style sheets, colours and theme | 13.2.4 |
+| CUST | Your own classes (promotion) | 13.2.5 |
+| PREV | Preview options, image, print, View code | 13.2.6 |
+| FSET | Form settings | 13.2.7 |
+| TMPL | Templates, Start v2 and settings | 13.2.8 |
+| MODE | One editing mode, overlays and keys | 13.2.9 |
+| M6 | M6 shared rules (M6-001 … 006) | 13.3.1 |
+| BEH | The Behavior tab and the Events list | 13.3.2 |
+| PICK | The event and step pickers | 13.3.3 |
+| ARR | Logic on the canvas: badges, arrows, Connections overlay | 13.3.4 |
+| CODE | Calling your code: names, methods, go to code, checks | 13.3.5 |
+| LST | Logic storage the person can see | 13.3.6 |
+
+### 0.3 Words used in this spec
+
+These are also the words the product uses on screen, unless a clause says otherwise.
+
+| Word | Meaning |
+| --- | --- |
+| Form | The `.ui` document and its top-level widget |
+| Page | The drawn card on the canvas that shows the form at its design size |
+| Backdrop | The canvas area around the page (dot grid). It follows the shell theme |
+| Gutter | The backdrop band that is always kept free around the page (UX-ZOOM-004). Labels that would cover content go here |
+| Layout | A `QVBoxLayout`, `QHBoxLayout`, `QGridLayout` or `QFormLayout`. On screen: "Vertical", "Horizontal", "Grid", "Form" (layout kinds); "vertical layout" in sentences |
+| Slot (layout) | A place in a layout: an index in a box, a cell in a grid, a label or field cell in a form row. Never shown as the word "slot" to the user (Qt uses "slot" for methods) |
+| Gap | Layout spacing between neighbours |
+| Margin | Layout contents margins |
+| Hug, Fill, Fixed | Sizing words (section 7.3) |
+| Share | Stretch factor (box stretch, grid row/column stretch, splitter stretch) |
+| Chip | A small filled label painted by the overlay (name, layout kind, drop target, number) |
+| Overlay | A temporary canvas layer with its own clicks: Tab order, Buddies, and (M6) Connections |
+| Content | Any non-ancestor widget's rectangle, and the selected widget's own rectangle. Ancestors' backgrounds and frames are not content |
+
+---
+
+## 1. Design principles
+
+Each principle names the evidence it rests on. When two clauses conflict, the lower-numbered principle wins.
+
+**UX-PRIN-001 · Truth first: the canvas is the app.** What the canvas shows is what `setupUi` builds at run time on ChoreBoy: same style, same palette, same font, same layout math, real widgets. The builder's own theme never leaks onto the form, and no overlay ever hides a pixel of the form that the user needs to read. *Evidence:* market survey failure mode "a preview that lies or dies"; pain 8 (style sheet differs), pain 12; the spike's `workbench-dark.png` proves the isolation works and its chips prove the overlay half does not yet (they cover fields).
+
+**UX-PRIN-002 · Every drop is already laid out.** Nothing is placed at a pixel in normal work. A drop lands in a layout slot that is drawn before release. Layout commands become optional refinements, never a precondition. *Evidence:* pains 1, 4, 5, 21; delighters 1, 11, 15; survey pattern 4 and 5.
+
+**UX-PRIN-003 · Plain words, Qt underneath.** On-screen vocabulary is Hug, Fill, Fixed, Gap, Margin, Share, "Vertical layout", "Line edit". Every friendly name has its Qt name one hover or one toggle away, and the file stays standard Qt. Veterans are never blocked by the friendly layer: the full Qt property list, Qt class names and Designer shortcuts are always reachable. *Evidence:* pain 2 (three mysteries), survey pattern 7 (names in the inspector are names in Python), owner goal "a Qt Designer veteran never goes back".
+
+**UX-PRIN-004 · Structure appears where you look.** Layout frames, gaps, margins, numbers and badges are faint or hidden everywhere except the hovered or selected container. A calm canvas with one focus beats a dense diagram. *Evidence:* LOGIC_DESIGN §2.7 ("showing every relationship by default is what makes graphs unreadable"), spike `layout-selected.png` (works) vs `drag-box.png` (whole-form tint washes out every field).
+
+**UX-PRIN-005 · No sticky modes; Esc always gets you out.** Tab order, Buddies and Connections are overlays with a visible exit. One Esc closes the innermost transient thing (inline editor, popover, drag, overlay), then walks selection up. Nothing changes the meaning of a click without a banner that says so. *Evidence:* pain 13, pain 20 ("unchecking does not work"), R3 items 1, 8, 10.
+
+**UX-PRIN-006 · Keyboard and mouse are equal citizens; focus is never stolen.** Every canvas gesture has a keyboard path, every keyboard path has a visible focus, and no status message, toast, save or regeneration moves the keyboard. *Evidence:* pain 25, R3 weakness "Renaming steals focus", PLAN §2 quality gate 11.
+
+**UX-PRIN-007 · Fast enough to feel like paper.** Feedback for a pointer move appears in the same frame (≤ 16 ms per edit, PLAN §1). Structure never animates. Expensive work (XML, generation, preview) is deferred and never blocks a gesture. *Evidence:* PLAN speed budgets; pain 23; VB6 and Glade complaints in the pains report ("hitches and lags", "freezes for a minute").
+
+**UX-PRIN-008 · Native to Code Studio.** The builder is a CBCS editor tab, not a second application: same theme tokens, same density, same menus, same status bar, same Problems panel, same shortcuts with the same meanings. A builder-only concept earns its own chrome only when CBCS has no equivalent. *Evidence:* spike screenshots show a standalone window with its own menu bar, Start/back navigation, Save button and status bar (all `*.png`); CBCS controls are 12 px text, 4 px radius, 20–24 px tall (`style_sheet_sections_*.py`), while the spike uses 13 px, 6 px and 28 px.
+
+---
+
+## 2. Visual language
+
+### 2.1 Colour tokens
+
+The builder defines no free-floating colours. Its chrome tokens are aliases of `ShellThemeTokens` so a CBCS theme change (light, dark standard, dark neutral-gray, high contrast light, high contrast dark) restyles the builder with no builder code. Builder-only roles (backdrop, overlays) are new tokens defined in `qtside/theme/` and chosen to harmonize with the shell's values.
+
+**UX-TOK-001** `M2.3` `[S A]` Chrome tokens alias shell tokens exactly as in this table. A builder file that writes a hex colour outside `qtside/theme/` fails review.
+
+| Builder token | Shell source | Light | Dark (standard) | HC light | HC dark |
+| --- | --- | --- | --- | --- | --- |
+| `fb.window` | `window_bg` | `#F8F9FA` | `#1F2428` | `#FFFFFF` | `#000000` |
+| `fb.panel` | `panel_bg` | `#FFFFFF` | `#262C33` | `#FFFFFF` | `#000000` |
+| `fb.row_hover` | `tree_hover_bg` | `#E9ECEF` | `#2A3038` | `#E6E6E6` | `#1F1F1F` |
+| `fb.row_selected` | `tree_selected_bg` | `#D0E2FF` | `#2D3A4A` | `#B8D7FF` | `#0A4D8C` |
+| `fb.border` | `border` | `#DEE2E6` | `#3C434A` | `#000000` | `#FFFFFF` |
+| `fb.text` | `text_primary` | `#212529` | `#E9ECEF` | `#000000` | `#FFFFFF` |
+| `fb.muted` | `text_muted` | `#5A6168` | `#C2C9D1` | `#1F1F1F` | `#E0E0E0` |
+| `fb.faint` | `gutter_text` | `#666F76` | `#8B949E` | `#2A2A2A` | `#D0D0D0` |
+| `fb.accent` | `accent` | `#3366FF` | `#5B8CFF` | `#0000C0` | `#7CB7FF` |
+| `fb.on_accent` | new | `#FFFFFF` | `#0B1020` | `#FFFFFF` | `#000000` |
+| `fb.input` | `input_bg` | `#FFFFFF` | `#1B1F23` | `#FFFFFF` | `#000000` |
+| `fb.popup` / `fb.popup_border` | `popup_bg` / `popup_border` | `#FFFFFF` / `#DEE2E6` | `#262C33` / `#3C434A` | `#FFFFFF` / `#000000` | `#000000` / `#FFFFFF` |
+| `fb.error` / `fb.warning` / `fb.ok` | `diag_error_color` / `diag_warning_color` / `test_passed_color` | `#E03131` / `#D97706` / `#1A7F37` | `#FF6B6B` / `#E5A100` / `#3FB950` | `#9C0000` / `#7A4500` / `#005000` | `#FF8080` / `#FFD700` / `#7FCB66` |
+
+The neutral-gray dark chrome palette substitutes its own surfaces through the same aliases.
+
+**UX-TOK-002** `M2.3` `[S]` Backdrop tokens follow the shell theme (the backdrop is chrome):
+
+| Token | Light | Dark | HC light | HC dark |
+| --- | --- | --- | --- | --- |
+| `fb.backdrop` | `#E9EBEF` | `#16191D` | `#FFFFFF` | `#000000` |
+| `fb.dots` (16 px dot grid, 1 px dots) | `#D3D8DF` | `#262B31` | none | none |
+| `fb.page_shadow` | `rgba(16,24,40,0.10)` | `rgba(0,0,0,0.45)` | none, 1 px `fb.text` border | none, 1 px `fb.text` border |
+
+**UX-TOK-003** `M3.1` `[S A]` Form-surface tokens are the colours drawn *on top of the form* (selection, layout frames, gaps, drop targets, overlay badges). Because the form always renders in the runtime palette (light Fusion, window `#EFEFEF`, base `#FFFFFF`; UX-ISO-001), these tokens do **not** change between light and dark chrome. They change only for high contrast. The spike's practice of brightening the accent in dark mode lowered contrast on the light form (`#5B8CFF` on `#EFEFEF` is 2.6:1) and is withdrawn.
+
+| Token | Normal | High contrast (both) | Contrast on `#EFEFEF` (normal / HC) | Use |
+| --- | --- | --- | --- | --- |
+| `ov.select` | `#2F5BEA` | `#0000C0` | 4.8:1 / 10.9:1 | selection outline, handles, drop line, drop cell |
+| `ov.hover` | `#2F5BEA` at 55% alpha | `#0000C0` | n/a (transient) | hover outline |
+| `ov.layout` | `#7C3AED` | `#5B21B6` | 5.0:1 / 7.8:1 | layout frames, layout chips |
+| `ov.layout_faint` | `#7C3AED` at 28% alpha | `#5B21B6` at 60% | decorative | unselected layout frames |
+| `ov.gap` | `#DB2777` | `#831843` | 4.0:1 / ≥ 7:1 | gap bars, margin bands, share numbers |
+| `ov.gap_fill` | `#DB2777` at 12% alpha | `#831843` at 20% | decorative | margin bands |
+| `ov.drop_fill` | `#2F5BEA` at 10% alpha | `#0000C0` at 15% | decorative | drop cell fill |
+| `ov.tab` | `#B45309` | `#7A3E00` | 4.4:1 / 7.3:1 | tab-order badges and flow line |
+| `ov.buddy` | `#047857` | `#00553A` | 4.8:1 / 7.7:1 | buddy links |
+| `ov.problem` | `#C81E1E` | `#9C0000` | 5.0:1 / ≥ 7:1 | invalid drop, problem badge |
+| `ov.style_match` | `#0E7490` | `#00546A` | 4.7:1 / 7.4:1 | dashed outline of the widgets the style sheet rule under the caret styles (UX-STYLE-005, M5.3) |
+| `ov.chip_text` | `#FFFFFF` | `#FFFFFF` | ≥ 4.6:1 on every chip fill above | chip labels |
+
+**UX-TOK-004** `M3.1` `[S]` Overlay strokes are drawn *outside* the widget rectangle they describe (a 2 px selection stroke sits 1 px outside the widget's edge), so the widget's own border and text stay visible. HC raises every overlay stroke to 2 px minimum.
+
+### 2.2 Type scale
+
+**UX-TYPE-001** `M2.3` `[S]` The builder uses the shell UI font family and weight setting (`ui_font_weight_css`). Sizes are defined relative to the shell base size B (12 px today); when the user changes the shell font size every builder size scales by B/12.
+
+| Role | Size | Weight | Use |
+| --- | --- | --- | --- |
+| Overline | B − 2 (10 px), uppercase, +0.5 px letter spacing | 600 | section headers in panes ("OUTLINE", "SIZE") |
+| Caption | B − 1 (11 px) | 400 | helper sentences, chips (chips use 600) |
+| Body | B (12 px) | 400 | rows, fields, menus |
+| Strong | B (12 px) | 600 | changed property labels, inspector name |
+| Title | B + 1 (13 px) | 600 | inspector header name, dialog section titles |
+| Screen | B + 6 (18 px) | 600 | Start and dialog headings |
+| Hero | B + 10 (22 px) | 600 | Start "New form" only |
+
+**UX-TYPE-002** `M3.1b` `[S]` Numbers in the inspector, chips and readouts use tabular figures when the font provides them, and always carry a unit when the unit is not obvious ("240 px", "2 columns").
+
+**UX-TYPE-003** `M3.1` `[S]` Nothing in builder chrome is set smaller than 10 px at 100% DPI. Chips are 11 px semibold.
+
+### 2.3 Spacing grid and sizes
+
+**UX-GRID-001** `M2.3` `[S]` A 4 px grid. Allowed spacings: 4, 8, 12, 16, 24, 32. Pane padding is 12 (8 at the compact breakpoint, UX-RESP-002).
+
+**UX-GRID-002** `M2.3` `[S]` Control heights match the shell: inputs, combos and segmented controls 24 px; buttons 24 px (primary 28 px only in dialogs and Start); outline rows 24 px; inspector rows 28 px (24 control + 4); pane section headers 28 px; tab toolbar 36 px.
+
+**UX-GRID-003** `M2.3` `[S]` Radii: 4 px controls and chips (the shell's dominant radius), 6 px popovers, menus and the page card, 8 px Start cards. Nothing else is rounded.
+
+**UX-GRID-004** `M3.1` `[A]` Hit targets: every canvas handle and every gap bar has a hit area of at least 12 × 12 screen px regardless of zoom; outline rows are 24 px tall; insertion targets in lists are at least 8 px tall (pain 20: "a drop marker wider than a few pixels").
+
+### 2.4 Elevation
+
+**UX-ELEV-001** `M2.3` `[S]` Three levels only. Level 0: panes, flat, separated by 1 px `fb.border`. Level 1: the page card (shadow `0 1 3` + `0 4 12` at `fb.page_shadow`). Level 2: popovers, menus, toasts, drawers (1 px `fb.popup_border` + shadow `0 8 24` at 16% black). High contrast: no shadows; level 1 and 2 use a 1 px (page) or 2 px (popover) `fb.text` border.
+
+### 2.5 Iconography
+
+**UX-ICON-001** `M3.1` `[S]` No icon files. All builder glyphs are painted by `qtside/icons/` with `QPainter`: 16 px design grid, 1.5 px stroke at 1× (scaled with device pixel ratio, never resampled bitmaps), round caps and joins, 2 px safe padding, single colour (`icon_primary`, or `fb.on_accent` on accent fills). Stroke weight and corner radius match `app/shell/toolbar_icons.py` so builder icons sit beside shell icons without looking foreign.
+
+**UX-ICON-002** `M3.1` `[S]` Glyphs are drawn natively at 12 (chips), 16 (rows, toolbar) and 20 px (Insert tiles), not scaled from one size. Each is cached per (name, colour, size, device pixel ratio). A theme switch invalidates the cache.
+
+**UX-ICON-003** `M4.1` `[S]` One glyph per widget class in the catalog, shaped like the widget (a push button is a pill, a line edit a box with a caret, a combo a box with a chevron, a grid layout four squares, a spacer a spring). Layout glyphs use `ov.layout`, spacer glyphs use `ov.gap`; every other glyph uses the text colour. Colour never carries meaning alone: the shape and the label do.
+
+**UX-ICON-004** `M3.1` `[S]` The UI set covers at least: chevron (4 directions), plus, minus, close, reset (↺), undo, redo, play (preview), zoom, fit, two-widths, text-size ("Aa"), XML (`</>`), tab-order (1→2), buddy (link), connection (M6), warning, error, info, check, lock (generated file), database, search, drag grip, more (⋯).
+
+### 2.6 Motion
+
+**UX-MOTION-001** `M3.1` `[T]` Structure never animates. Inserts, moves, wraps, reflows and undo appear in the next frame. Insertion lines, drop cells and selection outlines move instantly with the pointer.
+
+**UX-MOTION-002** `M3.1` `[S]` Only these animate: chips and handles fade in over 80 ms; popovers, menus and drawers fade and slide 4 px over 120 ms (ease-out); toasts slide 8 px and fade over 160 ms, and fade out over 120 ms; the page-resize readout fades out 600 ms after release.
+
+**UX-MOTION-003** `M3.1` `[A]` When the platform disables UI effects (`QApplication.isEffectEnabled(Qt.UI_AnimateMenu)` is false) or the setting `form_builder.reduce_motion` is on, every duration is 0.
+
+### 2.7 Runtime palette isolation of the canvas
+
+**UX-ISO-001** `M2.3` `[S A]` Canvas widgets render with the runtime look the user's app gets on ChoreBoy: the Fusion style, Qt's standard light palette, and the runtime default application font (not the shell's UI font). The M0.7 probe result is the source of truth; if it shows a different default style on ChoreBoy, this clause follows the probe.
+
+**UX-ISO-002** `M2.3` `[A]` No shell or builder style sheet rule reaches a canvas widget. The test renders a reference form (one of every catalog widget) on the canvas under all five shell themes and compares it pixel-for-pixel with the same form rendered in a clean `QApplication` with only Fusion and the standard palette. Any difference fails. This covers the spike's earlier bug where an app-level sheet squeezed a scroll bar into spin arrows (spike decisions.tsv, 2026-10-20T22:54).
+
+**UX-ISO-003** `M2.3` `[S]` The page card's mini title bar (window title, three caption glyphs) is drawn by the builder in neutral runtime-like greys, identical in every chrome theme. It is not the ChoreBoy window manager's chrome and must not pretend to be: it is 22 px high, `#E4E4E4` fill, `#6B6B6B` glyphs, title in the runtime font at 11 px semibold.
+
+**UX-ISO-004** `M5.3` `[S]` A form-level style sheet set by the user (`styleSheet` on the root or any widget) applies on the canvas exactly as at run time, because it is part of the truth (UX-PRIN-001).
+
+---
+
+## 3. Integration into CBCS
+
+### 3.1 The `.ui` tab
+
+**UX-SHELL-001** `M2.2` `[S]` Opening a `.ui` file (project tree, Quick Open, File > Open, a Problems row, a link) opens a normal CBCS editor tab whose content is the builder Workbench. The tab title is the file name with the form glyph; the dirty marker is the shell's standard one; close, close-others, reopen-closed and split behave as for any tab.
+
+**UX-SHELL-002** `M2.2` `[S]` The builder has no menu bar, no window title, no "back to Start" link and no status bar of its own (all four exist in the spike). Its commands live in shell menus (UX-SHELL-004), its status text goes to the shell status bar (UX-SHELL-006), and its problems go to the shell Problems panel (section 3.4).
+
+**UX-SHELL-003** `M2.2` `[S]` The tab content is: a 36 px tab toolbar, then the three-pane Workbench (section 4.3). The tab toolbar follows the Markdown pane's toolbar pattern (`shell.markdownEditorPane.toolbar`: 8 px side padding, mode group on the left, actions on the right) so the two editors look like siblings.
+
+**UX-SHELL-004** `M2.3` `[S]` When a form tab is active, a **Form** menu appears in the shell menu bar between View and Tools, and disappears when another tab becomes active. It holds: Insert widget… (/), Go to widget… (Ctrl+R), Layout ▸ (Vertical, Horizontal, Grid, Form, Horizontal splitter, Vertical splitter, Wrap in…, Unwrap, Remove layout…, Adjust size, Simplify grid), Size ▸ (Hug, Fill, Fixed for width and height, Reset size), Overlays ▸ (Tab order, Buddies; Connections in M6), Preview (Ctrl+Shift+R), Preview options ▸ (text size, screen scale, two widths), View XML (Ctrl+Shift+V), Form settings… (M5.5b), Create window class… The shell's Edit menu items (Undo, Redo, Cut, Copy, Paste, Delete, Select all, Find) operate on the form when the form tab has focus.
+
+**UX-SHELL-005** `M2.2` `[S]` Save is the shell's Save (Ctrl+S). There is no Save button in the tab. The right end of the tab toolbar shows a quiet save-state text in `fb.faint`: "Not saved yet" (new), "Unsaved changes", "Saved" (for 4 s after a save, then blank), "Saved · ui_invoice.py updated" when generation ran. Generation failure shows in `fb.error` "Saved invoice.ui · ui_invoice.py not written" and a Problems row.
+
+**UX-SHELL-006** `M2.3` `[S]` The shell status bar's editor segment (the one that shows "Ln, Col" for code) shows the builder's context sentence: the selection summary when idle ("email · Line edit · row 2 of the form layout"), the gesture sentence during a gesture ("Insert between Shop name and Receipts"), the overlay instruction during an overlay. The sentence never contains internal ids. The shell's own segments (run state, Python tooling, problems count) are untouched.
+
+**UX-SHELL-007** `M2.2` `[T]` Undo/redo history is per tab (PLAN §3). Closing and reopening the tab starts a new history. The shell's Edit > Undo label names the command: "Undo Wrap in group box".
+
+### 3.2 View XML
+
+**UX-XML-001** `M2.2` `[S T]` The tab toolbar's left end holds a two-segment control **Design | XML** (same component and style as the Markdown pane's mode group). Ctrl+Shift+V toggles it, reusing the shell's "toggle source view" key (today labelled "Markdown: Toggle Preview").
+
+**UX-XML-002** `M2.2` `[S]` XML shows the current document serialized on demand (lazy, PLAN §3) in the CBCS code editor with XML highlighting, full editing, and the shell's find and replace. An info bar at its top reads: "Edits here apply to the design when you switch back."
+
+**UX-XML-003** `M2.2` `[T]` Switching back to Design with valid XML applies one `ReplaceDocument` command (one undo step, named "Undo XML edits"), re-realizes the form and restores the selection by object name where the name still exists. Unchanged XML applies nothing.
+
+**UX-XML-004** `M2.2` `[S T]` Switching back with invalid XML keeps the XML view, moves the caret to the error, and shows an error bar: "Line 42: the tag `<widget>` is not closed. Fix it, or [Discard XML edits]." Discard restores the last valid design. Neither version is ever lost.
+
+**UX-XML-005** `M2.3` `[S]` If the file has nodes the builder does not understand, Design shows them untouched and the XML view marks them with a gutter note "Kept as is". Nothing is silently dropped (survey failure mode "serializer vandalism"). Moved out of M2.2 because the gutter mark needs the code editor's marker API, which this slice does not own. Design already keeps unknown nodes.
+
+### 3.3 Generated files
+
+**UX-GEN-001** `M2.3` `[S]` Opening `ui_<name>.py` (or `*_rc.py`, or the logic expansion) opens it read-only with an info bar: lock glyph, "Generated from invoice.ui. Code Studio rewrites this file every time the form is saved. Put your code in invoice_window.py." Buttons: [Open invoice.ui] [Open invoice_window.py] [Edit anyway].
+
+**UX-GEN-002** `M2.3` `[T]` "Edit anyway" makes the buffer writable for this tab only. If the user saves a hand edit, the next save of the form detects it (M1.4 hash) and asks in an info bar on the form tab: "ui_invoice.py has edits made by hand. Saving the form will replace them. [Replace] [Open ui_invoice.py] [Cancel save]". It never overwrites silently (pain 6).
+
+**UX-GEN-003** `M2.3` `[A]` Generated files are excluded from Problems linting and from format-on-save. The project tree shows them with the lock glyph and `fb.muted` text, nested under (or sorted next to) their `.ui` file. They still open and search normally.
+
+### 3.4 Problems
+
+**UX-PROB-001** `M2.3` `[S]` Form diagnostics appear in the shell Problems panel as ordinary rows: severity icon, message, source "Form", file `invoice.ui`, and a location that names the widget instead of a line ("saveButton"). FB codes appear at the row end in `fb.faint` ("FB201").
+
+**UX-PROB-002** `M2.3` `[T]` Double-clicking a form problem focuses (or opens) the form tab, selects the widget, scrolls it into view and focuses the inspector field the problem is about (for example the Buddy field, the connection row, or the rule in M6+).
+
+**UX-PROB-003** `M2.3` `[S]` The inspector's form view (nothing selected) shows a one-line problem summary with a link "Show in Problems". The builder never duplicates the Problems list inside itself.
+
+**UX-PROB-004** `M3.1` `[S]` A widget with an error carries a 12 px `ov.problem` badge, placed by the chip solver (UX-CHIP-002). Hover shows the message; click opens it in Problems.
+
+### 3.5 Run and Preview
+
+**UX-RUN-001** `M2.4` `[T]` F5 (Run Active File) with a form tab active: if the form belongs to a project, save the form (which generates `ui_*.py`), then run the project entry point; the status bar says "Saved invoice.ui · Running main.py". If the project has no entry point, or the form is outside a project, F5 opens Preview instead and the status bar says why ("This form isn't part of a project, so F5 previews it."). A form inside the project that is not in `forms/` and is not adopted previews too, and the status bar says "This form isn't in forms/ or adopted, so F5 previews it." Shift+F5, Ctrl+F5 and Ctrl+Shift+F5 keep their shell meanings.
+
+**UX-RUN-002** `M2.5` `[S T]` Preview (Ctrl+Shift+R, the Preview button) shows the form from the generated module in the separate preview process. The window title is "Preview · invoice.ui". While the child starts the button shows a spinner and the label "Starting…"; warm starts must not show it. Closing the preview window or pressing Esc in it closes it.
+
+**UX-RUN-003** `M2.5` `[S T]` If the preview process crashes or raises, the editor stays usable, a Problems row is added ("Preview stopped: ImportError in myapp.widgets (line 12)"), and a toast says "Preview stopped. Your form is fine. [Show problem]". Preview is retried on the next request with the plan's crash-loop backoff; while backing off the button tooltip says "Preview is resting after 3 crashes. Try again in 20 s."
+
+**UX-RUN-004** `M2.5` `[S]` Custom widgets that cannot be drawn in the editor show as sized stand-ins on the canvas (class name, dashed outline, at least 80 × 24 px; pain 7) and as the real class in Preview.
+
+**UX-RUN-005** `M2.4` `[S]` The shell's packaging flow lists the project's forms with their generated files. A generated file older than its form, or missing, is a packaging problem with a fix button: "ui_invoice.py is older than invoice.ui. [Save the form now]" (pain 10).
+
+### 3.6 Keyboard shortcuts
+
+The shell table in `app/shell/shortcut_preferences.py` is authoritative. A form tab may reuse a shell shortcut only when its meaning in the form is the same idea (save, undo, find, rename, zoom, go to symbol). Every new form shortcut was checked against the shell table and against Linux window-manager defaults (MATE, Xfce, GNOME): `Ctrl+Alt+arrows`, `Alt+drag`, `Alt+F1…F10`, and `Ctrl+Shift+U` (IBus) are never used.
+
+**UX-KEY-001** `M2.3` `[A]` A test loads the shell shortcut table plus the form table below and fails if any two commands active in the same focus context share a key, or if a form key is one of the window-manager keys listed above.
+
+**UX-KEY-002** `M2.3` `[A]` Form shortcuts are registered with the shell's `ShortcutCommand` mechanism under category "Form designer", so Settings > Keyboard can rebind them and conflict detection covers them.
+
+**UX-KEY-003** `M2.3` `[S]` All shortcuts use portable `QKeySequence` text: Ctrl means Command on macOS (developer machines). The spike's special case of physical Control for Ctrl+G is withdrawn.
+
+**UX-KEY-004** `M2.3` `[K]` The complete form key table. "Shell" in the last column means the shell already binds the key and the form gives it the same meaning; "new" means a form-only key; "inert" means the shell key does nothing in a form tab and the status bar says what to use instead.
+
+| Key | Context | Action | Status |
+| --- | --- | --- | --- |
+| Ctrl+S | form tab | Save `.ui` and generate `ui_*.py` | shell |
+| Ctrl+Shift+S | any | Save all | shell |
+| Ctrl+W | any | Close tab | shell |
+| Ctrl+Z / Ctrl+Shift+Z | form tab | Undo / redo (form command log) | shell |
+| Ctrl+X / Ctrl+C / Ctrl+V | canvas, outline | Cut / copy / paste into the layout (UX-CLIP) | shell |
+| Delete, Backspace | canvas, outline | Delete selection (asks first if referenced, UX-OUT-012) | shell |
+| Ctrl+A | canvas, outline | Select all siblings of the selection (or all children of the selected container) | new |
+| Ctrl+D | canvas, outline | Duplicate after the selection | new |
+| Ctrl+F | form tab | Find widget: focuses the outline filter. In the inspector: property search | shell (same idea) |
+| Ctrl+R | form tab | Go to widget: a picker of object names, text and classes | shell (Go to Symbol) |
+| F2 | canvas, outline, inspector | Rename (object name) in place | shell (Rename Symbol) |
+| Enter | canvas | Edit the widget's text in place; on a container or layout, select its first child | new |
+| Esc | everywhere | Close the innermost transient thing, else select the parent (UX-SEL-004) | new |
+| Tab / Shift+Tab | canvas | Select next / previous widget in outline order (R3 22) | new |
+| Tab / Shift+Tab | outline | Nest into the previous sibling container / un-nest | shell (Indent / Outdent idea) |
+| Up, Down, Left, Right | canvas | Select the nearest widget in that direction | new |
+| Up, Down | outline | Previous / next row | new |
+| Left, Right | outline | Collapse or go to parent / expand or go to first child | new |
+| Shift+arrow | canvas | Add the nearest widget in that direction to the selection | new |
+| Alt+Up / Alt+Down | canvas, outline | Move within the layout (rows in forms and grids) | new |
+| Alt+Left / Alt+Right | canvas | Move within a horizontal layout or across grid columns | new |
+| Alt+arrow | canvas, bare container | Nudge by 8 px | new |
+| Alt+Shift+arrow | canvas, bare container | Nudge by 1 px | new |
+| Ctrl+Shift+arrow | canvas | Resize: width or height ± 8 px, writing Fixed (UX-RESIZE-006) | new |
+| Ctrl+arrow | canvas | Resize: width or height ± 1 px, writing Fixed (UX-RESIZE-006) | new |
+| / | canvas, outline | Quick insert after the selection | new |
+| Ctrl+1 / Ctrl+2 | canvas, outline | Lay out horizontally / vertically (Designer parity) | new |
+| Ctrl+3 / Ctrl+4 | canvas, outline | Lay out in a horizontal / vertical splitter | new |
+| Ctrl+5 / Ctrl+6 | canvas, outline | Lay out in a grid / in a form | new |
+| Ctrl+J | canvas, outline | Adjust size (Designer parity) | new |
+| Ctrl+Shift+G | canvas, outline | Wrap in… (popover) | new |
+| Ctrl+Shift+B | canvas, outline | Unwrap (remove the selected layout or plain container, keep its children in place) | new |
+| (no key) | menu | Remove layout… (Designer's Break layout; Designer's Ctrl+0 is zoom here) | new |
+| Ctrl+= / Ctrl+- / Ctrl+0 | form tab | Canvas zoom in / out / 100% | shell (Zoom) |
+| Ctrl+9 | form tab | Zoom to fit | new |
+| Ctrl+PgDown / Ctrl+PgUp | canvas, outline | Show the next / previous page of the innermost page container (canvas only, not saved; UX-CONT-007) | new (M4.2) |
+| Ctrl+wheel | canvas | Zoom around the pointer | new |
+| Ctrl+Shift+V | form tab | Design / XML | shell (toggle source view) |
+| Ctrl+Shift+R | form tab | Preview | new |
+| F5 | form tab | Run (UX-RUN-001) | shell |
+| Shift+F5 / Ctrl+F5 / Ctrl+Shift+F5 | any | Run project / debug the active file / debug the project | shell |
+| F3 | form tab | Leave overlay (same as Esc; Designer's "Edit widgets") | new |
+| F7 | form tab | Buddies overlay (toggle) | new |
+| F8 | form tab | Tab order overlay (toggle) | new |
+| F4 | form tab | Connections overlay (toggle, UX-ARR-006; Designer parity) | new (M6.1c) |
+| Alt+1 / Alt+2 / Alt+3 / Alt+4 | form tab | Focus Outline / Insert / Canvas / Inspector | new |
+| Alt+5 | form tab | Focus Actions (UX-MAIN-010) | new (M5.1) |
+| Enter | canvas, a selected menu bar, menu or toolbar | Start menu editing (UX-MAIN-004); inside it the keys of UX-MAIN-004 and UX-MAIN-005 | new (M5.1) |
+| Ctrl+K, C | form tab | View Python code beside the canvas (toggle, UX-PREV-004) | new (M5.5a, shell chord prefix) |
+| F1 | canvas, outline, inspector | Help card for the selected widget (UX-MODE-007) | new (M5.6) |
+| Alt+B | form tab | Behavior tab of the inspector, first row focused (UX-BEH-003; 13.3.1 D22) | new (M6.1b) |
+| Ctrl+Shift+E | form tab | Add an event: Behavior tab with the event picker open (UX-PICK-001) | new (M6.1b) |
+| Ctrl+Shift+L | form tab | Show all connections on the canvas (toggle, UX-ARR-005) | new (M6.1c) |
+| F12 | form tab | Go to code (UX-CODE-009) | shell (Go to Definition, same idea; M6.2b) |
+| Shift+F12 | form tab | Find every use of the widget (M7.8). Until then: nothing in a form tab | shell (Find References) |
+| Up, Down, Enter, Delete, Space, Alt+Up / Alt+Down, Ctrl+D, Ctrl+. | Events list | Move, edit, delete, turn off or on, move a step, duplicate, first fix (UX-BEH-009) | new (M6.1b, `kind="qt"`) |
+| Enter, Home | Connections overlay | Start a link; pick the form as receiver (UX-ARR-008) | new (M6.1c, `kind="qt"`) |
+| Double-click | canvas, buttons, check boxes, radio buttons, button boxes, actions | Go to code for the default event, making it the first time (UX-CODE-003, 13.3.1 D8) | new (M6.2b) |
+| Enter / Shift+Enter / Backspace | tab-order overlay | Next number / continue from here / undo the last number (UX-MODE-002) | new (M5.6) |
+| Shift+F10, Menu key | canvas, outline | Context menu for the selection | Qt standard |
+| Ctrl+K, W | form tab | Two-widths view (toggle) | new (shell chord prefix) |
+| Ctrl+H, Ctrl+G, Ctrl+/, Ctrl+Alt+V, Ctrl+Shift+Space, F9 | form tab | Nothing. Status: "Not used in the form designer. Ctrl+R goes to a widget." | inert |
+| Shift+F2 | any | Stop (shell). Not used for rename in the form (the spike and LOGIC_DESIGN §2.12 used it) | shell |
+| Ctrl+Shift+F | any | Find in Files (shell), which gains a "Forms" result group (M7.8) | shell |
+
+**UX-KEY-005** `M6.0` `[A]` LOGIC_DESIGN §2.12 keys are adopted with three changes forced by the shell table: Preview is Ctrl+Shift+R (not Ctrl+R), and Run behavior starts checked so that key is also Try; "search this form's logic" is Ctrl+F in the form tab (not Ctrl+Shift+F); rename is F2 (not Shift+F2). Ctrl+Shift+E, Ctrl+Shift+L, Ctrl+Space, Ctrl+., Ctrl+Enter, F12 and Shift+F12 are adopted unchanged (none collide). Alt+B (focus Behavior tab) is adopted only if no shell menu title uses the mnemonic B; otherwise it becomes Alt+4 then B. *Resolved in v4 (13.3.1 D22):* no shell menu uses B, so Alt+B is adopted; Shift+F12 waits for M7.8; Ctrl+Space and Ctrl+Enter belong to M7's formula editor; Ctrl+. also runs a row's first fix in the Events list.
+
+**UX-KEY-006** `M3.1` `[S]` The canvas's first focus in a session shows a one-time status sentence: "Tab moves between widgets. Alt+4 goes to the inspector, Alt+1 to the outline."
+
+### 3.7 PySide2 runtimes
+
+**UX-PS2-001** `M2.1` `[S]` On a PySide2 runtime the builder is not loaded. A `.ui` file opens in the code editor as XML, with a dismissible info bar: "Visual form editing needs FreeCAD 1.1 or later. This form opens as text here; your changes are kept." The bar has no button and appears once per file per session.
+
+**UX-PS2-002** `M2.1` `[S]` On PySide2, "New Form…" menu items, the Form menu and form templates are absent (not disabled). Projects that contain forms still open, build and run as before. Generated `ui_*.py` files keep their read-only banner (UX-GEN-001) because the banner is a shell feature that does not need PySide6.
+
+---
+
+## 4. Screens and regions
+
+### 4.1 New form (Start)
+
+**UX-START-001** `M2.2` `[S]` Start is not a home screen of the builder; it is the **New form** tab. It opens from File > New Form…, from the project tree context menu ("New Form…" on any folder, defaulting to `forms/`), and from the Welcome page. Opening an existing `.ui` never shows Start.
+
+**UX-START-002** `M5.5c` `[S]` Layout: a centred column, max 960 px wide, 32 px top padding. Top: Hero "New form", then the name row (UX-START-003). The cards already say each starting point is laid out. Then three card groups. A right rail (240 px) with recent forms appears when the tab is at least 1180 px wide; below that, recent forms are a list under the cards.
+
+**UX-START-003** `M2.2` `[S T]` The name row is first and focused on open: "Name [new_form] in [forms/ ▾]". The live caption "Creates forms/new_form.ui, ui_new_form.py and new_form_window.py." is the name field tooltip. The default name is unique in the folder. Invalid names show an inline message under the field and disable creation: "Use letters, digits and _, starting with a letter."
+
+**UX-START-004** `M2.2` `[S K]` Card groups, each card a whole click target (no inner buttons):
+- **Templates**: Data entry form; List and detail; Table with search; Dialog with OK and Cancel.
+- **Start blank**: Widget; Main window; Dialog.
+- **From what you have**: Build a form from a table; Adopt a form your code already loads (M2.4).
+
+Clicking a card, or pressing Enter on a focused card, creates the files with the name row's values and replaces the tab content with the Workbench, with the first useful widget selected (the first input for templates, the root for blank forms). Arrow keys move between cards; the focused card has the focus ring (UX-A11Y-003). Templates name their widgets for what they hold (`nameLabel`, `nameEdit`, `emailEdit`, `buttonBox`), never `label_2`; forms built from a table use the column names.
+
+**UX-START-005** `M2.2` `[S]` Cards are 200 × 156 px: a painted wireframe thumbnail (120 px tall, `fb.row_hover` fill, wireframe in `fb.faint` with one accent element), title in Strong, one-line description in Caption. Hover lifts the border to `fb.accent`; no shadow change.
+
+**UX-START-006** `M2.2` `[S]` Recent forms lists up to 8 forms in this project opened most recently, with folder path in `fb.faint`. Empty: "Forms you open show up here."
+
+**UX-START-007** `M5.5c` `[S]` Saved templates (save-as-template) appear as a fourth group "Your templates" only when at least one exists. Amended in v3: it is the first group (UX-TMPL-004).
+
+**UX-START-008** `M2.2` `[S]` The spike's "Keys worth knowing" card moves off Start into the empty-form state (UX-EMPTY-001) and Help > Form designer keys.
+
+### 4.2 Build a form from a table
+
+**UX-TABLE-001** `M2.2` `[S]` The spike's dialog structure is kept: table list (left), column mapping (middle: Include, Column, Type, Shows as, Label), live preview (right) rendered by the same realizer and runtime palette as the canvas. Fixes:
+- the database path is shown relative to the project ("data/shop.sqlite"), with the full path in the tooltip (spike `from-table.png` shows a 90-character absolute path dominating the dialog);
+- labels are derived from column names in title case with `_id` dropped ("customer_id" → "Customer"), editable;
+- dates in the preview use the project locale with a four-digit year (spike shows "1/1/00");
+- the primary button says what it does: "Create form with 6 fields"; disabled with the reason when 0 columns are included ("Include at least one column").
+
+**UX-TABLE-002** `M8.3d` `[S]` From M8 the source is a named connection, and the created form is bound, as UX F13 (§13.5.1) describes. Until then it lays out unbound fields from a SQLite file.
+
+**UX-TABLE-003** `M8.7` `[S]` The dialog has "Open this screen when the app starts". It is ticked only when the project's `main.py` is missing. When `main.py` is still the template, the box is unticked and its label names the class that file already opens: "Open this screen when the app starts (instead of MainWindow)". Ticking it rewrites `main.py` in the Qt App shape so F5 opens the list screen when Make includes a list, and the record form otherwise. An open `main.py` tab reloads from that write. When `main.py` has the person's own code the box is off and disabled, and the dialog shows the §13.5.9 sentence that names the class and the `forms/…_window.py` file. The form undo step does not restore `main.py`.
+
+### 4.3 Workbench layout
+
+```
++-- tab: invoice.ui ● ------------------------------------------------------------------------+
+| [Design|XML]  [⇥ Tab order][🔗 Buddies]   ↶ ↷   [− 100% +]  [Aa ▾] [⇆]   [▶ Preview]  Saved  |  36 px tab toolbar
++----------------+--------------------------------------------------------+------------------+
+| OUTLINE    + ⌕ |  · · · · · · · · · · · · · · · · · · · · · · · · · · · | ▭ email       ↺  |
+| ▾ Invoice      |  ·   ┌ Invoice ───────────────────────── _ □ × ┐      · | Line edit        |
+|   ▾ ≡ form     |  ·   │ Name *   [______________________________] │      · | Invoice › form › |
+|      Aa nameL. |  ·   │ Email    [______________________________] │      · |[Properties|Behav]|
+|      ▭ name    |  ·   │ Notes    [                              ] │      · | ⌕ Find property  |
+|      ...       |  ·   │                         [ OK ] [Cancel ]  │      · | CONTENT          |
+|----------------|  ·   └────────────────────────────────────────────┘      · | SIZE             |
+| INSERT       ⌕ |  ·                     640 × 480 ═                     · |  Width  Hug|Fill|Fx
+| [tiles...]     |  · · · · · · · · · · · · · · · · · · · · · · · · · · · |  ...             |
++----------------+--------------------------------------------------------+------------------+
+  (shell status bar)  email · Line edit · row 2 of the form layout                 ✓ 0 problems
+```
+
+**UX-WB-001** `M2.2` `[S]` Three panes in a horizontal splitter: left pane (Outline over Insert), canvas, inspector. Default widths at a 1280 px wide tab: left 232, inspector 300, canvas the rest. Limits: left 184–360, inspector 264–420, canvas at least 360. The splitter handles are 1 px lines with a 6 px hit area, and they drag (the spike's handles do not). Widths persist per user, not per file.
+
+**UX-WB-002** `M2.2` `[S]` The left pane is always the tab bar Outline | Insert | Logic. Each tab fills the pane. Outline's + and filter, and Logic's Read as text, sit in the tab corner as 20 px icon buttons. Insert uses a one-column list below 232 px and the 72 by 56 tile grid at or above that. Saved pieces is a section inside Insert, shown only when a piece exists.
+
+**UX-WB-003** `M2.2` `[S]` Tab toolbar contents, left to right: **Design | XML** segments; a 1 px divider; overlay toggles **Tab order** and **Buddies** (toggle buttons, not a segmented "mode" control; text plus glyph; checked state uses `fb.row_selected` fill); Undo and Redo icon buttons (disabled state uses `fb.faint`, enabled `icon_primary`; the spike's always-faint arrows read as disabled); zoom group **− [100%] +** where the percentage is a menu button (Fit, 50, 75, 100, 150, 200 %); **Aa ▾** preview options (UX-SCALE); **⇆** two widths toggle (UX-WIDTHS); **Preview** button (secondary style with play glyph); the save-state text (UX-SHELL-005). Every icon-only button has a tooltip that includes its shortcut.
+
+**UX-WB-004** `M2.2` `[S]` The canvas is a `QGraphicsView` over the backdrop: dot grid, the page card centred with at least the gutter (UX-ZOOM-004) around it, a page chip above the page's top-left outside corner ("Invoice · Form layout"), and the size readout under the page's bottom edge ("640 × 480"). The page's right and bottom edges carry pill grabbers (32 × 4 px, `fb.faint`, `fb.accent` on hover) that resize the form (UX-RESIZE-008).
+
+**UX-WB-005** `M3.1b` `[S]` The inspector: header (UX-INSP-001), tab bar Properties · Behavior · Data (UX-INSP-002), a sticky property search field (Properties tab), then scrolling content. It is never empty: with nothing selected it shows the form (UX-INSP-010).
+
+**UX-WB-006** `M2.2` `[S]` Toasts appear bottom-centre of the canvas viewport, 16 px above its bottom edge, over the backdrop. Banners (overlay instructions, info bars) appear at the top of the canvas viewport, also over the backdrop; the page is never covered; it moves down only by the part of the banner that does not fit in the top gutter (D31).
+
+### 4.4 Empty states
+
+Every empty surface says what it is and what to do next, in one or two sentences, with at most one button.
+
+**UX-EMPTY-001** `M3.1` `[S]` Empty form (root layout with no items): the drop zone fills the root layout's whole interior (the spike's only fills a 160 px band at the top, `empty-form.png`). Centre text: "Drop a widget here" (Strong) and "or press / to search for one." (Caption). The shortcut hints live on the keys page.
+
+**UX-EMPTY-002** `M3.1` `[S]` Empty nested layout or empty container: drawn at least 32 px tall and 48 px wide with a dashed `ov.layout_faint` outline and centred Caption "Drop widgets here" when the area is at least 120 px wide, else a 12 px plus glyph. This minimum is a canvas-only size and is never saved (pain 4).
+
+**UX-EMPTY-003** `M3.2` `[S]` Empty tab widget page, stacked page or toolbox item: the same as UX-EMPTY-002, with "Drop widgets on this page".
+
+**UX-EMPTY-004** `M3.5` `[S]` Outline filter with no match: "No widget matches “xyz”." and a [Clear] link. Insert filter with no match: "Nothing called “xyz”. Try text, list or date." (suggestions are three real category words).
+
+**UX-EMPTY-005** `M3.1b` `[S]` Behavior tab with no connections (M3–M5): "Nothing happens yet when this button is clicked." and [+ Add connection]. The sentence names the class's default event in words (LOGIC_DESIGN §2.2 table).
+
+**UX-EMPTY-006** `M3.1b` `[S]` Data tab: hidden in user-facing builds until M8 lands. In development builds before M8 it shows "Connect this form to a table" as a disabled button with the caption "Not built yet (M8)". This stub text is the only place a milestone name may appear, and only behind the development flag. Behavior tab stubs follow the same rule: user builds never say "coming in the logic phase" (spike `inspector-behavior.png`).
+
+**UX-EMPTY-007** `M5.6` `[S]` Tab-order list with no inputs: "No fields to visit yet. Inputs join the order as you add them."
+
+**UX-EMPTY-008** `M2.2` `[S]` An unreadable file opens as a text tab with an info bar: "This form can't be opened in the form builder:" plus the reason (the CONTRACTS §8.5 wording). There is no centred panel and no [Open as text] button. This matches CONTRACTS §8.5: the provider declines and the shell opens the file as text.
+
+**UX-EMPTY-009** `M2.2` `[S]` Recovered draft and external change are info bars at the top of the tab (not modal dialogs): "Recovered unsaved changes from 14:02. [Keep recovered] [Discard]"; "invoice.ui changed on disk. [Reload from disk] [Keep mine] [Compare…]". Compare opens the shell diff of the two XML texts.
+
+### 4.5 Responsive behaviour
+
+ChoreBoy screens may be 1366 × 768. Inside CBCS (project tree, menu, toolbar, tab bar, status bar) the form tab gets roughly 1080 × 600 px, and about 1080 × 420 with the Problems panel open. The spike at 1100 × 640 clips the page under a horizontal scroll bar and cannot collapse a pane (extra capture `small-1100x640.png`). Breakpoints use the tab content size W × H.
+
+**UX-RESP-001** `M2.2` `[S]` W ≥ 1180: all panes at their remembered widths.
+
+**UX-RESP-002** `M2.2` `[S]` 900 ≤ W < 1180 (the common ChoreBoy case): compact density. Left pane 200, inspector 272, pane padding 8, Insert tiles switch from a 3-column icon grid to a 2-column icon-and-label list.
+
+**UX-RESP-003** `M2.2` `[S T]` 720 ≤ W < 900: the left pane collapses to a 36 px rail with two icon buttons, Outline and Insert. Clicking one (or Alt+1 / Alt+2) opens it as a 240 px drawer over the canvas edge (level 2), which closes on Esc, on a click on the canvas, or after a drop from Insert. A pin button in the drawer header restores the docked pane.
+
+**UX-RESP-004** `M2.2` `[S T]` W < 720: the inspector also collapses to a right rail with its three tab icons; opening it shows a 288 px drawer. Selecting a widget does not auto-open it.
+
+**UX-RESP-005** `M2.2` `[S]` The left pane stays Outline | Insert | Logic at every height, including H < 560. There is no stacked column. The inspector header compresses to one line (glyph, name, class) and the breadcrumb moves into the name field's tooltip.
+
+**UX-RESP-006** `M2.2` `[S]` The tab toolbar at W < 1000 hides the overlay toggle labels (glyph only, with tooltips) and folds Aa and ⇆ into a ⋯ menu. Nothing in the toolbar wraps or clips.
+
+**UX-RESP-007** `M3.1` `[T]` Opening a form, and resizing panes while zoom is "Fit", sets the zoom to fit the page plus gutters, capped at 100% (never upscales on open), floored at 50% (below that it scrolls). Once the user picks a zoom, pane resizes keep it.
+
+---
+## 5. The canvas interaction model
+
+### 5.1 Selection
+
+**UX-SEL-001** `M3.1` `[T]` A click selects the deepest widget whose rectangle contains the pointer. A click in a layout's empty space (a gap, a margin, an empty grid cell, the area past the last item) selects that layout. A click on the backdrop selects the form. Press-and-drag beyond 4 px starts a move instead (UX-MOVE-001); the selection happens on press, so a drag always moves what you pressed.
+
+**UX-SEL-002** `M3.1` `[T]` Shift+click and Ctrl+click both toggle a widget in or out of the selection. The last clicked widget is the *primary* selection: the inspector header shows it, and alignment-style commands (M4) use it as the anchor. Alt+click is not used (Linux window managers take Alt+drag and often Alt+click).
+
+**UX-SEL-003** `M3.1` `[T]` Rubber band: a drag that starts on empty space inside a container (not on a child) draws a 1 px `ov.select` rectangle with `ov.drop_fill`, and selects the direct children of that container whose rectangles it touches. Shift held at the start adds to the selection. A rubber band never selects across containers (wrap and layout commands need siblings). A drag that starts on the backdrop selects among the root's children.
+
+**UX-SEL-004** `M3.1` `[K]` Esc, in order of precedence: close the in-place editor (cancelling), close an open popover or menu, cancel a drag in progress (nothing changes), close the open overlay, close an open drawer; otherwise select the parent. Parents count layouts: line edit → its layout → the container → the container's parent layout → … → the form. Esc on the form does nothing (selection never becomes empty).
+
+**UX-SEL-005** `M3.1` `[K]` Enter on a container or layout selects its first child. Enter on a widget with editable text opens the in-place editor (UX-TEXT-001).
+
+**UX-SEL-006** `M3.1` `[K]` Tab and Shift+Tab select the next and previous widget in outline pre-order, skipping layouts and spacers, wrapping at the ends, and scrolling the canvas to keep the selection visible (R3 22).
+
+**UX-SEL-007** `M3.1` `[K]` Arrow keys select the nearest widget in that direction (spatial navigation by centre point, ties broken by outline order). Shift+arrow adds that widget. Alt+arrows move (UX-NUDGE).
+
+**UX-SEL-008** `M3.1` `[S]` The selection is drawn as a 2 px `ov.select` stroke 1 px outside each selected widget's rectangle, with resize handles on the primary selection only (UX-RESIZE-001). A selected layout is drawn as a 1.5 px solid `ov.layout` frame instead.
+
+**UX-SEL-009** `M3.1` `[T]` Canvas selection, outline selection and inspector are one model: selecting in any of them updates the other two in the same frame, scrolls the outline row into view (without moving keyboard focus) and scrolls the canvas to reveal the widget when it is off-screen.
+
+**UX-SEL-010** `M3.1` `[T]` Structural commands that need siblings (wrap, lay out, unwrap) are disabled when the selection spans different parents. Their tooltip and the status bar say why: "Select widgets in the same layout to wrap them."
+
+### 5.2 Hover
+
+**UX-HOV-001** `M3.1` `[S]` Hover draws a 1 px `ov.hover` outline 1 px outside the deepest widget under the pointer. No chip. The parent layout's faint frame strengthens to `ov.layout` at 60%. The outline row of the hovered widget gets `fb.row_hover`.
+
+**UX-HOV-002** `M3.1` `[S]` The status bar shows "shopName · Line edit · click to select" (or "· double-click to edit text" when that is the double-click action). Hovering an outline row hovers the canvas widget, and the reverse.
+
+**UX-HOV-003** `M3.1` `[S]` Hover never draws anything while a drag, an in-place editor or a popover is active.
+
+### 5.3 Layout frames
+
+**UX-FRAME-001** `M3.1` `[S]` Every layout draws a 1 px dashed `ov.layout_faint` frame around its rectangle, always (View option "Show layout frames", on by default, per user). The selected or hovered container's own layout draws solid `ov.layout`.
+
+**UX-FRAME-002** `M3.1` `[S]` A spacer draws as a 1.5 px `ov.gap` spring (zigzag, 6 px amplitude) along its axis, centred in its rectangle; it is selectable like a widget and draws its sizing word under selection.
+
+**UX-FRAME-003** `M3.1` `[S]` A container that has children but no layout (from older files) shows an amber "No layout" chip (via the chip solver) and a dashed `ov.tab` frame. Clicking the chip opens the Lay out popover (the wrap tiles applied to the container). This is the R3 34 "broken layout" marker.
+
+### 5.4 Chips and badges: placement rules
+
+The spike's name chip sits above the selected widget and covers the field above it (`workbench-light.png`, `workbench-dark.png`, `dark-layout.png`, `quick-insert.png`); its size badge covers the field below; chips pile up at a container's top-right corner (`empty-group.png`). The rules below replace that.
+
+**UX-CHIP-001** `M3.1` `[S A]` Chips never cover content (section 0.3). This is checked automatically for every screenshot-tour state: no chip rectangle intersects a non-ancestor widget's rectangle or the selected widget's own rectangle. Handles are the only overlay elements allowed on the selected widget's edge.
+
+**UX-CHIP-002** `M3.1` `[A]` The chip solver places each chip at the first candidate that is inside the viewport and free of non-ancestor content and of other chips, scanning: (1) outside the target, above its top-left corner, left-aligned; (2) below its bottom-left corner; (3) above its top-right corner, right-aligned; (4) below its bottom-right (a corner whose natural spot is off screen slides along the target's edge into view); (5) **beside** the target on its row, right then left, at 7 px, then further along the row with a horizontal 1 px leader in the chip colour that stops at the target's edge and crosses no other widget or chip (ancestor space is free); (6) the **gutter**: the backdrop band beside the page at the target's vertical centre with the same kind of leader. Leaders are horizontal; a leader that would cross content disqualifies the seat. The selection chip is never dropped: when (1)-(6) all fail it goes to (7) the **dock**, the page caption strip that sticks to the top of the canvas, at the target's x, painted as caption chrome (it covers no content); it gets a vertical leader only when nothing lies between the strip and the target. A "No layout" chip may also sit inside its own container's top-right or bottom-right corner, never on a child.
+
+**UX-CHIP-003** `M3.1` `[S]` One label per selection, not three. The primary selection's chip reads "email · Fill × Hug". A selected container adds its layout kind: "receiptGroup · Horizontal". A selected layout reads "receiptRow · Horizontal layout · 2 items". Pixel sizes are shown only while resizing (UX-RESIZE-004) and in the inspector. Multiple selection: one chip on the primary, reading "email + 2 more".
+
+**UX-CHIP-004** `M3.1` `[S]` Chip style: 18 px tall, 4 px radius, 6 px horizontal padding, 11 px semibold `ov.chip_text` on the role colour (selection `ov.select`, layouts `ov.layout`, numbers `ov.gap`, drop targets `ov.select`, tab order `ov.tab`, buddies `ov.buddy`, problems `ov.problem`). Chips keep their screen size at every zoom. Long object names elide in the middle at 24 characters.
+
+**UX-CHIP-005** `M3.1` `[S]` Badges (problem badge, tab-order number, logic badges in M6) are 16 px circles placed by the same solver with corner candidates first (outside top-right, outside top-left), then the gutter.
+
+**UX-CHIP-006** `M3.1` `[S]` The page chip above the page ("Invoice · Form layout") and the size readout under it live on the backdrop and are not counted as overlay chips; they use `fb.muted` text with no fill when idle and the role fill when the form is selected.
+
+### 5.5 Drag and drop: common rules
+
+**UX-DND-001** `M3.2` `[T]` Drag sources: an Insert tile, an Insert search result, an outline row, a canvas widget, and (M8) a Data column. Drop targets: the canvas and the outline. A drag from the outline can drop on the canvas and the reverse.
+
+**UX-DND-002** `M3.2` `[S]` During a drag the dragged widget is shown as a 60% opacity snapshot under the pointer (offset so the pointer sits at the grab point). For a move, the original stays where it is at 35% opacity until release, so nothing else on the form moves before the drop (pain 21).
+
+**UX-DND-003** `M3.2` `[S]` Exactly one drop target is shown at a time: the target layout's frame turns solid `ov.layout`, and the slot indicator for that layout kind is drawn (sections 5.6–5.11). The spike's whole-container tint is withdrawn: no fill washes over existing widgets.
+
+**UX-DND-004** `M3.2` `[S]` The drop description is shown in two places: in the status bar as a sentence in plain words, and in a chip placed by the chip solver next to the indicator (normally in the gutter). Sentences name neighbours by their visible text when they have it, else by object name: "Insert between Shop name and Receipts", "Into row 2, column 3 of the grid", "New row after Email", "Into the Settings tab", "Into receiptGroup · makes a vertical layout". Internal names like "verticalLayout · position 3" are not used (spike `drag-box.png`).
+
+**UX-DND-005** `M3.2` `[T]` Invalid targets (a widget into itself or its descendant, a spacer into a form's label column, a span that does not fit) show the indicator in `ov.problem`, the not-allowed cursor, and a status sentence that says why: "A widget can't go inside itself." Release over an invalid target does nothing.
+
+**UX-DND-006** `M3.2` `[T]` Esc during a drag cancels it with no change. Leaving the canvas and outline cancels the target (no indicator) but keeps the drag alive until release.
+
+**UX-DND-007** `M3.2` `[T]` Every drop is one undo step that also selects the dropped widget(s), and focuses the canvas (not the inspector).
+
+**UX-DND-008** `M3.2` `[T]` Hit-testing is by slot geometry, not by widget under the pointer: inside a layout, the nearest slot boundary along the layout's axis wins; the pointer never has to hit a 6 px gap.
+
+**UX-DND-009** `M3.2` `[T]` Spring-loading: hovering a drag over a collapsed outline row for 600 ms expands it; over a tab-widget tab title or toolbox item header for 600 ms switches to that page; over a stacked widget's page arrows (UX-PAGES-003) for 600 ms flips the page.
+
+### 5.6 Box layouts
+
+**UX-BOX-001** `M3.2` `[S T]` The indicator is a 2 px `ov.select` line with 6 px round end caps, centred in the gap between the two items it falls between (or 3 px inside the layout edge for first and last), spanning the layout's cross axis minus 4 px at each end.
+
+**UX-BOX-002** `M3.2` `[T]` The insertion index is chosen by the pointer's position relative to each item's midpoint along the layout axis.
+
+**UX-BOX-003** `M3.2` `[T]` Dropping near (within 8 px of) the edge of a widget along the *cross* axis of its layout is how nesting starts: dropping a widget to the right of a field in a vertical layout shows a vertical indicator at that field's right edge and the chip "Beside Email · makes a horizontal row". The drop wraps the field and the dropped widget in a new horizontal layout at the field's index (one undo step). This replaces the Designer workflow "drop, select both, lay out horizontally".
+
+### 5.7 Grid layouts
+
+**UX-GRIDL-001** `M3.2` `[S T]` Over an empty cell: the cell is drawn as a 1.5 px dashed `ov.select` rectangle with `ov.drop_fill`; chip "Row 2, column 3" (1-based, as in every user-facing count).
+
+**UX-GRIDL-002** `M3.2` `[T]` Over an occupied cell: the indicator is a line on the cell edge nearest the pointer (left, right, top, bottom); the drop inserts a new column or row there and shifts later columns or rows by one; chip "New column before Medium". The occupied cell's centre (middle 50%) is not a target.
+
+**UX-GRIDL-003** `M3.2` `[S T]` Past the last row or column (a 24 px band outside the grid, inside its container), a ghost cell with a dashed outline appears: "New row 3" or "New column 4".
+
+**UX-GRIDL-004** `M3.2` `[T]` Moving an item that spans several cells keeps its span; if the span does not fit at the target the ghost is drawn in `ov.problem` and the status says "Needs 2 free columns here". Only the moved item's row, column and span change (pain 21); other items keep their cells.
+
+**UX-GRIDL-005** `M3.3` `[T]` In a grid, dragging an item's right or bottom handle snaps to cell boundaries and changes its column or row span (readout "Spans 2 columns"); holding Shift while dragging writes a Fixed size instead (readout "Fixed 240 px"). The inspector's Placement group shows row, column and spans as numbers.
+
+**UX-GRIDL-006** `M3.3` `[S T]` When the grid or its container is selected, share numbers (stretch) appear for each column and row as `ov.gap` chips via the solver, preferring the gutter band above the columns and left of the rows (delighter 7). Clicking one focuses that number in the inspector.
+
+### 5.8 Form layouts
+
+**UX-FORML-001** `M3.2` `[S T]` A form row has a label cell and a field cell. Over an empty cell of an existing row the cell is the target (dashed cell, chip "Field of row 3" or "Label of row 3"). Over an occupied cell the target is the line between rows nearest the pointer (chip "New row after Email").
+
+**UX-FORML-002** `M3.2` `[T]` Dropping a non-label widget into a new row creates the row with a label "New field:" as the field's buddy, places the widget in the field cell, and opens the in-place editor on the label with its text selected. Typing and Enter names the row. All of this is one undo step, and Esc in the editor keeps the label text "New field:". Dropping a label into a new row puts it in the label cell and leaves the field cell empty, ready for the next drop (UX-AUTO-003). A push button, tool button, check box, radio button, command link, group box, or button box goes in the field cell with no label.
+
+**UX-FORML-003** `M3.2` `[T]` A widget dropped on the label cell of a row whose label is empty becomes the row's label even if it is not a `QLabel` (Qt allows any widget). A spacer cannot go in a form cell (UX-DND-005).
+
+**UX-FORML-004** `M3.2` `[T]` A row that spans both columns (`SpanningRole`) shows one cell across both columns; dropping on it targets the lines above and below only.
+
+### 5.9 Splitters
+
+**UX-SPLIT-001** `M3.2` `[S T]` A splitter's children are panes. The drop indicator is a 2 px line across the splitter at the pane boundary nearest the pointer, or at either end; chip "New pane after Customers list".
+
+**UX-SPLIT-002** `M3.3` `[S T]` Splitter handles on the canvas are draggable (pain 19). The visual handle is the runtime one; the overlay adds an 8 px hit area centred on it and a grip glyph on hover. Dragging moves the boundary live in 1 px steps (Shift: 8 px), and the release is one undo step that writes the panes' stored sizes (mechanism per `CONTRACTS.md`). Double-click on a handle resets the panes to equal sizes.
+
+**UX-SPLIT-003** `M3.3` `[S]` Selecting a pane shows its Share number on the splitter just like a box layout's stretch, and the inspector's Size group shows "Share of spare room" for it with the same control as a box item (R3 weakness "Splitter stretch is not in the property editor").
+
+### 5.10 Tab, stacked and toolbox pages
+
+**UX-PAGES-001** `M3.2` `[T]` Dropping onto a page container drops into the *current page's* layout, using that layout kind's indicator. A page with no layout follows UX-BARE-001.
+
+**UX-PAGES-002** `M3.2` `[S T]` A tab widget on the canvas shows a "+" pseudo-tab after its last tab (overlay, `ov.select`, only while the tab widget is hovered or selected, or during a drag). Clicking it adds a page "Tab 3" with a vertical layout and opens the in-place editor on its title. Dropping a widget on it creates the page with the widget inside.
+
+**UX-PAGES-003** `M3.2` `[S]` A stacked widget shows a page switcher chip via the chip solver: "◀ 2 / 3 ▶" with the current page's object name in the tooltip. Clicking the arrows changes the page shown on the canvas only (not `currentIndex`, which is a property in the inspector).
+
+**UX-PAGES-004** `M3.5` `[T]` Pages reorder by dragging tab titles on the canvas (2 px vertical insertion line between titles, at least 8 px hit area), by dragging page rows in the outline, and with Alt+Left/Right on a selected tab title or Alt+Up/Down on a page row (pain 20; R3 127).
+
+### 5.11 Bare containers (no layout)
+
+**UX-BARE-001** `M3.2` `[S T]` Over an *empty* container that has no layout, the whole interior shows a dashed `ov.select` outline with chip "Into receiptGroup · makes a vertical layout". The drop creates a vertical layout with the widget in it: one undo step (pain 1).
+
+**UX-BARE-002** `M3.2` `[S T]` Over a container with absolutely placed children and no layout (older files only), the drop places the widget at the pointer, snapped to an 8 px grid (Shift: no snap), shown as a ghost rectangle at its default size with a "x 120, y 48" readout chip. The container keeps its "No layout" marker (UX-FRAME-003).
+
+### 5.12 Auto-layout and "next drop fills the next cell"
+
+**UX-AUTO-001** `M3.2` `[T]` Every new form and every container created from Insert already has a vertical layout (blank forms and templates, UX-START-004; group boxes, frames, tab pages, scroll-area contents). A bare container without a layout appears only when the user removes a layout or opens an older file.
+
+**UX-AUTO-002** `M3.2` `[T]` The first drop into an empty bare container creates a vertical layout (UX-BARE-001). The kind can be changed afterwards in one click (UX-WRAP-005), so the first drop never asks.
+
+**UX-AUTO-003** `M3.2` `[T]` Inserting without a pointer position (Insert tile double-click, Enter on a tile, quick insert `/`, paste with a layout selected) fills the next free place: in a form layout, the empty field cell of the last row if any, else a new row; in a grid, the first empty cell in reading order, else a new row; in a box, after the selected item or at the end (delighter 11).
+
+**UX-AUTO-004** `M3.2` `[S]` Before an insert without a pointer, the target is previewed: while the Insert tile has keyboard focus or the quick-insert popover is open, the canvas draws the indicator where Enter will put the widget, and the popover caption names it: "Goes right after shopName."
+
+### 5.13 Move and copy
+
+**UX-MOVE-001** `M3.2` `[T]` Dragging a selected widget moves it (and all selected siblings, keeping their order) to the drop target. Moving into another container reparents it. Dragging an unselected widget selects it first and moves only it.
+
+**UX-MOVE-002** `M3.4` `[T]` Holding Ctrl at the moment of release copies instead of moving (Designer's Ctrl-drag clone). The pointer shows the copy cursor while Ctrl is held. Alt is also accepted when the window manager delivers it, but is never the documented key (Linux window managers take Alt+drag).
+
+**UX-MOVE-003** `M3.2` `[T]` A move that would leave a layout empty leaves it empty (it stays a hittable 32 px drop zone); layouts are never deleted as a side effect.
+
+### 5.14 Gaps and margins
+
+**UX-GAP-001** `M3.3` `[S]` When a layout (or a container with a layout) is selected, its gaps are drawn as 2 px `ov.gap` bars centred in each gap, spanning the layout's cross axis; its margins are drawn as `ov.gap_fill` bands on the four inner edges. Nothing about gaps is drawn when the layout is not selected (UX-PRIN-004).
+
+**UX-GAP-002** `M3.3` `[T]` Dragging any gap bar changes the layout's spacing for all gaps at once (Qt has one spacing value per layout axis; for grids and forms, horizontal and vertical spacing are separate bars). Steps are 1 px; Shift snaps to multiples of 4. The number is shown live in a chip via the solver and in the inspector. Release is one undo step (delighters 3, 8).
+
+**UX-GAP-003** `M3.3` `[T]` Dragging a margin band's inner edge changes that side's margin. Double-click a margin band, or a gap bar, resets it to the default (the property is deleted from the file, delighter 14).
+
+**UX-GAP-004** `M3.3` `[S]` When the root layout is selected, the page edges show anchor ticks: small `ov.layout` ticks on all four page edges at the layout's attachment points, with the margin numbers in the gutter. Caption in the inspector: "Everything in this layout follows the window's edges." (delighter 4).
+
+**UX-GAP-005** `M3.3` `[T]` Gap bars and margin bands have 12 px hit areas (UX-GRID-004). When they overlap a child's edge, the child's resize handle wins only if the child is the selection; otherwise the gap wins.
+
+### 5.15 Resize handles and Fixed sizes
+
+**UX-RESIZE-001** `M3.1` `[S]` A selected widget inside a layout has three handles: right edge midpoint, bottom edge midpoint, bottom-right corner. Handles are 7 × 7 px squares, white fill, 1.5 px `ov.select` border, centred on the selection stroke, with 12 px hit areas. Left and top handles do not exist, because the layout owns position.
+
+**UX-RESIZE-002** `M3.3` `[T]` Dragging a handle writes Fixed on that axis (size policy Fixed plus minimum = maximum = N; PLAN and the spike's sizing model). The layout reflows live; release is one undo step.
+
+**UX-RESIZE-003** `M3.3` `[T]` Double-click a handle resets that axis (the corner resets both) to the class default: the lines are deleted from the file.
+
+**UX-RESIZE-004** `M3.3` `[S]` While resizing, the selection chip reads "Fixed 240 × Hug". The readout stays for 600 ms after release.
+
+**UX-RESIZE-005** `M3.3` `[T]` A widget in a bare container (absolute geometry) has eight handles and moves freely; its handles write `geometry`. Snap 8 px; Shift disables snap.
+
+**UX-RESIZE-006** `M3.3` `[K]` Ctrl+Shift+Right/Left changes the width by ±8 px, Ctrl+Shift+Down/Up the height, with the same effect as a handle drag. Ctrl+arrow without Shift changes it by ±1 px. Alt is not used, because ChoreBoy's window manager takes Ctrl+Alt+arrow (`_WM_FORBIDDEN` in `engine/shell_commands.py`).
+
+**UX-RESIZE-007** `M3.3` `[T]` Every drag gesture that edits a number (gap, margin, resize, splitter, page edge) moves in 1 px steps by default and snaps to multiples of 8 with Shift (gaps snap to 4; UX-GAP-002). The spike mixed 4 px default steps with Alt for 1 px; Alt is withdrawn.
+
+**UX-RESIZE-008** `M3.1` `[T]` The page's right and bottom grabbers resize the form's design size (root `geometry`), not a Fixed size; the layout follows live; the readout under the page shows the new size; release is one undo step.
+
+### 5.16 In-place text editing
+
+**UX-TEXT-001** `M3.1` `[T K]` F2 is rename, never text editing (UX-KEY-004). Enter on a selected widget whose visible text is a property (label, push/tool/radio button, check box, group box title, tab title, menu title or action, line edit placeholder when the text is empty) opens an in-place editor over that text. Double-click opens it too (until M6.2, after which double-click on buttons, check boxes, radio buttons and actions goes to the handler per LOGIC_DESIGN §2.12, and Enter remains the text gesture).
+
+**UX-TEXT-002** `M3.1` `[S]` The in-place editor uses the runtime font at the canvas zoom, the widget's text alignment, a 1 px `ov.select` border and a white background, and selects all text. It grows with the text and never changes the form's layout while typing.
+
+**UX-TEXT-003** `M3.1` `[T]` Enter commits; Esc cancels; clicking elsewhere commits; Tab commits and opens the editor on the next text widget in outline order (so a row of labels can be typed in one go). Shift+Enter inserts a newline only where the property allows it (word-wrapped labels, plain text). One undo step per commit.
+
+**UX-TEXT-004** `M3.1` `[T]` For widgets whose text is a list (combo box items, list widget items), Enter opens the item editor (M4.4) instead. From M4 this covers tree and table widgets too (UX-ITEM-001).
+
+### 5.17 Wrap, unwrap, morph, remove layout
+
+**UX-WRAP-001** `M3.3` `[S K]` Ctrl+Shift+G opens the Wrap popover anchored below the selection (or in the gutter if it would cover the selection): a 3 × 3 grid of tiles — Vertical, Horizontal, Grid, Form, Horizontal splitter, Vertical splitter, Group box, Frame, Tab widget — with digits 1–9, arrows and Enter, and Esc to cancel. Header: "Wrap 2 widgets in…". Tiles that cannot apply are disabled with a tooltip reason.
+
+**UX-WRAP-002** `M3.3` `[T]` Ctrl+1 … Ctrl+6 apply directly, as in Designer: on several siblings, wrap them in that layout kind; on a container without a layout, give it that layout; on a container or layout that already has a layout, change its kind (morph).
+
+**UX-WRAP-003** `M3.3` `[T]` After a wrap the new container or layout is selected, the toast says "Wrapped 2 widgets in a group box · Undo", and the canvas does not rebuild (the realizer moves the existing widgets; spike decisions.tsv).
+
+**UX-WRAP-004** `M3.3` `[T]` Unwrap (Ctrl+Shift+B) on a layout or a plain container (group box, frame, plain widget) puts its children into the parent layout at the container's index, in reading order, and deletes the container. Toast "Unwrapped receiptGroup · Undo". Unwrap is disabled on containers whose loss would drop data (tab widget with several pages, scroll area with a set widget) with the reason.
+
+**UX-WRAP-005** `M3.3` `[T]` Morph layout: the inspector's Layout group shows "Kind" as a four-segment glyph control (Vertical, Horizontal, Grid, Form) that morphs in place, keeping children in reading order. A lossy morph (grid with spans to a box, a form with spanning rows) first shows a confirm popover listing what changes: "Spans will be removed from 2 widgets." [Change layout] [Cancel].
+
+**UX-WRAP-006** `M3.3` `[T]` Morph widget: the context menu's "Change to ▸" lists compatible classes (Designer's "Morph into"; for example Line edit → Plain text, Spin box → Double spin box, Push button → Tool button). It keeps the object name, layout position and every property the new class has; a toast lists dropped properties: "Changed to a plain text box. 1 property didn't apply: echoMode · Undo".
+
+**UX-WRAP-007** `M3.3` `[T]` Remove layout (Designer's Break layout) is in the Form > Layout menu and the context menu only. It confirms in a popover: "Remove the layout from receiptGroup? Its 2 widgets keep their current position and size, but they won't follow the window any more." [Remove layout] [Cancel]. The children get geometry equal to their current rectangles; no other layout on the form changes size; one undo step restores it (pain 5).
+
+**UX-WRAP-008** `M3.3` `[T]` Adjust size (Ctrl+J) sets the selected container's or form's design size to its size hint (one undo step). Simplify grid removes empty rows and columns (one undo step; disabled with a reason when there are none).
+
+**UX-WRAP-009** `M3.3` `[T]` "Keep at content size" (Form > Layout, context menu on a container) sets the container's share to 0 and its vertical sizing to Hug, so a login-style group stops growing with the window, without a spacer (pain 14). One undo step; the toast names what changed: "receiptGroup now keeps its content height · Undo".
+
+### 5.18 Clipboard and paste into a layout
+
+**UX-CLIP-001** `M3.4` `[T]` Copy puts a `.ui` fragment (and the object names as plain text) on the system clipboard, including the copied widgets' layouts, buddies among themselves, connections among themselves, and (M6+) their logic.
+
+**UX-CLIP-002** `M3.4` `[T]` Paste target, by what is selected:
+
+| Selection | Paste goes |
+| --- | --- |
+| A widget inside a box layout | After it, in the same layout |
+| A widget in a grid | The next empty cell after it in reading order, else a new row under it |
+| A widget in a form row | A new row after that row. A copied label and field pair stays a pair |
+| A layout, or a container with a layout | At its end (form and grid: UX-AUTO-003) |
+| An empty container without a layout | Into a new vertical layout (UX-BARE-001) |
+| A widget in a bare container | Into the same container, offset by 16, 16 px |
+| The form | At the end of the root layout |
+
+Paste never shows "cannot paste" errors (pain 3, R3 weakness "Paste into a layout is refused").
+
+**UX-CLIP-003** `M3.4` `[T]` Pasted widgets are selected; the outline scrolls to them; focus stays where it was. Name collisions are renamed with the next free number (email → email2), and references *within* the pasted set are rewritten to the new names (LOGIC_DESIGN §2.13). The status bar says "Pasted 2 widgets after shopName".
+
+**UX-CLIP-004** `M3.4` `[T]` Duplicate (Ctrl+D) is copy and paste after itself without touching the clipboard. Cut is copy then delete (one undo step for the delete; the clipboard is not part of undo).
+
+**UX-CLIP-005** `M3.4` `[T]` Paste across forms works; if pasted connections or (M6+) formulas refer to names that do not exist in the target, they are kept and flagged in Problems, and a toast says "Pasted 3 widgets. 1 connection points at a widget that isn't on this form. [Show]".
+
+**UX-CLIP-006** `M3.4` `[S T]` The scratch pad (R3 27) is a section at the bottom of the Insert pane, "Saved pieces", collapsed when empty. Drag a selection onto it, or use "Save to pieces" in the context menu, to keep a reusable copy (per user, across projects). Pieces drag back like any Insert tile and can be renamed and deleted.
+
+### 5.19 Keyboard nudges and keyboard moves
+
+**UX-NUDGE-001** `M3.2` `[K]` Alt+Up/Down (and Alt+Left/Right in horizontal layouts and grids) move the selection one slot within its layout; in a form layout Alt+Up/Down swaps rows; at the layout's end the move stops (it does not leave the layout). One undo step per press; repeated presses within 1 s merge into one step.
+
+**UX-NUDGE-002** `M3.2` `[K]` To move into or out of containers by keyboard use the outline's Tab / Shift+Tab (UX-OUT-004), or cut and paste.
+
+**UX-NUDGE-003** `M3.3` `[K]` In a bare container Alt+arrow nudges by 8 px and Alt+Shift+arrow by 1 px, writing geometry.
+
+### 5.20 Zoom
+
+**UX-ZOOM-001** `M3.1` `[T]` Zoom levels: 25, 33, 50, 67, 75, 90, 100, 110, 125, 150, 175, 200, 250, 300, 400%. Ctrl+= and Ctrl+- step through them; Ctrl+wheel zooms around the pointer; Ctrl+0 is 100%; Ctrl+9 fits. The zoom menu offers Fit, 50, 75, 100, 150, 200%.
+
+**UX-ZOOM-002** `M3.1` `[S]` Overlay strokes, chips, handles and hit areas keep their screen size at every zoom. Only the form scales.
+
+**UX-ZOOM-003** `M3.1` `[T]` Zoom is per tab and is not saved in the file. Middle-drag or Space+drag pans; the scroll wheel scrolls; Shift+wheel scrolls horizontally.
+
+**UX-ZOOM-004** `M3.1` `[A]` The scene always keeps a **gutter** of 64 screen px of backdrop above and below the page and 96 px on each side. Fit zoom accounts for it. When the page and its side gutters are wider than the view, the tab opens scrolled so the page's left edge sits 20 px inside the view (centred when the page alone fits with 20 px each side); the top gutter stays in view. The view keeps that home scroll across resizes until the user or a reveal scrolls it; Fit (Ctrl+9) returns to it.
+
+### 5.21 Two widths
+
+**UX-WIDTHS-001** `M3.6` `[S]` The two-widths view (⇆, Ctrl+K W) shows the form twice, live, at the **same zoom**: "Narrowest · 420 px" (the form's minimum size hint width) and "Wide · 1366 px" (the ChoreBoy screen width, editable in the menu). The spike scaled the wide copy down so it looked smaller than the narrow one (`two-widths.png`); withdrawn.
+
+**UX-WIDTHS-002** `M3.6` `[S]` If both copies do not fit side by side at the current zoom, they stack vertically (narrow above wide) and the view scrolls. Each copy has a label chip above its top-left corner.
+
+**UX-WIDTHS-003** `M3` `[T]` Both copies share one selection frame (M3, built with the canvas). Selecting in either draws the selection in both. Neither copy changes the form's design size. Drops, moves and resizes inside the wide copy are `M9.5`.
+
+### 5.22 Text-size and screen-scale preview
+
+**UX-SCALE-001** `M3.6` `[S]` The **Aa ▾** popover has two choices that change the canvas only, never the file: Text size — Smaller (−15%), Normal, Larger (+25%), Largest (+50%) — and Screen scale — 100, 125, 150, 200%. The spike's unlabeled "S M L" segments are withdrawn.
+
+**UX-SCALE-002** `M3.6` `[S]` While any preview choice is not Normal / 100%, a pill on the backdrop above the page's top-right corner reads "Previewing larger text · Reset", so a user never mistakes the preview for their saved form.
+
+**UX-SCALE-003** `M3.6` `[S A]` While previewing, every widget whose text no longer fits (its size hint is larger than its rectangle on an axis it cannot grow) gets a dashed `ov.tab` outline, and the pill adds "· 2 widgets cut off text". Clicking the pill's count selects them (pain 12).
+
+**UX-SCALE-004** `M3.6` `[T]` Laid-out children carry no geometry in the file at any preview setting (pain 12 test).
+
+---
+
+## 6. The outline
+
+**UX-OUT-001** `M3.5` `[S]` Each row (24 px): disclosure triangle, 16 px class glyph, object name (Body), then in `fb.faint` Caption the friendly class and the visible text in quotes ("Line edit “Full name”"). Layout rows use `ov.layout` for glyph and name, spacer rows `ov.gap`. A row whose widget has a problem shows the problem glyph at its right end. Hidden widgets (`visible` false) show their name in `fb.faint`.
+
+**UX-OUT-002** `M3.5` `[S]` The friendly class and text column hides first when the pane is narrow. Each nested level indents 12 px. A name elides at the end, and only when the name alone cannot fit, so the start of the name stays readable. Hovering an elided row shows the full row as a tooltip.
+
+**UX-OUT-003** `M3.5` `[K]` Keyboard grammar (focus in the outline):
+
+| Key | Action |
+| --- | --- |
+| Up / Down | Previous / next visible row (selects it) |
+| Left / Right | Collapse, else go to parent / expand, else go to first child |
+| Shift+Up / Shift+Down | Extend the selection among siblings |
+| Home / End | First / last row |
+| Enter | Select first child (same as the canvas) |
+| Esc | Select parent |
+| F2 | Rename (UX-OUT-008) |
+| Tab / Shift+Tab | Nest into the previous sibling container / move out to after the parent (UX-OUT-004) |
+| Alt+Up / Alt+Down | Move up / down among siblings |
+| / | Quick insert after the selected row |
+| Ctrl+X / C / V / D, Delete | Clipboard and delete, as on the canvas |
+| Ctrl+1 … Ctrl+6, Ctrl+Shift+G, Ctrl+Shift+B | Layout commands, as on the canvas |
+| Type a letter | Jump to the next row whose name starts with it (Qt default type-ahead) |
+
+**UX-OUT-004** `M3.5` `[K T]` Tab nests the selection into the previous sibling if it is a container or layout (at its end; into a new vertical layout if the container has none); Shift+Tab moves the selection out to the position after its parent container. Both are one undo step and keep focus and selection on the moved row. When Tab has no valid target the row flashes `ov.problem` once (120 ms) and the status says why ("Nothing above to nest into").
+
+**UX-OUT-005** `M3.5` `[S T]` Drag reparenting: dropping on the middle 50% of a container or layout row puts the item at its end (row highlighted with a 1.5 px `ov.select` outline); on the top or bottom 25% inserts before or after (2 px insertion line, 8 px hit band). While between rows, moving the pointer left or right changes the target depth, shown by the insertion line's indent (outliner convention) and the status sentence ("Into receiptRow, after printCopy").
+
+**UX-OUT-006** `M3.5` `[T]` Grid and form items in the outline are ordered row by row; dragging a row in the outline into a grid or form uses the same next-free-cell rule as UX-AUTO-003 unless it is dropped between two rows of the same layout, in which case it takes the position between them in reading order.
+
+**UX-OUT-007** `M3.5` `[S T]` Pages of tab widgets, stacked widgets and toolbox items appear as page rows ("Page 2 · Settings", with the page title) that reorder by drag and by Alt+Up/Down (pain 20, R3 127).
+
+**UX-OUT-008** `M3.5` `[K T]` Rename: F2 or a double-click on the name opens an inline editor on the row with the name selected. Enter commits and keeps focus on the same row; Esc cancels; Tab commits and opens rename on the next row, Shift+Tab on the previous (so renaming ten widgets is ten names and ten Tabs). Nothing else — status messages, regeneration, the inspector, Problems updates — takes focus while renaming (pain 25).
+
+**UX-OUT-009** `M3.5` `[S T]` Name validation is inline under the editor, in `fb.error` Caption, and Enter is refused while it shows: "Names use letters, digits and _, and can't start with a digit." / "Another widget is already called email." / "“close” would replace a method of the window. Try closeButton." Python keywords and attribute names of the form's base class are refused (LOGIC_DESIGN FB204 spirit).
+
+**UX-OUT-010** `M3.5` `[T]` A rename updates every reference in the form (buddies, tab stops, connections, M6+ formulas) in the same undo step. From M1.4 it also offers to update `self.ui.oldName` in the window class through the shell's rename-refactor preview (LOGIC_DESIGN §2.13).
+
+**UX-OUT-011** `M3.5` `[S]` The outline filter (Ctrl+F, ⌕) matches object names, friendly class, Qt class and visible text; ancestors of matches stay visible in `fb.faint`; Enter in the filter selects the first match; Esc clears the filter and returns focus to the tree.
+
+**UX-OUT-012** `M3.5` `[S T]` References shown before delete: deleting a widget that something else points to (a buddy label, a connection, a promoted-class page reference, M6+ rules) opens a confirm popover anchored to the row or the canvas selection, listing each reference in words: "email is used by: the buddy of “Email:”, 1 connection (email · returnPressed → Invoice · accept)". [Delete] [Cancel]. Deleting something unreferenced happens at once, with a toast "Deleted email · Undo". Tab order membership is not a reference worth asking about.
+
+**UX-OUT-013** `M3.5` `[S]` The outline header's + button opens the quick-insert popover, the same as `/`.
+
+---
+
+## 7. The inspector
+
+### 7.1 Structure
+
+**UX-INSP-001** `M3.1b` `[S]` Header (fixed, not scrolling): the class glyph; the object name as an inline-editable field styled as Title text (F2 or click edits; same validation as UX-OUT-009; Enter keeps focus in the field); under it, the friendly class and, in `fb.faint`, the Qt class ("Line edit · QLineEdit"); under that, a breadcrumb of ancestors ("Invoice › form layout › email") whose segments select that ancestor. The breadcrumb elides from the left with "…"; the full path is the tooltip (the spike truncates the middle segment, `empty-group.png`).
+
+**UX-INSP-002** `M3.1b` `[S]` Tabs: **Properties**, **Behavior**, **Data**. Behavior shows a count badge when the widget has connections (M3) or logic (M6+). Data is hidden in user builds until M8 (UX-EMPTY-006). The last used tab is kept as the user changes selection.
+
+**UX-INSP-003** `M3.1b` `[S]` Properties is a list of collapsible groups. Each group has an Overline header with a chevron; collapsed state is remembered per group across selections. Row layout: label column 104 px (96 compact), editor column the rest, 8 px between, labels in Body `fb.muted`, right-aligned editors never clip their text (no "All non fixed fields grov", `window-selected.png`).
+
+**UX-INSP-004** `M3.1b` `[S]` Curated groups, in this order, each shown only when it has rows for the selection:
+
+| Group | Holds (examples) |
+| --- | --- |
+| Content | text, placeholder, title, items, current value, check state, icon (M4.3c), tooltip |
+| Input | echo mode, max length, input mask, read-only, range and step, date range, accepted characters |
+| Appearance | font (M4.3b), alignment, word wrap, frame, flat, text format |
+| Size | sizing words, share, min and max (section 7.3) |
+| Placement | where it sits in its parent layout: row, column, spans, cell alignment, form role (label, field, spanning) |
+| Layout | for a container or layout: kind, gaps, margins, column and row shares and minimums, form options |
+| Accessibility | accessible name, accessible description, status tip, What's This |
+| All properties | every Qt property (UX-INSP-008) |
+
+The curated rows per class come from a registry (M3.1b) so M4 adds rows without editing shared files.
+
+**UX-INSP-005** `M3.1b` `[S]` Every curated row shows the friendly label; its tooltip gives the Qt property name and one sentence of help. The "Qt names" toggle in the tab's ⋯ menu shows Qt names as a second line under each label for veterans; it is remembered per user.
+
+**UX-INSP-016** `M3.1b` `[S]` A widget whose parent has a layout shows no position or geometry rows anywhere in the curated groups (the layout owns them; survey pattern 4, pain 1). All properties shows `geometry` read-only with the Caption "Set by the layout." Widgets in bare containers show X, Y, width and height in Placement.
+
+### 7.2 Changed values and reset
+
+**UX-INSP-006** `M3.1b` `[S T]` A property that is written in the file ("changed") has its label in Strong weight (Designer's bold, which veterans read instantly) and a 2 px `fb.accent` bar at the row's left edge. A reset button (↺, 16 px) appears on hover and on keyboard focus of the row. Reset deletes the property from the file (one undo step) and the row returns to normal weight (delighter 14, pain 2).
+
+**UX-INSP-007** `M3.1b` `[S]` A property that is not written shows the class default in `fb.faint` as the editor's placeholder or value: numbers show the default number with no "0 means unset" trap; optional limits that have no default show "—" ("not set"). The spike's "Minimum 0 × 0" placeholders (`inspector-size.png`) read as values and recreate pain 2; withdrawn.
+
+**UX-INSP-008** `M3.1b` `[S]` **All properties** is collapsed by default. Expanded, it lists every property grouped by declaring class (QObject, QWidget, QLineEdit…, as Designer does), with Qt names, the same editors and the same changed/reset model. Its values come from the real canvas widget (the spike shows `focusPolicy` "No focus" and `mouseTracking` checked for a line edit, `inspector-size.png`, which does not match the widget; the gate checks every row against the live widget).
+
+**UX-INSP-009** `M4.3a` `[S]` A property whose type has no editor is shown read-only with its raw value and "Kept as is" (pain 18). Enum and flag editors commit on choice (pain 18): enums as a drop-down of friendly names with the Qt name in each item's tooltip; flags as a popover of check boxes whose collapsed text lists the chosen names ("Left, vertically centred"), never middle-elided raw strings (`top-row-selected.png` shows "Left, Leading...rtical centre").
+
+### 7.3 Size panel
+
+**UX-SIZE-001** `M3.6` `[S]` The Size group has, per axis, a row "Width" / "Height" with a three-segment control **Hug | Fill | Fixed** and, when Fixed is chosen, a "[ 240 ] px" field beside it. Meanings, shown as each segment's tooltip:
+- **Hug**: "As big as its content needs, and no bigger." (stored as size policy Fixed on that axis)
+- **Fill**: "Takes the spare room the layout gives it." (Expanding)
+- **Fixed**: "Exactly this many pixels." (Fixed plus minimum = maximum = N)
+
+**UX-SIZE-002** `M3.6` `[S T]` Default state: when the axis has no stored policy, the segment matching the class default's behaviour is drawn *outlined*, not filled, and a Caption under the control says "Default for a line edit". Clicking a segment stores it (filled segment, changed marker). Reset returns to the outlined default and deletes the lines. This replaces the spike's "nothing selected" state and the badge word "Auto" (`dark-layout.png`), so one vocabulary of three words is used everywhere.
+
+**UX-SIZE-003** `M3.6` `[S]` Mapping of class-default policies to the outlined word: Fixed → Hug; Expanding, MinimumExpanding, Ignored → Fill; Preferred, Minimum, Maximum → Hug, with the Caption explaining the softer behaviour: "Default for a group box: hugs its content, and grows when nothing else wants the room."
+
+**UX-SIZE-004** `M3.6` `[S]` A stored policy that is none of Hug, Fill or Fixed (for example Minimum written by Designer) shows no filled segment and the Caption "Custom: Minimum — grows, never smaller than its content. Change it in All properties, or pick a word to replace it."
+
+**UX-SIZE-005** `M3.6` `[S]` "Share of spare room" (stretch) appears under the axis that runs along the parent layout's direction (and for grid rows/columns and splitter panes): a number field with the Caption "0 means no share. Two widgets with 1 and 2 split the spare room 1 : 2." Shown only when the parent is a box layout, grid or splitter.
+
+**UX-SIZE-006** `M3.6` `[S]` "At least" and "At most" rows each hold "[ — ] × [ — ] px" (minimum and maximum). Empty means not set; the placeholder is "—"; typing a number writes it; clearing the field deletes the line. Fixed hides these rows for that axis.
+
+**UX-SIZE-007** `M3.6` `[S A]` "Why is it this size?" is an always-visible paragraph at the bottom of the group in Caption on `fb.row_hover`, built from these templates. Every number comes from the live canvas widget (geometry, size hint, minimum size hint, constraints) at the current preview scale, and a test checks each number against the widget (PLAN M3.6).
+
+| Case | Template |
+| --- | --- |
+| Opening line | "{w} × {h} px." |
+| Fill, got room | "Width fills the room the {parent} gives it." |
+| Fill, stopped by At most | "Width would fill, but stops at its maximum of {max} px." |
+| Fill with share | "It gets {k} of every {total} px of spare room (share {k} of {total})." |
+| Hug | "Height is what a {class} needs for its content: {hint} px." |
+| Default soft, grew | "Width grew past the {hint} px it asks for, because nothing else wanted the room." |
+| Squeezed | "Width is squeezed below the {hint} px it asks for, because the window is too narrow. It can't go below {min} px." |
+| Fixed | "Width is fixed at {n} px." |
+| Held by At least | "Height can't go below its minimum of {min} px." |
+| Form label column | "This label is {label} px wide. The label column is {column} px, the width of the longest label." |
+| Not in a layout | "{w} × {h} px, as stored. A layout would size it." The Hug, Fill, and Fixed segments stay disabled, with the caption "Not in a layout: its size is the rectangle in Placement." |
+| Splitter pane | "When the splitter grows, this pane takes {taken} of every {total} extra px." |
+| Splitter pane, no share | "When the splitter grows, this pane keeps its size." |
+| Splitter pane, no share, and it still grows | "When the splitter grows, this pane takes {taken} extra px." |
+| Canvas-only minimum | "The canvas shows empty layouts bigger so you can drop into them; that size isn't saved." |
+
+`{parent}` is in words ("vertical layout", "group box Receipts"), `{class}` is the friendly class. With "Qt names" on, the Qt policy name follows in `fb.faint` parentheses.
+
+**UX-SIZE-008** `M3.6` `[S]` The selection chip's sizing words and the Size group always agree (UX-CHIP-003): same words, same effective value.
+
+### 7.4 Multi-select
+
+**UX-INSP-010** `M3.1b` `[S]` Nothing selected never happens; the form selected shows the form inspector: Window (title, design size with the Caption "Drag the page's right or bottom edge to try other sizes."), Layout of the root, Tab order list (UX-OVL-006), a one-line Problems summary (UX-PROB-003) and Files ("Saves invoice.ui and ui_invoice.py in forms/").
+
+**UX-INSP-011** `M3.1b` `[S T]` With several widgets selected the header reads "3 selected" and the Caption lists kinds ("2 line edits, 1 combo box"). Groups show only properties all of them have. A row whose values differ shows "Mixed" in italic `fb.faint`. An edit applies to all as one undo step. The Size group is complete (Hug, Fill, Fixed; the spike's multi-select offered only Hug and Fill, `wrap-menu.png`). Reset resets the property on all of them.
+
+### 7.5 Property search
+
+**UX-INSP-012** `M3.1b` `[S K]` A search field sits under the tab bar ("Find a property", Ctrl+F when the inspector has focus). Typing filters curated groups and All properties together, matching friendly labels, Qt names and current values; group headers of matching rows stay; matched text is highlighted with the shell's `search_match_bg`. Esc clears it. The filter persists across selection changes until cleared, with a "Filtered: echo · Clear" pill so it is never forgotten.
+
+### 7.6 Behavior and Data tabs
+
+**UX-INSP-013** `M3.1b` `[S T]` The Behavior tab holds a working Connections list (R3 2–7 basics): each connection is a row "When **clicked** → **Invoice** · **accept()**" in words with the Qt signature in `fb.faint`. Each row has a delete button and a context menu. The signal and slot pickers ("When", the receiver, and "More") are `M6.1`. "+ Add connection" inserts a new row at the top of the list, already selected. Pain 16: a new row is never added off-screen.
+
+**UX-INSP-014** `M6.0` `[S]` From M6 the Behavior tab follows LOGIC_DESIGN §2.1: sections State, Checks, Events in that fixed order, with the Connections list becoming the Events list. The layout reserves this order already: the M3 Connections list sits where Events will go (bottom), so muscle memory carries over.
+
+**UX-INSP-015** `M8.0` `[S]` From M8 the Data tab is UX-BIND-001 (§13.5.4).
+
+---
+
+## 8. Modes as overlays
+
+**UX-OVL-001** `M5.6` `[S]` Tab order (F8) and Buddies (F7) are overlays: toggle buttons in the tab toolbar, not segments of a mode control (the spike's "Design | Tab order | Buddies" segmented control reads as a sticky mode). Only one overlay is open at a time; opening another closes the first. (The basic overlays ship in M3 from the spike and are refined in M5.6.)
+
+**UX-OVL-002** `M5.6` `[S]` An open overlay shows a banner at the top of the canvas viewport over the backdrop (UX-WB-006) with its glyph, name, one instruction sentence and a [Done · Esc] button. Esc, F3, Done, or clicking the toggle again closes it. Switching tabs closes it.
+
+**UX-OVL-003** `M5.6` `[S]` While an overlay is open, the canvas dims layout frames and hover outlines, and the overlay's own marks use their role colour. Outline and inspector stay fully usable. Structural commands (insert, delete, wrap, move) close the overlay first, then run.
+
+**UX-OVL-004** `M5.6` `[S A]` Tab order overlay: a 16 px `ov.tab` number badge for every widget in the focus chain, placed by the chip solver at an outside corner (top-left first). When any stop has no free corner (packed layout rows), every badge sits 3 px inside its widget's top-left corner instead, never in a side gutter with a leader and never mixed (M5.6 gate: gutter badges read as belonging to nobody; the spike's fault was badges over the middle of the content, `tab-order.png`). A 1.5 px dashed `ov.tab` flow line, fainter than the badges and under them, joins badge centres in order; a step whose straight line would run through another badge bows (up steps left, down steps right). A `QDialogButtonBox` is not a stop: its focus policy is NoFocus, Designer does not number it, and `QWidget::setTabOrder` ignores it, so a `buttonBox` tab stop would break the order at runtime (Qt 5.15 and 6.8); Tab reaches its buttons after the numbered stops.
+
+**UX-OVL-005** `M5.6` `[T]` Clicking widgets in the overlay assigns 1, 2, 3… from the first click; Shift+click a widget to continue numbering from it; a hover hint chip says "Click to make it 4". The banner offers "Reset to reading order", which deletes `<tabstops>`. Each click is one undo step, merged while the overlay stays open.
+
+**UX-OVL-006** `M5.6` `[S K]` The form inspector's Tab order list mirrors the overlay: numbered rows, drag and Alt+Up/Down to reorder, "Use reading order" to reset, and the Caption "Follows reading order: top to bottom, left to right." or "Custom order. New fields join it where they sit on the form." New inputs are spliced into a custom order by reading position, never appended (pain 20).
+
+**UX-OVL-007** `M5.6` `[S A]` Buddies overlay: each label with a buddy gets a 1.5 px `ov.buddy` link from 2 px right of the label's text box to 2 px left of the field's rectangle, with 4 px end dots. Lines never cross text (the spike's dots sit on the last letter, "Emai", "Note", `buddy.png`), and fields are not tinted. Labels without a buddy show a hollow 8 px ring in the gutter-side margin, outside the label.
+
+**UX-OVL-008** `M5.6` `[T]` Drag from a label (or its ring) to a field to set the buddy; click a label then a field also works; drag a link's field end to empty space to clear it. "Pair labels automatically" in the banner pairs every form-layout label with the field in its row (one undo step) and reports "Paired 3 labels".
+
+**UX-OVL-009** `M6.1` `[S]` Connections overlay (F4, Designer parity, LOGIC_DESIGN §2.7): draws connections of the selected widget only; dragging from a widget to another opens the event picker. Structure only in v1; specified in M6.0.
+
+---
+
+## 9. Feedback, errors and copy
+
+### 9.1 Toasts
+
+**UX-FEED-001** `M3.1` `[S T]` Toasts confirm actions whose result might be missed or regretted: delete, cut, wrap, unwrap, morph, remove layout, cross-form paste with broken references, form created from a table, reset of several properties. They do not appear for actions whose result is plainly visible (drop, move, rename, ordinary property edits, paste in place).
+
+**UX-FEED-002** `M3.1` `[S]` A toast is level 2, max 480 px wide, Body text, at most one action button ("Undo", "Show") plus a close ×. One toast at a time; a new one replaces the old. It stays 6 s (8 s with an action), pauses while hovered, and never takes keyboard focus. Ctrl+Z works whether or not the toast is showing.
+
+**UX-FEED-003** `M3.1` `[T]` A toast's Undo undoes exactly the command it announced. The toast is dismissed as soon as any later command runs, so its Undo never reaches past newer work.
+
+### 9.2 Status bar context
+
+**UX-FEED-004** `M3.1` `[S]` The shell status bar's editor segment (UX-SHELL-006) is the builder's narrator. Priority: gesture sentence (during a drag or resize) > overlay instruction > hover sentence > selection summary. Messages never take focus and never pop up.
+
+**UX-FEED-005** `M3.1` `[S]` Selection summary formats: "email · Line edit · row 2 of the form layout", "receiptGroup · Group box · 2 widgets in a horizontal layout", "3 selected", "Invoice · the form · 640 × 480".
+
+### 9.3 Timings
+
+**UX-FEED-006** `M3.1` `[S]` The spike's perf meter ("open 118.6 ms", "edit 62.0 ms") is a development tool. It is hidden in user builds. It shows in the shell status bar's right end when the setting `form_builder.dev.show_timings` is on or `CBCS_FB_TIMINGS=1` is set, in `fb.faint`, turning `fb.warning` over the PLAN budget. Timings are always logged for the speed harness.
+
+### 9.4 Errors in place
+
+**UX-FEED-007** `M3.1b` `[S]` Validation errors appear next to the field that caused them (Caption, `fb.error`, under the field) and the field keeps its invalid text until fixed or Esc. No modal error dialogs in the builder, except a failed save to disk (shell standard).
+
+**UX-FEED-008** `M3.2` `[S]` Refused gestures explain themselves in the status bar and, if the user tries the same refused gesture twice within 5 s, in a toast without actions.
+
+### 9.5 Copy guidelines
+
+**UX-COPY-001** `all` `[C]` US English, sentence case everywhere (menus, buttons, headers in Overline excepted). Buttons are verbs that say what happens ("Create form with 6 fields", "Remove layout", "Delete"), never "OK" for a destructive or creating action.
+
+**UX-COPY-002** `all` `[C]` Plain words first; Qt words only where a veteran needs them (tooltips, "Qt names" lines, All properties, the XML view). No internal words on screen: no milestone or phase names, no command or node ids, no "realize", "slot" (for layouts), "item", "ui_ module" fragments, no "position 3" without saying what is there.
+
+**UX-COPY-003** `all` `[C]` Say what happened and what to do next, in that order, in at most two sentences. Name things by what the user sees (their text), then by object name.
+
+**UX-COPY-004** `all` `[C]` Numbers carry units; counts are 1-based; plurals are correct ("1 widget", "2 widgets").
+
+**UX-COPY-005** `all` `[C]` No blame, no exclamation marks, no "please", no "simply" or "just". Errors say "can't", not "invalid" or "illegal".
+
+**UX-COPY-006** `all` `[C]` Examples (spike text → required text):
+
+| Where | Spike | Required |
+| --- | --- | --- |
+| Drop chip | "+ Into verticalLayout · position 3" | "Insert between Shop name and Receipts" |
+| Drop chip | "New row 3" | "New row after Email" |
+| Size badge | "Auto × Auto · 622 × 69" | "receiptGroup · Hug × Hug" |
+| Behavior tab | "Coming in the logic phase" | (no stub in user builds; see UX-EMPTY-005) |
+| Data tab | "In the logic phase this tab binds fields…" | (hidden until M8) |
+| Why sentence | "Width fills the room the form layout formLayout gives it (Expanding)." | "Width fills the room the form layout gives it." (Qt name only with "Qt names" on) |
+| Problems in inspector | "No problems. Save writes a clean .ui and ui_ module." | "No problems." |
+| Status hint | "Drag from Insert, or press / . Click to select, Esc for the parent." | "Drag a widget from Insert, or press / to search. Esc selects the parent." |
+| Files | "Not saved yet. Save writes name.ui and ui_name.py side by side." | "Saves invoice.ui and ui_invoice.py in forms/." |
+| Shortcut field | placeholder "Ctrl+O" on an empty shortcut | placeholder "None" and a "Record" button |
+| Remove layout | "Remove layout…" (plain text link) | a secondary button "Remove layout…" |
+
+---
+
+## 10. Accessibility
+
+**UX-A11Y-001** `M3.7` `[K]` Keyboard-only paths exist for every task in the M2–M3 scope, and the keyboard script (section 12.3) completes each without the mouse: create a form from a template; insert, move, nest, wrap, unwrap, morph, delete, copy, paste and duplicate widgets; rename; edit text; set Hug/Fill/Fixed, share, minimum and maximum; change gaps and margins (inspector); change splitter sizes (inspector); zoom; preview; switch to XML and back. Reorder tab order and set buddies are `M5.6`, because those overlays are built there.
+
+**UX-A11Y-002** `M3.1` `[S]` Focus is always visible and always distinct from selection: a 2 px `fb.accent` focus ring (HC: `focus_border_width`, 2 px) on the focused control; the focused pane shows a 2 px `fb.accent` line along its top edge; on the canvas the focused-and-selected widget gets an extra 1 px dotted `ov.select` ring outside the selection stroke. In the outline, the focused row has the focus ring in addition to the selected-row fill (the spike shows no difference between a focused and an unfocused selected row, extra capture `focus-outline.png`).
+
+**UX-A11Y-003** `M2.2` `[S]` Start cards, Insert tiles, segmented controls, the zoom menu and chips that act as buttons are focusable with the same ring.
+
+**UX-A11Y-004** `M3.1` `[A]` Every interactive builder control has an accessible name (the spike sets none: `setAccessibleName` appears 0 times). Icon buttons use their tooltip text without the shortcut; Insert tiles "Insert line edit"; segmented segments "Width: Hug"; the canvas view "Form canvas"; outline rows "email, line edit, Full name". A test walks the builder widget tree and fails on any focusable widget with an empty accessible name.
+
+**UX-A11Y-005** `M3.1` `[A]` The canvas exposes the current selection to assistive technology through its accessible description ("Selected: email, line edit, row 2 of the form layout") and updates it on every selection change. Canvas widgets themselves are not exposed as live controls (they are a picture of the user's form).
+
+**UX-A11Y-006** `M2.3` `[A]` Contrast targets: text 4.5 : 1 against its background (7 : 1 in high contrast); non-text UI (icons, control borders, focus rings, overlay strokes, chips) 3 : 1 against what they sit on. The token tables in section 2.1 meet these; a test computes every token pair used and fails below target.
+
+**UX-A11Y-007** `M3.1` `[S]` Colour is never the only signal: layout frames carry a kind chip when selected, changed properties use weight and a bar, invalid drops use the not-allowed cursor and a sentence, problems use a glyph and text.
+
+**UX-A11Y-008** `M3.1` `[S]` At 200% device pixel ratio every glyph, stroke and chip is crisp (painted, not scaled bitmaps), and hit areas scale with the logical pixel.
+
+**UX-A11Y-009** `M2.2` `[K]` Tab order of the builder chrome is: tab toolbar (left to right) → outline → Insert → canvas → inspector header → inspector tabs → search → rows. Inside the canvas and outline, Tab has its builder meaning (UX-KEY-004); Alt+1…4 and the toolbar's focus jump keys let a keyboard user leave them (UX-KEY-006).
+
+---
+
+## 11. Pains and delighters mapped to clauses
+
+### 11.1 The 25 ranked pains
+
+In the tables of this section the `UX-` prefix is omitted.
+
+Every pain is a requirement (PLAN §1). Pains whose fix is mostly engine, generator or project work still have the UX clauses listed that make the fix visible. The pain's own test from `P_user_pain_points.md` remains the acceptance test; the clauses add how it looks and feels.
+
+| Rank | Pain | Clauses that solve it | Milestone |
+| --- | --- | --- | --- |
+| 1 | Widgets sit still until a layout command | PRIN-002, AUTO-001, AUTO-002, BARE-001, START-004, INSP-016, RESIZE-008, SCALE-004 | M3.2 |
+| 2 | Size policy, minimum and stretch are three mysteries | SIZE-001 … SIZE-008, INSP-006, INSP-007, CHIP-003, RESIZE-002, RESIZE-003 | M3.6 |
+| 3 | Paste refused inside a layout | CLIP-002, CLIP-003, CLIP-004, MOVE-002 | M3.4 |
+| 4 | Nested layouts shrink to a line | EMPTY-002, EMPTY-003, DND-008, BOX-003, FRAME-001, OUT-005 | M3.2, M3.5 |
+| 5 | Break layout is required and resizes siblings | WRAP-002, WRAP-003, WRAP-004, WRAP-007 | M3.3 |
+| 6 | Edits in `ui_*.py` disappear | GEN-001, GEN-002, GEN-003; the window file is only ever added to: CODE-005, CODE-006, CODE-008 | M2.3, M6.2b |
+| 7 | Promotion stores a C++ header, draws the base class | RUN-004, CUST-001 … CUST-011 | M5.4 |
+| 8 | Style sheet on the canvas differs from the app | ISO-001, ISO-002, ISO-004, STYLE-001 … STYLE-009 | M2.3, M5.3 |
+| 9 | Icon shows in the designer, gone at run time | RES-001 … RES-007 (the P-9 test is amended: packaging, not Save, is blocked; 13.2.1 D3) | M5.2 |
+| 10 | Packaged app can't find the form | RUN-005 | M2.4 |
+| 11 | A plugin aborts the designer | RUN-002, RUN-003, RUN-004 | M2.5 |
+| 12 | Raw pixel sizes break on font or scale change | SCALE-001 … SCALE-004, WIDTHS-001 … WIDTHS-003, INSP-016 | M3.6 |
+| 13 | Modes and a dated canvas | PRIN-005, OVL-001 … OVL-003, INSP-013, MODE-001, section 2 | M3, M5.6 |
+| 14 | Spacers stick, disagree with preview | GAP-001 … GAP-005, FRAME-002, SIZE-005, WRAP-009 | M3.3 |
+| 15 | No completion of widget names | OUT-010 (rename carries to code); completion itself is M1.4 | M1.4, M3.5 |
+| 16 | Signal mode hides new connections | INSP-013, BEH-003, BEH-016, BEH-018, ARR-006 | M3.1b, M6.1b, M6.1c |
+| 17 | Menus and toolbars refuse dragged controls | MAIN-004 … MAIN-011, MAIN-016 | M5.1 |
+| 18 | Enum properties don't commit | INSP-009, FEED-007, PED-001, PED-009, PED-022 | M4.3a |
+| 19 | Splitter can't nest, handle doesn't move | SPLIT-001, SPLIT-002, SPLIT-003 | M3.2, M3.3 |
+| 20 | Tab order sticks; new widgets append; page reorder is a thin target | OVL-002, OVL-004 … OVL-006, MODE-002, MODE-003, PAGES-004, OUT-007, GRID-004 | M3.5, M5.6 |
+| 21 | One grid drag moves untouched cells | GRIDL-001 … GRIDL-004, DND-002 | M3.2 |
+| 22 | `connectSlotsByName` misses a slot | PROB-001, PROB-002, CODE-011, CODE-012, CODE-014 | M6.2a, M6.2b |
+| 23 | Huge forms freeze | PRIN-007, MOTION-001, FEED-006, DND-008 (cached slot geometry), section 12.5 speed evidence | M3.1, M9.4 |
+| 24 | Undo writes a non-widget z-order | OUT-006 (outline order is the real child order); engine fix in M1.2 | M1.2 |
+| 25 | Rename steals the keyboard | PRIN-006, OUT-008, OUT-009, INSP-001, FEED-002, FEED-004 | M3.5 |
+
+### 11.2 Adopted delighters (the report's fifteen)
+
+| # | Delighter | Clauses |
+| --- | --- | --- |
+| 1 | Drop, and it is placed | AUTO-001 … AUTO-004, DND-003, DND-004 |
+| 2 | Hug, fill and fixed | SIZE-001 … SIZE-004 |
+| 3 | A gap you can select | GAP-001, GAP-002 |
+| 4 | Anchors drawn on the window | GAP-004 |
+| 5 | Double-click opens the handler; undo removes an empty one | TEXT-001, CODE-003, CODE-008 (13.3.1 D8) |
+| 6 | The hierarchy can reparent | OUT-004, OUT-005 |
+| 7 | Column sizes are numbers | GRIDL-006, INSP-004 (Layout group) |
+| 8 | A modifier key for small steps | RESIZE-007, GAP-002, SPLIT-002 |
+| 9 | Preview in another process | RUN-002, RUN-003 |
+| 10 | Live canvas, same file | XML-001 … XML-005, ISO-001 |
+| 11 | Rows and columns receive the next control | AUTO-003, AUTO-004 |
+| 12 | A theme object for common shapes | STYLE-012 (two roles; 13.2.1 D5) |
+| 13 | A custom component with a real size | RUN-004, CUST-007 |
+| 14 | Reset that deletes the line | INSP-006, RESIZE-003, GAP-003 |
+| 15 | Auto layout by default, with an escape | AUTO-001, WRAP-007 |
+
+### 11.3 Delighters added by this spec
+
+| Delighter | Clause | Why |
+| --- | --- | --- |
+| Drop beside a field to make a row | BOX-003 | Removes "drop, select both, lay out horizontally", the most common nesting chore |
+| Drop into a new form row, type its label | FORML-002 | A data-entry form becomes drop → type → Enter per field, buddies set |
+| Tab through renames and text edits | OUT-008, TEXT-003 | Renaming ten widgets is ten names and ten Tabs (pain 25 test, made pleasant) |
+| Cut-off text warning in the text-size preview | SCALE-003 | Turns pain 12 from "looks wrong at run time" into a count you can click |
+| One plain sentence for every drop | DND-004 | Non-programmers know where a widget goes before releasing it |
+| Designer layout keys | WRAP-002, KEY-004 | Ctrl+1 … Ctrl+6 and Ctrl+J are a veteran's muscle memory |
+
+### 11.4 Praised elsewhere, not adopted
+
+| Pattern | Decision |
+| --- | --- |
+| Pixel placement as the saved form | Only in bare containers from older files (BARE-002), never the default path |
+| A drag that writes widget margins (WPF) | Not done. Margin drags edit the *layout's* contents margins (GAP-003), which Qt stores and every layout respects |
+| Absolute position inside a layout frame (Figma) | Not offered. Layout children have no position rows (INSP-016) |
+| Snaplines | Not added. Layouts align by construction; bare containers snap to an 8 px grid |
+| In-process live previews | Not used for user code (RUN-002). The canvas is the realizer's real widgets without user code |
+
+---
+
+## 12. Acceptance evidence
+
+### 12.1 Evidence codes
+
+| Code | What the PR provides | How the gate verifies |
+| --- | --- | --- |
+| `S` | Screenshots of the named state (section 12.2), in light, dark, high contrast light and high contrast dark, at 100% and 200% device pixel ratio, at the tab sizes listed | The reviewer compares against the clause text; overlays are composited as in the spike's `grab()` |
+| `T` | An interaction trace: a JSON-lines event log of real mouse and key events (drag state injected through the controller seam, PLAN §2 gate 10), the selection and focus widget after each step, the command names pushed, and the final `.ui` diff; then undo of every step back to the original bytes | The trace replays in CI; the reviewer reads the XML diff and the command names |
+| `K` | A keyboard-only script (section 12.3): key sequence plus assertions, with no mouse events at all | CI runs it; a mouse event in the log fails it |
+| `A` | An automated assertion in the test suite | CI result plus the test name in the PR |
+| `C` | The copy strings touched, listed in the PR | The reviewer checks them against section 9.5 |
+| `P` | A persona walkthrough record (section 12.6) | The reviewer reads step counts and confusion points |
+
+The O-UX gate also needs a launched-build screenshot sequence from the lab Linux host (PLAN §2a) for any clause marked `S` that involves drag and drop, because offscreen grabs composite overlays differently from a real compositor.
+
+### 12.2 Screenshot tour (state names)
+
+Tab sizes: **L** = 1440 × 860 tab, **C** = 1080 × 600 tab inside the CBCS shell at 1366 × 768 (the ChoreBoy case), **N** = 840 × 560 tab. Unless marked, a state is required at L and C.
+
+| State | Shows | Clauses |
+| --- | --- | --- |
+| `shell-form-tab` | A form tab inside CBCS with the project tree and Problems panel | SHELL-001 … 006, WB-001, WB-003 |
+| `shell-form-menu` | The Form menu open | SHELL-004 |
+| `xml-view`, `xml-error` | XML view; invalid XML on switching back | XML-001 … 004 |
+| `generated-banner` | `ui_invoice.py` open | GEN-001 |
+| `problems-row` | A form problem in Problems, and the widget badge | PROB-001, PROB-004 |
+| `pyside2-ui` | `.ui` as text on PySide2 | PS2-001 |
+| `start`, `start-invalid-name`, `start-narrow` (N) | New form tab | START-001 … 006 |
+| `from-table` | Build from a table | TABLE-001 |
+| `empty-form` | New blank form | EMPTY-001 |
+| `empty-group` | An empty group box nested in a row | EMPTY-002, CHIP-001 |
+| `select-top-row` | The first field of a form selected (the spike's chip overlap case) | SEL-008, CHIP-001 … 004 |
+| `select-container` | A group box with a layout selected | CHIP-003, GAP-001, FRAME-001 |
+| `select-layout-root` | The root layout selected: margins, anchors | GAP-001, GAP-004 |
+| `select-multi` | Three widgets selected, inspector in multi mode | SEL-002, INSP-011 |
+| `hover` | Hover over a nested widget | HOV-001, HOV-002 |
+| `drag-box`, `drag-box-beside` | Insertion line; cross-axis drop making a row | BOX-001, BOX-003, DND-003, DND-004 |
+| `drag-grid-empty`, `drag-grid-edge`, `drag-grid-newrow`, `drag-grid-span-refused` | Grid targets | GRIDL-001 … 004, DND-005 |
+| `drag-form-field`, `drag-form-newrow`, `form-new-row-label-edit` | Form targets and the label editor after a drop | FORML-001, FORML-002 |
+| `drag-splitter`, `splitter-handle-drag` | Splitter target and handle drag | SPLIT-001, SPLIT-002 |
+| `drag-tab-plus`, `stack-switcher` | Page containers | PAGES-001 … 003 |
+| `drag-bare-empty`, `bare-legacy` | Bare containers; No layout marker | BARE-001, BARE-002, FRAME-003 |
+| `outline-drag-depth` | Outline drag between rows with indent | OUT-005 |
+| `outline-rename`, `outline-rename-error` | Rename in place; invalid name | OUT-008, OUT-009 |
+| `delete-references` | Delete confirm listing references | OUT-012 |
+| `gap-drag` | Gap bar dragged with live number | GAP-002 |
+| `resize-fixed` | Handle drag readout | RESIZE-001, RESIZE-004 |
+| `text-edit-inplace` | In-place editor on a button | TEXT-002 |
+| `wrap-popover`, `wrap-toast` | Wrap popover; toast after wrap | WRAP-001, WRAP-003, FEED-002 |
+| `remove-layout-confirm` | Confirm popover | WRAP-007 |
+| `inspector-size-default`, `inspector-size-fixed`, `inspector-size-custom` | Size group states with the why paragraph | SIZE-001 … 007 |
+| `inspector-changed` | Changed rows, reset button on focus | INSP-006, INSP-007 |
+| `inspector-all-props`, `inspector-search` | All properties expanded; search filtering | INSP-008, INSP-012 |
+| `inspector-form` | Form selected | INSP-010 |
+| `inspector-behavior` | Connections list with a new row in edit state | INSP-013, EMPTY-005 |
+| `overlay-tab-order`, `overlay-buddies` | Overlays | OVL-001 … 008 |
+| `two-widths` (L only) | Two widths side by side and stacked | WIDTHS-001, WIDTHS-002 |
+| `preview-larger-text` | Text-size preview with cut-off warnings | SCALE-001 … 003 |
+| `zoom-50`, `zoom-200` | Overlay sizes constant | ZOOM-002, ZOOM-004 |
+| `responsive-rail` (N), `responsive-drawer` (N), `responsive-short` (1080 × 420) | Collapsed panes and drawers | RESP-001 … 006 |
+| `focus-outline`, `focus-canvas`, `focus-inspector` | Focus rings | A11Y-002, A11Y-003 |
+| `preview-crash` | Preview stopped toast and Problems row | RUN-003 |
+
+**M4 states** (added in v2). Each is required at L and C, in light, dark and both high contrast themes, and the inspector states also at the minimum inspector width (236 px content).
+
+| State | Shows | Clauses |
+| --- | --- | --- |
+| `insert-icons`, `insert-list` (C) | Insert pane with Recently used and all categories, each view | CAT-003 … 006, ICON-005 |
+| `insert-search-synonym` | "dropdown" typed, Combo box first with “dropdown” caption | CAT-007, CAT-008 |
+| `insert-search-empty` | No match | CAT-009 |
+| `insert-window-kinds` | "wizard" typed: widget results then "Wizard · new form" | CAT-015 |
+| `quick-insert-recent` | `/` with an empty query, Recently used first | CAT-013 |
+| `insert-refused-wizard-page` | Wizard page dragged over a group box | CAT-014 |
+| `pages-menu` | Context menu with Pages ▸ open on a tab page | CONT-002 |
+| `page-delete-confirm` | Delete page popover listing widgets | CONT-004 |
+| `page-shown-vs-start` | Tab widget showing page 2, starting on page 1, status sentence | CONT-006, CONT-007 |
+| `pages-empty` | Tab widget with no pages | CONT-009 |
+| `scroll-area-scrolled` | Scroll area scrolled to a selected widget at the bottom | CONT-010 |
+| `mdi-windows` | MDI area with two windows and its switcher | CONT-011 |
+| `dock-bands` (main window) | Dock widget dragged: four side bands, Left hot | CONT-012 |
+| `wizard-canvas` | Wizard with step switcher; inspector step title rows | CONT-013 |
+| `stand-ins` | OpenGL widget and Qt Quick view stand-ins | CONT-017 |
+| `inspector-pages` (236 px) | Pages group of a tab widget | CONT-019, PED-044 |
+| `inspector-min-width-all` (236 px) | A line edit, a label, a spin box and a date edit selected in turn: every row unclipped, stacked rows where required | PED-002 |
+| `popover-flags`, `popover-size-policy`, `popover-date`, `popover-locale` | Each popover open from its row | PED-003, PED-023, PED-026, PED-028, PED-029 |
+| `enum-unknown` | An enum value from a newer Qt shown as kept | PED-022 |
+| `keyseq-recording`, `keyseq-clash` | Recorder active; clash warning | PED-027 |
+| `text-translation` | Translation disclosure open, "Not translated" tag on another row | PED-041 |
+| `rich-text`, `rich-text-source` | Rich text popover, both segments | PED-042 |
+| `stringlist-popover` | List editor with 5 rows, one being dragged | PED-043, PED-044 |
+| `custom-props`, `custom-prop-add-error` | Custom properties block; a refused name | PED-060, PED-061 |
+| `all-props-sorted` | Sort A–Z on | PED-064 |
+| `font-popover` (236 px) | Font popover with More open | PED-080 |
+| `colour-popover`, `gradient-popover`, `palette-popover`, `palette-role-brush` | The visual editors | PED-081 … 085 |
+| `picture-picker`, `icon-states`, `picture-missing` | Picker with a resource grid; icon states; a missing file | PED-100 … 104 |
+| `items-combo`, `items-list-details`, `items-tree`, `items-table`, `items-model-view` | Item editors; the model-view status sentence | ITEM-001 … 008 |
+
+**M5 states** (added in v3). Same rules as the M4 states: L and C, light, dark and both high contrast themes, 100% and 200%, and inspector states also at 236 px.
+
+| State | Shows | Clauses |
+| --- | --- | --- |
+| `main-window-new` | Blank main window: empty menu bar with "Type here", central area, status bar | MAIN-001, MAIN-003 |
+| `menu-typing`, `menu-reuse-list` | "Type here" editor in the File menu; the reuse list with an existing action current | MAIN-005 … 007 |
+| `menu-open-submenu` | File open with a submenu open beside it, placeholders in both | MAIN-005, MAIN-015 |
+| `menu-drag-entry`, `toolbar-drop-action` | An entry dragged between two entries; an action from Actions dropped on a toolbar | MAIN-009, TOK-006 |
+| `toolbar-refused-widget` | A line edit dragged over a toolbar, refused | MAIN-016 |
+| `actions-section` (C) | Actions section with a group, used-in captions and "Not used" | MAIN-010 |
+| `action-inspector` (236 px) | An action selected: used-in links, Content and Input rows | MAIN-012 |
+| `toolbar-inspector` (236 px) | Toolbar side segments and break | MAIN-013 |
+| `button-group` | Three radio buttons in a group; the form inspector's Button groups list | MAIN-019 |
+| `picker-project-pictures` | Picker with both sections and the "New pictures go into" footer | RES-001 |
+| `picture-added-toast` | Toast after the first picture made `forms/resources.qrc` | RES-002 |
+| `qrc-editor`, `qrc-editor-missing` | Resource editor tab; a missing file cell | RES-004, RES-007 |
+| `raw-path-problem` | FB031 in Problems and the row warning with its link | RES-005 |
+| `style-drawer-valid`, `style-drawer-error` | Drawer with match chips and matched widgets outlined; an error status with the canvas still styled | STYLE-002 … 005 |
+| `style-insert-menu` | Insert ▸ open | STYLE-006 |
+| `colour-rows` (236 px) | Appearance: Font, Text colour, Background, Style sheet; the overridden warning on one row | STYLE-010, STYLE-011 |
+| `form-look` | Form inspector Look group | STYLE-012 |
+| `own-class-popover`, `own-class-check-lines` | The popover with the registry list; each check line | CUST-002, CUST-003 |
+| `own-class-canvas` | A label drawn as its base with the corner tag; a QWidget-based stand-in | CUST-007, TOK-006 |
+| `own-class-preview-notice`, `own-class-stand-in-toast` | Security info bar; the stand-in toast and Problems row | CUST-008, CUST-009 |
+| `aa-style-screen` | Aa menu with Style and Screen open | PREV-001 |
+| `view-code-split` | Code split beside the canvas, the selected widget's lines marked | PREV-004 |
+| `form-settings` (236 px) | Code, Translation and Free placement groups expanded; the older-file row | FSET-001 … 006 |
+| `save-template`, `start-your-templates` | Save as template popover; Start with Your templates first | TMPL-001, TMPL-004 |
+| `settings-form-designer` | Settings > Form designer page | TMPL-006 |
+| `tab-order-overlay-keys`, `tab-order-list` | Overlay with "Press Enter" status; the inspector list | MODE-002, MODE-003, OVL-004, OVL-006 |
+| `buddy-dropdown`, `buddy-overlay-keys` | Buddy drop-down; overlay link in progress | MODE-004, OVL-007 |
+| `keys-page`, `widget-help-card` | Form designer keys filtered; the F1 card | MODE-005, MODE-007 |
+
+**M6 states** (added in v4). Same rules as the M5 states: L and C, light, dark and both high contrast themes, 100% and 200%, and inspector states also at 236 px. Fixture: the M6 shop project (`tests/form_builder/fixtures/m6/`, K24).
+
+| State | Shows | Clauses |
+| --- | --- | --- |
+| `behavior-empty` (236 px) | A push button with no events: the sentence, [+ When…] and the double-click caption | BEH-013 |
+| `events-list` (236 px) | Two events, three steps, one turned off, one call step with its place link, one row with a problem badge | BEH-003 … 005, BEH-008, BEH-019 |
+| `events-by-name` | A group with a method connected by name, and FB206 on another | BEH-006, CODE-012 |
+| `events-two-places` | FB404's header note and [Merge] | BEH-007, LST-005 |
+| `events-from-others` | From other widgets section on a line edit | BEH-015 |
+| `form-behavior` (C) | Form selected: root events, All events on this form filtered, Your methods with a "not used" and a "not in" row | BEH-016, BEH-017 |
+| `event-picker`, `event-picker-more` | Common events; More events with Show events from QWidget ticked | PICK-001, PICK-002 |
+| `step-picker`, `step-picker-target`, `step-picker-slots` | Do this / Your code / Everything else; the target page; slots with greyed incompatible ones and their reasons | PICK-003 … 006 |
+| `method-page`, `method-page-refused` | The method page with the name selected and "My method receives…"; the window-file-can't-be-read line | PICK-007, CODE-002 |
+| `canvas-badges-arrows` | Badges on four widgets; the selected button's arrows, a `{ }` chip and a form chip, one label chip | ARR-001 … 004, TOK-007 |
+| `canvas-show-all` | Show all connections on a 30-connection form | ARR-005 |
+| `connections-overlay`, `connections-link-drag` | The overlay banner; a link dragged over a receiver | ARR-006, ARR-007 |
+| `code-tab-new-method` | The window file after double-click: caret on `pass`, `pass` selected | CODE-004, CODE-005, CODE-007 |
+| `problems-fb2xx` | Problems with FB201, FB202, FB206, FB208 and FB209 rows | CODE-011, CODE-014 |
+| `form-settings-connect-by-name` (236 px) | The Code group with Connect methods by name | CODE-013 |
+| `newer-logic` (236 px) | FB402 notice bar over read-only Events | LST-001 |
+| `event-unreadable` | FB401 and FB403 rows | LST-002, LST-003 |
+| `preview-stand-in-status` | Preview open, status "Preview: … would call …" | CODE-016 |
+
+### 12.3 Keyboard scripts
+
+Each script starts with focus in the form tab and uses only keys. The PR runs the scripts that touch its clauses.
+
+- **K1 Create and fill a data-entry form.** File > New Form… (menu by keyboard), type a name, arrow to "Data entry form", Enter. Assert: Workbench open, first input selected, canvas focused. Then `/`, type "date", Enter: a date field is inserted as a new form row with its label editor open; type "Issued", Enter. Assert the row, the buddy and that focus is on the canvas.
+- **K2 Structure.** Select two sibling fields (Down, Shift+Down), Ctrl+1: wrapped in a horizontal layout; Ctrl+Shift+B: unwrapped; Ctrl+Shift+G, 7: wrapped in a group box; Esc: the group's layout is selected; Esc: the group; Alt+Up: moved up one place. Undo all: original bytes.
+- **K3 Clipboard.** Select a field, Ctrl+C, Ctrl+V: pasted after it and selected; Ctrl+D: duplicated; Delete on a referenced field: the confirm opens; Esc: nothing deleted; Delete again, Enter on [Delete]: deleted, toast shown, focus unchanged.
+- **K4 Rename ten.** Alt+1, F2, type a name, Tab, … ten times. Assert after each step: the focus widget is the rename editor or the outline, never anything else (pain 25).
+- **K5 Sizing.** Alt+4, move to Size, set Width Fill, Share 1, Height Fixed 120, At least width 200; Reset each; assert the file has none of those lines after the resets. Ctrl+Shift+Right twice: Fixed width +16.
+- **K6 Overlays.** F8: tab-order overlay; Esc: closed. In the form inspector, reorder the tab list with Alt+Down; "Use reading order". F7, then use the inspector Buddy field to pair a label; Esc.
+- **K7 Text.** Select a button, Enter, type, Tab (next text widget's editor opens), type, Enter. Undo twice: both texts restored.
+- **K8 Views.** Ctrl+9 fit, Ctrl+= twice, Ctrl+0; Ctrl+Shift+V to XML, edit a title, Ctrl+Shift+V back: the title changed in one undo step; Ctrl+Shift+R: preview opens; Esc closes it; F5: runs the project.
+
+**M4 scripts** (added in v2). Same rules as K1–K8: keys only, start with focus in the form tab, and every script ends with Undo back to the original bytes unless it says otherwise. The lane named after each script owns its test; M4.5 runs them all together.
+
+- **K9 Insert by words** (`M4.1`). Open a form-layout form, select its last field. Alt+2; type "dropdown": focus moves to the filter and Combo box is the first result with “dropdown” beside it. Enter: a combo box is inserted as a new form row and the label editor opens; type "Size", Enter: focus is back on the Insert result list. Esc: the filter clears and focus stays in Insert; Recently used shows Combo box first. Ctrl+Down twice, Enter: the first entry of that category is inserted after the combo. Esc (filter empty): focus returns to the canvas. Press `/`: the quick-insert list starts with Recently used; type "tabs", Enter: a tab widget with two pages is inserted and focus returns to the canvas. Assert after each insert: one undo step, named "Insert …". Undo four times: original bytes.
+- **K10 Pages** (`M4.2`). Ctrl+R, "tabWidget", Enter. Shift+F10, open Pages, "Insert page after": a third page is shown and selected, its title editor open; type "Printing", Enter. Ctrl+PgUp: page 2 shown; the status bar says it still starts on page 1; the file has not changed (dirty state unchanged). Shift+F10, Pages, "Start on this page": `currentIndex` is 1 in the XML. Alt+1, Down to the "Printing" page row, Alt+Up: it moves before page 2. Delete on a page that has a widget: the confirm opens; Esc: nothing deleted; Delete, Enter on [Delete page]: deleted, toast shown, focus still in the outline. Undo five times: original bytes.
+- **K11 Choices and numbers** (`M4.3a`). Select a line edit. Alt+4, Ctrl+F, type "echo": Echo mode is the only curated row; Tab to it, Alt+Down, choose "Password", Enter. Esc clears the search. Ctrl+S, close the tab, reopen the form, select the same line edit: Echo mode reads "Password" in Strong (pain 18). Tab to Maximum length, type 40, Enter, Up three times: 43, and Undo once restores the value from before the visit (one visit is one step); Redo. Tab away and back, Up once: 44; Undo once: 43 (a second visit is its own step). Select a label, open All properties, reach Text interaction, Enter: the flags popover opens; Space on "Select with mouse", Esc: nothing changed; Enter, Space, Enter: changed, one step. Select a date edit: Date row, type "12/31/2026", Enter; Alt+Down, PageDown, Enter: January 31, 2027 written. Select a key sequence edit: Record, press Ctrl+Shift+P: "Ctrl+Shift+P" written; Record, Esc: unchanged. Undo all: the bytes the form had when it was reopened (undo history does not survive closing the tab).
+- **K12 Text, translations and custom properties** (`M4.3d`). Select a label; Alt+4; in Text type "Total:", Enter. Tab to "Translation ▸", Enter: it opens; Space on "Translate this text": the XML gains `notr="true"` and the row's caption says "Not translated"; Tab to "Note for the translator", type "Shown on receipts", Enter. End of All properties: Tab to "+ Add custom property", Enter, type "requiredRole", Tab, choose "Text", Enter: the row appears and its editor has focus; type "manager", Enter: the XML has `<property name="requiredRole" stdset="0">`. Type an invalid name in a second add ("2nd"): the refusal shows and Enter does nothing; Esc. Open the Text popover of a rich label, Formatted, select a word, Ctrl+B, Done: the HTML has bold; run the same steps twice and compare bytes. Undo all: original bytes.
+- **K13 Font, colour and palette** (`M4.3b`). Select a label; Font row, Enter: the popover opens with focus on Family; type "Sans", Enter on the first match; Tab to Size, Up twice; Tab to Bold, Space; Done: one undo step "Change font of …", the summary lists only the parts set. Palette row, Enter; Down to "Window text", Enter: the brush editor opens; Tab to Hex, type "#1A7F37", Enter; Esc: back to the palette list; Esc: closed and reverted; repeat and press Done: kept, one step. Undo all: original bytes.
+- **K14 Items** (`M4.4`). Select a combo box; Enter: the item editor opens with focus in its first row; type "Small", Enter, "Medium", Enter, "Large", Enter, Enter: closed, three items, one undo step "Edit items of …", focus back on the canvas. Enter; Down; Alt+Up: "Medium" first; Esc: the order is back to Small, Medium, Large and no step was added. Select a tree widget; Enter; type "Fruit", Enter, "Apple", Tab: Apple is under Fruit; Done. Select a list view; Enter: no popover, the status sentence of UX-ITEM-008. Undo all: original bytes.
+- **K15 Pictures** (`M4.3c`). In a form that includes a `.qrc`, select a push button; Icon row, Enter; type "save" in the search; arrows to the first match, Enter: icon written as a resource path, one step. Open again, "Other states ▸", pick a Disabled picture; Esc: reverted. Undo all: original bytes.
+
+**M5 scripts** (added in v3). Same rules as K1–K15. The lane named after each script owns its test; M5.R runs them all together. Fixture projects live under `tests/form_builder/fixtures/m5/` (a shop project with no `.qrc`, `logo.png` outside it, `widgets/till_display.py` with `class TillDisplay(QLabel)`, `widgets/broken.py` whose class raises in `__init__`).
+
+- **K16 Main window** (`M5.1`). File > New Form… by keyboard, name "shop_window", arrow to Main window, Enter: the form has `menubar`, `centralwidget`, `statusbar` in that order. Ctrl+R, "menubar", Enter; Enter: menu editing, focus on "Type here". Type "&File", Enter: `menuFile` exists; Down: File opens with focus on its "Type here". Type "New sale", Enter; type "Print receipt", Enter: focus is back on "Type here" each time. Down, Enter: a separator. Up, type "Quit", Enter. Up (on Quit), Alt+Up: Quit is above the separator; Alt+Down: back. Esc: File closes, its title has focus. Right, type "Help", Enter. Esc: menu editing ends. Esc until the window is selected; Shift+F10, Main window ▸ Add toolbar: `toolBar` exists and is selected. Enter; type "Pri": the reuse list shows "New action “Pri”" current and "Print receipt" under it; Down, Enter: the toolbar references `actionPrint_receipt` and the XML has that action in `menuFile` and `toolBar` (pain 17). Alt+5: Actions focused; its Print receipt row says "File menu, toolBar". Back on the toolbar (Alt+3, Enter), Delete on Print receipt: the toast says it's still on the File menu and the action still exists. Assert after each step: one undo step with its 13.2.10 name. Undo all: the bytes the form had when it was created.
+- **K17 Pictures** (`M5.2`). In the shop project, create a blank Widget form and insert a label (`/`, "label", Enter). Alt+4 to Picture, Enter: the picker opens with no sections but the footer; Tab to "Add picture…", Enter; type the fixture path of `logo.png`, Enter. Assert: `forms/resources.qrc` exists with `pictures/logo.png`, `forms/pictures/logo.png` is a byte copy, the form includes the `.qrc`, the label's picture is `:/pictures/logo.png`, one undo step "Add picture logo.png". Ctrl+S: `resources_rc.py` exists and a `QUiLoader` preview shows the picture. Undo: the property and the include are gone, the files stay; Redo. Ctrl+P, "resources.qrc", Enter: the resource editor opens; arrow to the picture, Enter, type "shop_logo.png", Enter, Ctrl+S: the alias is written and the form's `resources_rc.py` is rewritten. Open the fixture form whose button icon is a file path; select the button; Icon row, Tab to "Add to project pictures", Enter: the icon is a resource path and FB031 is gone.
+- **K18 Style** (`M5.3`). Select `okButton`. Alt+4, Ctrl+F, "style", Tab to Style sheet, Enter: the drawer opens with focus in its editor. Type `QPushButton#okButton { background: #1A7F37; }`; after 300 ms the canvas button's pixels are green, the status reads "Looks right" and the chip reads "1 widget". Backspace over the last `}`: the status reads "Line 1: a } is missing." and the button stays green. Type `}`. Esc: the drawer closes, focus is on the Style sheet row, one step "Change style sheet of okButton". Select a label; Text colour, Enter, Hex "#FFFFFF", Enter, Done; Background, Enter, Hex "#1A7F37", Enter, Done: the XML has the two palette roles and `autoFillBackground`. Select the form; Look, Text size, type 12, Enter. Undo all: original bytes.
+- **K19 Your own class** (`M5.4`). In the shop project, select a label. Shift+F10, "Use my own class…", Enter: the popover opens with focus on Class. Type "TillDisplay", Tab, type "widgets.till_display": the line reads "Found TillDisplay in widgets/till_display.py." Enter on [Use TillDisplay]: the XML has the `customwidget` with header `widgets/till_display.h`; the inspector header reads "TillDisplay · your class, based on Label"; no module from `widgets/` was imported in the editor (import hook). Ctrl+Shift+R: the preview child reports `TillDisplay` as that widget's class, and the info bar shows; Esc. Select another label, use "Broken" from "widgets.broken", Ctrl+Shift+R: the stand-in toast and FB602 appear, the preview opens; F2, type a new name, Enter: the rename works. Shift+F10, "Back to label": the Broken declaration is gone. Undo all: original bytes.
+- **K20 Preview options and code** (`M5.5a`). Form > Preview options ▸ Screen ▸ "Small screen · 1024 × 600" by keyboard. Ctrl+Shift+R: the window title ends "· Small screen" and its size is at most 1024 × 600; Esc. Form > Save image…, Enter on the default name: `{stem}.png` exists with the page's size. Ctrl+K, C: the code split opens; Alt+1, Down: the code scrolls to the selected widget's lines; Ctrl+K, C: closed, focus on the canvas. Assert: the undo stack and the file bytes did not change.
+- **K21 Form settings** (`M5.5b`). Form > Form settings…: Code is expanded and Author has focus. Type "Shop", Enter. Tab to Default gaps, Space, Tab, type 6, Enter. Tab to Translation's Translate by ID, Space. Open the fixture with a free container and an `stdsetdef` attribute: Free placement, Step across 16, Enter; select a free widget, Alt+Right: it moves 16 px. Older file setting, Tab to [Remove], Enter. Undo all: original bytes.
+- **K22 Templates** (`M5.5c`). With K16's window plus K17's logo label, Form > Save as template…: type "Shop window", Tab, type "Till and receipts", Enter: the template folder holds `form.ui`, `template.json`, `thumbnail.png`, `pictures/logo.png`. File > New Form…: "Your templates" is the first group; type "back_office" in the name row, Tab to the Shop window card, Enter: `forms/back_office.ui` exists with the root renamed, its picture resolves through `forms/resources.qrc`, and the Workbench is open. File > New Form…, Tab to the card, Shift+F10, "Delete template…", Enter on [Delete template]: the folder is gone and `back_office.ui` is unchanged.
+- **K23 Tab order and buddies** (`M5.6`). In a form with three labels and three fields: F8; Tab to nameEdit, Enter (1), Tab, Enter (2), Shift+Tab twice, Shift+Enter, Tab twice, Enter: the order continues from the first. Backspace undoes the last number. Esc: the overlay closes. Alt+4, Tab order group: Alt+Down on row 1; "Use reading order", Enter: `tabstops` is gone. F7; select the Email label, Enter, Tab to emailEdit, Enter: `buddy` is `emailEdit`. Esc. Select phoneLabel; Buddy drop-down, type "phone", Enter. F1: the help card opens; Esc. Help > Form designer keys: type "wrap": the first row is Ctrl+Shift+G. Undo all: original bytes.
+
+**M6 scripts** (added in v4). Same rules as K1–K23. The lane named after each script owns its test; M6.R runs them all together. The fixture project `tests/form_builder/fixtures/m6/` holds `forms/sale.ui` (a dialog `Sale` with `nameEdit`, `phoneEdit`, `clearButton` "Clear", `printButton` "Print receipt", `saveButton` "Save", `cancelButton` "Cancel" and a `QDialogButtonBox` already connected to `accept()` and `reject()`), its `forms/sale_window.py` (class `SaleWindow` with one method and a trailing comment, CRLF line endings), and `forms/designer_made.ui` (Designer connections with `<hints>`, a layout connection, an event stored in two places).
+
+- **K24 Events list** (`M6.1b`). Open `sale.ui`. Ctrl+R, "cancelButton", Enter; Alt+B: the Behavior tab shows "Nothing happens yet when Cancel is clicked." Ctrl+Shift+E: the event picker opens with "clicked" current; Enter: the step picker; type "close", Enter: the row "Close this form" is current and the XML has one `<connection>` cancelButton `clicked()` → Sale `close()`; one step "Add Close this form to Cancel clicked". Ctrl+R, "clearButton", Enter, Alt+B, Ctrl+Shift+E, Enter; type "clear", Enter (the target page), type "name", Enter: "Clear Name (nameEdit)". Down to "+ Then…", Enter, type "focus", Enter, type "name", Enter: step 2 "Move focus to Name". Alt+Up on step 2: it is step 1, and only those two `<connection>` elements swapped. Space on step 1: " (off)", the XML has no clearButton connection and has `cbcsOnClicked` with two steps, the root has `cbcsLogic`. Space again: back to two native connections in that order, no `cbcsOnClicked`, no `cbcsLogic`. Ctrl+D on step 2, Delete on the copy. Select the form (Esc until the form), Alt+B: All events on this form lists five rows (Cancel's one, Clear's two, the button box's two); type "clear" in its filter: Clear's two rows. Ctrl+R, "nameEdit", Enter, Alt+B: From other widgets shows "When Clear is clicked: Clear Name". Assert after each step: one undo step with its 13.3.8 name, the new row visible and focused (P-16). Undo all: the original bytes.
+- **K25 Connections overlay** (`M6.1c`). F4: the banner shows; select phoneEdit by Tab; Enter; Tab to nameEdit… (Shift+Tab to nameEdit), Enter: the event picker for phoneEdit opens at nameEdit; type "enter", Enter; the step picker is on "Everything Name can do" with setFocus() among the first rows; type "focus", Enter: the step exists and an arrow phoneEdit → nameEdit is in the layer's items. Esc: the overlay closes; Alt+B on phoneEdit lists "When Enter is pressed: Move focus to Name". Ctrl+Shift+L: the status says "Showing all 3 connections. Ctrl+Shift+L hides them." (the button box's two and the new one); Ctrl+Shift+L again. F4, Home with saveButton selected after Enter: the link targets the form; Esc twice: nothing written. Open `designer_made.ui`, Ctrl+S without an edit: identical bytes (hints and the layout connection kept). Undo all on `sale.ui`: original bytes.
+- **K26 Call your code** (`M6.2b`). In `sale.ui`, Ctrl+R, "printButton", Enter; Shift+F10, "Write code for “clicked”", Enter: the method page has `print_receipt` selected; Enter: `sale_window.py` is the current tab, the caret is on `pass` with it selected, the file is the original text plus exactly the UX-CODE-004 lines (CRLF kept) after the class's trailing comment, the tab is saved; the form has the `<connection>` printButton `clicked()` → Sale `print_receipt()` and `<slot>print_receipt()</slot>`. A file too short to scroll leaves the def wherever it falls (D28); Code Studio does not add lines to place it. Ctrl+P, "sale.ui", Enter (back to the form tab); Ctrl+Z: the connection, the declaration and the method are gone and the window file has its original bytes; Ctrl+Shift+Z: all three are back. In the code tab type `self.close()` over `pass`, Ctrl+S; Ctrl+P, "sale.ui", Enter; Ctrl+Z: the step goes, the method stays, the toast says it stays. Ctrl+Shift+Z. F12 with printButton selected: the code tab shows the method with the caret on its first body line. In the code tab rename the method to `print_reciept`, Ctrl+S: Problems has FB201 for printButton with "Use print_reciept"; Ctrl+P, "sale.ui", Enter, Alt+B, Down to the call step, Ctrl+. runs it: the step calls `print_reciept` and FB201 is gone. Add `def on_saveButton_clickd(self): pass` with `@Slot()`, Ctrl+S: FB208 suggests clicked. Add a correctly spelled `@Slot() def on_saveButton_clicked(self): pass`, Ctrl+S. Ctrl+P, "sale.ui", Enter; Form > Form settings…, Tab to Connect methods by name, Space: `connectslotsbyname="false"` and FB211 for `on_saveButton_clicked` (D29). Ctrl+Shift+R: Preview opens; Space on printButton in Preview: the editor status says "Preview: Print receipt clicked would call print_reciept() in sale_window.py." Undo all on the form: original bytes; the window file holds only the person's own edits.
+
+### 12.4 Interaction traces
+
+A trace is a JSON-lines file with one object per step: `{"t": ms, "event": "press|move|release|key|wheel", "pos": [x, y] or null, "key": "Ctrl+Shift+G" or null, "selection": [object names], "focus": "<objectName of focus widget>", "commands": ["Wrap in group box"], "status": "<status sentence>"}`, followed by the final XML diff and an undo-all check that compares bytes with the original. Traces are produced by the interaction-test harness, not by hand.
+
+### 12.5 Automated checks the gate expects
+
+A continuous edit (typing a property, dragging, changing a layout gap) stays within 16 ms. Paste is one discrete action, so its budget is 100 ms. On the 1000-widget reference form, Qt lays out the ~200 shifted rows and that alone is about 45 ms.
+
+| Check | Clauses |
+| --- | --- |
+| Chip and badge rectangles never intersect content, in every tour state | CHIP-001, CHIP-002, OVL-004, OVL-007, A11Y-007 |
+| Every handle, gap bar and list insertion target meets the minimum hit area at 50%, 100% and 200% zoom | GRID-004, GAP-005, ZOOM-002 |
+| Canvas pixel isolation under all five shell themes | ISO-001, ISO-002 |
+| Token contrast pairs | TOK-003, A11Y-006 |
+| Every focusable builder widget has an accessible name | A11Y-004 |
+| Shortcut table has no collisions with the shell or window-manager keys | KEY-001, KEY-002 |
+| "Why is it this size?" numbers equal the live widget's geometry and hints | SIZE-007 |
+| The focus widget does not change during save, generation, toasts, Problems updates and renames | PRIN-006, OUT-008, FEED-002 |
+| Edit-path speed within PLAN budgets, recorded with machine load | PRIN-007 |
+| No hex colour literals outside `qtside/theme/` | TOK-001 |
+| No user-visible string contains a milestone name, "phase", or an internal id (string table scan, development stubs excepted) | COPY-002, EMPTY-006 |
+| Every catalog entry inserts a fragment that `QUiLoader` loads, that our generator and `uic` build into the same tree, and that saves twice to the same bytes | CAT-001, CAT-002 |
+| Insert search returns the expected first result for every pair in the UX-CAT-007 table | CAT-007 |
+| Every catalog glyph is non-blank and differs from every other entry's glyph | ICON-005 |
+| No inspector row clips or scrolls sideways at 236, 264 and 420 px content width, for every editor of the reference form | PED-002 |
+| Every ui4 value class has a registered editor other than the raw one, except the two deferred or kept rows of UX-PED-001 | PED-001 |
+| A popover session is one undo step; Esc leaves the document bytes and the undo stack exactly as before it opened; focus returns to the row | PED-003, PED-004, ITEM-007 |
+| The wheel over an unfocused field changes nothing | PED-005 |
+| Rich text and gradients written on macOS and on Linux, under `C` and `de_DE`, are the same bytes | PED-042, PED-084 |
+| Echo mode set, saved, reopened: still Password; an uneditable property is byte-identical after save (P-18) | PED-009 |
+| After realizing a form with an OpenGL widget and a Qt Quick view, no GL context or QML engine exists | CONT-017 |
+| Each page container writes its title where its loader reads it; a toolbox insert never writes `title` | CONT-001 |
+| Menus, toolbars, status bar, actions and groups build the same tree in our `ui_*.py`, `uic` and `QUiLoader`, in canvas order | MAIN-018 |
+| Removing the last reference removes the action; removing one of two keeps it | MAIN-008 |
+| A widget dropped, pasted or keyboard-inserted on a toolbar, menu or status bar never lands there | MAIN-016 |
+| "Type here" and "Add separator" placeholders never appear in a saved file, a Preview grab or Save image | MAIN-003, PREV-002 |
+| Making and breaking a button group leaves the child order in the file unchanged | MAIN-019 |
+| The written `.qrc` is the same bytes on macOS and Linux and after a second save; our `*_rc.py` and `rcc` register the same map | RES-004, RES-007 |
+| Add picture copies only files outside the `.qrc`'s folder and never overwrites a different file | RES-002 |
+| A raw path never blocks Save, and blocks packaging | RES-005 |
+| For a corpus of sheets, the style check says "Looks right" exactly when Qt's parser accepts the sheet | STYLE-004 |
+| Selector matches equal the widgets Qt styles, for a table of selectors over the reference form (rendered pixels in a clean `QApplication`) | STYLE-005 |
+| Every curated colour row changes the rendered pixels of its class under the runtime look | STYLE-010 |
+| No module of the user's project is imported in the editor process, through promotion, the check line, Insert or the registry | CUST-003, CUST-007, CUST-011 |
+| A class that raises in `__init__` or hangs leaves the editor responsive and the preview open with a stand-in | CUST-008 |
+| The header written for a module path is read back by `header_module` and by uic as the same import | CUST-004 |
+| View code text equals the `ui_*.py` that Save then writes | PREV-004 |
+| Form-setting rows round-trip byte-identically; `stdsetdef` is never written on a new form | FSET-004, FSET-005 |
+| A template made from a form and used again gives the same widget tree under the new name, with every picture resolving | TMPL-002, TMPL-003 |
+| The keys page lists every registered form command and nothing that isn't bound | MODE-005 |
+| Every M5 key added to UX-KEY-004 passes UX-KEY-001 | KEY-001, MODE-006 |
+| After any random sequence of Events-list commands, every event whose steps are all plain is native connections only, every other event is one step list only, and undo-all gives the original bytes | LST-004, M6-002 |
+| A Designer-made file with hints, a layout connection and a two-places event saves unchanged; after an edit to one event only that event's elements change | LST-004, LST-008, D7 |
+| Step-list and marker text is canonical (CONTRACTS §15.4): write(parse(text)) == text for canonical input, and parse(write(x)) == x for random step lists with unknown keys | LST-009 |
+| A form with logic version 2, or an unreadable marker, opens with every logic property and connection written back byte-identical after layout edits | LST-001 |
+| Rename and paste rewrite step targets and formula tokens and nothing else (strings, attribute names after `.`, other forms) | LST-006, LST-007 |
+| Every intent and every picker slot the engine marks compatible connects in PySide6 6.8 without error and the slot runs when the signal is emitted; every incompatible one is refused by Qt's rule | PICK-004, PICK-006 |
+| The pickers and the code checks never import a project module (import hook) | PICK-011, CODE-010 |
+| Method insertion over the fixture set changes exactly the method's lines at one line boundary; undo restores the bytes; a file that fails D11's limits is never written | CODE-005, CODE-006, CODE-008 |
+| The pre-scan refuses a file with a 100,000-term expression line, and the editor process survives reading it (Python 3.9 AppRun lane) | D11 |
+| Suggested names are valid, unique, never start with `on_` and never shadow a base-class method, for every widget of the corpus | CODE-001 |
+| Each FB2xx row appears for its fixture and disappears when the cause is fixed; no FB201–FB213 row is shown while FB209 is | CODE-011 |
+| A form whose events call your methods previews without an exception | CODE-016 |
+| Generated code for step lists is 3.9-parseable, and running it under PySide6 calls the steps in list order, skips turned-off steps and passes the declared number of values | LST-004, CODE-004 |
+| Every M6 key added to UX-KEY-004 passes UX-KEY-001 | M6-004 |
+
+### 12.6 Persona walkthroughs
+
+M3.7 runs two walkthroughs on a launched build and records step counts and every hesitation:
+
+- **Shop owner, never used a form builder.** Make a "Customer" form with name, phone, email and notes, and Save and Cancel buttons; make Notes grow with the window; put phone and email side by side; preview with larger text; save and run. Pass: finished without the manual, no dialog dismissed by guessing, no step that needed Undo to escape.
+- **Qt Designer veteran.** Open a FreeCAD corpus form, select a nested layout, morph it to a grid with Ctrl+5, fix a buddy, reorder tab order, set a splitter's sizes, check XML. Pass: no Designer habit is blocked without an on-screen alternative named at that moment.
+
+M4.5 runs one walkthrough on a launched build, after every M4 lane has merged, and records step counts and every hesitation:
+
+- **Shop owner, M4 tasks.** Starting from a blank dialog, build a "Shop settings" form: a tab widget with the tabs "General" and "Printing" (rename the two default tabs; add a third "Extras" and then delete it); on General, a shop name field, a currency drop-down with USD, CAD and EUR, an opening date, an "Open on Sundays" tick box and a number of tills (1 to 9); on Printing, a receipt note with several lines, a bigger bold font for the receipt header label, a dark green header colour, a logo picture from the project's resources, and copies (1 to 5); make the currency drop-down start on CAD; set Echo mode of a PIN field to Password; save, reopen and preview. The owner searches with their own words ("dropdown", "tick box", "number", "date", "picture", "tabs"). **Pass:** every widget found by the first or second word tried; no "Kept as is" row met on any property touched; no popover closed by guessing; no step that needed Undo to escape; reopen shows every value set. **Record:** steps per task, every search word tried and its first result, every time Esc or Undo was used, and every sentence that confused.
+
+The veteran's M4 checks are K9–K15 plus three spot checks the reviewer does by hand on a FreeCAD corpus form: add a dynamic property and see `setProperty` in `ui_*.py`; edit a palette role and compare with Designer's resave; reorder tree widget columns.
+
+M5.R runs one walkthrough on a launched build, after every M5 lane has merged, and records step counts and every hesitation:
+
+- **Shop owner, M5 tasks.** The owner's nephew has put `widgets/till_display.py` (a `TillDisplay` label that shows a running total) in the shop project and a `logo.png` on the desktop. Starting from File > New Form…, build a "Shop window": a main window with a **File** menu (New sale, Print receipt, a separator, Quit) and a **Help** menu (About); a toolbar with New sale and Print receipt, reusing the menu's actions, each with a picture; a keyboard shortcut for New sale; the status bar kept; in the central area a header label showing the shop logo (from `logo.png`, so the project gets its first pictures file), a heading in the shop's dark green, either through the label's Text colour row or a style sheet rule; the till total label changed to "TillDisplay from widgets.till_display"; preview, and see the real total widget. Then save the window as a template "Shop window" and start a new form "Back office" from that template; preview it and check the logo and the till total came along. The owner names things in their own words ("menu", "logo", "green", "my nephew's widget", "template"). **Pass:** the logo is in place without the owner ever opening a `.qrc` or seeing the word "resource"; the green is set from the Appearance group or the style sheet drawer, without All properties; the toolbar buttons are made by reusing the menu's actions (drag or the reuse list), not by typing them again; the till widget is found through "Use my own class" or Insert's Your widgets; the template appears first on New form; no step needed Undo to escape and no dialog was dismissed by guessing. **Record:** steps per task, every search word and its first result, every Esc and Undo, every sentence that confused, and whether the owner noticed the security info bar and understood it.
+
+The veteran's M5 checks are K16–K23 plus three spot checks by hand: open a Designer-made main window from the corpus and move a menu, add a toolbar, resave and diff with Designer's resave; promote a widget with a C++ header and see FB504; open View code and compare it with `uic -g python` output.
+
+M6.R runs two walkthroughs on a launched build, after every M6 lane has merged, and records step counts and every hesitation:
+
+- **Shop owner, M6 tasks.** The owner opens the "Sale" dialog of the shop project (the K24 fixture, without its events). Tasks: (1) make **Cancel** close the window; (2) make **Enter** in Name jump to Phone; (3) make **Clear** empty both fields; (4) wire **Print receipt** to code so the nephew can fill it in later: the owner should end with an empty `print_receipt` method in `sale_window.py` and say who will write it; (5) undo task 4 and do it again; (6) make **Save** usable only after Name is filled. The owner names things in their own words ("when I press", "close", "jump to", "empty", "print"). **Pass:** tasks 1–3 done from the Behavior tab or the canvas without All slots; task 4 by double-click or "Write code for…" without typing a method name; task 5 leaves the window file exactly as before task 4; no step needed Undo to escape and no dialog was dismissed by guessing. **Task 6 is the M7.2 hook, not a pass condition:** M6 has no rule for it (D4). Record where the owner looked first (Behavior tab, Properties' Enabled row, the step picker's filter), every word typed into a filter, whether they tried a connection that would not do what they meant, and whether anything on screen suggested it worked when it didn't. M7.0 uses this record to place the State section and the rule intents.
+- **Qt developer, M6 tasks.** Open `designer_made.ui`: confirm in the Events lists and in All events on this form that every Designer connection is there, then F4 and connect `applyButton` to the form's new method `apply_changes` by dragging; write `@Slot() def on_okButton_clicked(self)` by hand and see it listed as running by its name; misspell one `on_` method and see FB208; connect `toggled` to a method with two required parameters and see FB202; F12 between form and code; turn off Connect methods by name and see FB211; turn one step off and read the `cbcsOnClicked` text in View XML; save and open the file in Qt Designer 6.8 (FreeCAD's bundle): the plain events are drawn in its signals and slots mode and the turned-off one is a dynamic property. **Pass:** no Designer habit is blocked without an on-screen alternative named at that moment (UX §12.6 M3 rule), the Designer resave of an untouched file diffs to nothing CBCS cares about, and the generated `ui_*.py` reads as the developer predicted when asked before opening View code.
+
+---
+
+## 13. Later milestones: structure and key decisions
+
+Section 13.1 is the full M4 specification (version 2). Section 13.2 is the full M5 specification (version 3).
+
+### 13.1 M4: widgets, containers and properties
+
+Version 2 (work package M4.0, 2026-10-28). Binding for M4. It replaces the four short decisions that stood here in version 1:
+
+- **UX-M4-001** Withdrawn in v2. Replaced by the CAT clauses (13.1.2) and UX-ICON-005.
+- **UX-M4-002** Withdrawn in v2. Replaced by the CONT clauses (13.1.3). One change: a scroll area is drawn at its real size and scrolls on the canvas; its content is not expanded (UX-CONT-010, UX-PRIN-001).
+- **UX-M4-003** Withdrawn in v2. Replaced by the PED clauses (13.1.4).
+- **UX-M4-004** Withdrawn in v2. Replaced by the ITEM clauses (13.1.5).
+
+The lane split, owned files and parity rows are in `PLAN.md` (M4 table and "M4 lanes"). Every clause names the lane that builds it. Copy in quotes is the exact on-screen text; `{name}` marks a value filled in at run time.
+
+#### 13.1.1 Rules every M4 clause shares
+
+**UX-TOK-005** `M4.0s, M4.2` `[S A]` New builder tokens for M4. They live in `qtside/theme/` like every builder colour (UX-TOK-001). M4.0s adds the `fb.*` chrome tokens; M4.2 adds the `ov.*` form-surface tokens it draws. Form-surface tokens (drawn on the canvas) are the same in light and dark chrome, like UX-TOK-003.
+
+| Token | Source or light | Dark | HC light | HC dark | Use |
+| --- | --- | --- | --- | --- | --- |
+| `fb.tile_hover` | alias `fb.row_hover` | alias | alias | alias | Insert tile and list-row hover |
+| `fb.tile_current` | alias `fb.row_selected` | alias | alias | alias | Current Insert tile, current list-editor row |
+| `fb.glyph` | shell `icon_primary` | shell | shell | shell | Catalog glyphs (UX-ICON-005) |
+| `fb.match` | shell `search_match_bg` | shell | shell | shell | Matched letters in Insert search, property search, item filter |
+| `fb.swatch_border` | alias `fb.border` | alias `fb.border` | `#000000` | `#FFFFFF` | 1 px border of every colour swatch and thumbnail |
+| `fb.checker_a` / `fb.checker_b` | `#FFFFFF` / `#D3D8DF` | `#3C434A` / `#262C33` | `#FFFFFF` / `#000000` | `#000000` / `#FFFFFF` | 4 px checkerboard under transparent colours and images |
+| `fb.handle` | `fb.panel` fill, 1.5 px `fb.text` border | same | `#FFFFFF`, 2 px `#000000` | `#000000`, 2 px `#FFFFFF` | Gradient stops, colour-square cursor |
+| `fb.handle_current` | 2 px `fb.accent` border | same | 2 px `#0000C0` | 2 px `#7CB7FF` | Selected gradient stop |
+| `ov.stand_in_fill` / `ov.stand_in_line` / `ov.stand_in_text` | `#F4F4F4` / `#8A8A8A` dashed 1 px / `#3C3C3C` | same | same as light | same as light | Canvas stand-ins (UX-CONT-017). Form surface, so not chrome-dependent |
+| `ov.dock_band` | `ov.drop_fill` with a 1 px dashed `ov.select` edge | same | `#0000C0` at 15% with a 2 px edge | same | Dock-side drop bands (UX-CONT-012) |
+
+**UX-M4-005** `all M4` `[C]` Copy for M4 follows section 9.5. In addition: on-screen text never contains a lane or milestone id, an engine command name, `stdset`, `notr`, `iconset`, `cstring` or any other ui4 element name. Those words may appear only in the Qt-name line (UX-INSP-005), in All properties with "Qt names" on, and in the XML view.
+
+**UX-M4-006** `all M4` `[T]` Undo names. Every M4 command and session has a plain name, used by Edit > Undo ("Undo Insert combo box") and by the toast's Undo. The table in 13.1.6 lists them. A popover session or an item-editor session is one undo step (UX-PED-004, UX-ITEM-007).
+
+**UX-M4-007** `all M4` `[A]` Speed. Every M4 edit path stays inside the PLAN budgets: one keystroke in Insert search ≤ 16 ms with the whole catalog; opening any popover ≤ 50 ms; each live change from a popover (drag in a colour square, a gradient stop, a font size step) ≤ 16 ms on the 300-widget reference form; opening the item editor on a 500-item list ≤ 50 ms and each keystroke in it ≤ 16 ms. The speed rows are added to the harness by M4.5; each lane measures its own path with a local script and reports CPU p50 and p95.
+
+#### 13.1.2 The Insert catalog (CAT)
+
+**UX-CAT-001** `M4.1` `[A]` One catalog. Every insertable class has exactly one catalog entry with: friendly name, Qt class, category, default object name, default content, one-sentence description, synonyms and glyph. The Insert pane, quick insert (`/`), the outline's friendly-class column, canvas chips and status sentences, the inspector header and the "Change to" menu read friendly names from the catalog. No other table of friendly class names remains (today there are three: `qtside/inspector/words.py`, `qtside/canvas/core/words.py`, `qtside/canvas/core/palette.py`, and they disagree: "List" against "List widget"). A class that is not in the catalog (a custom or unknown class) gets a friendly name derived from its class name, as `class_words` does today. Catalog modules import no Qt, so the canvas core can build a fragment without Qt (dune file role, not a test).
+
+**UX-CAT-002** `M4.1` `[S A]` Categories, in this order, and their entries in this order. "Content" is what one insert writes beyond the class and the object name. Every container gets a vertical layout (UX-AUTO-001). Default object names follow Designer (`lineEdit`, `pushButton`, `tabWidget`), with the suffix rule for repeats (`lineEdit_2`). Default texts are plain words, not Designer's (`Button`, not `PushButton`).
+
+| Category | Friendly name | Qt class | Content | Description (tooltip sentence) |
+| --- | --- | --- | --- | --- |
+| Layouts and spacers | Vertical layout | `QWidget` + `QVBoxLayout` | name `verticalLayoutWidget` | Stacks widgets from top to bottom. |
+| | Horizontal layout | `QWidget` + `QHBoxLayout` | `horizontalLayoutWidget` | Puts widgets side by side. |
+| | Grid layout | `QWidget` + `QGridLayout` | `gridLayoutWidget` | Rows and columns, like a table. |
+| | Form layout | `QWidget` + `QFormLayout` | `formLayoutWidget` | Labels on the left, fields on the right. |
+| | Horizontal splitter | `QSplitter` | orientation Horizontal, no panes | Side-by-side panes the user can resize. |
+| | Vertical splitter | `QSplitter` | orientation Vertical, no panes | Stacked panes the user can resize. |
+| | Horizontal spacer | spacer | Horizontal, Expanding, 40 × 20 | Empty space that pushes its neighbours apart. |
+| | Vertical spacer | spacer | Vertical, Expanding, 20 × 40 | Empty space that pushes its neighbours up or down. |
+| Text and numbers | Line edit | `QLineEdit` | — | One line of text the user can type. |
+| | Text edit | `QTextEdit` | — | Several lines of text, with formatting. |
+| | Plain text edit | `QPlainTextEdit` | — | Several lines of plain text, such as notes. |
+| | Spin box | `QSpinBox` | — | A whole number with up and down arrows. |
+| | Double spin box | `QDoubleSpinBox` | — | A number with decimals, such as a price. |
+| | Horizontal slider | `QSlider` | orientation Horizontal | Pick a number by dragging a handle. |
+| | Vertical slider | `QSlider` | orientation Vertical | Pick a number by dragging a handle up or down. |
+| | Dial | `QDial` | — | Pick a number by turning a knob. |
+| | Horizontal scroll bar | `QScrollBar` | orientation Horizontal | Scrolls something your code draws. |
+| | Vertical scroll bar | `QScrollBar` | orientation Vertical | Scrolls something your code draws. |
+| | Key sequence edit | `QKeySequenceEdit` | — | Records a keyboard shortcut the user presses. |
+| Choices | Combo box | `QComboBox` | — | Pick one item from a drop-down list. |
+| | Font combo box | `QFontComboBox` | — | Pick one of the fonts on the computer. |
+| | Check box | `QCheckBox` | text "Check box" | On or off, with a label. |
+| | Radio button | `QRadioButton` | text "Radio button" | Pick one of several options. |
+| Buttons | Push button | `QPushButton` | text "Button" | Runs an action when clicked. |
+| | Tool button | `QToolButton` | text "…" | A small button, often with only an icon. |
+| | Command link | `QCommandLinkButton` | text "Command link" | A large button with a title and a description. |
+| | Button box | `QDialogButtonBox` | standard buttons OK and Cancel | OK, Cancel and other standard buttons, in the order the desktop expects. |
+| Dates and times | Date edit | `QDateEdit` | — | A date the user types or picks. |
+| | Time edit | `QTimeEdit` | — | A time of day. |
+| | Date and time edit | `QDateTimeEdit` | — | A date with a time. |
+| | Calendar | `QCalendarWidget` | — | A month grid to pick a day. |
+| Lists and tables | List widget | `QListWidget` | — | A list of rows you type here. |
+| | Tree widget | `QTreeWidget` | one column, header "Name" | Rows that fold open, typed here. |
+| | Table widget | `QTableWidget` | — | A grid of cells you type here. |
+| | List view | `QListView` | — | A list your code fills from a model. |
+| | Tree view | `QTreeView` | — | A tree your code fills from a model. |
+| | Table view | `QTableView` | — | A table your code fills from a model. |
+| | Column view | `QColumnView` | — | Columns that drill down, filled by your code. |
+| | Undo view | `QUndoView` | — | Shows the steps of an undo stack from your code. |
+| Containers | Group box | `QGroupBox` | title "Group box", vertical layout | A titled frame around related widgets. |
+| | Frame | `QFrame` | Styled panel, Raised, vertical layout | A plain border around a group of widgets. |
+| | Widget | `QWidget` | vertical layout | An empty area that holds a layout. |
+| | Tab widget | `QTabWidget` | pages `tab`, `tab_2`, titles "Tab 1", "Tab 2", each with a vertical layout | Pages the user switches with tabs. |
+| | Toolbox | `QToolBox` | pages `page`, `page_2`, labels "Page 1", "Page 2", vertical layouts | Pages stacked like drawers; one is open at a time. |
+| | Stacked widget | `QStackedWidget` | pages `page`, `page_2`, vertical layouts | Pages your code switches; one shows at a time. |
+| | Scroll area | `QScrollArea` | content follows the area's size; contents `scrollAreaWidgetContents` with a vertical layout | Scrolls content that is bigger than the space. |
+| | Wizard | `QWizard` | pages `wizardPage`, `wizardPage_2`, titles "Step 1", "Step 2", vertical layouts | Steps with Back and Next buttons. |
+| | Wizard page | `QWizardPage` | title "Step {n}", vertical layout | One step of a wizard. Goes only into a wizard. |
+| | MDI area | `QMdiArea` | no windows | Several small windows inside one area. |
+| | Dock widget | `QDockWidget` | contents `dockWidgetContents` with a vertical layout | A panel that docks to a side of a main window. |
+| Display | Label | `QLabel` | text "Label" | Text or a picture. |
+| | Text browser | `QTextBrowser` | — | Formatted text with links, read only. |
+| | Horizontal line | `Line` | orientation Horizontal | A thin line that separates groups. |
+| | Vertical line | `Line` | orientation Vertical | A thin upright line that separates groups. |
+| | Progress bar | `QProgressBar` | value 24 | Shows how far a task has got. |
+| | LCD number | `QLCDNumber` | — | Digits in a calculator-style display. |
+| | Graphics view | `QGraphicsView` | — | A drawing surface your code fills. |
+| | OpenGL widget | `QOpenGLWidget` | — | 3D drawing from your code. The canvas shows a placeholder. |
+| | Qt Quick view | `QQuickWidget` | — | A Qt Quick scene from your code. The canvas shows a placeholder. |
+| FreeCAD | Quantity spin box, Input field, File chooser, Color button, URL label, Integer spin box, Double spin box (FreeCAD) | `Gui::QuantitySpinBox`, `Gui::InputField`, `Gui::FileChooser`, `Gui::ColorButton`, `Gui::UrlLabel`, `Gui::IntSpinBox`, `Gui::DoubleSpinBox` | a `customwidget` declaration with the base class and header FreeCAD's own forms use | One sentence each, ending "Needs FreeCAD's window at run time." |
+| Your widgets | one tile per class in this form's custom widget declarations | the declared class | the declaration | "Your class {class}, based on {base}." |
+
+The FreeCAD entries' base classes and headers are taken from FreeCAD's own `.ui` files on the development machine (the classes FreeCAD forms use most: Quantity spin box 75 uses, Input field 27). Preference variants (`Gui::Pref*`) are not listed; they still open, round-trip and draw as their base class.
+
+**UX-CAT-003** `M4.1` `[S]` The Insert pane, top to bottom: the header ("INSERT", ⌕ search, ⋯ menu), the filter field (placeholder "Search widgets"), "RECENTLY USED" (UX-CAT-006), then the categories, then "Saved pieces" (UX-CLIP-006). The ⋯ menu holds "Show as icons", "Show as list" (a radio pair), "Expand all", "Collapse all" and "Clear recently used". Nothing else is in the header.
+
+**UX-CAT-004** `M4.1` `[S]` Two views (R3 133). **Icons**: a grid of 64 × 60 px tiles, the 20 px glyph centred 8 px from the top, the friendly name under it in Caption, centred, at most two lines, elided at the end, with the full name in the tooltip. **List**: 24 px rows, a 16 px glyph, the friendly name in Body, the description in Caption `fb.faint` after it when the row has room for at least 12 more characters. The default is Icons when the left pane is at least 216 px wide and List below that (UX-RESP-002), as many columns as fit. "Show as icons" or "Show as list" overrides the default, per user. Search results always use List (UX-CAT-008). Tiles and rows: hover `fb.tile_hover`, current `fb.tile_current`, keyboard focus a 2 px `fb.accent` ring (UX-A11Y-002). A tile never shows a scroll bar inside itself; the pane scrolls.
+
+**UX-CAT-005** `M4.1` `[S]` Each category has a 24 px header: chevron, the category name in Overline (`fb.muted`), and the entry count in `fb.faint` ("CONTAINERS 11"). Click or Enter toggles it; Left collapses and Right expands when the header has focus. Collapsed state is kept per user. FreeCAD starts collapsed. While the filter has text, every category is shown expanded and the remembered state is untouched. "Your widgets" is absent when the form declares no custom widget.
+
+**UX-CAT-006** `M4.1` `[S T]` "RECENTLY USED" shows up to 6 entries, most recent first, as tiles or rows in the current view. An entry joins when it is inserted from Insert (click, Enter, drag) or from quick insert, and moves to the front when used again. The list is per user, across forms and projects, stored in the settings under `form_builder.insert.recent` (catalog keys, never object names). It is hidden while it is empty and while the filter has text. "Clear recently used" empties it at once with no confirm (it is a convenience, not work).
+
+**UX-CAT-007** `M4.1` `[A]` Matching ignores case, spaces, hyphens and a leading Q. Each entry gets its best rank: (1) the friendly name equals the query; (2) a synonym equals the query; (3) a whole word of the friendly name equals the query ("tab" finds Tab widget); (4) the friendly name starts with the query; (5) a word of the friendly name starts with the query; (6) a synonym starts with the query; (7) the Qt class starts with the query; (8) the friendly name or Qt class contains the query; (9) a word of the description starts with the query. Ties go to category order, then catalog order, so a Qt widget always beats a FreeCAD widget at the same rank ("integer" finds Spin box). A word gets a synonym only on its lead entry and on siblings listed after it in the same category. Synonyms (catalog data; the lane may add):
+
+| Query words | Lead result (and others it also finds) |
+| --- | --- |
+| textbox, text box, textfield, input, entry, field | Line edit |
+| textarea, memo, multiline, notes, paragraph | Plain text edit (Text edit) |
+| dropdown, drop down, select, picklist, choice, combo | Combo box |
+| checkbox, tick, tickbox, toggle, yes no | Check box |
+| radio, option | Radio button |
+| button, btn, command | Push button (Tool button, Command link, Button box) |
+| ok cancel, dialog buttons, buttons | Button box |
+| number, integer, whole number, counter, numeric | Spin box |
+| decimal, float, money, currency, price, amount | Double spin box |
+| date, datepicker, day | Date edit (Calendar, Date and time edit) |
+| time, clock | Time edit |
+| datetime, timestamp | Date and time edit |
+| calendar, month | Calendar |
+| slider, range, track bar | Horizontal slider (Vertical slider) |
+| knob | Dial |
+| progress, loading, percent | Progress bar |
+| table, spreadsheet, cells | Table widget (Table view) |
+| grid | Grid layout (Table widget) |
+| list, listbox | List widget (List view) |
+| tree, hierarchy, folders | Tree widget (Tree view) |
+| tabs, tab, notebook, pages | Tab widget (Toolbox, Stacked widget) |
+| wizard, steps, assistant | Wizard (Wizard page) |
+| panel, box, group, fieldset, container | Group box (Frame, Widget) |
+| scroll | Scroll area (scroll bars) |
+| label, caption, static text, title | Label |
+| image, picture, photo, logo, icon | Label (a picture is a label's Picture property) |
+| line, separator, divider, rule | Horizontal line (Vertical line) |
+| space, gap, stretch, spring, spacer | Horizontal spacer (Vertical spacer) |
+| shortcut, hotkey | Key sequence edit |
+| html, browser, link, help text | Text browser |
+| lcd, digits, display | LCD number |
+| font | Font combo box |
+| split, splitter, resizable panes | Horizontal splitter (Vertical splitter) |
+| dock, side panel | Dock widget |
+| mdi, windows | MDI area |
+| quantity, unit, length | Quantity spin box |
+
+The test is a table of (query, expected first result) pairs taken from this table plus "lin" → Line edit, "QComboBox" → Combo box, "push" → Push button, "tab" → Tab widget, "date" → Date edit.
+
+**UX-CAT-008** `M4.1` `[S]` While the filter has text, the pane shows one flat result list in List view: glyph, friendly name with the matched letters on `fb.match`, and on the right in `fb.faint` Caption the category, or the synonym that matched in quotes ("“dropdown”") when the match came from a synonym. The first result is current, so Enter inserts it at once. The caption above the list (UX-AUTO-004) says where it will go: "Goes right after shopName."
+
+**UX-CAT-009** `M4.1` `[S]` No match: the list area shows "Nothing called “{query}”. Try text, list or date." (UX-EMPTY-004) and a [Clear] link. Enter does nothing; the status bar says "Nothing to insert. Change the search or press Esc."
+
+**UX-CAT-010** `M4.1` `[K]` Keyboard in the Insert pane (focus on a tile or row):
+
+| Key | Action |
+| --- | --- |
+| Arrow keys | Move between tiles (Icons: in two dimensions; List: Up and Down). Left and Right on a category header collapse and expand it |
+| Ctrl+Down / Ctrl+Up | First tile of the next / previous category |
+| Home / End | First / last tile |
+| Enter | Insert the current entry where the preview shows (UX-AUTO-003, UX-AUTO-004) |
+| A printable character | Moves focus to the filter and types the character there |
+| Esc | In the filter: clear it (focus stays). In the list with an empty filter: focus returns to the canvas |
+| Down in the filter | Focus moves to the first result or tile |
+| Alt+2 | Focus Insert (already in UX-KEY-004) |
+
+To insert somewhere else, select the target first (Alt+1 and the outline, or the canvas), then Alt+2: the preview line shows the new place (UX-AUTO-004).
+
+**UX-CAT-011** `M4.1` `[T K]` Inserting: click-and-drag places by pointer (UX-DND); double-click or Enter inserts without a pointer (UX-AUTO-003). After a keyboard insert, focus stays in the Insert pane so several widgets can be inserted in a row, each after the one before it (the selection follows the new widget). When the insert opens the form-row label editor (UX-FORML-002), focus goes to that editor and comes back to the same Insert tile after Enter or Esc in it. After a drag, focus goes to the canvas (UX-DND-007). Each insert is one undo step named "Insert {friendly name in lower case}" ("Undo Insert combo box").
+
+**UX-CAT-012** `M4.1` `[S A]` A tile's tooltip has three lines: the friendly name (Strong), the Qt class in `fb.faint`, the description. Accessible names: tiles "Insert {friendly name in lower case}" ("Insert combo box"); category headers "{Category}, {n} widgets, collapsed" or "expanded"; the filter "Search widgets"; results "Insert combo box, Choices".
+
+**UX-CAT-013** `M4.1` `[S K]` Quick insert (`/`, the outline's +, and the canvas `/`) uses the same search, ranking and synonyms. With an empty query it lists Recently used first, under a faint "Recently used" caption, then every entry by category. It shows at most 8 rows before scrolling. Rows: glyph, friendly name, category on the right. Enter inserts and closes it, Esc closes it, and focus returns to where `/` was pressed (UX-OUT-013).
+
+**UX-CAT-014** `M4.1` `[T]` Context-limited entries are never hidden or greyed. They are refused at the target, with the indicator in `ov.problem` (UX-DND-005) and these sentences:
+
+| Entry | Refused where | Sentence |
+| --- | --- | --- |
+| Wizard page | anywhere but a wizard | "A wizard page can only go into a wizard." |
+| Dock widget | a main window's central area | "In a main window, a dock widget goes on one of its sides." |
+| Spacer | a form layout cell | "A spacer can't go in a form row. Use a gap instead." (existing UX-DND-005 case) |
+| Any container | inside itself | "A widget can't go inside itself." (existing) |
+
+A keyboard insert of a refused entry inserts nothing, and the status bar shows the sentence.
+
+**UX-CAT-015** `M4.1` `[S T]` Window kinds. Searching "main window", "dialog", "widget form" or "wizard" also lists, after the widget results, rows for the four window kinds: "Main window · new form", "Dialog · new form", "Widget · new form", "Wizard · new form", with the glyph of the kind. Enter opens the New form tab with that card focused and the name row filled with a free name. A window cannot go inside a form, so these rows never insert. The New form tab gains a fourth blank card, **Wizard**, which creates a `QWizard` root with two pages ("Step 1", "Step 2"), each with a vertical layout (R3 121).
+
+**UX-CAT-016** `M4.1` `[S]` FreeCAD widgets draw on the canvas as their Qt base class (the realizer already uses the declared base). The FreeCAD category header has the tooltip "These widgets come from FreeCAD. In an app that runs without FreeCAD's window, each one is the plain Qt widget it is based on." Inserting one adds its `customwidget` declaration once per form.
+
+**UX-ICON-005** `M4.1` `[S A]` Every catalog entry has its own glyph, painted on the 16 px grid at 16 and 20 px (UX-ICON-001, UX-ICON-002), in `fb.glyph`, with layouts in `ov.layout` and spacers in `ov.gap` (UX-ICON-003). In high-contrast dark the chrome glyphs use the standard (non-high-contrast) `ov.layout` and `ov.gap` inks, since the high-contrast inks are tuned for the light form surface and drop below 3:1 on dark chrome. Each glyph looks like a miniature of the widget: a button is a pill, a line edit a box with a caret, a combo a box with a chevron, a check box a ticked square, a radio a dotted circle, a slider a line with a knob, a dial a circle with a pointer, a spin box a box with up and down ticks, a date a calendar page, a time a clock, a list three lines with bullets, a tree indented lines, a table a 3 × 3 grid, a tab widget a folder tab, a toolbox stacked bars, a stacked widget two offset cards, a scroll area a box with a scroll thumb, a wizard a box with "<  >", an MDI area two overlapping windows, a dock a window with a side panel, a group box a box with a gap in its top edge for a title, a label "Aa", a line a single rule, a progress bar a half-filled bar, an LCD "88", OpenGL and Qt Quick a cube and a ring. Each window kind reuses the page-card glyph with a mark. Two entries share a glyph only when they differ only by orientation and the glyph is rotated. A test paints every glyph and fails when two different entries paint the same pixels, or a glyph is blank.
+
+#### 13.1.3 Containers and pages (CONT)
+
+**UX-CONT-001** `M4.2` `[A]` Page containers and where a page's title lives. The builder writes each page the way the container's loader reads it:
+
+| Container | A page is | Title stored as | Shown in the outline as |
+| --- | --- | --- | --- |
+| Tab widget | a child widget | attribute `title` (also `toolTip`, `whatsThis`, `icon`) | "Tab 2 · Settings" |
+| Toolbox | a child widget | attribute `label` (also `toolTip`, `icon`) | "Page 2 · Settings" |
+| Stacked widget | a child widget | no title | "Page 2 · {object name}" |
+| Wizard | a `QWizardPage` child | properties `title` and `subTitle` | "Step 2 · Payment" |
+| MDI area | a child widget, shown in a subwindow | property `windowTitle` | "Window 2 · Notes" |
+
+An insert never writes a tab title as a toolbox label, or the reverse (R3 128). Today's `InsertPage` writes `title` and "Tab {n}" for every container; M4.2 fixes it.
+
+**UX-CONT-002** `M4.2` `[S K]` Page commands. On the canvas and in the outline, the context menu of a page container, of one of its pages, or of any widget inside a page has a **Pages** submenu (contributed through the context-menu seam, UX-CONT-020). It acts on the innermost page container and its shown page:
+
+| Item | Shown for | Copy |
+| --- | --- | --- |
+| Insert page before | all but MDI | "Insert page before “{title}”" ("Insert tab before…", "Insert step before…" for tab widgets and wizards) |
+| Insert page after | all but MDI | "Insert page after “{title}”" |
+| Add window | MDI area | "Add window" |
+| Delete page | all | "Delete page “{title}”…" (with "…" only when it will ask, UX-CONT-004) |
+| Move left / Move right | tab widget | "Move tab left", "Move tab right" |
+| Move up / Move down | toolbox, stacked, wizard, MDI | "Move page up", "Move page down" |
+| Show previous / Show next | all | "Show previous page   Ctrl+PgUp", "Show next page   Ctrl+PgDown" |
+| Start on this page | tab widget, toolbox, stacked, wizard | "Start on this page" (checked when it is the start page) |
+| Tile windows / Cascade windows | MDI area | canvas only, not saved |
+
+For a stacked widget, `{title}` is the page's object name. Items that cannot act stay visible and disabled with the reason as tooltip ("This is already the first page."). Wizards always start on their first step; "Start on this page" is not offered for a wizard. Shift+F10 opens the same menu by keyboard. The Pages submenu is the first item group, above the clipboard rows, when the clicked widget is a page or a page container.
+
+**UX-CONT-003** `M4.2` `[T]` Insert page before or after the shown page: the new page gets the container's next free name (`tab_3`, `page_3`, `wizardPage_3`, `subwindow_2`), the title "Tab {n}", "Page {n}", "Step {n}" or "Window {n}" (n is its 1-based position), and a vertical layout. It becomes the shown page and the selection. For a tab widget, toolbox or wizard, the in-place title editor opens with the title selected (UX-TEXT-002); Enter keeps the typed title, Esc keeps the default. Insert and title are one undo step "Insert page". The canvas "+" pseudo-tab (UX-PAGES-002) is "Insert page after" the last page. Focus stays where it was (canvas or outline), except while the title editor is open.
+
+**UX-CONT-004** `M4.2` `[T]` Delete page. A page with no widgets is deleted at once; toast "Deleted page “Tab 3” · Undo". A page with widgets asks first, in a popover anchored to the page's tab (canvas) or row (outline): "Delete page “Settings” and the 4 widgets on it?" [Delete page] [Cancel], Enter on the focused button, Esc cancels. References to widgets on the page are listed as in UX-OUT-012. After delete, the next page (else the previous one) is shown and selected. One undo step "Delete page". Deleting the last page is allowed; the container then shows UX-CONT-009.
+
+**UX-CONT-005** `M4.2` `[T K]` Move page. Besides the existing drag and Alt+arrow gestures (UX-PAGES-004, UX-OUT-007), the Pages menu items move the shown page one place. Each move is one undo step "Move page"; presses within 1 s merge (UX-NUDGE-001). The start page stays the same page (CONTRACTS `MovePage`).
+
+**UX-CONT-006** `M4.2` `[S T]` Shown page and start page are different things. The **shown** page is the one the canvas displays; it is never saved. Clicking a tab title, a toolbox header, the stacked switcher arrows (UX-PAGES-003), a wizard or MDI switcher chip, selecting a widget on a hidden page, Ctrl+PgUp or Ctrl+PgDown all change the shown page only. The **start** page is `currentIndex`, saved in the file, changed only by "Start on this page" or the inspector row "Starts on" (a drop-down of page titles, Content group). The page chip of a container whose shown page is not its start page reads "Shows {title} · starts on {title}" in its tooltip. This differs from Designer, which saves whatever page was showing; it keeps an accidental click from changing the file.
+
+**UX-CONT-007** `M4.2` `[K]` Ctrl+PgDown and Ctrl+PgUp, with focus in the canvas or the outline and the selection inside or on a page container, show the next or previous page of the innermost one (they wrap). The status bar says "Showing page 2 of 3: Settings · the file still starts on page 1" when the shown page differs from the start page, else "Showing page 2 of 3: Settings". Add both keys to UX-KEY-004 (context canvas, outline; status new; checked against the shell table: free).
+
+**UX-CONT-008** `M4.2` `[T K]` Page titles. Enter on a selected page row in the outline, on a selected tab title or toolbox header on the canvas, or on a wizard page opens the title editor (UX-TEXT-001; a wizard page edits its `title`). F2 still renames the page's object name. A stacked page has no title: Enter on it selects its first child (UX-SEL-005).
+
+**UX-CONT-009** `M4.2` `[S]` A page container with no pages draws, inside its own rectangle, a dashed `ov.layout_faint` outline and the Caption "No pages. Use + or Pages > Insert page." (wizard: "No steps…"; MDI: "No windows. Use Pages > Add window."). A drop on it creates the first page with the widget inside (UX-PAGES-002 rule).
+
+**UX-CONT-010** `M4.2` `[S T]` Scroll area. The canvas draws it at its real size with its real scroll bars (truth first, UX-PRIN-001). The wheel over a scroll area on the canvas scrolls its content (Shift+wheel horizontally) without moving the canvas; Ctrl+wheel still zooms. Selecting a widget inside it, by any means, scrolls the area so the widget is visible (canvas only, never saved). A drag held over the area's top or bottom 16 px for 400 ms scrolls it by one step per 100 ms, so a drop can reach any place. Drops go into the content widget's layout. A scroll area without a content widget (older files) gets `scrollAreaWidgetContents` with a vertical layout on the first drop, one undo step. Curated rows: "Content follows the area's size" (`widgetResizable`, help: "On: the content stretches to fill the area and scrolls only when it can't shrink further. Off: the content keeps its own size."), "Scroll bars" with "Horizontal" and "Vertical" drop-downs (As needed, Always, Never).
+
+**UX-CONT-011** `M4.2` `[S T]` MDI area. Each child widget is a window and is drawn in a real subwindow on the canvas. "Add window" adds `subwindow` with the title "Window {n}" and a vertical layout, shown, selected, with the title editor open. Show previous and Show next bring a window to the front (canvas only); a switcher chip "◀ 2 / 3 ▶" sits by the area like the stacked one. Tile and Cascade arrange the windows on the canvas only and are not saved. The subwindow frames' buttons do nothing on the canvas. Delete removes the window and its content (UX-CONT-004 rules).
+
+**UX-CONT-012** `M4.2` `[S T K]` Dock widget. In a main window, a dock widget belongs on a side. While a dock widget is dragged over a main-window form (from Insert or a move), four 32 px `ov.dock_band` bands appear along the inside edges of the page: "Left side", "Right side", "Top", "Bottom" (chips placed by the solver). The pointer picks the nearest band; the drop writes the dock's side (attribute `dockWidgetArea`, the number Qt uses) and the canvas shows it docked. The central area is a refused target (UX-CAT-014). The inspector shows "Dock side" as a four-segment control (Left, Right, Top, Bottom) in Placement, and "Can close", "Can float", "Can move" check boxes (`features`) and "Allowed sides" (flags popover) in Content. Outside a main window, a dock widget sits in the layout like any container, and its inspector Placement caption says "Docks only in a main window. In this form it shows as a panel." Keyboard: Enter on the Dock widget entry in Insert (or quick insert) with a main-window form adds the dock on the left side and selects it; the Dock side control then moves it. Alt+arrows do not move docks between sides.
+
+**UX-CONT-013** `M4.2` `[S T]` Wizard. A wizard's pages are `QWizardPage` widgets. The canvas draws the real wizard with its Back, Next and Cancel buttons, which do nothing on the canvas; a switcher chip "◀ Step 2 of 3 ▶" changes the shown page. Insert step before and after, delete, move and "Start on this page" follow CONT-002 to CONT-006. A wizard page's Content group shows "Step title" (`title`, translatable) and "Step subtitle" (`subTitle`, translatable). The form can be a wizard (the New form card, UX-CAT-015) or contain one. Generated code builds the same pages in the same order; the uic oracle covers a root wizard and a nested one.
+
+**UX-CONT-014** `M4.2` `[S]` Group box rows (Content and Appearance): "Title" (exists), "Can be switched off" (`checkable`, help: "Adds a check box to the title. Unchecking it turns off everything inside."), "Starts switched on" (`checked`, shown only when Can be switched off is on), "Flat" (exists), "Title alignment" (Left, Centre, Right). A phrase that does not fit the 96 px column stacks onto its own line (UX-PED-002), so the words are not cut off. A single long name still elides, with the full name in the tooltip.
+
+**UX-CONT-015** `M4.2` `[S]` Frame rows (Appearance): "Frame" (`frameShape`: No frame, Box, Panel, Styled panel, Horizontal line, Vertical line, Windows panel), "Shadow" (`frameShadow`: Plain, Raised, Sunken), "Line width", "Middle line width". A `Line` widget shows only "Orientation" and "Shadow"; its shape follows its orientation, as Designer writes it.
+
+**UX-CONT-016** `M4.2` `[T]` A page is a container (R3 132). Selecting a page (its outline row, or its empty area on the canvas) and pressing Ctrl+1 … Ctrl+6 lays out that page; a page without a layout shows the "No layout" marker (UX-FRAME-003). The same holds for a scroll area's content widget, a dock's content widget and an MDI window.
+
+**UX-CONT-017** `M4.2` `[S A]` Stand-ins. An OpenGL widget, a Qt Quick view, and any class the realizer can't build safely in the editor (it would need a GL context, a QML engine, or user code) is drawn as a stand-in: an `ov.stand_in_fill` rectangle with a dashed `ov.stand_in_line` border, at least 80 × 24 px (UX-RUN-004), and centred 11 px `ov.stand_in_text`: "{friendly name} · drawn by your code" (two lines when narrower than the text). The stand-in has the widget's size policy and size hint, so the layout is the same as at run time. The editor never creates an OpenGL context or a QML engine (test: no `QOpenGLContext` or `QQmlEngine` exists after realizing a form that has both). Stand-ins are part of the form, so they keep the light runtime look in every shell theme, high contrast included (UX-ISO-002).
+
+**UX-CONT-018** `M4.2` `[S]` Page attributes are curated rows on the page widget, in Content: tab widget pages "Tab title", "Tab tooltip", "Tab help" (`whatsThis`), "Tab icon" (shown from M4.3c); toolbox pages "Page label", "Page tooltip", "Page icon"; each written as an attribute (UX-PED-063). They are registered from a new rows module; the shared rows file is not edited.
+
+**UX-CONT-019** `M4.4` `[S K T]` Inspector **Pages** group, for a tab widget, toolbox, stacked widget, wizard and MDI area, directly after Content. It is the list editor (UX-PED-044) over the pages: one row per page showing its title (stacked: object name, read-only, with "Page {n}" before it), a "Starts on" marker (a filled dot) on the start page's row, and a + button "Add page". Keys as the list editor: Enter on the last row adds a page after it; Alt+Up and Alt+Down move; Ctrl+Delete deletes (asking per UX-CONT-004); typing edits the title. Moving the current row shows that page on the canvas. Space on a row makes it the start page. Each action is the same command as the Pages menu, with the same undo step. At 236 px the group is full width (UX-PED-002 stacked rows); titles elide at the end with the full title in the tooltip.
+
+**UX-CONT-020** `M4.0s` `[A]` Context-menu seam. Lanes add context-menu rows without editing `integration/surface.py` or `integration/context_menu.py`: modules in `integration/menu_ext/` are discovered in sorted name order and each exposes `register(registry)`; a contributor receives the menu, the selection and the command dispatcher, and may add a submenu or rows in one of three groups: "first" (above the clipboard rows), "structure" (with Change to and Remove layout) and "last". M4.2 adds Pages; M4.4 adds "Edit items…".
+
+#### 13.1.4 Property editors (PED)
+
+##### Shared rules
+
+**UX-PED-001** `M4.0s` `[A]` Every value type has an editor; none is left as raw XML except the style sheet until M5.3 (pain 18). Owner lanes:
+
+| Value (ui4 element) | Editor | Inline or popover | Lane |
+| --- | --- | --- | --- |
+| `bool` | check box | inline | M4.3a |
+| `number`, `uint`, `longlong`, `ulonglong`, `float`, `double` | spin field | inline | M4.3a |
+| `enum` | drop-down of friendly names | inline | M4.3a |
+| `set` (flags) | summary + check-box popover; alignment keeps its segments | popover | M4.3a |
+| `char` | one-character field | inline | M4.3a |
+| `size`, `sizef`, `point`, `pointf`, `rect`, `rectf` | one field per line | stacked inline | M4.3a |
+| `sizepolicy` | summary + popover | popover | M4.3a |
+| key sequence (`string` named `shortcut`, `keySequence`) | recorder | inline | M4.3a |
+| `date`, `time`, `datetime` | typed field + calendar popover | inline + popover | M4.3a |
+| `locale` | summary + popover | popover | M4.3a |
+| `string` | text field; multi-line and rich text in a popover; Translation disclosure | inline + popover | M4.3d |
+| `stringlist` | summary + list popover | popover | M4.3d |
+| `cstring` | text field | inline | M4.3d |
+| `url` | text field + Translation disclosure | inline | M4.3d |
+| `font` | summary + popover | popover | M4.3b |
+| `color` | swatch + popover | popover | M4.3b |
+| `brush` (and gradients) | swatch + popover | popover | M4.3b |
+| `palette` | summary + large popover | popover | M4.3b |
+| `cursor`, `cursorShape` | drop-down | inline | M4.3b |
+| `pixmap` | thumbnail + picker popover | popover | M4.3c |
+| `iconset` | thumbnail + picker popover | popover | M4.3c |
+| style sheet (`string` named `styleSheet`) | raw text, "Kept as is" editing as today | inline | M5.3 (deferred) |
+| anything else (an element from a newer Qt) | read-only raw value with "Kept as is" (UX-INSP-009) | — | M4.3d keeps it |
+
+A test walks every ui4 value class and fails when one has no registered editor other than the raw one, except the two rows marked deferred and kept.
+
+**UX-PED-002** `M4.0s` `[S A]` Width budget. The narrowest inspector content width is **236 px** (the 264 px pane minimum, less padding and the scroll bar). There the row is label 96 px + gap 8 + editor column 132 px. Every inline editor shows its reference value unclipped in 132 px: "Password while typing", "Minimum expanding", "−2147483648", "12/31/2026 11:59 PM" and "Ctrl+Shift+Alt+F12" are the reference texts. An editor that cannot fit uses the **stacked row**: the label on its own line, the editor full width (236 px) under it. Size, point and rect fields and the date-and-time field are stacked below 300 px content width and side by side above it. Summary buttons (fonts, colours, flags, lists, pictures) stay in the editor column and elide their text at the end, with the full text in the tooltip. Nothing in the inspector scrolls sideways at any width (test at 236, 264 and 420 px).
+
+**UX-PED-003** `M4.0s` `[S K T]` The row popover. A compound value opens in a popover anchored to its row:
+
+- Level 2 (UX-ELEV-001), `fb.popup` fill, 1 px `fb.popup_border`, 6 px radius, 12 px padding. Width is the inspector content width, at least 236 and at most 320 px; the large editors (palette, gradient, item lists, tables) are 320–480 px wide and grow to the left over the canvas. It opens below the row, or above when there is no room below, and never covers its own row.
+- Header: the row label in Title and the Qt name in `fb.faint` Caption. Footer, when the editor needs one: [Reset] at the left (only when the value is written), [Done] at the right (primary).
+- Open: Enter, Space or Alt+Down on the row's summary button, or a click on it. Focus goes to the popover's first field.
+- Tab and Shift+Tab cycle inside the popover; they do not leave it.
+- Close and keep: Done, Enter in a one-line field, or a click outside the popover. Close and revert: Esc, which undoes everything this popover changed and leaves no undo step. Ctrl+Z in a field undoes the field's typing first; elsewhere in the popover, Ctrl+Z closes it and keeps the change, then undoes it as one step.
+- On close, focus returns to the row's summary button. Nothing else (toasts, regeneration, Problems) takes focus while it is open (UX-PRIN-006).
+- Changing the selection, switching tabs, or a structural command closes it and keeps the changes.
+- Accessible name of the popover: "{Row label} editor"; the summary button: "{Row label}: {summary}".
+
+**UX-PED-004** `M4.0s` `[T A]` Commit and undo. Inline fields commit on Enter, on focus out and on a choice; Esc reverts uncommitted text (existing `is_dirty`). A **session** is the time a field keeps focus, or a popover stays open. Every change in one session to one property merges into one undo step named for the property ("Undo Change maximum length", "Undo Change font of titleLabel"); spin-arrow steps, drags in a colour square and gradient stop moves merge the same way. A popover session that touches several properties (palette roles, a font's parts) is still one step. Each change applies to the canvas live, inside the edit budget (UX-M4-007). The seam gives editors `commit(value, session=...)` and a popover session object with `revert()`; the existing per-row merge token ends when the session ends, so two separate visits to one row are two undo steps.
+
+**UX-PED-005** `M4.0s` `[T]` The mouse wheel never changes a value in a field that does not have keyboard focus; it scrolls the inspector. With focus, the wheel steps a number field by one step and a drop-down by one item, and the session rule merges the steps.
+
+**UX-PED-006** `M4.3a, M4.3b, M4.3c, M4.3d` `[S]` Unwritten values. Every editor shows the class default in `fb.faint` (UX-INSP-007): a faint number, a faint drop-down text, a summary like "Default (9 pt)" for fonts, a hollow swatch with "Default" for colours, "None" for images and shortcuts, "—" for limits without a default. Writing a value makes the text `fb.text` and the label Strong with the accent bar (UX-INSP-006). Reset deletes the property, one undo step "Reset {label}".
+
+**UX-PED-007** `M4.3a, M4.3b, M4.3c, M4.3d` `[S T]` Multi-select (UX-INSP-011). Every editor has a Mixed look: an empty field with the placeholder "Mixed" in italic `fb.faint`, a partly checked check box, a drop-down whose text is "Mixed", a swatch with a diagonal line, a summary "Mixed". A commit writes the new value to every owner that has the property, as one step; owners without it are skipped and the caption says "Not applied to {n} widgets that lack this property." (exists).
+
+**UX-PED-008** `M4.3a, M4.3b, M4.3c, M4.3d` `[S]` Refusals appear under the field in `fb.error` Caption (UX-FEED-007), keep the typed text, and block Enter until fixed or Esc. The sentences are in 13.1.6.
+
+**UX-PED-009** `M4.3a` `[S T]` Pain 18. A chosen value is written at once and stays written: the row is Strong, and save writes it. If Qt refuses the value on the canvas widget (the realizer reports it), the value stays in the file and the row's caption says, in `fb.warning`: "Saved in the file. The canvas can't show this value." Save never drops a value. P-18 test: set Echo mode to Password, save, close, reopen: the row shows Password and the XML has `QLineEdit::EchoMode::Password` (Designer 6's spelling; the older `QLineEdit::Password` reads the same); a property whose type has no editor is byte-identical after save.
+
+**UX-PED-010** `M4.3a, M4.3b, M4.3c, M4.3d` `[A]` Accessible names of editor parts follow "Row: part" (as M3.7d2 did for segments): "Maximum size: width", "Font: bold", "Colour: hex", "Date: open calendar". A test walks every editor built for the reference form and fails on an empty accessible name.
+
+##### Scalars (M4.3a)
+
+**UX-PED-020** `M4.3a` `[S K]` Bool: a check box with no text, aligned to the editor column's left. Space toggles; the toggle commits at once.
+
+**UX-PED-021** `M4.3a` `[S K T]` Numbers: a spin field, right-aligned, tabular figures, with the unit after it when there is one ("px", "pt", "%"). The range comes from the curated row (Maximum length 0–32767), else from the Qt type. Up and Down step by one step (Shift: ×10), PageUp and PageDown by ten steps. Decimals: for `double` and `float`, as many as the property needs, at most 6, with trailing zeros dropped on show; the decimal mark is the project locale's (en_US: "."). Typing a value out of range shows "Use a number from {min} to {max}." Typing a non-number shows "Type a number, like 12." Clearing the field resets the property (deletes it) when the property has a default; otherwise it shows "Type a number, like 12."
+
+**UX-PED-022** `M4.3a` `[S K T]` Enum: a drop-down of friendly names, in Qt's enumerator order. Friendly names come from a table (Echo mode: "Normal", "No echo", "Password", "Password while typing"; Frame: as UX-CONT-015; others by splitting the enumerator into words: `MinimumExpanding` → "Minimum expanding"). Each item's tooltip is the Qt name. A value the table doesn't know (a newer Qt, a plugin enum) is shown as the first item in italic, "{Qt name} (kept as is)", and stays written until the user picks another. Choosing commits (pain 18). Keys: Alt+Down or Space opens; Up and Down on the closed drop-down change the value and commit, merged into one step (UX-PED-004); typing letters jumps to the next match.
+
+**UX-PED-023** `M4.3a` `[S K T]` Flags: a summary button listing the set names, friendly, joined by ", " ("Left, Vertically centred"), "None" when empty, elided at the end with the full list in the tooltip. Its popover lists one check box per flag; flag groups that exclude each other (horizontal alignment, vertical alignment) are radio groups with a "None" choice. Each toggle applies live; the session is one step. Space toggles the focused flag. The alignment rows keep their segmented controls from M3.7d2.
+
+**UX-PED-024** `M4.3a` `[S]` Char: a 32 px field that takes exactly one character. With "Qt names" on, the code point shows after it in `fb.faint` ("U+00B7"). More than one character shows "Type one character."
+
+**UX-PED-025** `M4.3a` `[S]` Size, point and rect (and their float forms): one labelled field per line ("Width", "Height" / "X", "Y" / "X", "Y", "Width", "Height") with "px" after integer fields, stacked below 300 px content width (UX-PED-002) and in pairs above it. Each field commits on its own (one step per field). Float forms show 2 decimals.
+
+**UX-PED-026** `M4.3a` `[S T]` Size policy (the raw row in All properties and the curated "Size policy" row): summary "{horizontal} × {vertical}" with shares when set ("Expanding × Fixed · share 1 : 0"). The popover: "Horizontal" and "Vertical" drop-downs of the seven policies with friendly names and one-line help each (Fixed: "Exactly its size hint." Minimum: "Can grow; never smaller than its size hint." Maximum: "Can shrink; never larger than its size hint." Preferred: "Its size hint, but can grow or shrink." Expanding: "Takes all the room it can." Minimum expanding: "Takes all the room it can; never smaller than its size hint." Ignored: "Ignores its size hint; takes the room it's given."), then "Horizontal share" and "Vertical share" (0–255). Changes are live and one step. The Size group's words (UX-SIZE) and the chip update in the same frame (UX-SIZE-008).
+
+**UX-PED-027** `M4.3a` `[S K T]` Key sequence: a field showing the sequence in portable text ("Ctrl+Shift+P"), or the placeholder "None", and a [Record] button (UX-COPY-006). Record (or Enter on the field) shows "Press the keys…" with a 2 px `fb.accent` border; the next key combination is captured; a second combination within 1 s makes a two-step shortcut ("Ctrl+K, Ctrl+S"); then recording stops and the value commits. Esc while recording cancels and keeps the old value. Backspace alone while recording clears the shortcut ("None") and commits. If another action in this form already has the same shortcut, the caption warns, in `fb.warning`: "{actionName} already uses {keys}." The value is written anyway. The string's translation attributes are kept as they were.
+
+**UX-PED-028** `M4.3a` `[S K T]` Date and time: a typed field in the project locale's short format with a four-digit year ("10/28/2026", "2:30:00 PM", "10/28/2026 2:30 PM") and a ▾ button that opens a popover: a calendar for dates (arrows move by day, PageUp and PageDown by month, Ctrl+PageUp and Ctrl+PageDown by year, Enter picks and closes) and Hour, Minute, Second fields for times. Typed text commits on Enter or focus out; an unreadable date shows "Use a date like 10/28/2026." and an unreadable time "Use a time like 2:30 PM." Date ranges (minimum and maximum dates) use the same editor.
+
+**UX-PED-029** `M4.3a` `[S K]` Locale: a summary "{Language} ({Country})" ("English (United States)"); unwritten shows "Same as the app" in `fb.faint`. The popover has "Language" (a drop-down that filters as you type) and "Country or region" (only the territories Qt pairs with that language). Stored as the `language` and `country` names Qt writes.
+
+##### Text, translations and lists (M4.3d)
+
+**UX-PED-040** `M4.3d` `[S K T]` Text. One-line properties edit in the row's field. Properties that allow several lines (a word-wrapped label's text, `plainText`, tooltips, What's this, status tips longer than the field) show the first line with "↵" where a line break is, and a ▾ button that opens a text popover: a plain multi-line editor (Body, the runtime font family), where Enter adds a line and Ctrl+Enter or [Done] keeps it, Esc reverts. One step per session, named for the property.
+
+**UX-PED-041** `M4.3d` `[S K T]` Translation. Every string that generated code puts in `retranslateUi` (the translatable properties and attributes: texts, titles, tooltips, status tips, What's this, accessible names and descriptions, placeholders, window titles, page titles and labels, item texts, URL strings) has a "Translation ▸" disclosure in Caption `fb.muted` on its caption line. Expanded, it shows: a "Translate this text" check box (off writes `notr="true"`); "Meaning" (`comment`, help: "Tells translators which meaning is meant when the same words mean different things, like “Open” a file or “Open” the shop."); "Note for the translator" (`extracomment`); and, when the file has one or Qt names are on, "Translation id" (`id`). Each field commits on its own (one step each). A string that will not be translated shows "Not translated" in `fb.faint` at the end of its caption line, so a veteran sees it without opening the disclosure. A string that is not translatable (style sheet, input mask, object references) has no disclosure. Editing the text keeps the attributes as they were. The disclosure state is per row and remembered for the session.
+
+**UX-PED-042** `M4.3d` `[S K T A]` Rich text (R3 172). For a label whose text format is Rich, or Automatic with text that is already HTML, and for the `html` of a text edit or text browser, the text popover has a two-segment control **Formatted | Source**. Formatted is an editor with a bar: Bold (Ctrl+B), Italic (Ctrl+I), Underline (Ctrl+U), Link… (no key; it asks "Link address" in a field under the bar), Bulleted list, Numbered list, and Text size (Smaller, Normal, Larger). Source shows the HTML in the code editor style with XML highlighting. Plain mode turns into Formatted only when the user picks Formatted ("Make this text formatted? It is stored as HTML." [Make formatted] [Cancel]). The HTML written is generated against the runtime default font and a fixed document setup, never the editor's own font, so the same edit gives the same bytes on macOS and Linux (test runs the edit under both and under the `C` and `de_DE` locales, CONTRACTS §8.3).
+
+**UX-PED-043** `M4.3d` `[S K T]` String list: a summary "{n} items: {first}, {second}…" ("3 items: Red, Green, Blue"), "No items" when empty, elided at the end. The popover is the list editor (UX-PED-044) with a Translation disclosure at its foot that applies to the whole list (the attributes live on the `stringlist`). One step per session.
+
+**UX-PED-044** `M4.3d` `[S K T A]` The list editor, shared by string lists, the Pages group (UX-CONT-019) and the item editors (UX-ITEM). One row per entry, 24 px: a drag grip, the text field, and a × button (accessible "Delete row {n}") shown on hover and focus.
+
+| Key | Action |
+| --- | --- |
+| Typing | Edits the focused row's text |
+| Enter | Keeps the row and moves to the next row; on the last row, adds a new empty row and moves to it. Enter on an empty last row closes the editor and keeps the session |
+| Up / Down | Previous / next row |
+| Alt+Up / Alt+Down | Move the row up / down |
+| Ctrl+Delete | Delete the row (the next row gets focus, else the previous) |
+| Backspace in an empty row | Delete the row and move to the end of the previous row |
+| Ctrl+V with several lines | Paste one row per line, after the focused row |
+| Esc | Close and revert the session |
+| Tab / Shift+Tab | Leave the list to the footer buttons and back |
+| Alt+Right / Alt+Left | Open / close the row's details, where rows have them (items, UX-ITEM-003) |
+
+Rows reorder by dragging the grip, with a 2 px insertion line and an 8 px hit band (UX-GRID-004). An empty list shows "No items yet. Type one and press Enter." in `fb.faint`. 500 rows open within 50 ms (UX-M4-007). Accessible name of each field: "{List name} row {n}".
+
+**UX-PED-045** `M4.3d` `[S]` C string: a plain text field with no Translation disclosure. Rows that name another object (the buddy) are M5.6 pickers; until then they are text fields that refuse a name that isn't on the form: "No widget called “{name}” on this form."
+
+**UX-PED-046** `M4.3d` `[S]` URL: a text field showing the address. An address with no scheme gets the caption, in `fb.warning`, "This doesn't look like a web or file address." and is written anyway. The Translation disclosure applies to the inner string (R3 170).
+
+##### The Properties tab (M4.3d)
+
+**UX-PED-060** `M4.3d` `[S]` Custom properties (R3 149). Under All properties, a block "Custom properties" lists the selection's dynamic properties (written with `stdset="0"`), each a normal row: its name as the label (no friendly name), the editor for its type, Reset, and a ⋯ row menu with "Rename…", "Change type ▸" and "Remove". Code Studio's own logic keys (names starting with `cbcs`) are not listed here (M6 shows them in Behavior). The block is shown even when empty, with only the add button, so the feature can be found.
+
+**UX-PED-061** `M4.3d` `[S K T]` "+ Add custom property" is a text button at the end of the block. It opens an inline form in the block: "Name" field, "Type" drop-down (Text, Number, Decimal number, True or false, Date, Time, Date and time, Colour, Font, Size, Point, Rectangle, List of text, Address (URL), Shortcut), and [Add] [Cancel]. Enter in the Name field adds; Esc cancels. The new property gets its type's empty value (empty text, 0, false, today's date, black, the default font, 0 × 0…), is written, and focus moves into its editor. One step "Add custom property {name}". With several widgets selected it is added to all of them.
+
+Name refusals: "Names use letters, digits and _, and can't start with a digit." / "{Class} already has a property called {name}. Pick another name." / "This widget already has a custom property called {name}." / "Names starting with cbcs are kept for Code Studio."
+
+**UX-PED-062** `M4.3d` `[T]` Rename is a remove plus an add of the same value, one step "Rename custom property". Change type converts the value when it can (number to text, text to number when it reads as one) and otherwise asks: "{name} can't be turned into {type}. Its value will be cleared." [Change type] [Cancel]. Remove deletes it, one step, toast "Removed custom property {name} · Undo". Reset on a custom property is the same as Remove and says so in its tooltip.
+
+**UX-PED-063** `M4.3d` `[S]` Properties and attributes (R3 150). All properties lists Qt properties grouped by declaring class, then "Stored by the parent" for attributes (page titles, labels, dock side, toolbar area, button group), then "In the file" for anything else written that the live widget doesn't have, then Custom properties. An attribute row edits the attribute, never a property of the same name. With Qt names on, attribute rows show "(attribute)" after the Qt name.
+
+**UX-PED-064** `M4.3d` `[S]` The inspector ⋯ menu gains "Sort all properties A–Z" (a check item, per user, off by default). On, All properties is one alphabetical list by Qt name with each row's declaring class in `fb.faint` on its Qt-name line; group headers go away (R3 148). Curated groups are never re-sorted.
+
+**UX-PED-065** `M4.3d` `[S]` Property search (UX-INSP-012) also matches custom property names, attribute names and the friendly words of enum and flag values ("password" finds Echo mode).
+
+##### Font, colour, brush, palette, cursor (M4.3b)
+
+**UX-PED-080** `M4.3b` `[S K T]` Font: a summary of only the written parts, in the order family, size, style ("Sans Serif, 12 pt, Bold"), or "Default ({size} pt)" in `fb.faint`. The summary is drawn in the plain inspector font, never in the chosen font. The popover:
+
+- "Family": a drop-down that filters as you type, with "Default (the app's font)" first, then the families installed here. A family is shown in its own face only in the drop-down list. Caption: "The computer that runs your app needs this font too."
+- "Size": a spin field in points (1–200) with presets in its drop-down (8, 9, 10, 11, 12, 14, 16, 18, 20, 24, 28, 36, 48).
+- Style toggles Bold, Italic, Underline, Strikeout as four 24 px toggle buttons with glyphs "B", "I", "U", "S" (accessible "Font: bold" …).
+- "More ▸": "Weight" (Thin … Black), "Kerning", "Smoothing" (Default, Prefer smooth, No smoothing), "Hinting" (Default, None, Vertical, Full).
+
+Each part is written only when set; each set part has its own ↺ in the popover that unsets that part. Changes are live; one step per session. This replaces today's 50 px family combo that clipped to "De…" (ticket I5b).
+
+**UX-PED-081** `M4.3b` `[S K A]` The colour picker, used by the colour row, brushes, gradient stops and palette roles: a saturation-value square 200 × 140 px with an `fb.handle` ring, a hue strip 200 × 12 px, an alpha strip (shown only where alpha is stored) over the `fb.checker` pattern, a "Hex" field ("#1A7F37", or "#1A7F3780" with alpha), "More ▸" with Red, Green, Blue (0–255) and Alpha (0–100 %) fields, and a row of up to 12 recent colours (per user, most recent first). Keys: in the square, arrows move by 1 (Shift: 10); in the strips, Left and Right. Typing a hex value commits on Enter; a bad one shows "Use a colour like #1A7F37." Dragging is live within the edit budget and one step per session. At 236 px the square shrinks to 212 × 120.
+
+**UX-PED-082** `M4.3b` `[S]` Colour row: a 16 × 16 swatch (1 px `fb.swatch_border`, the checkerboard under transparency) and the hex text, plus "{n} %" when alpha is below 100. Unwritten: a hollow swatch and "Default" in `fb.faint`.
+
+**UX-PED-083** `M4.3b` `[S K T]` Brush: summary swatch (the brush painted 16 × 16) and "Solid #1A7F37", "Pattern: Dense 4, #000000", "Linear gradient, 3 colours", "No brush". The popover has a "Style" segmented control: **None | Solid | Pattern | Gradient** (and **Picture** from M4.3c, UX-PED-103). Solid embeds the colour picker. Pattern shows a drop-down of the Qt patterns, each drawn as a 32 × 16 preview, with friendly names ("Dense 1 (darkest)" … "Dense 7 (lightest)", "Horizontal lines", "Vertical lines", "Cross", "Diagonal lines /", "Diagonal lines \\", "Diagonal cross"), and a colour.
+
+**UX-PED-084** `M4.3b` `[S K T A]` Gradient (inside the brush popover, 320–480 px wide): "Type" (Linear, Radial, Conical); a 24 px gradient bar with stop handles (`fb.handle`, current `fb.handle_current`); the colour picker for the current stop; "Spread" (Pad, Repeat, Reflect); "Fill" ("Stretch to the widget", "Use pixel positions", "Stretch to the screen" for the three coordinate modes; default the first); and "More ▸" with the geometry fields of the type (Linear: start X, Y, end X, Y; Radial: centre X, Y, radius, focal X, Y; Conical: centre X, Y, angle), as fractions 0–1 in "Stretch to the widget" mode. Bar keys: Left and Right pick the previous and next stop; Alt+Left and Alt+Right move the current stop by 1 % (Shift: 10 %); Insert adds a stop halfway to the next one; Delete removes the current stop (at least 2 stay: "A gradient needs at least two colours."). Click on the bar adds a stop with the colour under the pointer; drag moves; drag a stop off the bar by 24 px removes it. Every change is live, one step per session. The written gradient is the same bytes for the same stops on macOS and Linux (CONTRACTS §8.3).
+
+**UX-PED-085** `M4.3b` `[S K T]` Palette: summary "Default" or "{n} colours changed". The popover (320 px, up to 480 px tall, scrolls) lists the roles in this order with friendly names: Window, Window text, Base (field background), Alternate base, Text, Placeholder text, Button, Button text, Bright text, Highlight, Highlighted text, Link, Visited link, Tooltip background, Tooltip text, Light, Midlight, Mid, Dark, Shadow. Each role row has one swatch "All states". "Show each state" (a check box at the top) splits each row into three swatches: Active, Inactive, Disabled. Enter or a click on a swatch opens the brush editor in place inside the popover with a "‹ Palette" back button (Esc goes back first, a second Esc closes). A written role has a Strong label and a ↺. "Start from a colour…" sets every role from one button colour the way Qt derives a palette, as one step, after a confirm when roles are already set: "Replace the {n} colours you set?" [Replace] [Cancel]. Only changed roles are written; the three state groups are written as Qt requires. One step per session, named "Change palette of {name}".
+
+**UX-PED-086** `M4.3b` `[S K]` Cursor: a drop-down with friendly names in this order: Arrow, Pointing hand, Text (I-beam), Wait, Busy (arrow and wait), Cross, Up arrow, Resize left–right, Resize up–down, Resize diagonal ⟋, Resize diagonal ⟍, Move, Split horizontal, Split vertical, Not allowed, What's this, Open hand, Closed hand, Drag copy, Drag move, Drag link, Blank. Tooltips give the Qt names. A legacy integer `cursor` is shown by its name and kept until changed; a change writes `cursorShape`.
+
+##### Pictures and icons (M4.3c)
+
+**UX-PED-100** `M4.3c` `[S K T]` The picture picker, used by pixmap and icon rows and picture brushes. A popover (320 px) with a "Search pictures" field and a grid of 56 × 64 px cells (48 px thumbnail on the checkerboard, file name under it, elided in the middle). It lists every image file in the `.qrc` files this form includes (`<resources>`), grouped by `.qrc` file and prefix, with the resource path in each tooltip (":/icons/save.png"). Arrows move in the grid, Enter picks and closes, Esc reverts. Below the grid: "From a file…" (a file dialog) and, when the form includes no `.qrc`, the Caption "This form uses no resource file yet. Pictures from files may be missing when the app is packaged." Picking a file outside resources writes its path relative to the form and shows, in `fb.warning` on the row, "Loaded from a file path. A packaged app may not find it." Adding the file to a resource file is M5.2 (deferred, pain 9).
+
+**UX-PED-101** `M4.3c` `[S]` Picture row (pixmap): a 16 × 16 thumbnail (1 px `fb.swatch_border`) and the file name; unwritten "None" in `fb.faint`; a missing file "{name} (missing)" in `fb.error` with the tooltip "Code Studio can't find {path}." The canvas shows the picture as the app would (the realizer reads resources from the `.qrc` on disk).
+
+**UX-PED-102** `M4.3c` `[S K T]` Icon (icon set): summary thumbnail and name. The popover: "Picture" (the normal, off state; the picker), "Theme icon name" (field, help: "Uses the desktop's icon with this name when there is one; otherwise the picture."), and "Other states ▸": a 4 × 2 grid of small picker cells — Normal, Disabled, Active, Selected, each Off and On — with "Same as normal" shown faint where unset. A legacy `resource` attribute is kept as it was. One step per session.
+
+**UX-PED-103** `M4.3c` `[S]` A brush's **Picture** style (texture) uses the picture picker inside the brush popover.
+
+**UX-PED-104** `M4.3c` `[S]` Every image on the canvas that cannot be loaded is drawn as the class would draw an empty picture, never as a crash or a broken-image icon, and the row says why (UX-PED-101).
+
+#### 13.1.5 Item editors (ITEM)
+
+**UX-ITEM-001** `M4.4` `[K T]` The items of a combo box, list widget, tree widget and table widget are edited in the item editor. It opens with: Enter on the selected widget on the canvas (UX-TEXT-004; for a tree and a table too); "Edit items…" in the context menu; or the "Items" row in the Content group, whose summary reads "{n} items: {first}, {second}…" (tree: "{n} rows in {m} columns"; table: "{rows} × {columns}, {n} cells filled"). Double-click on these widgets on the canvas opens it as well (they have no text to edit in place).
+
+**UX-ITEM-002** `M4.4` `[S]` From the canvas, the editor is a popover anchored beside the widget, placed like a chip (UX-CHIP-002 order, never covering the widget being edited), 360 × 320 px by default (tree and table 480 × 360), resizable from its bottom-right grip, size remembered per user. From the inspector row it anchors to the row (UX-PED-003). It is a level 2 surface with a header "Items of {name}" and [Done] at the foot.
+
+**UX-ITEM-003** `M4.4` `[S K T]` Combo box and list widget: the list editor (UX-PED-044) over the items' texts. Each row has a ▸ disclosure that shows the item's details: "Icon" (the picture picker, UX-PED-102), and for list widget items "User can check it" with "Starts" (Unchecked, Checked, Partly), "Enabled", "Selectable", "Editable", "Tooltip", and "More properties ▸" (UX-ITEM-006). Alt+Right opens the focused row's details and Alt+Left closes them (Ctrl+Left and Ctrl+Right stay word moves in the field). The combo's "Starts on" (`currentIndex`) is an inspector row, not part of the editor.
+
+**UX-ITEM-004** `M4.4` `[S K T]` Tree widget: two tabs, **Items | Columns**. Columns is a list editor of the header texts (at least one column: "A tree needs at least one column."). Items is a tree-shaped list editor: each row has one field per column (up to 3 visible; more scroll sideways inside the editor); Tab nests the row under the previous row and Shift+Tab moves it out one level (the outline's grammar, UX-OUT-004); Ctrl+Tab and Ctrl+Shift+Tab leave the list. Left at the start of a field moves to the previous column's field, Right at the end to the next. Enter on the last row adds a sibling. Alt+Up and Alt+Down move a row among its siblings, with its children.
+
+**UX-ITEM-005** `M4.4` `[S K T]` Table widget: three tabs, **Cells | Rows | Columns**. Rows and Columns are list editors of the header texts; their count is the table's row and column count ("Rows" adding a row adds a table row). Cells is a grid: arrow keys move, typing replaces the cell's text, Enter or F2 edits the cell keeping its text, Delete clears the cell, Ctrl+V of tab-separated text fills from the current cell. A cell's details (the UX-ITEM-003 list) open with Alt+Right.
+
+**UX-ITEM-006** `M4.4` `[S]` "More properties" of an item, row or column header shows a short property list using the same editors as the inspector (UX-PED): Text, Tooltip, Status tip, What's this, Font, Background, Foreground, Text alignment, Check state, Flags. It reuses the inspector's editor registry; no item-only editors exist.
+
+**UX-ITEM-007** `M4.4` `[T A]` Every change is live on the canvas. One editor session is one undo step, "Edit items of {name}" (`SetItems` with a merge key per widget and session). Esc reverts the session and leaves no step. Closing keeps it. Selecting another widget or a structural command closes it and keeps.
+
+**UX-ITEM-008** `M4.4` `[S]` Model-based views (List, Tree, Table and Column view, Undo view) have no items in the file. Enter or double-click on one says, in the status bar: "This view gets its rows from your code. To type rows here, change it to a list widget (Change to)." No popover opens.
+
+**UX-ITEM-009** `M4.4` `[S]` The outline's text column shows the first two items for item widgets, without the class word so it fits a narrow outline ("size “Small, Medium, …”"), and the canvas signature check covers tree item texts (ticket M4b), so a realize patch that drops a tree item is caught.
+
+#### 13.1.6 Copy tables
+
+**Undo names** (UX-M4-006):
+
+| Action | Undo name |
+| --- | --- |
+| Insert from the catalog | "Insert {friendly name}" ("Insert combo box") |
+| Insert page / step / window | "Insert page" |
+| Delete page | "Delete page" |
+| Move page | "Move page" |
+| Start on this page | "Change start page" |
+| Dock side | "Dock to the {side}" |
+| A field or popover session on one property | "Change {label in lower case}" ("Change echo mode") |
+| A popover session on a font, palette or icon | "Change font of {name}", "Change palette of {name}", "Change icon of {name}" |
+| Translation fields | "Change translation of {label in lower case}" |
+| Add / rename / remove custom property | "Add custom property {name}", "Rename custom property", "Remove custom property {name}" |
+| Item editor session | "Edit items of {name}" |
+| Reset | "Reset {label}" ("Reset Tooltip") |
+
+**Refusals and warnings** (every sentence a lane may show for M4; a new one needs a spec change):
+
+| Where | Sentence | Colour |
+| --- | --- | --- |
+| Insert target | "A wizard page can only go into a wizard." / "In a main window, a dock widget goes on one of its sides." | status + `ov.problem` |
+| Insert search, Enter with no result | "Nothing to insert. Change the search or press Esc." | status |
+| Page commands | "This is already the first page." / "This is already the last page." | tooltip |
+| Number | "Use a number from {min} to {max}." / "Type a number, like 12." | `fb.error` |
+| Char | "Type one character." | `fb.error` |
+| Date / time | "Use a date like 10/28/2026." / "Use a time like 2:30 PM." | `fb.error` |
+| Colour | "Use a colour like #1A7F37." | `fb.error` |
+| Gradient | "A gradient needs at least two colours." | `fb.error` |
+| Tree columns | "A tree needs at least one column." | `fb.error` |
+| Custom property names | the four sentences in UX-PED-061 | `fb.error` |
+| Object reference | "No widget called “{name}” on this form." | `fb.error` |
+| Shortcut clash | "{actionName} already uses {keys}." | `fb.warning` |
+| URL | "This doesn't look like a web or file address." | `fb.warning` |
+| Canvas can't show | "Saved in the file. The canvas can't show this value." | `fb.warning` |
+| File path picture | "Loaded from a file path. A packaged app may not find it." | `fb.warning` |
+| Model views | "This view gets its rows from your code. To type rows here, change it to a list widget (Change to)." | status |
+
+#### 13.1.7 Deferred from M4, with owners
+
+| Item | Owner |
+| --- | --- |
+| Main-window parts in the catalog (menu bar, toolbar, status bar), menus, actions, action groups, button groups (R3 113–119) | M5.1 |
+| Promotion and a project-wide "Your widgets" registry (R3 123) | M5.4 |
+| Adding a picture to a resource file, resource-only pictures, the Problems fix for file paths (pain 9) | M5.2 |
+| Style sheet editor (the `styleSheet` row stays raw) | M5.3 |
+| Buddy and tab-order pickers (object-reference rows stay text fields) | M5.6 |
+| Speed harness rows for the M4 paths (UX-M4-007) | M4.5 |
+| Drops and moves inside the wide copy of Two widths | M9.5 (unchanged) |
+| Items for model-based views | Won't do: the model lives in user code (UX-ITEM-008) |
+
+### 13.2 M5: main windows, resources, styling, custom widgets, templates
+
+Version 3 (work package M5.0, 2026-10-29). Binding for M5. It replaces the six short decisions that stood here in versions 1 and 2:
+
+- **UX-M5-001** Withdrawn in v3. Replaced by the MAIN clauses (13.2.2). Two changes: Actions are a third section of the left pane, not a tab (UX-MAIN-010); toolbars and status bars refuse widgets with a sentence (UX-MAIN-016).
+- **UX-M5-002** Withdrawn in v3. Replaced by the RES clauses (13.2.3). One change: a raw file path warns and blocks packaging, but never blocks Save (UX-RES-005).
+- **UX-M5-003** Withdrawn in v3. Replaced by the STYLE clauses (13.2.4). One change: the theme has two roles, accent colour and text size; corner radius is dropped (UX-STYLE-012).
+- **UX-M5-004** Withdrawn in v3. Replaced by the CUST clauses (13.2.5).
+- **UX-M5-005** Withdrawn in v3. Replaced by the PREV, FSET and TMPL clauses (13.2.6–13.2.8). One change: form settings are groups in the form inspector, not a dialog (UX-FSET-001).
+- **UX-M5-006** Withdrawn in v3. Replaced by the MODE clauses (13.2.9).
+
+The lane split, owned files and parity rows are in `PLAN.md` (M5 table and "M5 lanes"). Every clause names the lane that builds it. Copy in quotes is the exact on-screen text; `{name}` marks a value filled in at run time. The M5 screenshot states, keyboard scripts K16–K23, automated checks and the persona walkthrough are in section 12 under "M5", like M4's. Clauses that earlier versions already tagged M5 stay where they are and bind as written: UX-START-002, UX-START-007 (amended by UX-TMPL-004), UX-ISO-004, UX-OVL-001 … 008, UX-EMPTY-007, and the M5.6 part of UX-A11Y-001.
+
+#### 13.2.1 Decisions and shared rules
+
+**Decisions.** Each open question from the M5 brief, the answer, and why. A lane that wants a different answer asks the orchestrator first; it is not a gate finding.
+
+| # | Question | Decision | Why |
+| --- | --- | --- | --- |
+| D1 | How does a new form get a `.qrc`? | Automatically, on the first "Add picture…": the picture is copied to `forms/pictures/` and listed in `forms/resources.qrc`, which is created if missing, and the form includes it (UX-RES-002). There is no separate "Add pictures to this project" step | The M4.5 persona was blocked on the logo because a new form has no resource file; an extra concept before the first picture is the blocker |
+| D2 | Which pictures does the picker show? | Every picture in every `.qrc` of the project, this form's files first. Picking one from a file the form doesn't include adds the include in the same step (UX-RES-001) | Pictures belong to the project, not to one form |
+| D3 | Pain 9 says "Save is blocked while a pixmap is a raw path." | Save is never blocked. A raw path is a Problems warning with a one-click fix, a warning on the row, and a packaging error (UX-RES-005). The P-9 acceptance test is amended to match | Blocking Save loses work (UX-PRIN, PLAN §1); packaging is where the missing icon actually hurts |
+| D4 | Curated "Text colour" and "Background" rows for common widgets? | Yes, in Appearance right after Font (UX-STYLE-010). Background writes one palette role; Text colour writes a `color` declaration in the widget's own style sheet | The persona needed All properties → Palette for one colour, and font, bold, size and colour lived in three places. On ChoreBoy, FreeCAD's application style sheet sets text colours, so a palette text role never shows at run time (VM probe 2026-10-29, §16.3); backgrounds set by palette do show |
+| D5 | Theme roles | Two: "Accent colour" and "Text size", written as the root widget's palette and font (UX-STYLE-012). Corner radius is dropped | A radius needs a style sheet that takes over every button's look; that is what the style sheet editor is for. Keep the role list short (delighter 12's warning) |
+| D6 | How does "Type here" work with the keyboard only? | A menu-editing grammar entered with Enter on a menu bar, menu or toolbar: arrows move, typing on "Type here" creates, Alt+arrows move entries, Right opens or starts a submenu, Esc leaves one level (UX-MAIN-004 … 006). Typing shows existing actions to reuse, which is the keyboard form of dragging an action onto a menu (UX-MAIN-007) | Pain 17 must be solvable without a mouse (UX-A11Y-001) |
+| D7 | Toolbars | Toolbars get "Type here" too, with the same reuse list. A widget dropped on a toolbar or status bar is refused with a sentence (UX-MAIN-016) | uic and `QUiLoader` don't place widgets inside a toolbar or status bar from a `.ui`; a silent drop is pain 17 |
+| D8 | Where do actions live? | An **Actions** section is the third section of the left pane, under Insert, shown when the form has a main window root or any action. Alt+5 focuses it (UX-MAIN-010) | A drag source must stay visible while the menu is open; tabs would hide it. At short heights it becomes a third tab, as Outline and Insert do |
+| D9 | What does Delete on a menu entry delete? | The entry. The action goes too only when nothing else uses it (UX-MAIN-008) | Owners think "menu item"; a toolbar button made from the same action must survive |
+| D10 | Blank Main window contents | A menu bar `menubar` with "Type here", the central area, and a status bar `statusbar`, as Designer 6.8's template (UX-MAIN-001) | Parity (R3 134) and the persona's first step |
+| D11 | How is a style sheet checked without external tools? | Two layers in the editor process: a Qt-free tokenizer in `engine/style/` for line and column and for selectors, and Qt's own parser (a hidden probe widget and a message handler) as the final verdict (UX-STYLE-004). No `rcc`, `uic` or subprocess | Designer uses `QCss::Parser`; Qt's parser is in AppRun already and AppArmor allows nothing else |
+| D12 | Can an invalid style sheet be saved? | Yes. Problems warns, and the row says Qt ignores the whole sheet (UX-STYLE-008) | No lost work; pain 8's test saves a no-match rule too |
+| D13 | Style sheet surface | A drawer under the canvas with the CBCS code editor; valid text applies to the canvas 300 ms after typing stops; one undo step per drawer session (UX-STYLE-002, 003, 007) | Same editor as code, canvas visible while typing, Designer's modal text box was the complaint |
+| D14 | How is a Python module stored as a promotion header? | Shown as a dotted module ("widgets.till_display"), stored as `widgets/till_display.h` with `location="local"` (UX-CUST-004) | Designer opens it and uic and our generator both turn it into `from widgets.till_display import TillDisplay` (P-7 test) |
+| D15 | How is the module path checked? | By looking for the file in the project and reading it with `ast`, never by importing it in the editor (UX-CUST-003) | CONTRACTS §10.4: user code runs only in the preview child |
+| D16 | How does Preview load the real class safely on ChoreBoy? | In the preview child only (AppRun, no extra installs, no Designer plugins): each own class is imported and built once on a throwaway parent before `setupUi`; a failure installs a stand-in of the base class and reports FB602 with the file and line; a hang is caught by the existing ping (UX-CUST-008). Forms outside a project never import own classes | A class that raises in `__init__` or hangs must not take the editor or the preview down (P-7, pain 11) |
+| D17 | How does a promoted widget look on the canvas? | As its base class when the base draws something (a label, a button); as a sized stand-in when the base is a plain `QWidget` or `QFrame`; either way at least 80 × 24 px on the canvas only (UX-CUST-007) | Truth where the editor can show it, never a collapsed line (R3 "Promoted widgets collapse to a line") |
+| D18 | Custom widget registry | Project settings (`cbcs/project.json`, key `form_builder.custom_widgets`); its fields stand in for Designer's plugin interface (UX-CUST-006, 011) | Plugins can't load on a noexec mount and run code in the editor |
+| D19 | Form settings surface | Groups in the form inspector (Code, Translation, Free placement), opened by Form > Form settings… (UX-FSET-001) | Same editors, undo and keyboard as every other property; no modal dialog (UX-FEED-007) |
+| D20 | Grid settings (R3 222) | Move from M5.6 to M5.5b, as the "Free placement" group (UX-FSET-006) | They are form settings in Designer, and the form inspector is M5.5b's |
+| D21 | Preview style and screen profiles | Apply to Preview only; the canvas keeps the ChoreBoy look (UX-PREV-001) | UX-ISO-001: the canvas is the runtime truth |
+| D22 | View code | A read-only split beside the canvas, updated live from the unsaved form (UX-PREV-004) | Designer's View Code is a modal dialog of a stale file |
+| D23 | Templates | Kept for "All my projects" by default, with their pictures; "Your templates" is the first group on Start (UX-TMPL-001, 004) | The owner's own starting point is the likeliest choice, across every tool they build |
+| D24 | Designer keys the shell already uses | Print has no key (Ctrl+P is Quick Open); F1 opens a help card for the selected widget; Designer's Ctrl+? is Help > Form designer keys (UX-MODE-005 … 007) | UX-KEY-001; F1 is free in the shell table |
+| D25 | Button groups: CONTRACTS lists `SetButtonGroup` under M5.6 | M5.1 builds it, with action groups (UX-MAIN-019) | The ledger puts R3 119 and 142 in M5.1, and the group UI sits next to actions |
+
+**UX-M5-007** `all M5` `[C]` Copy for M5 follows section 9.5 and UX-M4-005. In addition, on-screen text says "picture" (never "pixmap", "resource" or "iconset"), "pictures file" only where the `.qrc` file itself is meant ("forms/resources.qrc"), "your own class" (never "promote" outside tooltips and the Qt-names line), "menu entry" and "toolbar button" (an action is "action" only in the Actions section and the inspector header). Every sentence a lane may show is in the 13.2.10 tables; a new one needs a spec change.
+
+**UX-M5-008** `all M5` `[T]` Undo names. Every M5 command has a plain name, listed in 13.2.10, used by Edit > Undo and by toast Undo. A menu-editing session that creates one entry is one step; a style sheet drawer session is one step (UX-STYLE-007). Files written outside the `.ui` (a copied picture, the `.qrc`, a saved template, the registry) are not on the form's undo stack; the clause that writes them says so on screen.
+
+**UX-M5-009** `all M5` `[A]` Speed. CPU p50 and p95 on the 300-widget reference form (plus, where named, a main window with 40 actions in 6 menus and 2 toolbars, a project with 500 pictures in 3 `.qrc` files, and a 200-rule style sheet), recorded with machine load. M5.R adds the rows to the harness; each lane measures its own path with a local script and reports it.
+
+| Path | Budget (p95) |
+| --- | --- |
+| A keystroke in "Type here", the Actions filter (200 actions) or the reuse list | ≤ 16 ms |
+| Open a menu on the canvas; commit a new entry (Enter) | ≤ 50 ms |
+| Drop an action on a menu or toolbar | ≤ 50 ms |
+| Open the picture picker, warm (index cached) | ≤ 50 ms; first index of 500 pictures ≤ 300 ms, thumbnails filled in after first paint |
+| Add one 1 MB picture (copy, `.qrc` write, include, row set) | ≤ 200 ms |
+| A keystroke in the style sheet drawer | ≤ 16 ms |
+| Check plus selector matches after the 300 ms pause, 200 rules | ≤ 50 ms |
+| Apply a valid style sheet to the canvas | ≤ 100 ms |
+| Open "Use my own class"; check one module path (file lookup and `ast` of a file up to 100 KB) | ≤ 50 ms; ≤ 30 ms |
+| View code refresh after the 300 ms pause | ≤ 100 ms |
+| Change Preview style or screen profile, warm child | ≤ 300 ms until the window shows it |
+| Start with 20 saved templates | ≤ 150 ms to first paint |
+| Open Form designer keys; a keystroke in its filter | ≤ 100 ms; ≤ 16 ms |
+| Open the tab-order or buddies overlay; assign one number | ≤ 50 ms; ≤ 16 ms |
+
+**UX-M5-010** `M5.0s` `[S A]` The Form menu (UX-SHELL-004) after M5, in this order; items come from the form-menu contributor registry, so lanes don't edit `integration/form_menu.py`: Insert widget…, Go to widget…, Layout ▸, Size ▸, Main window ▸ (M5.1; main-window forms only), Overlays ▸ (adds "Tab order list…", M5.6), separator, Preview, Preview options ▸ (adds Style ▸ and Screen ▸, M5.5a), View Python code (M5.5a), View XML, separator, Style sheet of the form… (M5.3), Form settings… (M5.5b), Save as template… (M5.5c), Save image… and Print… (M5.5a), Create window class… Help gains "Form designer keys" (M5.6). Items a runtime can't offer are absent, not disabled.
+
+**UX-TOK-006** `M5.1, M5.3, M5.6` `[S A]` New builder tokens for M5, in `qtside/theme/` (UX-TOK-001). Form-surface tokens are the same in light and dark chrome (UX-TOK-003).
+
+| Token | Normal | High contrast (both) | Use |
+| --- | --- | --- | --- |
+| `ov.type_here` | text `#6B6B6B` italic, 1 px dashed `ov.layout_faint` box | text `#2A2A2A`, 1 px dashed `#5B21B6` | "Type here" placeholders on menu bars, menus and toolbars (M5.1) |
+| `ov.menu_drop` | alias `ov.select` 2 px line | alias | Insertion line for entries and buttons (M5.1) |
+| `ov.style_match` | `ov.select` 1.5 px dashed, 2 px outside the widget | `#0000C0` 2 px dashed | Widgets the rule under the caret matches (M5.3) |
+| `ov.own_class` | `ov.layout` 1 px, 4 px corner tag | `#5B21B6` | The corner tag of a widget using your own class (M5.4) |
+
+#### 13.2.2 Main windows, menus, toolbars and actions (MAIN)
+
+**UX-MAIN-001** `M5.1` `[S T]` The blank **Main window** card (UX-START-004) creates, in this order, `menubar` (`QMenuBar`, empty), `centralwidget` (`QWidget` with a vertical layout) and `statusbar` (`QStatusBar`), the same names and order as Designer 6.8's `Main_Window.ui`. There is no toolbar until the user adds one (R3 134). Existing main-window templates keep their parts.
+
+**UX-MAIN-002** `M5.1` `[S K T]` Adding and removing parts. On a main-window form, the page's context menu, the Form menu's new **Main window ▸** submenu, and Insert search ("menu bar", "toolbar", "status bar") offer: "Add menu bar" (only when there is none; R3 135), "Add toolbar" (any number; named `toolBar`, `toolBar_2`; Top side), "Add status bar" (only when there is none). Each part's own context menu has "Remove menu bar…", "Remove toolbar", "Remove status bar". Removing a menu bar that has menus asks: "Remove the menu bar and its {n} menus? Actions stay in the Actions list." ("its menu" when there is one) [Remove menu bar] [Cancel]. In Insert search the three rows read "Menu bar · add to this window", "Toolbar · add to this window", "Status bar · add to this window"; Enter runs the command. On a form that is not a main window they insert nothing and the status bar says "Menus, toolbars and status bars go on a main window. This form is a {friendly root class}."
+
+**UX-MAIN-003** `M5.1` `[S]` "Type here" placeholders (`ov.type_here`) are painted by the builder, never realized, never in Preview or the file: the last title of every menu bar, the second-to-last row of every open menu (the last is "Add separator"), and the last button of every toolbar. A placeholder is at least 64 × 20 px. They are drawn only while the form tab shows Design and no overlay is open.
+
+**UX-MAIN-004** `M5.1` `[K T]` **Menu editing** starts with Enter on a selected menu bar, a selected menu or a selected toolbar (or a click on a title, entry, button or placeholder). The status bar shows the grammar: "Left and Right move between menus. Down opens one. Type on Type here to add. Esc leaves." Keys on the bar and on a toolbar:
+
+| Key | Action |
+| --- | --- |
+| Left / Right | Previous / next title (bar) or button (toolbar), "Type here" last |
+| Down | Open the focused menu; focus its first entry (bar only) |
+| Enter | Edit the focused title or button text in place (UX-TEXT-002 editor, text selected) |
+| A printable character on "Type here" | Start the editor with that character |
+| Alt+Left / Alt+Right | Move the focused menu or button one place |
+| Delete | Remove the focused menu (asks when it has entries: "Remove the {title} menu and its {n} entries?" [Remove menu] [Cancel]) or button (UX-MAIN-008) |
+| Esc | Leave menu editing; the bar or toolbar stays selected |
+
+**UX-MAIN-005** `M5.1` `[K T]` Keys inside an open menu:
+
+| Key | Action |
+| --- | --- |
+| Up / Down | Previous / next entry, then "Type here", then "Add separator" |
+| Enter | On an entry: edit its text. On "Type here": start an empty editor. On "Add separator": add a separator above "Type here" |
+| A printable character on "Type here" | Start the editor with that character |
+| `-` then Enter in the editor | Add a separator instead of an entry |
+| Right | Open the entry's submenu; if it has none, open an empty submenu with "Type here" focused (nothing is written until an entry is typed) |
+| Left | Close this submenu (focus its entry), or in a top-level menu close it (focus its title) |
+| Alt+Up / Alt+Down | Move the entry or separator one place |
+| Delete | Remove the entry or separator (UX-MAIN-008) |
+| Esc | Close the open menu, one level at a time; from the bar, leave menu editing |
+
+While an entry has focus, the selection is its action: the inspector shows it, so Alt+4 then Shortcut sets its key (UX-MAIN-012). Focus comes back to the same entry after Alt+3.
+
+**UX-MAIN-006** `M5.1` `[S T]` The in-place editor for a title or entry: Enter keeps, Esc cancels and writes nothing, Tab keeps and moves to the next placeholder (so "File", Tab, "Edit", Tab builds a bar). An `&` before a letter marks the mnemonic; `&&` is a literal ampersand; the canvas underlines the mnemonic as Qt does. Caption under the editor on first use per session: "Put & before a letter to open it with Alt and that letter." A new menu is named `menu` + its text in UpperCamel without symbols (`menuFile`, `menuRecent_files`; suffix rule for repeats) and is written as a `QMenu` child of its bar or parent menu plus an `addaction` with the menu's name, as Designer writes it (R3 114). A new entry creates an action named `action` + its text (`actionPrint_receipt`) with that text, written under the main window and referenced by `addaction` (R3 117, 137). Creating a menu or an entry is one undo step "Add menu {text}" / "Add {text} to the {menu} menu". After a new entry is committed, focus moves to "Type here", so entries can be typed one after another; after "Add separator", focus stays on it.
+
+**UX-MAIN-007** `M5.1` `[S K T]` Reuse list. While the "Type here" editor of a menu or toolbar has text, a list opens under it with at most 6 rows: first "New action “{text}”", then existing actions whose text or name matches (UX-CAT-007 matching rules, without synonyms), each with its icon and shortcut. When an existing action's text equals the typed text (ignoring `&` and case), that row is current instead of the New row. Down and Up move, Enter picks, Esc closes the list and keeps the text. Picking an existing action adds a reference to it (one step "Add {text} to the {menu} menu" / "to {toolbar}"), the keyboard form of dragging it (pain 17).
+
+**UX-MAIN-008** `M5.1` `[T]` Removing an entry or toolbar button removes that reference. If the action is then used nowhere (no menu, toolbar, widget `addaction` or connection), the action is removed too, in the same step "Remove {text}". Otherwise the action stays and the toast says "Removed {text} from the {place}. It's still on {other place}. · Undo". Removing a menu removes its references and its submenus, and actions left unused with it, in one step "Remove the {title} menu".
+
+**UX-MAIN-009** `M5.1` `[S T]` Drags (R3 136–138). A menu title drags along the bar; an entry drags inside a menu, onto another menu (hover a closed title 400 ms to open it) or onto a toolbar; a toolbar button drags along its toolbar or onto another toolbar or a menu. The landing place is an `ov.menu_drop` line, never a tint. A plain drag moves the reference; Ctrl+drag adds a second reference (UX-MOVE-002's copy rule). The status sentence names the place: "Put Print receipt after New sale in the File menu". Dropping outside any menu or toolbar does nothing ("Drop it on a menu or a toolbar.").
+
+**UX-MAIN-010** `M5.1` `[S K]` The **Actions** section (D8). It is the third section of the left pane's vertical splitter (Outline / Insert / Actions, default 40 / 35 / 25), with an Overline header "ACTIONS {n}", a ⌕ filter (placeholder "Search actions"), a [+] button ("New action") and a ⋯ menu ("Show as icons", "Show as list"). It is shown when the root is a main window or the form has at least one action. Rows (24 px): 16 px icon or a blank square, text (mnemonic `&` hidden), shortcut in `fb.faint`, and in Caption `fb.faint` where it's used ("File menu, Main toolbar" or "Not used", which is also FB036 Info). Action groups are rows with their actions indented under them. At H < 560 (UX-RESP-005) the left pane's tabs become "Outline | Insert | Actions"; at 720 ≤ W < 900 the rail gets a third button. Alt+5 focuses it (UX-KEY-004).
+
+**UX-MAIN-011** `M5.1` `[K T]` Keys in the Actions section: Up and Down move; Enter edits the text in place; F2 renames the object name (UX-OUT-008 rules); Delete deletes (asks when used: "Delete the action {text}? It's on {places}." [Delete action] [Cancel]); Ctrl+C and Ctrl+V copy and paste actions, also between forms (R3 139), with the suffix rule for names; a printable character types into the filter; with filter text and no match, the only row is "New action “{text}”" and Enter creates it. A new action is selected, so the inspector shows it at once. Drag a row onto a menu or toolbar (UX-MAIN-009); after a drop, focus goes to the canvas.
+
+**UX-MAIN-012** `M5.1` `[S]` Action inspector (R3 140). Header: the action glyph, object name, "Action · QAction", and the used-in line as links ("Used in File menu and Main toolbar"; each link selects that entry). Content: Text, Icon (UX-PED-102), Shortcut (UX-PED-027), Tooltip, Status tip (caption "Shows in the status bar while the pointer is on it."), Help text (`whatsThis`). Input: "Can be ticked" (`checkable`), "Starts ticked" (`checked`, shown only when Can be ticked), Enabled, Visible, "Shortcut works" (`shortcutContext`: "In this window", "In the focused widget", "Anywhere in the app"), "Group" (drop-down of the form's action groups and "None", UX-MAIN-019). Everything else is in All properties.
+
+**UX-MAIN-013** `M5.1` `[S]` Menu inspector (a selected `QMenu`): Title (with the mnemonic rule), Icon, "Tear-off" (`tearOffEnabled`), "Shows tooltips" (`toolTipsVisible`). Menu bar: "Native menu bar" (`nativeMenuBar`, caption "Only matters on macOS."). Toolbar: "Toolbar side" four segments Top, Bottom, Left, Right (attribute `toolBarArea`, R3 138), "Starts on a new row" (attribute `toolBarBreak`), "Button style" (Icon only, Text only, Text beside icon, Text under icon), "Can move" (`movable`), "Can float" (`floatable`). Status bar: "Size grip" (`sizeGripEnabled`) and the caption "Status tips of actions and widgets show here while the pointer is on them. Your code can show other messages."
+
+**UX-MAIN-014** `M5.1` `[S]` The central widget (R3 143) carries the page chip suffix "· central area" when selected. Delete on it refuses: "The central area belongs to the window. Delete what's inside it instead." Docks and toolbars are its siblings in the outline, never its children (the outline lists, under the window: menu bar, toolbars, central area, docks, status bar).
+
+**UX-MAIN-015** `M5.1` `[S]` Opened menus are drawn on the canvas as real `QMenu` contents painted inside the page's coordinates, attached under their title (submenus to the right of their entry, flipped left near the page edge), at the same zoom as the form. They are content (UX-PRIN-001), so chips are placed around them. A click outside, Esc or switching tabs closes them. They never open as top-level popup windows (which would grab the pointer).
+
+**UX-MAIN-016** `M5.1` `[T]` Refusals (pain 17). A widget dragged or pasted onto a toolbar, a menu, a menu bar or a status bar is refused with the `ov.problem` indicator and a status sentence: toolbar "A toolbar holds actions. Make an action, or put the widget in the window." Menu or menu bar: "Menus hold actions. Type a menu entry instead." Status bar: "A status bar can't hold widgets from the form. It shows messages from your code." A keyboard insert or paste of a widget with one of these selected inserts after it in the central area instead and says "Inserted in the central area." An older file that already has widgets inside a toolbar or status bar keeps them and shows FB037.
+
+**UX-MAIN-017** `M5.1` `[S T]` An action can also go on a tool button's menu or a widget's actions (`addaction` under any widget, used by context menus): the widget's context menu has "Actions ▸" listing the form's actions as check items. Ticking adds a reference; unticking removes it; one step each.
+
+**UX-MAIN-018** `M5.1` `[A]` Generated code and loading. Menus, toolbars, status bar, actions, groups and references produce the same widget tree in our `ui_*.py`, in `uic -g python` and in `QUiLoader` (oracle), with entries in the visual order of the canvas and separators where the canvas shows them (R3 137). Toolbar side and break use the enum spelling of the file (`Qt::TopToolBarArea`), as Designer writes it.
+
+**UX-MAIN-019** `M5.1` `[S K T]` Groups (R3 118, 119, 141, 142, D25). **Action groups:** select two or more actions in the Actions section, context menu "Make a choice group" (one step "Group actions"): creates `actionGroup` with the selected actions, exclusive. Its inspector: "Only one on at a time" (`exclusive`), Enabled, Visible. "Ungroup" removes it. **Button groups:** select two or more buttons (radio, check, push or tool buttons), canvas or outline context menu "Make a button group": creates `buttonGroup` and the `buttonGroup` attribute on each button, without changing their order in the file or on the canvas (R3 "Child order in the file can disagree with the picture"). A button's Content group gains "Button group" (None, the form's groups, "New group"). The form inspector lists button groups under "Button groups": name (F2 renames), member count, "Only one can be on" (`exclusive`); selecting a row selects its buttons; Delete ungroups ("Ungroup buttons"). The status summary of a grouped button ends "· in button group {name}".
+
+#### 13.2.3 Resources and pictures (RES)
+
+**UX-RES-001** `M5.2` `[S K]` The picture picker (UX-PED-100) v2. The grid has two headed sections: "THIS FORM'S PICTURES" (the `.qrc` files the form includes, grouped by file and prefix as today) and "OTHER PICTURES IN THIS PROJECT" (every other `.qrc` under the project root, excluding `cbcs/` and generated folders). Search filters both. Picking a picture from the second section adds the include and sets the property in one step. The footer holds the secondary button "Add picture…" and, when the project has more than one `.qrc`, the Caption "New pictures go into {qrc path}." with a "Change" link (a drop-down of the project's `.qrc` files). Arrow keys cross section headers (the M4 follow-up). The picker never lists a raw file path for a new pick.
+
+**UX-RES-002** `M5.2` `[S T]` "Add picture…" (D1) replaces "From a file…". It opens the file dialog filtered to the image types in `engine/project/pictures.py`, several files allowed. Target `.qrc`: the first file this form includes; else `forms/resources.qrc` (created when missing, with `<!DOCTYPE RCC>`, one `<qresource prefix="/">`). Each picture inside the `.qrc`'s folder is listed where it is; any other is copied to `{qrc folder}/pictures/{file name}` (a different file with the same name gets `_2`, and so does a name that differs only in case, so macOS and ChoreBoy agree; a file over 16 MB is refused: "{file} is larger than 16 MB, too big to carry in a form's pictures."). The `.qrc` gains `<file>pictures/logo.png</file>`, the form gains the include, and the row gets `:/pictures/logo.png` (the first picture when several were added). The form part is one undo step "Add picture logo.png"; the copy and the `.qrc` stay on disk after Undo, and the toast says so: "Added logo.png to forms/resources.qrc. Undo keeps the copied file. · Undo". The first time a project gets `forms/resources.qrc`, the toast reads "Made forms/resources.qrc for this project's pictures and added logo.png. · Undo".
+
+**UX-RES-003** `M5.2` `[T]` Image files dragged from the desktop's file manager onto the open picker, or onto a label, push button, tool button or the form on the canvas, should be added (a must once §16.3 confirms the drag reaches the editor) as in UX-RES-002 and set as the label's Picture, the button's Icon, or (on the form) the window icon. A drop of a non-image file is refused: "Only pictures can go here."
+
+**UX-RES-004** `M5.2` `[S K T]` The resource editor. Opening a `.qrc` (project tree, Quick Open, the "Open" link in UX-RES-006) opens a CBCS tab with **Pictures | XML** segments (the UX-XML-001 control and rules: XML edits apply on switching back, invalid XML keeps the XML view). Pictures shows one header per prefix ("/" shown as "No prefix") with a grid of 72 × 80 px cells (thumbnail, alias or file name, "missing" in `fb.error` when the file is gone), and a toolbar: "Add pictures…", "New prefix…", "Remove from this file" (the file on disk stays), "Rename…" (sets an alias; when forms use the picture the dialog says "{n} forms use this picture. Saving {qrc} updates them to the new name."), "Show where it's used" (lists the forms and properties using the selected picture; double-click opens one). Keys: arrows move; Enter opens Rename; Delete is "Remove from this file", asking when a form uses it: "{n} forms use this picture. Remove it from resources.qrc anyway?" [Remove] [Cancel]. Undo history is per tab, like a form. Ctrl+S writes the `.qrc` with stable bytes (two-space indent, entries in the order shown, `<!DOCTYPE RCC>` kept) and rewrites the `*_rc.py` of every form in the project that includes it, so a run shows the new pictures without resaving forms (R3 174, 175). A rename never leaves a form pointing at the old name: the same save rewrites every picture and icon of those forms from the old `:/` path to the new one (the `.ui` and its Python; a form open in a tab sees an outside change), and the banner says "Updated {n} forms to the new picture name." Undo in the tab and save again maps them back. A rewrite drops comments and elements `rcc` does not read (an untouched file stays byte-identical); while the file holds any, the tab shows "This file has comments or parts Code Studio doesn't read. A change in Pictures drops them; make it in XML to keep them.", and an "Add picture…" into such a file adds "Comments in {qrc} were not kept." to its toast. Edit > Undo and Redo name and run the tab's steps while it is shown (off in XML, which keeps its own undo). Changes made outside the tab are picked up when the tab or a picker is focused (the mtime cache).
+
+**UX-RES-005** `M5.2` `[S T]` Raw file paths (D3, pain 9). A picture or icon property that holds a file path (older files, or the M4 "From a file" path) gets: FB031 Warning in Problems, "{name} uses a picture from a file path ({path}). A packaged app may not find it." with the fix [Add to project pictures]; the row's warning from UX-PED-100 gains the same link; the packaging flow (UX-RUN-005) lists it as a packaging error with the same fix. The fix runs UX-RES-002 on that file and rewrites the property to the resource path (one step "Add picture {file}"). Save is never blocked.
+
+**UX-RES-006** `M5.2` `[S]` The form inspector's Files group (UX-INSP-010) lists the form's resource files: "Pictures from forms/resources.qrc · {n} pictures" with [Open] and a ⋯ "Stop using in this form" (removes the include; asks when properties use its pictures: "{n} properties use pictures from this file. They will show as missing." [Stop using] [Cancel]), and "Use another pictures file…" (a drop-down of the project's `.qrc` files). One step each ("Use pictures file {path}", "Stop using pictures file {path}").
+
+**UX-RES-007** `M5.2` `[A]` A picture listed in a `.qrc` whose file is missing is FB032 Warning: "{qrc} lists {file}, but the file is missing." on each form that includes it, with the fix [Open {qrc}]. The canvas draws it as UX-PED-104. Our `*_rc.py` and `rcc`'s register the same path-to-bytes map (CONTRACTS §15 row `codegen.resources`), and a run of a fixture project shows the icon through our generated import (R3 175).
+
+**UX-RES-008** `M5.8b` `[S K T]` A label that still has text shows the text, not its Picture, when the app runs (uic sets the text last). The Picture row's note ("The label's text replaces this picture when the app runs. Clear the text to show it.") carries a "Clear text" button, one Tab stop under the note. It removes the text of the selected labels in its own undo step "Clear text" (toast "Cleared the label's text · Undo"), separate from the step that set the picture: Undo brings the text back and keeps the picture, and nothing deletes text the user typed without their pressing it.
+
+#### 13.2.4 Style sheets, colours and theme (STYLE)
+
+**UX-STYLE-001** `M5.3` `[S K]` Entry points. Appearance gains a "Style sheet" row on every widget and on the form: a summary ("None", "1 rule", "{n} rules", or "Can't be read" in `fb.warning`) and an [Edit…] button; Enter on the row opens the drawer. The canvas and outline context menu has "Edit style sheet…"; the Form menu has "Style sheet of the form…". The drawer opens on the selected widget's own sheet (the form's when the form is selected).
+
+**UX-STYLE-002** `M5.3` `[S]` The drawer (D13) sits under the canvas inside the canvas column, default 240 px, resizable from 160 px to 60% of the tab height by its top edge (6 px hit area), height remembered per user. Header (32 px): "STYLE SHEET" Overline, then "of {name}" (a drop-down of the form and every widget with a sheet, then the selection), the check status, an "Insert ▸" menu button and [Done]. Body: the CBCS code editor with CSS highlighting, line numbers, the shell's Ctrl+F find bar, no word wrap. A right gutter beside each rule's first line shows its match count chip ("3 widgets", or "No match" in `fb.warning`). The canvas keeps at least 200 px of height; below that the drawer refuses to grow. At H < 560 the drawer covers the canvas (level 2) instead of pushing it, and Esc closes it.
+
+**UX-STYLE-003** `M5.3` `[T A]` Live apply. 300 ms after the last keystroke, a valid text is set on the canvas widget (a `SetProperty styleSheet` in the drawer's session; UX-ISO-004: it applies exactly as at run time). An invalid text keeps the last valid one on the canvas and shows the error; the canvas is never left half-styled. Only the edited widget and its descendants are re-polished.
+
+**UX-STYLE-004** `M5.3` `[S A]` Checking (D11). The status reads "Looks right" (`fb.ok`, ✓ glyph) or the first problem with its place: "Line 3: a } is missing.", "Line 5: “colr” isn't a property Qt knows.", "Line 8: a ; is missing after the value." A click on the status moves the caret there. Errors from the engine tokenizer (unbalanced braces, brackets, parentheses or quotes, a stray closing mark) mark the sheet invalid. A problem Qt tolerates is a warning and the sheet still applies: an unknown property name (Qt skips that line), an unknown pseudo-state (Qt's rule then matches nothing, and the match chip says "No match"), a declaration without a colon, a missing `;`, an unclosed `/*` inside a rule (amended at the M5.3 gate: each case was checked against Qt's parser on the corpus in `test_m5_3_style_check.py`). Then Qt's parser decides: the text is set on a hidden probe widget with a message handler; if Qt reports it can't parse the sheet and the tokenizer found nothing, the status reads "Qt can't read this style sheet." with no line. Qt's verdict is final in both directions. No subprocess and no external tool is used.
+
+**UX-STYLE-005** `M5.3` `[S A]` Selector matches (pain 8). The engine matcher evaluates each rule's selectors against the document: type selectors match the class and its subclasses (stock classes from the class table, own classes through their base, UX-CUST), `.Class` only the exact class, `#name`, `Type#name`, `[property="value"]` against the stored value, `*`, descendant and `>` child combinators, and comma lists. A selector in a widget's own sheet matches only that widget and its descendants, as Qt cascades. Pseudo-states (`:hover`, `:checked`, `:disabled` …) and sub-controls (`::indicator`) match their widget; the count chip adds "· when hovered", "· when checked". While the caret is inside a rule, the canvas outlines its matched widgets in `ov.style_match` and the status bar says "This rule styles saveButton, cancelButton and 1 more." Hover on a count chip lists the names; a click selects them. A rule with no match keeps its "No match" chip and can be saved (FB034 Info).
+
+**UX-STYLE-006** `M5.3` `[S K T]` Insert ▸ (R3 176): "Colour…" (the colour picker of UX-PED-081; inserts `#1A7F37`), "Picture…" (the picker of UX-RES-001, so "Add picture…" works here too; inserts `url(:/pictures/logo.png)`), "Gradient…" (UX-PED-084; inserts `qlineargradient(…)`), "Font…" (UX-PED-080; inserts `font: bold 12pt "Sans Serif";`), "Rule for this widget" (inserts `#{name} {` newline, four spaces, newline `}` with the caret on the middle line). Each inserts at the caret, replacing a selection. With the caret inside a colour value, "Colour…" opens on that colour and replaces it.
+
+**UX-STYLE-007** `M5.3` `[T]` Undo. Inside the drawer Ctrl+Z and Ctrl+Shift+Z are the text editor's own. A drawer session on one widget is one form undo step "Change style sheet of {name}", committed when the drawer closes, when the scope drop-down or the selection changes to another widget (the drawer then shows that widget's sheet), or when the form is saved. Esc in the drawer closes it and keeps the text (typing is never thrown away by a key). An empty text deletes the property.
+
+**UX-STYLE-008** `M5.3` `[S]` A sheet Qt can't read is saved as typed (D12). Problems gets FB033 Warning "The style sheet of {name} can't be read, so Qt ignores all of it." with the fix [Edit style sheet]; the inspector summary reads "Can't be read".
+
+**UX-STYLE-009** `M5.3` `[A]` Preview and run use the same text through the generated module (no editor-only styling), so what the canvas shows is what the app shows (pain 8). The pain test: a `QPushButton#okButton` rule colours that button on the canvas, in Preview and after reopening.
+
+**UX-STYLE-010** `M5.3` `[S T]` Curated colour rows (D4), in Appearance directly after Font, for the classes below. Each is a colour row (UX-PED-082). **Background** writes one palette role in all three state groups and nothing else; Reset removes that role (and the `autoFillBackground` this row set). Background on a label, group box, frame, plain widget, check box, radio button, command link or the form also writes `autoFillBackground` true in the same step, because Qt paints no background otherwise (a check box and a radio button fill from the Button role, as `QAbstractButton` sets it as the background role; amended at the M5.3 gate after the per-class pixel check under Fusion). **Text colour** writes a `color` declaration in the widget's own style sheet, because on ChoreBoy FreeCAD's application style sheet overrides palette text roles (§16.3): when the widget's sheet is empty or holds only declarations, the row adds or replaces `color: #RRGGBB;` there; when it holds rules, the row adds or replaces a `#objectName { color: #RRGGBB; }` rule, and a rename rewrites that selector in the same step. Reset removes only that declaration (and the rule or sheet if it is left empty). The table's "Text colour writes" column names the palette role the canvas uses to read back a colour set in Designer; the row shows that colour with the caption "Set by the palette. ChoreBoy shows its own text colour; pick a colour here to override it." and writes the style sheet declaration when changed.
+
+| Class | Text colour writes | Background writes |
+| --- | --- | --- |
+| Label, group box, frame, plain widget, the form | Window text | Window (+ fill background) |
+| Check box, radio button | Window text | Button (+ fill background) |
+| Push button, tool button | Button text | Button |
+| Command link | Button text | Button (+ fill background) |
+| Line edit, text edit, plain text edit, spin boxes, date and time edits, list, tree and table widgets and views | Text | Base |
+| Combo box | Button text (Text when editable) | Button (Base when editable) |
+
+The lane renders each row's effect under the Fusion runtime look (UX-ISO-001); a class where the colour does not show in that render loses the row (the test is a pixel check per class). When the widget's sheet, or an ancestor's, sets the same thing (`color`, `background`, `background-color` matching this widget), the row keeps its value and shows, in `fb.warning`: "The style sheet sets this colour, so this one has no effect." with an [Edit style sheet] link.
+
+**UX-STYLE-011** `M5.3` `[S]` Appearance order for text-bearing widgets: Font, Text colour, Background, Style sheet, then the M4 rows (alignment, word wrap, frame …). So bold, size and colour are in one place (the M4.5 persona's confusion). The font summary gains the colour swatch when Text colour is set ("Sans Serif, 14 pt, Bold · ■ #1A7F37").
+
+**UX-STYLE-013** `M5.3` `[S]` The palette editor (M4.3b) shows, under any text role (Window text, Text, Button text, Bright text, Placeholder text) the user sets, in `fb.warning`: "ChoreBoy's theme sets text colours, so this has no effect when the app runs. Use Text colour in Appearance." The value is still written (Designer and other runtimes read it).
+
+**UX-STYLE-012** `M5.3` `[S T]` Theme (D5, delighter 12). The form inspector gets a "Look" group (through the form-group slot): "Accent colour" (a colour row writing the root palette's Highlight and Link roles; caption "Colour of selections, progress bars and links.") and "Text size" (point size on the root font, 8–24 pt; caption "Every widget that doesn't set its own size follows this."). Both are ordinary root properties, so Designer, uic and `QUiLoader` read them. Reset removes them. One step each, "Change accent colour", "Change text size".
+
+#### 13.2.5 Your own classes (CUST)
+
+**UX-CUST-001** `M5.4` `[S K]` Entry points: the canvas and outline context menu "Use my own class…" (tooltip "Qt Designer calls this Promote to."), and Insert's "Your widgets" category (UX-CAT-002), which now lists the project's registry (UX-CUST-006) as well as this form's declarations. Several selected widgets of the same class are changed together.
+
+**UX-CUST-002** `M5.4` `[S K T]` The "Use my own class" popover (level 2, 360 px, anchored like UX-ITEM-002). Top: "CLASSES IN THIS PROJECT", the registry entries based on the widget's class (or a compatible base), each "TillDisplay · widgets.till_display"; Enter on one fills the fields. Then the fields: "Class" (placeholder "TillDisplay"), "From Python module" (placeholder "widgets.till_display"), "Based on" (the widget's class in friendly words, read-only here), "Holds other widgets" (check box, shown only when the base is a container). Under the fields a live check line (UX-CUST-003). Footer: [Use {Class}] (disabled while the class or module field is empty or not a name) and [Cancel]. Enter on the button, Esc cancels.
+
+**UX-CUST-003** `M5.4` `[S A]` The check line, updated 150 ms after typing, never importing (D15). The module path is resolved under the project root as `{a}/{b}.py` or `{a}/{b}/__init__.py`; the file is read with `ast` and its top-level classes listed:
+
+| Case | Line | Colour |
+| --- | --- | --- |
+| Found, base matches | "Found TillDisplay in widgets/till_display.py." | `fb.ok` |
+| Found, different base | "TillDisplay in widgets/till_display.py is based on {base}, not {expected}. The form may look different when it runs." | `fb.warning` |
+| File found, class missing | "widgets/till_display.py has no class called TillDisplay." | `fb.warning` |
+| File missing | "There's no widgets/till_display.py in this project yet. You can still use the name." | `fb.warning` |
+| Not a module path | "Use a module path like widgets.till_display." | `fb.error` (blocks) |
+| Not a class name | "Use a class name like TillDisplay: letters, digits and _, starting with a letter." | `fb.error` (blocks) |
+| Form outside a project | "This form isn't in a project, so Preview shows a stand-in." | `fb.faint` |
+
+The `ast` read does not follow imports and caches by path and mtime.
+
+**UX-CUST-004** `M5.4` `[T A]` Storage (D14, R3 123, 194). Using a class writes, once per form, `<customwidget><class>TillDisplay</class><extends>QLabel</extends><header location="local">widgets/till_display.h</header></customwidget>` (plus `<container>1</container>` when "Holds other widgets" is on), and sets each widget's `class` to `TillDisplay`. One step "Use class {Class} for {name}" ("for 3 widgets"). Our generator writes `from widgets.till_display import TillDisplay`, as uic does (P-7). Every other `customwidget` child (`sizehint`, `addpagemethod`, `slots`, `propertyspecifications`, `pixmap`) is kept as written (R3 195).
+
+**UX-CUST-005** `M5.4` `[K T]` The context menu of a widget using its own class has "Back to {friendly base}" (Designer's Demote), one step "Use {friendly base} for {name}"; the declaration is removed when nothing uses it (CONTRACTS `Promote`). Changing to another own class uses the same popover.
+
+**UX-CUST-006** `M5.4` `[S T]` The registry (D18): `form_builder.custom_widgets` in `cbcs/project.json`, a list of entries with class, module, base class, "holds other widgets", and optional description, size on the canvas, add-page method, signals and slots (the last two for M6's pickers, LOGIC_DESIGN §2.7 "reads a declaration in the widget registry"). Using a class adds its entry (written at once, not on undo; the popover says "Saved for this project's other forms." the first time). In the popover, each registry row has a ⋯ with "Edit…" (the same fields plus description and size) and "Remove from this list" (forms keep their declarations). Insert's tile for a registry entry inserts the base class with the class applied, one step "Insert {Class}".
+
+**UX-CUST-007** `M5.4` `[S A]` Canvas drawing (D17). A widget using its own class draws as its base class when the base is anything but a plain `QWidget` or `QFrame`. For those two it draws a stand-in (UX-CONT-017 tokens) reading "{Class} · from {module}" at the registry's size on the canvas, else the declaration's `sizehint`, else 120 × 40. Either way its hit area is at least 80 × 24 px on the canvas only (never saved), and it carries an `ov.own_class` corner tag when selected or hovered. The inspector header reads "TillDisplay · your class, based on Label" with the Qt name line "TillDisplay (QLabel)". The editor process never imports the module (CONTRACTS §10.4 test).
+
+**UX-CUST-008** `M5.4` `[S T A]` Preview (D16). The preview child imports each own class from the project, then builds one instance on a throwaway hidden parent and deletes it, before `setupUi`. If the import or that build raises, the child installs a stand-in class of that name based on the declared base and reports FB602; the form still opens. The editor shows the toast "Preview used a plain {friendly base} for {Class}. [Show problem]" and the Problems row "Preview used a stand-in for {Class}: {ExceptionName} in {file} line {n}." A hang inside the class is caught by the existing ping and restart (CONTRACTS §10.3). Editing the module and previewing again re-imports it (the child drops the project's modules before each load). The pain test: a class that raises in `__init__` shows the error, the preview opens with the stand-in, and the editor still renames a widget.
+
+**UX-CUST-009** `M5.4` `[S]` Security note (R3 198). The first Preview of a project form that uses own classes in a session shows an info bar on the form tab: "Preview runs code from this project: {Class} ({file}){, and n more}. Code Studio runs it only in the preview window, never in the editor." [Got it]. It is not shown again for that project in the session. A form outside a project never imports own classes; Preview shows stand-ins and the status bar says "Preview shows stand-ins for your own classes, because this form isn't in a project." Opening any `.ui` never runs code and never loads a Designer plugin, and picture paths in a file are only read, never executed.
+
+**UX-CUST-010** `M5.4` `[S]` Problems: FB035 Warning "{Class} comes from {module}, which isn't in this project." (fix [Use my own class…] opens the popover); FB030 and FB504 keep their meanings. A dotted module that `header_module` can't read stays FB504.
+
+**UX-CUST-011** `M5.4` `[A]` Designer's plugin interface and extensions (R3 196, 197) are met by declarations, never by running code in the editor: name, group ("Your widgets"), tooltip (description), include file (module), icon (the base class glyph), container, default content (an inserted registry entry's fragment), add-page method for containers, and signals and slots for M6. Task-menu, member-sheet and property-sheet extensions that need plugin code are not offered; the editor never loads Designer plugins (CONTRACTS §10.4). R3 196 and 197 are done when the declaration fields round-trip and the Insert, canvas and M6 picker readers use them.
+
+#### 13.2.6 Preview options, image, print and View code (PREV)
+
+**UX-PREV-001** `M5.5a` `[S K]` The **Aa ▾** menu (UX-WB-003) gains, after the M3 rows, a group titled "Preview" with "Style ▸" with "Fusion · as on ChoreBoy" (default, checked) and every other style the preview runtime reports, by name; and "Screen ▸" with "ChoreBoy screen · 1366 × 768" (default), "Small screen · 1024 × 600", "Full HD · 1920 × 1080", the user's profiles, and "Add a screen…" (Name, Width, Height, Font, Font size, Scale 100–200 %). A Caption at the top of both submenus: "Preview only. The canvas always shows the ChoreBoy look." (D21). Group titles ("Text size", "Screen scale", "Preview") and the caption are words that are never a choice and show in every style (Windows, Fusion, macOS, and under the shell's style sheet), not `addSection` text, which Windows and style sheets drop. Choices are per user, not in the file (R3 178, 179), in the same `preview_style` and `preview_screen` keys Settings > Form designer writes (CONTRACTS §14): a pick in either place is the other's value, read again each time the menu opens or a preview starts. The Preview window title adds the choices when not default: "Preview · invoice.ui · Windows style · Small screen". The window opens at the form's size, clamped to the profile's screen size, with the profile's font and scale.
+
+**UX-PREV-002** `M5.5a` `[S T]` Form > "Save image…" (R3 180) opens the shell file dialog in the form's folder with the name `{form stem}.png`. The image is the open Preview of this form when there is one (real classes, chosen style), else the canvas page at 100% (one picture pixel per logical pixel, also on a 200% screen) without overlays, chips or placeholders. Toast: "Saved invoice.png. · Show". It never writes the `.ui`.
+
+**UX-PREV-003** `M5.5a` `[S]` Form > "Print…" (no key; D24) opens Qt's print dialog with the same image fitted to the page, centred, with "Print to PDF file" available when no printer is set up. Printing never writes the `.ui`.
+
+**UX-PREV-004** `M5.5a` `[S K T]` View code (R3 181, D22). Form > "View Python code" and Ctrl+K, C toggle a read-only split at the right of the canvas column (default 45% of it, at least 300 px; the canvas keeps at least 360 px). When the canvas column is too narrow for both (the default layout on a 1366 × 768 ChoreBoy screen), the Outline pane goes to its rail while the split is open (status "The Outline is on the left rail while the code is open."), then the inspector ("The Outline and the inspector are on their rails while the code is open."); the inspector also goes whenever that is what it takes for the split to show about 60 characters of a code line (at 1366 it does), and both come back when the split closes, and the rails still open them as drawers. The code wraps at the split's width (a wrapped line shows its line number once), and the code font drops from the editor's size to no less than 8 pt when that fits 60 characters; the canvas still keeps its 360 px. Only when even that leaves too little room does the split refuse with the status "Make the window wider to see the code beside the form." Header: "ui_{name}.py · as it will be saved" and [Open file] (when saved). Body: the CBCS code editor, Python highlighting, read only, the shell's find. The text is generated in memory from the current, unsaved form 300 ms after the last change (the preview's generation path); when generation fails the body shows the FB502 sentence. Selecting a widget scrolls the code to the line that creates it and marks its lines with `fb.row_selected`; a click in the code on a line that names a widget selects that widget (should). Ctrl+K, C again or Esc in the split closes it; focus returns to the canvas.
+
+**UX-PREV-005** `M5.5a` `[A]` Preview (R3 177) uses the same generated module as the app (CONTRACTS §10.2). A style or screen change sends `set_appearance` to the warm child; no restart.
+
+#### 13.2.7 Form settings (FSET)
+
+**UX-FSET-001** `M5.5b` `[S K]` Form settings (D19) are groups in the form inspector (UX-INSP-010), after the M3 groups, collapsed by default: **Code**, **Translation**, **Free placement**. Form > "Form settings…" selects the form, opens the inspector (Alt+4), expands Code and focuses its first row. Each change is one step "Change form setting: {label in lower case}". Every row has the reset and changed-state model of UX-INSP-006.
+
+**UX-FSET-002** `M5.5b` `[S]` **Code** group rows (R3 185–190): "Author" (`author`); "Default gaps" (check box, then "Gap" and "Margin" numbers, `layoutdefault`; caption "Used by layouts that don't set their own."); "Gap functions" (check box, then two function names, `layoutfunction`; caption "Python code calls these functions for gaps and margins instead of numbers."); "Picture function" (`pixmapfunction`, a function name); "Extra includes" (the list editor of UX-PED-044, each line with Local or Global, `includes`; caption "Used by C++ code. Python ignores these lines; they are kept for Qt Designer."); "Export macro" (`exportmacro`) and "Comment" (`comment`), each with the caption "Kept for Qt Designer and C++ code." Function names are checked as Python names: "Use a function name like margin_for."
+
+**UX-FSET-003** `M5.5b` `[S]` **Translation** group (R3 191, 192): "Translate by ID" (`idbasedtr`, caption "Each text uses its translation ID instead of the English text."), "Code language" (`language`) and "Display name" (`displayname`), each with the caption "Kept for Qt Designer."
+
+**UX-FSET-004** `M5.5b` `[S]` Legacy defaults (R3 193). When the file has `stdsetdef` or `stdSetDef`, the Code group shows a read-only row "Older file setting" with the value, the caption "Kept as is. Newer forms don't use it." and a [Remove] button (one step). The builder never writes either attribute on a new form, and never drops one it read.
+
+**UX-FSET-005** `M5.5b` `[A]` Every Code and Translation row round-trips byte-identically when unchanged, and our generator matches uic for `layoutdefault`, `layoutfunction` and `pixmapfunction` (oracle).
+
+**UX-FSET-006** `M5.5b` `[S T]` **Free placement** group (R3 222, D20), shown only when the form has a container without a layout: "Show grid" (check box), "Step across" and "Step down" (2–100 px, default 8), "Snap to grid" (check box). Caption: "Only for containers without a layout. Alt+arrows move by one step." Values are written to `designerdata` only when they differ from the defaults, as Designer does. The canvas dot grid inside free containers and the Alt+arrow nudge (UX-NUDGE-001) follow the step.
+
+#### 13.2.8 Templates, Start v2 and settings (TMPL)
+
+**UX-TMPL-001** `M5.5c` `[S K T]` Form > "Save as template…" (R3 184, D23) opens a level 2 popover anchored under the tab toolbar: "Name" (default the window title, else the file stem in words), "Description" (one line, placeholder "What this form is for"), "Keep it for" two radios "All my projects" (default) and "This project only", the Caption "Saves a copy of this form's design and pictures. Your code and data are not included.", and [Save template] [Cancel]. A name in use asks: "Replace the template “{name}”?" [Replace] [Cancel]. Toast: "Saved the template “Shop window”. It's on the New form tab."
+
+**UX-TMPL-002** `M5.5c` `[A]` Storage. A template is a folder: `form.ui` (the form as saved), `template.json` (name, description, root class, created date, builder version), `thumbnail.png` (the canvas page at 200 × 120 without overlays) and, when the form uses pictures, `pictures/` plus a `resources.qrc` holding only those pictures. "All my projects" folders live in `form_templates/` in the Code Studio settings folder; "This project only" in `cbcs/form_builder/templates/` (pruned from packages, PLAN M2.4). Own classes stay as declarations; their code is not copied. These files are not on the form's undo stack.
+
+**UX-TMPL-003** `M5.5c` `[T A]` Creating a form from a saved template copies `form.ui`, renames the root and the form class to the name row's name, keeps every other object name, connection and logic property, copies its pictures into `forms/pictures/` and merges them into `forms/resources.qrc` (creating it per UX-RES-002; a different file with the same name gets `_2` and the properties are rewritten), rewrites the include, and creates `ui_{name}.py` and `{name}_window.py` as any new form. An own class whose module isn't in this project gives FB035 and the toast "{Class} comes from {module}, which isn't in this project. The form shows a stand-in." The result opens in the Workbench with the root selected.
+
+**UX-TMPL-004** `M5.5c` `[S K]` Start v2 (UX-START-002 layout, built here). Amends UX-START-007: "Your templates" is the **first** group when at least one template exists, before Templates. Its cards use the thumbnail, the name, the description and, for project templates, a faint "This project" tag. Shift+F10 or right-click on a card: "Rename…", "Change description…", "Delete template…" (asks "Delete the template “{name}”? Forms made from it don't change." [Delete template] [Cancel]). Ctrl+Down and Ctrl+Up move to the next or previous group (UX-CAT-010). A template that fails to read shows a card "Can't open {name}" with the reason in its tooltip and only "Delete template…".
+
+**UX-TMPL-005** `M5.5c` `[S T]` Built-in templates (R3 183). Templates adds "Dialog with side buttons" (Designer's Dialog with Buttons Right; the name fits the 200 px card title; a horizontal layout: the content area, then a vertical button box with OK and Cancel connected to accept and reject). The Designer templates map to cards: Dialog with Buttons Bottom → "Dialog with OK and Cancel"; Dialog without Buttons → blank "Dialog"; Main Window → blank "Main window" (UX-MAIN-001); Widget → blank "Widget". Every built-in is already laid out (UX-START-002's sentence), unlike Designer's.
+
+**UX-TMPL-006** `M5.5c` `[S K]` Settings > Form designer (R3 182) is a page in the CBCS settings dialog: "Preview style" and "Preview screen" defaults (UX-PREV-001), "Start the preview process when a form opens" (pre-warm, CONTRACTS §10.3), "Insert shows" (Icons, List, Automatic), "Show Qt names in the inspector" (UX-INSP-005), "Where new templates go" (All my projects, This project only), and a link "Keyboard shortcuts…" to Settings > Keyboard filtered to "Form designer". The keys and their defaults are in CONTRACTS §14; the page joins the dialog through the shell's settings-page registry and saves in the same write as the shell.
+
+#### 13.2.9 One editing mode, overlays and keys (MODE)
+
+**UX-MODE-001** `M5.6` `[T A]` One editing mode (pain 13, R3 1). The canvas has no tool or mode state. Tab order and Buddies are the overlays of UX-OVL-001 … 008, never sticky: Esc, F3, Done, a structural command or a tab switch closes them. Connections are edited in the Behavior tab while the canvas stays as it is. The P-13 test adds a connection with a button selected and asserts the canvas's state object is unchanged.
+
+**UX-MODE-002** `M5.6` `[K T]` Tab order overlay keys (R3 10). With the overlay open, the canvas selection keys work as usual (arrows, Tab). Enter on the selected widget gives it the next number (the status says "Press Enter to make emailEdit number 4."); Shift+Enter makes the selected widget the place to continue from (Shift+click's keyboard form). Backspace undoes the last assignment in this overlay session. Badges follow UX-OVL-004.
+
+**UX-MODE-003** `M5.6` `[S K T]` Tab order list (R3 11, 12). The form inspector's "Tab order" group (UX-OVL-006) is the full list editor: numbered rows "1 · nameEdit · Line edit", Alt+Up and Alt+Down move, Enter selects the widget on the canvas, "Use reading order" resets (deletes `tabstops`). Form > Overlays ▸ "Tab order list…" focuses it. Only widgets that take focus by Tab are listed (focus policy with the Tab bit, or the class's Qt default); a button box is not listed (UX-OVL-004). An empty list shows UX-EMPTY-007. New inputs join a custom order by reading position (pain 20).
+
+**UX-MODE-004** `M5.6` `[S K T]` Buddies by keyboard (R3 8, 9). A label's curated Content "Buddy" row becomes a drop-down (no longer a text field, UX-M4 deferral; All properties keeps the raw `buddy` text field): "None", then the form's focusable fields in reading order, "emailEdit · Line edit", type to filter. In the Buddies overlay, Enter on a selected label starts a link, arrows or Tab select a field, Enter sets the buddy (status: "Choose the field for “Email”, then press Enter."); Esc cancels the link. One step "Set buddy of {label}". "Pair labels automatically" stays in the banner (UX-OVL-008).
+
+**UX-MODE-005** `M5.6` `[S K A]` Form designer keys. Help > "Form designer keys" opens a non-modal "Form designer keys" window (M5.6 gate: an editor tab needs a shell virtual-tab kind; revisit with the shell) generated from the registered shortcuts (UX-KEY-002), so it can't drift from the real bindings. A filter field (placeholder "Search keys", focused on open), then groups in UX-KEY-004's order; columns "Keys", "What it does", "Where", "In Qt Designer". Rebinding a key in Settings > Keyboard updates the page the next time it is shown. A test fails if any registered form command is missing from the page or the page lists a key that isn't bound.
+
+**UX-MODE-006** `M5.6` `[A]` Designer key mapping (R3 199–221). The "In Qt Designer" column and the test table:
+
+| R3 | Designer | Code Studio |
+| --- | --- | --- |
+| 199 | Ctrl+N new form | File > New Form… (Ctrl+N is New Project) |
+| 200 | Ctrl+O open form | Ctrl+P Quick Open, or the project tree |
+| 201, 202 | Ctrl+S, Ctrl+Shift+S | same |
+| 203, 204 | Ctrl+W, quit | same (Ctrl+W closes the tab or the Preview; Ctrl+Q quits) |
+| 205, 206 | Undo, redo, clipboard, Delete | same (UX-KEY-004) |
+| 207 | Ctrl+R preview | Ctrl+Shift+R (Ctrl+R is Go to widget, §16.1) |
+| 208 | Ctrl+P print | Form > Print… (Ctrl+P is Quick Open) |
+| 209 | F1 help for the widget | F1 (UX-MODE-007) |
+| 210 | Ctrl+? Designer help | Help > Form designer keys |
+| 211 | F3 or Esc widget mode | F3 or Esc leaves an overlay |
+| 212 | F4 signals and slots | F4 (Connections overlay from M6; until then the status says "Connections are in the Behavior tab. Alt+4 goes there.") |
+| 213 | F2 edit text | Enter (F2 renames) |
+| 214 | Ctrl+F find in object inspector | Ctrl+F |
+| 215 | Ctrl+1 … Ctrl+6 layouts | same |
+| 216 | Ctrl+0 break layout | Form > Layout > Remove layout…, or Ctrl+Shift+B to unwrap (Ctrl+0 is 100% zoom) |
+| 217 | Ctrl+J adjust size | same |
+| 218 | Ctrl-drag clone | same |
+| 219 | Arrows snap, Ctrl+arrows 1 px | Alt+arrow by the grid step, Alt+Shift+arrow 1 px (arrows select) |
+| 220 | Shift-click selects the parent layout | Esc |
+| 221 | Shift+Ctrl+drag moves inside a layout | a plain drag |
+
+**UX-MODE-007** `M5.6` `[S K]` F1 with a widget selected opens a help card popover anchored to the selection (level 2, 320 px): the glyph and friendly name, the catalog description, the Qt class, the curated groups it has ("You can set: Text, Echo mode, Maximum length …"), and two links: "All form designer keys" and, when the user manual has a page for it, "Read more". Esc closes it; focus returns. With nothing but the form selected, F1 opens Form designer keys.
+
+**UX-MODE-008** `M5.6` `[K]` UX-A11Y-001's M5.6 part: K23 reorders tab order and sets two buddies with keys only.
+
+#### 13.2.10 Copy tables
+
+**Undo names** (UX-M5-008):
+
+| Action | Undo name |
+| --- | --- |
+| Add / remove menu bar, toolbar, status bar | "Add menu bar", "Add toolbar", "Add status bar", "Remove menu bar", "Remove toolbar", "Remove status bar" |
+| Type a new menu / entry / toolbar button | "Add menu {text}", "Add {text} to the {menu} menu", "Add {text} to {toolbar}" |
+| Separator | "Add separator", "Remove separator" |
+| Edit a title or entry text | "Rename menu {old} to {new}", "Change text of {action}" |
+| Move a menu, entry or button | "Move {text}" |
+| Remove an entry / menu | "Remove {text}", "Remove the {title} menu" |
+| New / delete / paste action | "New action {text}", "Delete action {text}", "Paste {n} actions" |
+| Groups | "Group actions", "Ungroup actions", "Make a button group", "Ungroup buttons", "Change button group of {name}" |
+| Widget actions (UX-MAIN-017) | "Add {action} to {name}", "Remove {action} from {name}" |
+| Add picture / use another pictures file / stop using one | "Add picture {file}", "Use pictures file {path}", "Stop using pictures file {path}" |
+| Style sheet session | "Change style sheet of {name}" |
+| Colour rows and theme | "Change text colour of {name}", "Change background of {name}", "Change accent colour", "Change text size" |
+| Own class | "Use class {Class} for {name}", "Use {friendly base} for {name}", "Insert {Class}" |
+| Form settings | "Change form setting: {label in lower case}", "Remove older file setting" |
+| Tab order, buddies | "Change tab order", "Use reading order", "Set buddy of {label}", "Pair labels" |
+| Resource editor tab | "Add {n} pictures", "Remove {file}", "Rename {file}", "New prefix {prefix}" |
+
+**Refusals, warnings and status sentences** (every sentence a lane may show for M5; the clauses above hold the confirms and toasts):
+
+| Where | Sentence | Colour |
+| --- | --- | --- |
+| Main-window part on another form | "Menus, toolbars and status bars go on a main window. This form is a {friendly root class}." | status |
+| Widget on a toolbar | "A toolbar holds actions. Make an action, or put the widget in the window." | status + `ov.problem` |
+| Widget on a menu or menu bar | "Menus hold actions. Type a menu entry instead." | status + `ov.problem` |
+| Widget on a status bar | "A status bar can't hold widgets from the form. It shows messages from your code." | status + `ov.problem` |
+| Keyboard insert redirected | "Inserted in the central area." | status |
+| Drop outside menus | "Drop it on a menu or a toolbar." | status |
+| Delete the central area | "The central area belongs to the window. Delete what's inside it instead." | status |
+| Menu editing grammar | "Left and Right move between menus. Down opens one. Type on Type here to add. Esc leaves." | status |
+| Mnemonic caption | "Put & before a letter to open it with Alt and that letter." | Caption |
+| Drop picture of another type | "Only pictures can go here." | status |
+| FB031 | "{name} uses a picture from a file path ({path}). A packaged app may not find it." | `fb.warning` |
+| FB032 | "{qrc} lists {file}, but the file is missing." | `fb.warning` |
+| FB033 | "The style sheet of {name} can't be read, so Qt ignores all of it." | `fb.warning` |
+| FB034 | "This rule matches nothing on the form: {selector}." | Info |
+| FB035 | "{Class} comes from {module}, which isn't in this project." | `fb.warning` |
+| FB036 | "The action {text} isn't on any menu, toolbar or widget." | Info |
+| FB037 | "{name} is inside a {toolbar or status bar}. It won't show where you see it here." | `fb.warning` |
+| Style check | "Looks right" / "Line {n}: a {mark} is missing." ({mark} is `}`, `{`, `)`, `(`, `]`, `[` or a quote) / "Line {n}: a ; is missing after the value." / "Line {n}: a : is missing after “{word}”." / "Line {n}: a */ is missing." / "Line {n}: a { is missing." (a selector with no body at the end) / "Line {n}: “{word}” isn't a property Qt knows." / "Line {n}: “{word}” isn't a state Qt knows." / "Qt can't read this style sheet." | `fb.ok` / `fb.error` / `fb.warning` / `fb.warning` / `fb.warning` / `fb.warning` / `fb.warning` / `fb.warning` / `fb.error`; any line finding is `fb.warning` when Qt reads the sheet (UX-STYLE-004) |
+| Style sheet row, sheet Qt can't read | "Can't be read" (summary) and, on Text colour, "The style sheet can't be read, so it can't be changed here." | `fb.warning` |
+| Style match chip | "1 widget" / "{n} widgets", then " · when {state} and {state}" / "No match" | `fb.muted` / `fb.warning` |
+| Text colour from the palette | "Set by the palette. ChoreBoy shows its own text colour; pick a colour here to override it." | Caption |
+| Palette editor text role | "ChoreBoy's theme sets text colours, so this has no effect when the app runs. Use Text colour in Appearance." | `fb.warning` |
+| Look group captions | "Colour of selections, progress bars and links." / "Every widget that doesn't set its own size follows this." | Caption |
+| Colour row overridden | "The style sheet sets this colour, so this one has no effect." | `fb.warning` |
+| Style matches | "This rule styles {a}, {b} and {n} more." | status |
+| Own class check | the seven lines of UX-CUST-003 | as listed |
+| Preview stand-in | "Preview used a stand-in for {Class}: {ExceptionName} in {file} line {n}." | Problems |
+| Outside a project | "Preview shows stand-ins for your own classes, because this form isn't in a project." | status |
+| Function names | "Use a function name like margin_for." | `fb.error` |
+| View code too narrow | "Make the window wider to see the code beside the form." | status |
+| View code moved panes to their rails | "The Outline is on the left rail while the code is open." / "The Outline and the inspector are on their rails while the code is open." | status |
+| Save image, nothing to draw | "There is no form to save as an image." | status |
+| Save image, write failed | "{name} could not be saved." | status |
+| Print, nothing to draw | "There is no form to print." | status |
+| Print failed | "The form could not be printed." | status |
+| F4 before M6 | "Connections are in the Behavior tab. Alt+4 goes there." | status |
+| Tab order overlay | "Press Enter to make {name} number {n}." | status |
+| Buddy overlay | "Choose the field for “{label text}”, then press Enter." | status |
+| Tab order overlay, a numbered field clicked again | "{name} is number {n}." | status |
+| Tab order banner | "Click fields in the order Tab should visit them." | overlay banner |
+| Buddies banner | "Drag from a label to its field." | overlay banner |
+| Pair labels | "Paired {n} labels" ("Paired 1 label") | status |
+| Template card menu, Rename… | input dialog titled "Rename template", label "Name", filled with the current name | dialog |
+| Template card menu, Change description… | input dialog titled "Change description", label "Description", filled with the current description | dialog |
+| Template name in use (rename) | "A template named “{name}” already exists." | status |
+| Template name empty / too long | "A template needs a name." / "Use a shorter name for the template." (80 characters) | status |
+| Template that can't be read, Rename or Change description | "That template can't be read, so it can only be deleted." | status |
+| Template card for a folder that can't be read | title "Can't open {folder}", tooltip one of "template.json is missing." / "template.json can't be read." / "template.json has no name." / "template.json is too large to be a template description." / "form.ui is missing." | `fb.muted` |
+| New form from a template that can't be read | "That template can't be opened: {reason}" | status |
+| Template file errors | "Code Studio couldn't save the template." / "Code Studio couldn't change the template." / "Code Studio couldn't delete the template." / "That folder is not one of your templates." | status |
+| Template scope | "Open a project to keep a template for this project only." / "Code Studio has no settings folder to keep templates in." | status |
+| Form too large or unreadable for a template | "This form is too large to keep as a template." / "The form can't be read, so it can't be kept as a template: {reason}" | status |
+
+**FB codes.** FB031–FB037 are new in this version (CONTRACTS §7.2 gains them through the lanes' `engine/diagnostic_codes/` modules). FB031, FB032 belong to M5.2; FB033, FB034 to M5.3; FB035 to M5.4; FB036, FB037 to M5.1.
+
+#### 13.2.11 Deferred from M5, with owners
+
+| Item | Owner |
+| --- | --- |
+| Connecting an action's `triggered` to a method, and the Connections overlay (F4) | M6.1 (LOGIC_DESIGN §2.2 table already lists `QAction`) |
+| Signal and slot pickers reading the own-class registry | M6.1 |
+| Drops and moves inside the wide copy of Two widths | M9.5 (unchanged) |
+| Task-menu, member-sheet and property-sheet plugin extensions | Not offered: they need plugin code in the editor (UX-CUST-011) |
+| Corner radius as a theme role | Not offered: use the style sheet (D5) |
+| The shell's Ctrl+F find bar inside the style sheet drawer (UX-STYLE-002); in a form tab Ctrl+F is the inspector filter, so the key needs focus routing to the drawer's editor | M5.R (found at the M5.3 gate) |
+
+### 13.3 M6: events and your code (logic levels 1 and 2)
+
+Version 4 (work package M6.0, 2026-10-29). Binding for M6. It turns UX-INSP-013, UX-INSP-014, UX-EMPTY-005, UX-OVL-009, UX-KEY-005 and the M6.2 note in UX-TEXT-001 into full clauses (areas BEH, PICK, ARR, CODE, LST, plus UX-TOK-007 and the shared rules UX-M6-001 … 006). It is the on-screen half of LOGIC_DESIGN §2.1–2.3, §2.7, §2.9, §2.12, §2.13 and §3 for levels 1 and 2. The storage, command and handler contracts are in CONTRACTS.md §15 and §16; the changes this version makes to LOGIC_DESIGN are listed at its end ("Changes recorded by M6.0").
+
+**Scope.** Level 1: a widget drives another widget (or the form). Level 2: a widget calls a method you write in `<name>_window.py`. State rules, checks, formulas, the no-code step vocabulary, form events and Try mode are M7; the Data tab is M8. Where M6 leaves room for them, the clause names the registry M7 fills. M6 never shows a row, section or menu item it can't fill (UX-COPY-002).
+
+The lane split, owned files and parity rows are in `PLAN.md` ("M6 lanes"). Clauses that earlier versions tagged `M6.1` or `M6.2` (UX-OVL-009, UX-TEXT-001's note, CONTRACTS §3.5 owners) are built by the lanes named here. Copy in quotes is the exact on-screen text; `{name}` is filled in at run time. The M6 screenshot states, keyboard scripts K24–K26, automated checks and persona walkthroughs are in section 12 under "M6".
+
+**Words.** In this section a **sender** is the widget, action or form whose event it is; an **event** is one of the sender's Qt signals, shown in words ("When clicked"); a **step** is one thing that happens, in run order; a **plain step** is a Qt slot on a widget or the form, or a call to one of your methods, with no condition and turned on; **your method** is a method of the window class in `<name>_window.py`; the **window file** is that file.
+
+#### 13.3.1 Decisions and shared rules
+
+**Decisions.** Each open question from the M6 brief, the answer, and why. A lane that wants a different answer asks the orchestrator first; it is not a gate finding.
+
+| # | Question | Decision | Why |
+| --- | --- | --- | --- |
+| D1 | Where does the Events list live? | In the inspector's **Behavior** tab, for the selected sender (widget, action, or the form itself), as the Events section of LOGIC_DESIGN §2.1. With the form selected the tab also lists every event on the form (Designer's Signal/Slot Editor table, R3 5) and the methods the form names (R3 6). There is no separate panel in M6; M7.8's Logic panel becomes the form-wide home later (UX-BEH-001, 016, 017) | One place to look per widget (LOGIC P1). The inspector already follows the selection and has the count badge and a key (Alt+B). Designer's table hidden behind a mode is pain 16 |
+| D2 | How are steps stored: native `<connections>` or a step list? | Per event. When every step of an event is a plain step, the event is saved as one `<connection>` per step, in list order. Otherwise all steps of that event are one `cbcsOn<Signal>` step list. The builder converts both ways inside the same undo step and the person never chooses (UX-LST-004, CONTRACTS §15.6) | Qt Designer, uic and `QUiLoader` see the common case. CBCS never splits one event across two storages, so the run order is the list order |
+| D3 | What needs a step list in M6? | Only a step that is turned off (UX-BEH-008). Conditions and no-code steps arrive with M7.1 and M7.4 and use the same list. M6 adds two step verbs to schema v1, `slot` and `call` (CONTRACTS §15.3) | M6 proves the conversion and the codec end to end before M7 depends on them. "Off" is the one M6 need a native connection can't store |
+| D4 | "Enable this field while that box is checked" | Not offered as an intent in M6. The intents are a registry (`engine/logic/intents/`); M7.2 adds rule intents to it and the step picker shows them without a change to M6 files. A plain `toggled(bool)` → `setEnabled(bool)` connection can still be made from "Everything {target} can do" | A rule needs formulas and refresh (LOGIC Decision 2). Offering it now would store something that does nothing when the app runs |
+| D5 | When are arrows drawn on the canvas? | For the selected widget, only while the Behavior tab is the current inspector tab or the Connections overlay is open; for every widget with Show all connections (Ctrl+Shift+L). The `>` badge marks every widget that has events, whenever Design is shown (UX-ARR-001 … 005) | UX-PRIN-004: structure appears where you look. Arrows across fields while laying out repeat the M3 chip fault. LOGIC §2.7's one-widget default is kept |
+| D6 | What is F4? | The **Connections** overlay, Designer's signals and slots mode (R3 2), opened and closed like F7 and F8. Drag (or Enter, arrows, Enter) from a sender to a receiver opens the same pickers. The canvas has no mode state (UX-MODE-001) | Designer parity for veterans, with the Buddies overlay's gesture vocabulary |
+| D7 | Designer's draggable connection points (`<hints>`) | Kept and written back unchanged, including when a native connection becomes a step list and comes back. Dropped when that connection's sender, receiver, or slot changes. Reordering keeps them. Arrows are routed automatically and have no handles | Hints only change Designer's drawing; keeping them gives a zero-diff Designer resave |
+| D8 | What does double-click do? | On push, tool and command-link buttons, check boxes, radio buttons, button boxes, and actions (a menu entry on the canvas or a row in the Actions section), double-click goes to the code for the default event (LOGIC §2.2 table), creating it the first time. Enter stays the text gesture (UX-TEXT-001). Every other widget keeps its M3–M5 double-click | The Delphi and VB6 gesture (delighter 5). Widgets with no meaningful event keep text editing |
+| D9 | What if `<name>_window.py` doesn't exist? | For a form that generates (in `forms/` or adopted), making a method first writes the window file exactly as Save would (`render_window_class`), then adds the method. Undo removes the method and keeps the file. For a form that doesn't generate, "Call a new method" and double-click say why and offer "Adopt this form…" (UX-CODE-017) | The file is what the next Save creates anyway. Deleting a file on Undo is riskier than keeping a correct one |
+| D10 | How is a method added without clobbering user code? | As whole lines after the last line of the window class (its last method or statement, plus the indented comments that follow it), never inside a line. Indentation, tabs, blank-line spacing and line endings follow the file. Nothing else in the file changes, ever. Undo removes the method only while its text is exactly what was inserted. A file that can't be read safely, isn't valid Python, or has no window class is never edited (UX-CODE-005, 006, 008) | LOGIC P6 and pain 6. Line-boundary edits avoid the byte-versus-character trap of `ast` column offsets (the current `plan_stub` computes a character offset from a UTF-8 byte column) |
+| D11 | How is user code read safely? | Never imported. The M5.4 file rules (a regular file inside the project, at most 1 MB, a symlink out of the project refused, decoded by its coding cookie), then a linear `tokenize` pre-scan that refuses a logical line of more than 2,000 tokens or brackets nested deeper than 100, and only then `ast.parse` of the whole file. Cached by path, mtime and size, or by text hash for an open tab. An open tab's text is what is checked (CONTRACTS §16.1) | The M5.4 gate saw one crafted line overflow the C stack inside `ast.parse` on Python 3.9 and kill the process. The pre-scan bounds the tree depth, so the read is safe on every runtime the editor runs on. Checking the tab's text matches what the person sees |
+| D12 | When do code checks run? | On form open, form save, window-file save, after a builder edit to the window file, and after any event edit (against the cached reading). Never per keystroke in the code tab. A syntax error pauses the window-file checks behind one Info row (FB209) instead of a flood of FB201 | LOGIC §3.4. Problems stays steady while someone types |
+| D13 | `@Slot` and `on_` names | Stubs never get `@Slot`. Suggested names never start with `on_` | LOGIC §3.3 and §3.6 |
+| D14 | Connect slots by name | Stays on by default. Turning it off is a row "Connect methods by name" in the form's Code group (R3 7). Methods it connects are shown in the Events list, read-only | LOGIC §3.6 |
+| D15 | Severities of FB203 and FB402 | FB203 (the method is still empty) is Info, not Warning. FB402 (newer logic version) is Warning, not Error | A method the person just made is not a problem. FB402 loses nothing and can't be fixed in this build |
+| D16 | Form events ("When the form opens") and pseudo-events ("current row changed") | M7.4 and M8. In M6 the form's Behavior tab lists the root's real Qt signals only | They need generated setup code and the step vocabulary |
+| D17 | Preview of a form whose events call your methods | Preview never runs your window class. Each method the form names becomes a stand-in that does nothing, and the editor's status bar says what would have run (UX-CODE-016) | Today a form-slot connection makes `setupUi` raise in Preview, because the preview host has no such method. Try mode (M7.6) keeps a log; Preview just says it |
+| D18 | Renaming your method | Not in M6. A method renamed in code gives FB201 with the fix "Use {method}" when the class has an unconnected method with a close name. A rename that changes the code and the form together is M7.8 | Changing user code beyond the stub needs the shell's refactor preview; the fix covers the common slip |
+| D19 | Shift+F12 (find every use) | M7.8. M6 ships F12 only | It searches rules too |
+| D20 | Pasting widgets copied from a form with a newer logic version | When the pasted widgets carry behavior (any `cbcs*` logic property, a step list included), the target form's logic version is raised to the newer one, so its logic becomes read-only (FB402), and the toast says so (UX-LST-010). Plain widgets with no behavior leave the target's version alone, so a form never turns read-only for nothing | Nothing is dropped or misread (LOGIC §6.5 forward compatibility) |
+| D21 | Property order on save | Properties keep the order they were read in. Only a property CBCS changes is rewritten as canonical text; a new one is placed by rank (CONTRACTS §2.5). A save never re-sorts a Designer-ordered file | The Designer-resave zero-diff oracle and byte-stable saves of untouched files. This amends LOGIC §6.5's "the next CBCS save re-canonicalises" |
+| D22 | Alt+B | Adopted: no shell menu title uses B (&File, &Edit, &View, F&orm, &Tools, &Run, &Help). It selects the Behavior tab and focuses its first row | UX-KEY-005's condition is met |
+| D23 | Layouts and spacers as senders or receivers | Not offered. A drag that ends on a layout or spacer connects to the widget that holds the layout; one that starts on a spacer does nothing. Existing layout connections in a file are kept, listed in the form's event table, and generate as uic does | Designer allows layout endpoints (R3 2), but layouts have no events and almost no slots a form uses. Keeping them round-trips the file |
+| D24 | Step lists for an overloaded event | The UI shows one event per signal name ("When clicked" covers `clicked()` and `clicked(bool)`). Native storage picks the overload with the fewest arguments that the step needs; a step list connects the overload with the most arguments, so any step can use a prefix of its values (CONTRACTS §15.6) | Designer lists overloads twice; owners shouldn't have to choose |
+| D26 | A step whose name Code Studio can't use | FB406, same severity as FB401. The steps stay on screen, read-only, with Open as text. The event is kept as it is and does nothing. This includes a native connection. (orchestrator, 2026-10-29) | A bad name must be a Problems row, not only a banner |
+| D27 | Sentences after "When" | Each event-words row has a clause that is a complete English clause after "When" ("{display} is clicked", "you finish editing {display}", "Enter is pressed in {display}"). Prefer "in" over "of". `toggled` is "{display} is checked or unchecked". Headers stay the short words. An event with no row uses "{display} sends {signal}". (orchestrator, 2026-10-29) | "When Name is editing is finished" is not a sentence |
+| D28 | Where does Go to code put the def? | Code Studio never changes the document to place a line. Go to code scrolls the def toward the top third as far as the scroll range allows. In a file too short to scroll, the def is wherever it falls. (orchestrator, 2026-10-30) | A trailing pad of newlines is a change to the person's file |
+| D29 | Which methods get FB211? | FB211 reports only methods whose name matches a real `on_{object}_{signal}` for this form. A near miss is FB208, not FB211. (orchestrator, 2026-10-30) | The FB table row is the rule |
+| D30 | Which budget covers the method gesture? | The whole double-click-to-caret gesture is held to its own row, "tab already open ≤ 80 ms" (p95), clean and dirty tabs both. The 50 ms added row covers the step commit inside it. On a clean tab the gesture also saves the file, which a dirty tab doesn't, and that save is part of the 80 ms. The Mac measured 74–80 ms p95 at load 5, so M6.R must measure the clean-tab gesture on the ChoreBoy VM. If it is over 80 ms there, cut the save checkpoint or the second paint. (orchestrator, 2026-10-30) | Measured on the Mac at p95 over 40 runs |
+| D31 | Does an overlay banner push the page down or cover it? | Neither, at normal widths: the canvas keeps a top gutter at least as tall as the one-line banner, so opening F4, F7 or F8 does not move the page and the banner covers no widget. When the banner wraps taller than the gutter (narrow canvas, 200%), the page moves down by the excess only, never by the full banner height. This refines UX-WB-006's push-down rule, whose full-height push made the page jump about 40 px on every overlay toggle. | orchestrator ruling, 2026-10-30, M6.R |
+
+**UX-M6-001** `all M6` `[C]` Copy for M6 follows section 9.5, UX-M4-005 and UX-M5-007. In addition, on-screen text says "event" (never "signal" outside tooltips, the Qt-names line and the "MORE EVENTS" list's Qt column), "step", "method" for your code, "window file" only in captions ("Code Studio adds methods to the window file, shop_window.py."), and never "slot" for a method (the word appears only in the Qt column and the tooltip "Qt calls these slots."). Behavior is spelled the US way (UX-COPY-001); LOGIC_DESIGN's "behaviour" is not on screen. Every sentence a lane may show is in the 13.3.8 tables; a new one needs a spec change.
+
+**UX-M6-002** `all M6` `[T]` Undo names. Every M6 command has a plain name, listed in 13.3.8, used by Edit > Undo and toast Undo. A picker session that ends in a choice is one step. A storage conversion is part of the step that caused it and is never a step of its own. Making a method is one step on the form's undo stack plus one edit in the window file's tab (UX-CODE-008). Files written outside the `.ui` (the window file) say so on screen when Undo can't take them back.
+
+**UX-M6-003** `all M6` `[A]` Speed. CPU p50 and p95 on the 300-widget reference form with 120 events (80 native connections, 40 step lists) and a 2,000-line window file of 150 methods, recorded with machine load. M6.R adds the rows to the harness; each lane measures its own path with a local script and reports it.
+
+| Path | Budget (p95) |
+| --- | --- |
+| Select a widget with 20 events: Behavior tab filled | ≤ 16 ms |
+| A keystroke in the event picker (a class with 60 events) or the step picker (300 possible targets) | ≤ 16 ms |
+| Commit a step (`SetEventSteps` with a storage conversion), command to repainted canvas, outline and inspector | ≤ 50 ms added p95 (one discrete action, under the 100 ms people notice; M6.R measures it on the ChoreBoy VM); the command alone ≤ 2 ms |
+| Arrows for a selection with 10 connections; Show all with 120 events | ≤ 4 ms; ≤ 16 ms per frame |
+| Open the Connections overlay; a link drag frame | ≤ 50 ms; ≤ 16 ms |
+| Read the window file: pre-scan plus `ast` of 100 KB / of 1 MB / a cached reading | ≤ 30 ms / ≤ 250 ms (idle, never on the edit path) / ≤ 1 ms |
+| All code checks against a cached reading | ≤ 5 ms |
+| Double-click to a new method with the caret in the code tab: tab already open / file not open | ≤ 80 ms / ≤ 200 ms |
+| F12 to an existing method: tab open / not open | ≤ 30 ms / ≤ 150 ms |
+| Parse and write a 50-step list (codec) | ≤ 1 ms |
+| Rename a widget referenced by 40 events and 60 logic properties | ≤ 3 ms (O(form) is allowed for Rename, CONTRACTS §12) |
+| Save with 40 step lists (generate included) | ≤ 60 ms |
+
+**UX-M6-004** `all M6` `[A K]` M6 keys are registered from lane files in `integration/keys_ext/` (UX-KEY-002) and listed in UX-KEY-004; UX-KEY-001 covers them; Form designer keys (UX-MODE-005) shows them. Keys used only inside the Events list or a picker are registered with `kind="qt"` in their focus context, as M5.6 did for overlay keys.
+
+**UX-M6-005** `all M6` `[A K]` Accessibility. Every event header, step row, picker item and table row has an accessible name that reads as a sentence: "When clicked, step 1 of 2: Clear Name (nameEdit)", "When clicked, step 2 of 2: Call print_receipt in shop_window.py line 42", "Event, clicked, Qt signal clicked()". A turned-off step adds ", turned off"; a step with a problem adds ", problem: {message}". Focus is always visible on rows (UX-A11Y-002). Every task in this section has a keyboard path (K24–K26).
+
+**UX-M6-006** `M6.1b, M6.1c, M6.2b` `[S A]` The Form menu (UX-M5-010) gains, from lane files in `integration/form_menu_ext/`: after Go to widget…, "Add event…" (Ctrl+Shift+E) and "Go to code" (F12); in Overlays ▸, "Connections" (F4) after Buddies, and "Show all connections" (Ctrl+Shift+L, a check item). UX-SHELL-004's "Connections in M6" is this item.
+
+**UX-TOK-007** `M6.1c` `[S A]` New builder tokens for M6, in `qtside/theme/overlay.py` (UX-TOK-001). Same in light and dark chrome (UX-TOK-003).
+
+| Token | Normal | High contrast (both) | Use |
+| --- | --- | --- | --- |
+| `ov.connect` | `#4338CA` 1.5 px | `#1E1B8A` 2 px | Arrows of the selected widget, the link line while dragging |
+| `ov.connect_faint` | `#4338CA` at 35% alpha, 1 px | `#1E1B8A` at 60%, 1.5 px | Other arrows under Show all connections |
+| `ov.code` | `#15803D` | `#00553A` | The `{ }` chip of a call into your code |
+| `ov.logic_badge` | fill `#4B5563`, text `ov.chip_text` | fill `#000000` | The `>` badge of a widget with events |
+
+#### 13.3.2 The Behavior tab and the Events list (BEH)
+
+**UX-BEH-001** `M6.0s` `[S A]` The Behavior tab body is built from registered sections (`qtside/inspector/behavior_ext/`), each with an order, a predicate on the selection and a widget: State 10 and Checks 20 (M7.2, M7.3, not registered in M6), Events 30, From other widgets 35, All events on this form 40 (form only), Your methods 50 (form only). Sections show in that order; a section with nothing to show for the selection is hidden, except Events (UX-BEH-013). A lane adds a section from its own file. The M3 Connections list (UX-INSP-013) is withdrawn when M6.1b's Events section registers.
+
+**UX-BEH-002** `M6.1b` `[S]` The tab's top line (fixed, above the sections) is the sender's display name and object name, as LOGIC §2.1: "Save · saveButton" ("Shop window · ShopWindow" for the form; an action's text for an action). The display name comes from the buddy label's text, then the widget's own text, then the object name, with `&` removed. Kind (LOGIC §4.3) is M7.
+
+**UX-BEH-003** `M6.1b` `[S K]` The **Events** section. Overline "EVENTS" with a [+ When…] button at its right (Ctrl+Shift+E). Then one group per event in run order of first connection: a header row "When {event words}" (13.3.8 table; with Qt names on, `clicked()` under it in `fb.faint`) with a ⋯ button; under it numbered step rows (24 px, the number in `fb.faint`); and under the group's last step a "+ Then…" row, shown while any row of that group is current or hovered. Rows never clip at 236 px (UX-PED-002); long text elides in the middle of the target's display name only, with the full sentence as the tooltip.
+
+**UX-BEH-004** `M6.1b` `[S C]` Step row text. A plain step reads as a sentence from the 13.3.8 "Step words" table ("Clear Name (nameEdit)", "Close this form", "Call print_receipt()"); a Qt slot with no entry reads "{target display name} ({object}) · {slot words}" with the Qt signature in `fb.faint`. Targets are named by display name then object name in `fb.faint`. A step whose target is missing reads "{object} (missing)" in `fb.error` (FB405).
+
+**UX-BEH-005** `M6.1b, M6.2b` `[S T]` A call step shows its place in your code at the right of the row: "shop_window.py:42" as a link (click or Enter on it, F12 on the row: UX-CODE-009). When the method isn't in the window class the place reads "not in shop_window.py" in `fb.warning`, the row carries the problem badge (UX-BEH-019), and Ctrl+. runs "Create method" (UX-CODE-003). When the window file can't be checked (FB209, FB210) the place reads "not checked" in `fb.faint` with the reason as its tooltip.
+
+**UX-BEH-006** `M6.2b` `[S]` A method that Qt connects by name (`on_{object}_{signal}`, UX-CODE-012) is a read-only row in that event's group, after the plain steps: "on_okButton_clicked() runs by its name" with its place link. It has no number, can't be moved, turned off or deleted from here; its context menu has "Go to code" and "Why does it run?" (status: "Qt runs methods named on_{object}_{event} by themselves, because Connect methods by name is on."). With Connect methods by name off, the row is not shown and FB211 explains.
+
+**UX-BEH-007** `M6.1b` `[S A]` The order shown is the order Qt runs things: native connections in file order, then methods connected by name, then the step list (CONTRACTS §15.6). An event that has both native connections and a step list (made in Qt Designer) shows both groups, the native ones first, under the header note "This event is stored in two places." in `fb.warning` with a [Merge] button (FB404, UX-LST-005).
+
+**UX-BEH-008** `M6.1b` `[S K T]` Turn off and on. Space on a step row, or its context menu "Turn off" / "Turn on", toggles the step. A turned-off step keeps its number, reads in `fb.faint` with " (off)" appended, and generates nothing. Turning a native step off converts its event to a step list; turning the last off step on again converts it back when every step is plain (D2, D3). One step "Turn off {step words}" / "Turn on {step words}". Methods connected by name can't be turned off here (UX-BEH-006).
+
+**UX-BEH-009** `M6.1b` `[K]` Keys in the Events section: Up and Down move between header and step rows; Enter on a step opens the step picker on it (UX-PICK-010); Enter on a header opens the event picker to change the event of all its steps; Enter on "+ Then…" opens the step picker to add; Delete deletes the row (a header deletes the event and its steps); Alt+Up and Alt+Down move a step inside its event; Ctrl+D duplicates a step after itself; Space turns a step off or on; F12 goes to code (UX-CODE-009); Ctrl+. runs the row's first fix; Shift+F10 or the Menu key opens the row's context menu (Turn off or on, Duplicate, Move up, Move down, Delete, and for a call step Go to code). Esc leaves the list to the canvas. These are registered as `kind="qt"` keys in the context "behavior_list" (UX-M6-004).
+
+**UX-BEH-010** `M6.1b` `[T]` Deleting the last step of an event removes the event. Deleting a call step never touches the window file; when the method is then used by nothing, the toast says "Removed the step. print_receipt() is still in shop_window.py. · Undo". One step "Delete {step words}" / "Delete the {event words} event".
+
+**UX-BEH-011** `M6.1b` `[T]` Steps move only inside their event. Alt+Up on the first step, or Alt+Down on the last, does nothing and says "That is the first step." / "That is the last step." A move of native steps reorders those `<connection>` elements only (CONTRACTS `MoveConnection`); no other connection in the file moves. One step "Move {step words}".
+
+**UX-BEH-012** `M6.1b` `[T]` Ctrl+D duplicates a step right after it (one step "Duplicate {step words}"). A duplicated call step calls the same method; it never makes a second method.
+
+**UX-BEH-013** `M6.1b` `[S]` Empty state (replaces UX-EMPTY-005). A sender with no events shows, under the EVENTS overline, "Nothing happens yet when {display name} is {default event words}." ("Nothing happens yet when Save is clicked."; for a sender with no default event "Nothing happens yet for {display name}.") and the [+ When…] button. Under it, for widgets that double-click to code (D8), the Caption "Double-click it on the form to write code for it."
+
+**UX-BEH-014** `M6.1b` `[S]` With several widgets selected, the tab shows "Select one widget to see what it does." and nothing else. With a layout or spacer selected: "Layouts and spacers don't have events. Select a widget." (D23).
+
+**UX-BEH-015** `M6.1b` `[S K]` **From other widgets** (shown when another sender's step targets this widget): Overline "FROM OTHER WIDGETS", rows "When Clear is clicked: Clear Name" in sentence form, read-only. Enter or click selects that sender and makes the step current in its Events list.
+
+**UX-BEH-016** `M6.1b` `[S K T]` **All events on this form** (form selected; R3 5, the Signal/Slot Editor table). Overline "ALL EVENTS ON THIS FORM {n}", a filter field (placeholder "Search events"; matches display names, object names, event words, step words, method names), then one row per step grouped by sender in outline order: "{sender display name} · When {event words} → {step words}". A connection whose sender or receiver is missing (FB014) reads "{object} (missing) · …" in `fb.error`. Enter selects the sender and focuses that row in its Events list; Delete deletes the step (same step names as UX-BEH-010); an empty table shows "No events on this form yet." The form's own events (its root's signals, D16) show above this table in the normal Events section.
+
+**UX-BEH-017** `M6.2b` `[S K T]` **Your methods** (form selected; R3 6). Overline "YOUR METHODS · {window file}". One row per method the form names (in `<slots>`, native connections to the form, and call steps), in name order: "print_receipt() · Print receipt clicked · line 42", "close_shift() · not used · line 60", "export_day() · not in shop_window.py" (`fb.warning`). Methods of the window class that the form doesn't name are not listed. Enter on a row goes to code; Delete on a row whose method no step uses removes its `<slots>` declaration (one step "Remove method declaration {name}"; the code is never touched; a used one says "{name} is used by {n} steps. Delete those steps first."). Signals the form declares (`<slots><signal>`) are listed read-only under "SIGNALS YOUR FORM DECLARES". The Caption under the overline: "Code Studio adds methods to {window file} and never changes the rest of it."
+
+**UX-BEH-018** `M6.1b` `[T A]` Pain 16. Every new event or step is scrolled into view, selected and focused in the Events list the moment it is committed, whatever added it (picker, canvas link, double-click, paste). The P-16 test adds a connection on a sender whose Events list is taller than the inspector and asserts the new row is fully visible without a scroll by the test.
+
+**UX-BEH-019** `M6.1b` `[S]` A row with a problem carries the 12 px problem badge at its right (UX-PROB-004 glyph), its message as tooltip and in the status bar while current. Problems double-click lands on that row (UX-CODE-014).
+
+**UX-BEH-020** `M6.1b` `[S]` The Behavior tab's count badge (UX-INSP-002) is the number of events with at least one step, plus events with a method connected by name. It updates in the same frame as the change.
+
+#### 13.3.3 The event and step pickers (PICK)
+
+**UX-PICK-001** `M6.1b` `[S K T]` The **event picker** ("When…"): a level-2 popover, 320 px wide, anchored under [+ When…], under a header row being changed, or at the receiver end of a canvas link (UX-ARR-007). Title "When… ({display name} · {friendly class})". A filter field, focused, placeholder "Type to find an event". Then "COMMON" (UX-PICK-002), "MORE EVENTS" (every other signal of the class chain below `QWidget`, alphabetical, each "{event words}" with the Qt signature in `fb.faint`; a signal with no words entry shows the signal name only), and a check box "Show events from QWidget and QObject" (R3 3), remembered per user. Picking an event that already has steps adds to it. Picking opens the step picker at once (LOGIC §2.2).
+
+**UX-PICK-002** `M6.1a` `[A]` Common events and the default event per class come from one Qt-free table (`engine/logic/events_catalog.py`), LOGIC §2.2 minus pseudo-events and form events (D16), with the words of 13.3.8. Own classes use their base class's row plus the registry's declared signals (UX-CUST-006). A test checks every signal named in the table against the class table (`qt_classes.json`).
+
+**UX-PICK-003** `M6.1b` `[S K]` The **step picker** ("Then…"): same popover rules. Title "Then… (When {display name} is {event words})". A filter field, then up to three sections:
+- "DO THIS": the intents for this sender (UX-PICK-004), in table order;
+- "YOUR CODE": "Call a new method…" and, under it, each method of the window class that this event can call (UX-PICK-007), "Call print_receipt()";
+- "EVERYTHING ELSE": "A widget's own action…" (opens the target page, then UX-PICK-006).
+
+The filter searches all three, the target names inside intents, and the Qt slot names.
+
+**UX-PICK-004** `M6.1a` `[A]` M6 intents (LOGIC §3.1 without the rule intents, D4). Registered in `engine/logic/intents/` (Qt-free), each producing one or two plain steps:
+
+| Sender | Intent (picker text) | Steps it adds |
+| --- | --- | --- |
+| Any button, action | "Close this form" | `clicked()` (action: `triggered()`) → form `close()` |
+| Any button, action, on a dialog | "Accept (OK)" / "Cancel" | → form `accept()` / `reject()` |
+| Any button, action | "Clear a field…" | → `{field}.clear()` (fields that have `clear()`) |
+| Any button, action | "Move focus to…" | → `{field}.setFocus()` |
+| `QCheckBox` | "Check another box the same way…" | `toggled(bool)` → `{box}.setChecked(bool)` |
+| `QLineEdit` | "Go to the next field when Enter is pressed…" | `returnPressed()` → `{field}.setFocus()` (the target page starts on the next field in tab order) |
+| `QComboBox` | "Show the matching page of…" | `currentIndexChanged(int)` → `{tabs or stack}.setCurrentIndex(int)` |
+| `QSlider`, `QSpinBox`, `QDial` | "Keep another one in step…" | two steps: this `valueChanged(int)` → `{other}.setValue(int)` and the other's `valueChanged(int)` → this `setValue(int)`; one undo step "Keep {a} and {b} in step" |
+| `QDialogButtonBox` | "OK accepts, Cancel closes" | `accepted()` → `accept()` and `rejected()` → `reject()` (Designer's template) |
+
+An intent whose event differs from the one being edited is offered only from [+ When…] (it picks its own event); from "+ Then…" only intents of the current event are listed. An intent that needs a target opens the target page (UX-PICK-005). A registry entry may be a rule intent (M7.2); M6 registers none.
+
+**UX-PICK-005** `M6.1b` `[S K]` The target page lists the form's widgets that fit the intent or slot ("Name (nameEdit) · Line edit"), in reading order, the form first when it fits ("This form (ShopWindow)"), filtered by display name, object name and friendly class words. Its title names what is being chosen: "Clear which field?", "Move focus to which field?", "Which widget?". Left (with an empty filter) or Backspace on an empty filter goes back.
+
+**UX-PICK-006** `M6.1a, M6.1b` `[S K A]` "Everything {target} can do": the target's slots from the class table (own classes: the registry and `<customwidget><slots>`), each in words when 13.3.8 has them, with the Qt signature in `fb.faint`, and the check box "Show actions from QWidget and QObject" (R3 3). Only compatible slots can be picked: a slot's parameters must be a prefix of one overload of the event's signal, with the same types (Qt's rule, CONTRACTS §15.6). An incompatible slot is greyed with its reason as a second line: "Needs {type words}; {event words} sends nothing." or "Needs {type words}; {event words} sends {type words}." The engine computes compatibility; the picker never asks Qt.
+
+**UX-PICK-007** `M6.1b, M6.2b` `[S K]` "Call a new method…" opens the method page: a name field with the suggested name selected (UX-CODE-001), its check line under it (UX-CODE-002), and, when the event sends a value, the check box "My method receives {value words}" ("My method receives whether it's checked", "… the new text", "… the new number", "… the new date"), off by default (LOGIC §3.3). Enter makes the method (UX-CODE-003). "METHODS IN {window file}" lists the class's existing methods this event can call (a method whose required parameters are at most the event's values); one already used by this event is marked "already here". When methods can't be listed, the section shows one line instead: "{window file} can't be read: {reason}" / "{window file} has no class that calls self.ui.setupUi(self)." / "This form isn't in a project, so it has no window file." (with the link "Adopt this form…", UX-CODE-017).
+
+**UX-PICK-008** `M6.1b` `[K]` Picker keys: typing filters; Up and Down move (crossing section headers); Enter picks or opens a page; Right opens a page too; Left or Backspace on an empty filter goes back one page; Tab reaches the check boxes; Esc goes back one page, and on the first page closes the picker and writes nothing. Focus returns to the row or button that opened it, or to the canvas after a canvas link.
+
+**UX-PICK-009** `M6.1b` `[T]` One picker session that ends in a choice is one undo step, named for what it added or changed (13.3.8). Esc anywhere leaves the document bytes and the undo stack as they were (UX-PED-004's rule, tested the same way).
+
+**UX-PICK-010** `M6.1b` `[K T]` Editing a step (Enter on its row, double-click on its arrow) opens the step picker on the page that made it, with the current choice current; picking another replaces the step in place (one step "Change {old step words} to {new step words}"). Editing a header changes the event of all its steps, keeping only steps compatible with the new event; the confirm lists the others: "{n} steps can't run on {event words} and will be removed." [Change event] [Cancel].
+
+**UX-PICK-011** `M6.1a` `[A]` The pickers never import or run project code. Own-class signals and slots come only from declarations (UX-CUST-011). A test runs every picker over a project with promoted classes under the import hook of CONTRACTS §13 and asserts no project module loaded.
+
+**UX-PICK-012** `M6.1b` `[S]` A filter with no match shows "Nothing matches “{text}”." and keeps the "A widget's own action…" row, so the full Qt list is one Enter away.
+
+#### 13.3.4 Logic on the canvas: badges, arrows and the Connections overlay (ARR)
+
+**UX-ARR-001** `M6.1c` `[S A]` A widget or the form with at least one event carries a 12 px `ov.logic_badge` "›" badge, placed by the chip solver at an outside corner (top-right first, UX-CHIP-002), never over content. It is drawn in Design whenever no other overlay is open, hidden below 50% zoom, and not drawn in Preview, Save image or Print. Hover: "{n} events: When clicked, When toggled" (at most three names, then "and {k} more"). Click selects the widget and shows the Behavior tab.
+
+**UX-ARR-002** `M6.1c` `[S]` Arrows (D5). For the selected sender: one arrow per plain step whose receiver is another widget; plus incoming arrows from other senders whose steps target it, dashed. A step list's steps are drawn like native ones; a turned-off step is not drawn.
+
+**UX-ARR-003** `M6.1c` `[S A]` An arrow is a 1.5 px `ov.connect` line from the midpoint of the sender's edge that faces the receiver to the receiver's facing edge, a gentle curve (control points one third along, offset 12 px), ending in a 6 px arrowhead 2 px outside the receiver. Arrows are drawn above the form and below chips; they never cover a chip or badge, and they bow around other arrows' endpoints. When the step's row is current in the Events list, or the arrow is hovered, its label chip shows at the curve's midpoint, placed by the chip solver: "clicked → clear()".
+
+**UX-ARR-004** `M6.1c` `[S T]` Calls into your code draw as a short line from the sender to an `ov.code` chip "{ } print_receipt()" placed by the chip solver beside the sender; the form's own slots (`close()`, `accept()`, `reject()`) draw to a form chip "{form name} · accept()" in the gutter next to the sender, the place of Designer's ground symbol. Clicking the `{ }` chip goes to code (UX-CODE-009).
+
+**UX-ARR-005** `M6.1c` `[S K]` **Show all connections** (Ctrl+Shift+L, Form > Overlays ▸, a toggle per tab, not saved) draws every step's arrow on the form in `ov.connect_faint`, the selected sender's in `ov.connect`. The status bar says "Showing all {n} connections. Ctrl+Shift+L hides them." It stays on while the person selects and edits, and turns off with the tab.
+
+**UX-ARR-006** `M6.1c` `[S K]` **Connections overlay** (F4, D6; replaces UX-OVL-009). A toggle in the tab toolbar after Buddies, opened and closed by the UX-OVL-001 … 003 rules (one overlay at a time, banner, Esc, F3, Done, structural commands and tab switches close it). Banner: "Drag from a widget to the widget it should act on. Drop on the form's background to act on the form." While it is open, every step's arrow is drawn (as Show all) and badges are hidden.
+
+**UX-ARR-007** `M6.1c` `[S T]` In the overlay, a press on a widget and a drag draws an `ov.connect` line from it to the pointer; the widget under the pointer gets the `ov.select` outline, the page background highlights the form. A drop on a widget opens the event picker for the sender at the drop point, then the step picker already on "Everything {receiver} can do" with the receiver's compatible slots first (the intents that fit this pair listed above them). A drop on the background targets the form. A drop on a layout or spacer targets its owning widget (D23); a press on a spacer or on nothing starts nothing. A drop on the sender itself targets the sender. Esc during the drag cancels; nothing is written until a slot is picked.
+
+**UX-ARR-008** `M6.1c` `[K]` Overlay keys (the Buddies overlay's grammar, UX-MODE-004): with the overlay open, arrows and Tab select as usual; Enter on the selected widget starts a link from it (status "Choose the widget for {sender display name} to act on, then press Enter. Home picks the form."); arrows or Tab select the receiver; Home selects the form; Enter opens the pickers as in UX-ARR-007; Esc cancels the link. Deleting and editing steps by keyboard is done in the Events list (Alt+B).
+
+**UX-ARR-009** `M6.1c` `[T]` In the overlay or with arrows shown, clicking an arrow selects its sender and makes the step current in the Events list; Delete then deletes that step (R3 4); double-click on an arrow opens the step picker on it (UX-PICK-010; R3 3's "double-click a connection").
+
+**UX-ARR-010** `M6.1c` `[S]` Hover sentences in the status bar: on a widget in the overlay "{display name} · drag to another widget to connect"; on an arrow "When {sender} is {event words}: {step words}. Click to select, Delete to remove."; on a `{ }` chip "Calls print_receipt() in shop_window.py. Click to go to the code."
+
+**UX-ARR-011** `M6.1c` `[A]` The §12.5 chip check covers badges and arrow label chips in every M6 tour state, and arrows never end inside a chip. The badge and arrows layers are `qtside/canvas/layers/` modules (M5.0s registry); with no event on the form the frame cost is the registry's empty test.
+
+#### 13.3.5 Calling your code (CODE)
+
+**UX-CODE-001** `M6.2a` `[A]` Suggested method names (LOGIC §3.2, refined), computed by one Qt-free function:
+
+| Rule | Example |
+| --- | --- |
+| A button or action with text: the words of its text, `&` and punctuation removed, in `snake_case`. A single word gets the form's name added, without a trailing "window", "dialog" or "form" | "Save" on Invoice → `save_invoice`; "Print receipt" → `print_receipt`; "&New sale" → `new_sale` |
+| Any other sender: its object name's stem (a trailing class word removed: Button, Btn, Check, CheckBox, Radio, Edit, LineEdit, Combo, ComboBox, Spin, SpinBox, Slider, Dial, Box, Date, Tabs, List, View, Action) in `snake_case`, plus the event's short word (13.3.8) | `discountCheck` toggled → `discount_toggled`; `customerCombo` choice changed → `customer_changed` |
+| No usable words (no text, a stem of one character, or nothing ASCII) | `{object name in snake_case}_{short word}` |
+| Never starts with `on_` (D13); such a name gets `do_` in front | text "On hold" → `do_on_hold` |
+| Never shadows a method of the window's Qt base class (LOGIC FB204's list, from the stock class); such a name gets the form's name added | "Close" on Invoice → `close_invoice`; "Print" → `print_invoice` |
+| Unique in the window class and the form's `<slots>`: `_2`, `_3` … | `print_receipt_2` |
+| ASCII letters, digits and `_`; starts with a letter; at most 40 characters, cut at a word boundary; not a Python keyword; never starts with `cbcs` | |
+
+**UX-CODE-002** `M6.2b` `[S]` The method name field's check line, updated as the person types: "Adds print_receipt() to ShopWindow in shop_window.py." (`fb.muted`); "Use a method name like print_receipt: letters, digits and _, starting with a letter." (`fb.error`, blocks); "{name} is a method of {Qt base class}, so it would replace it. Try {suggestion}." (`fb.error`, blocks; FB204's meaning); "Methods named on_… also run by their name. Pick another name." (`fb.error`, blocks); "ShopWindow already has {name}. This event will call it." (`fb.muted`, Enter connects without adding code).
+
+**UX-CODE-003** `M6.2b` `[T]` **Making a method** (double-click, the canvas or outline context menu "Write code for “{event words}”", "Call a new method…" in the step picker, the Create method fix). One gesture:
+1. read the window file (UX-CODE-010) and plan the method (UX-CODE-005); if the plan is refused, nothing changes and the status says why (13.3.8 "Refusals");
+2. add the method to the window file (UX-CODE-007);
+3. in one form transaction, add the call step to the event (native or step list, D2) and the `<slots>` declaration `print_receipt()` (with "My method receives…" ticked: `print_receipt(bool)` and so on);
+4. open the window file at the new method (UX-CODE-007).
+If step 3 fails, step 2 is taken back by the UX-CODE-008 rule. The form step is named "Write code for {display name} {event words}" ("Write code for Print receipt clicked"). A double-click or "Write code for…" on an event whose code exists goes to it instead (UX-CODE-009): a method is made once.
+
+**UX-CODE-004** `M6.2a` `[A]` The method text, with the file's indentation unit `{i}` (four spaces when the class has no methods):
+
+```python
+{i}def print_receipt(self):
+{i}{i}"""Runs when printButton is clicked."""
+{i}{i}pass
+```
+
+With "My method receives…" ticked the parameter is named by the event: `checked` (toggled), `text` (textChanged, textEdited), `index` (currentIndexChanged, activated, currentChanged), `value` (valueChanged), `date`, `time`, `date_time`, `item` (itemActivated), `button` (button box clicked), else `value`. The docstring uses the object name and the event words of 13.3.8 ("Runs when discountCheck is checked or unchecked."). No decorator (D13). The text is ASCII except the object name as written.
+
+**UX-CODE-005** `M6.2a` `[A]` Where the method goes (D10): after the last line of the window class body, where the body's last line is its last statement's last line, extended over the comment lines indented deeper than the `class` line that follow it, and never past a line indented at or left of the `class` line. It is inserted as whole lines: one blank line before it when the class's methods are separated by one blank line or the class has one method; two when the class mostly uses two; a newline at the end. The file's line ending (LF or CRLF, the first line's) and indentation characters (spaces or tabs, from the first indented line of the class) are used. When the class body is only `pass` or a docstring, the method goes after it and the `pass` stays.
+
+**UX-CODE-006** `M6.2a, M6.2b` `[A T]` Never clobbering (pain 6). A test inserts into every file of a fixture set (CRLF, tabs, a non-ASCII comment before the class, a class ending in a comment, a decorator on the last method, nested classes, two classes, a file without a trailing newline, a coding cookie) and asserts that the result is the original text with exactly the method's lines added at one line boundary. The window file is refused, with a sentence and no change, when: it can't be read under D11's rules ("{file} can't be read, so Code Studio won't change it: {reason}."); it isn't valid Python ("Fix the error on line {n} of {file} first, so Code Studio can find where to add {name}."); it has no window class (UX-CODE-010); it isn't UTF-8 or ASCII text ("{file} isn't UTF-8 text, so Code Studio won't change it."); or writing fails ("Code Studio couldn't change {file}: {reason}.").
+
+**UX-CODE-007** `M6.2b` `[T]` The method is added through the code bridge (`integration/code_bridge.py`, M6.0s): when the window file is open in a tab, as one edit of that tab's document, so it is in the tab's own undo; otherwise written to disk atomically, marked as the editor's own write (no reload prompt, M5.8a's seam). A tab that had no unsaved changes is saved after the edit; a tab with unsaved changes keeps them unsaved (the person's own unsaved work is never saved for them). Then the window file's tab is shown with the caret on the new method's `pass` line and `pass` selected, so typing replaces it. Go to code scrolls the `def` toward the top third as far as the scroll range allows (D28). In a file too short to scroll, the def is wherever it falls. Code Studio never changes the document to place a line. Focus goes to the code tab: the person asked to write code.
+
+**UX-CODE-008** `M6.2a, M6.2b` `[T]` Undo and redo (LOGIC §2.13). Undo of the form step removes the call step and the declaration it added, and removes the method from the window file only when the method's current text (its `def` line to its last line, line endings ignored) still hashes to the text inserted; then the blank lines added before it go too if they are still blank. Otherwise the method stays. The toast says "Removed the step. {name}() has your code in it, so it stays in {file}." when the method was edited. It says "Removed the step. {name}() was renamed in {file}, so the new name stays." when some other method still has the inserted text. It says "Removed the step. {name}() is already gone from {file}." when the name is gone. It says "Removed the step. {file} can't be read, so {name}() was left as it is." when the file can't be read. Redo puts the step back, and puts the method back when the class has no method of that name (planned again against the current text); if it can't, the step comes back and FB201 shows. Ctrl+Z in the code tab undoes only the text there; the step stays and FB201 offers "Create method". A window file the gesture created (D9) stays after Undo.
+
+**UX-CODE-009** `M6.2b` `[S K T]` **Go to code.** F12, or Enter on a place link, or a click on a `{ }` chip, or double-click on a D8 widget with code, opens the window file at the method: the tab is reused or opened, the caret goes to the first line of the body after the docstring, and the `def` scrolls toward the top third as far as the scroll range allows (D28). In a file too short to scroll, the def is wherever it falls. F12 with a step row current goes to that step's method; with a widget selected on the canvas, to the method of its default event, then of its first event with one; with the form selected, to the window class line. When there is nothing to go to, the status says "{display name} has no code yet. Double-click it, or press Ctrl+Shift+E to add an event." / "print_receipt() isn't in {file} yet. Press Ctrl+. to create it."
+
+**UX-CODE-010** `M6.2a` `[A]` The window class is the first top-level class in the window file that has a method calling `<x>.setupUi(self)` where `<x>` is assigned `Ui_{FormClass}()` in the class or is `self.ui`; else the class named `{FormClass}Window` (what `render_window_class` writes); else none (FB210). The reader follows a base class into another project file named by a `from … import …` at the top of the window file, up to three files deep, with the same rules (D11); a base it can't read leaves its methods unknown (FB212).
+
+**UX-CODE-011** `M6.2a` `[A]` Code checks (LOGIC §3.4 and §3.6, with D12 and D15). Each produces one Problems row and a row badge:
+
+| Code | Severity | When | Fix |
+| --- | --- | --- | --- |
+| FB201 | Error | A step or native connection to the form calls a method the window class doesn't have (and the base Qt class has no such slot) | "Create method"; and "Use {method}" when an unconnected method differs by at most two letters |
+| FB202 | Error | The method needs more values than the event sends (required parameters beyond `self` > the signal's arguments, no `*args`) | "Go to code" |
+| FB203 | Info | The method's body is only `pass` and a docstring | "Go to code" |
+| FB204 | Error | A method the form declares has the name of a method of the window's Qt base class | "Go to code" |
+| FB205 | Warning | A method a step calls is also named `on_{object}_{signal}` for that event, so it runs twice | "Go to code" |
+| FB206 | Warning | A method named `on_{object}_{signal}` for a real widget and signal has no `@Slot`, or its `@Slot` types match no overload of that signal, so Qt won't connect it | "Go to code" |
+| FB208 | Warning | A method named `on_{x}_{y}` where `{x}` is a widget and `{y}` is not one of its events, or `{x}` is not a widget and differs from one by at most two letters | "Go to code" |
+| FB209 | Info | The window file couldn't be read or has a syntax error, so code isn't checked | "Go to code" (to the error line when there is one) |
+| FB210 | Warning | The window file has no window class (UX-CODE-010) | "Go to code" |
+| FB211 | Info | Connect methods by name is off and the class has `on_{object}_{signal}` methods for this form | "Turn on Connect methods by name" (one step) |
+| FB212 | Info | A method comes from a base class Code Studio can't read, so it isn't checked | none |
+| FB213 | Error | A method a step calls is a `@staticmethod`, `@classmethod` or `@property` | "Go to code" |
+
+The pain 22 test: a misspelled signal (`on_okButton_clickd`) is FB208; `@Slot() def on_okButton_clicked(self)` for a real `QPushButton` gives no row. A check never reports code it couldn't read: during FB209 no FB201–FB213 row is shown.
+
+**UX-CODE-012** `M6.2a, M6.2b` `[A S]` Connected by name. With Connect methods by name on, each window-class method `on_{object}_{signal}` whose object is a widget, action or the form and whose signal is one of its events, with a matching `@Slot`, is listed in that event's group (UX-BEH-006) and drawn as a `{ }` chip with arrows on. The generated code keeps uic's `QMetaObject.connectSlotsByName` call (CONTRACTS §9.3).
+
+**UX-CODE-013** `M6.2b` `[S T]` The form's **Code** group (UX-FSET-002) gains the first row "Connect methods by name" (check box, on by default; R3 7), with the caption "Methods named on_{widget}_{event} with @Slot run without a step. Qt Designer calls this Connect slots by name." Unticking writes `connectslotsbyname="false"` (Designer writes the attribute only when false); ticking removes it. One step "Change form setting: connect methods by name".
+
+**UX-CODE-014** `M6.2b` `[T]` Problems rows (UX-PROB-001) for FB2xx put the sentence in the Description ("print_receipt is not defined in ShopWindow (shop_window.py).") and the object in the Location ("printButton", or "on_okButton_clickd" when the row is only a method). Double-click on a row with a step selects the sender, shows the Behavior tab and makes the step current (UX-PROB-002); on a row with only a method it goes to code at that method; FB209 goes to the error line. The rows clear when the cause is gone at the next check (D12).
+
+**UX-CODE-015** `M6.2b` `[T]` F5 (UX-RUN-001) from a form tab, when the form's window file is open with unsaved changes, asks first: "Save {file} before running? It has code this form calls." [Save and run] [Run without saving] [Cancel]. Without this, a method still only in the editor makes `setupUi` raise when the app starts.
+
+**UX-CODE-016** `M6.2b` `[S T]` Preview (D17). The preview host gets a stand-in for every method the form names (`<slots>`, native connections to the form, call steps), taking any arguments and doing nothing; the editor's status bar shows "Preview: {display name} {event words} would call {method}() in {file}." each time one runs ("Preview: {method}() in {file} would run." when several events call it). Preview never imports the window file (CONTRACTS §10.4).
+
+**UX-CODE-017** `M6.2b` `[S]` A form that doesn't generate (outside the project, or in the project but not in `forms/` and not adopted): "Call a new method…" shows "This form isn't in a project, so it has no window file." or "This form isn't in forms/, so Code Studio doesn't write Python for it." with the link "Adopt this form…" (the M1.4/M2 adopt flow); double-click on a D8 widget opens the event picker for its default event instead, with the same sentence in the status bar. Plain steps work as on any form.
+
+**UX-CODE-018** `M6.0s, M6.2b` `[S]` Hover on a D8 widget (UX-HOV-002): "{object} · {friendly class} · click to select · double-click to write code" before it has code, "… · double-click to go to its code" after. Enter still edits its text (UX-TEXT-001).
+
+#### 13.3.6 Logic storage the person can see (LST)
+
+**UX-LST-001** `M6.0b, M6.1b` `[S T]` FB402 (a form saved by a newer Code Studio, logic version above 1, or a version marker that can't be read). The Behavior tab shows a notice bar above its sections: "This form's behavior was saved by a newer version of Code Studio. You can read it here but not change it. Layout edits still work." Event and step rows are read-only (no + When…, + Then…, Delete, Space, pickers); double-click on a D8 widget goes to existing code only; every refused gesture says "This form's behavior was saved by a newer version of Code Studio, so it can't be changed here." Renaming a widget whose name any `cbcs*` text contains is refused with "{name} is used by behavior from a newer version of Code Studio, so it can't be renamed here." Every logic property and native connection is written back unchanged (the O-logic round-trip test). The Problems row is a Warning (D15).
+
+**UX-LST-002** `M6.0b, M6.1b` `[S]` FB401 (a step list that isn't valid JSON or isn't a list of steps). Its event shows one row "This event can't be read (line {n}). It is kept as it is and does nothing when the form runs." in `fb.error` with the fix "Open as text", which switches the tab to View XML with the caret on that property (UX-XML-001; `cbcs*` keys are not in Custom properties, UX-PED-060). Nothing is rewritten until the person edits it there.
+
+**UX-LST-003** `M6.0b, M6.1b` `[S]` FB403 (a step with a verb this build doesn't know). The step reads "A step Code Studio can't edit ({verb})" in `fb.warning`, read-only, and the whole event generates nothing, so its run order is never silently changed. Other steps of that event stay editable; editing them keeps the unknown step in place.
+
+**UX-LST-004** `M6.1a` `[A T]` Conversion is invisible and exact (D2). After any Events-list edit, an event whose steps are all plain is native `<connection>` elements in list order, with every unchanged connection element (and its `<hints>`) kept; otherwise it is one step list and that event has no native connection left. View XML shows the result. Undo of the edit restores the previous bytes exactly (CONTRACTS §3.9 invariant 3).
+
+**UX-LST-005** `M6.1a, M6.1b` `[S T]` FB404 (an event stored in two places, made in Qt Designer). [Merge] moves the native connections into the step list, at its front (they ran first), in one step "Merge the {event words} event"; when every step is then plain, the event becomes native connections only. Until merged, both generate, in the order UX-BEH-007 shows.
+
+**UX-LST-006** `M6.0b, M6.1b` `[T]` Rename (LOGIC §2.13, §6.4). Renaming a widget updates its connections, every step target, the error-label and formula references (M6.0b's token rule, CONTRACTS §15.8) and the step-list property names stay as they are, in the same undo step. The status says "Renamed {old} to {new}. Updated {n} events." when any event changed. A method name is never renamed by a widget rename.
+
+**UX-LST-007** `M6.0b, M6.1b` `[T]` Paste and delete. A pasted widget brings its events; steps that target other pasted widgets point at the copies, others keep their targets. The toast: "Pasted {n} widgets. {k} steps now act on the copies; {m} still act on {name}." when both kinds exist. A step whose target isn't on the form (paste from another form) is FB405. Delete asks first when other widgets' steps target the widget, in UX-OUT-012's confirm, which lists each step in words ("nameEdit is used by: Clear clicked (Clear Name), 1 step of Phone Enter is pressed (Move focus to Name)") and adds, when any of them is in a step list, "Steps saved in a step list will show as broken." [Delete] [Cancel]. Native connections go with the widget (CONTRACTS `DeleteNodes`); step-list steps stay and show FB405.
+
+**UX-LST-008** `M6.0b` `[A]` What a Qt Designer user sees (LOGIC §6.5). Plain events are ordinary connections: Designer's signals and slots mode draws them and its Signal/Slot Editor lists them; methods are declared in `<slots>`, so Designer's Configure Connection dialog offers them on the form. Turned-off steps and later no-code steps are dynamic properties (`cbcsOnClicked`, a JSON list) Designer shows in its property editor as text, and the form root has `cbcsLogic`. A Designer resave keeps them (corpus findings), possibly in another order or without `notr`; CBCS reads either. A connection added in Designer to an event that has a step list gives FB404. `QUiLoader` builds the layout and runs widget-to-widget connections; calls into your code are inert there ("No such slot", harmless, LOGIC §3.5).
+
+**UX-LST-009** `M6.0b` `[A]` Determinism the person can rely on: saving an unchanged form gives identical bytes; adding one step to a step list is a one-line diff; reordering two steps is a two-line diff; a Designer-ordered file keeps its order when saved (D21).
+
+**UX-LST-010** `M6.0b` `[T]` Pasting widgets that carry behavior from a form with a newer logic version (D20) raises this form's version and shows the toast "The pasted widgets have behavior from a newer version of Code Studio, so this form's behavior is now read-only here. · Undo". Undo takes both back.
+
+#### 13.3.7 Amendments to earlier clauses
+
+| Clause | Change in v4 |
+| --- | --- |
+| UX-INSP-013 | Withdrawn in v4 when M6.1b's Events section registers (UX-BEH-001). Its pain-16 rule continues as UX-BEH-018 |
+| UX-INSP-014 | Bound by 13.3.2: in M6 only Events (and the form-only sections) show; State and Checks register in M7 |
+| UX-EMPTY-005 | Replaced by UX-BEH-013 |
+| UX-OVL-009 | Replaced by UX-ARR-006 … 010 |
+| UX-TEXT-001 | The M6.2 switch happens as D8 describes; Enter is unchanged |
+| UX-HOV-002 | Gains UX-CODE-018's words |
+| UX-KEY-004 | Gains the M6 rows (section 3.6); F4's row changes from "Connections overlay (M6; Designer parity)" to the overlay of UX-ARR-006 |
+| UX-KEY-005 | Resolved: Alt+B adopted (D22); Ctrl+Space, Ctrl+Enter and Ctrl+. in formulas are M7; Ctrl+. in the Events list runs a row's first fix (M6) |
+| UX-MODE-006 | R3 212's Code Studio column becomes "F4 (Connections overlay)" |
+| UX-SHELL-004, UX-M5-010 | Form menu items of UX-M6-006 |
+| UX-FSET-002 | Code group gains "Connect methods by name" first (UX-CODE-013) |
+
+#### 13.3.8 Copy tables
+
+**Event words** (event headers "When {words}", picker items, docstrings "Runs when {object} is {words}.", and the short word for method names):
+
+| Signal | Header and picker words | Docstring words | Short word | Clause (after "When") |
+| --- | --- | --- | --- | --- |
+| `clicked` | "clicked" | "clicked" | `clicked` | "{display} is clicked" |
+| `pressed` / `released` | "pressed" / "released" | same | `pressed` / `released` | "{display} is pressed" / "{display} is released" |
+| `toggled` | "checked or unchecked" | "checked or unchecked" | `toggled` | "{display} is checked or unchecked" |
+| `editingFinished` | "editing is finished" (header "When editing is finished") | "finished editing" | `done` | "you finish editing {display}" |
+| `returnPressed` | "Enter is pressed" | "given Enter" | `enter` | "Enter is pressed in {display}" |
+| `textChanged` / `textEdited` | "the text changes" / "the text is typed" | "changed" | `text_changed` / `typed` | "the text of {display} changes" / "the text is typed in {display}" |
+| `currentIndexChanged` | "the choice changes" | "changed" | `changed` | "the choice of {display} changes" |
+| `activated` (combo box) | "a choice is picked" | "picked" | `picked` | "a choice is picked in {display}" |
+| `activated` (any other) | "activated" | "activated" | `activated` | "{display} is activated" |
+| `valueChanged` | "the value changes" | "changed" | `changed` | "the value of {display} changes" |
+| `dateChanged`, `timeChanged`, `dateTimeChanged` | "the date changes", "the time changes", "the date or time changes" | "changed" | `changed` | "the date of {display} changes", "the time of {display} changes", "the date or time of {display} changes" |
+| `currentChanged` (tabs, stack, toolbox) | "the page changes" | "switched to another page" | `page_changed` | "the page of {display} changes" |
+| `itemActivated` | "an item is opened" | "opened" | `opened` | "an item in {display} is opened" |
+| `currentRowChanged` | "another row is chosen" | "moved to another row" | `row_changed` | "the row of {display} changes" |
+| `accepted` / `rejected` (button box, dialog) | "OK is pressed" / "Cancel is pressed" | "accepted" / "cancelled" | `ok` / `cancel` | "OK is pressed in {display}" / "Cancel is pressed in {display}" |
+| `clicked(QAbstractButton*)` (button box) | "any of its buttons is clicked" | "clicked" | `button_clicked` | "a button in {display} is clicked" |
+| `triggered` (action) | "chosen" | "chosen" | the action's text rule (UX-CODE-001) | "{display} is chosen" |
+| `finished` (dialog) | "it closes" | "closed" | `closed` | "{display} closes" |
+| any other | the signal name, as Qt writes it | the signal name | the signal name in `snake_case` | "{display} sends {signal}" |
+
+D27. A sentence uses the clause: "When {clause}." Headers stay "When {words}" ("When clicked", "When OK is pressed"). The step picker title is "Then… (When {clause})". Prefer "in" ("the text is typed in {display}", "a choice is picked in {display}", "an item in {display} is opened", "a button in {display} is clicked"). `toggled` is "{display} is checked or unchecked", matching its header. `editingFinished` is "you finish editing {display}".
+
+**Value words** ("My method receives {words}"): bool "whether it's checked"; QString "the new text"; int "the new number" (index signals: "the number of the new choice"; tabs: "the number of the new page"); double "the new number"; QDate "the new date"; QTime "the new time"; QDateTime "the new date and time"; QAbstractButton* "the button that was clicked". **Type words** (UX-PICK-006 reasons): bool "yes or no", int "a whole number", double "a number", QString "text", QDate "a date", other types their Qt name.
+
+**Step words** (UX-BEH-004):
+
+| Step | Words |
+| --- | --- |
+| form `close()` / `accept()` / `reject()` | "Close this form" / "Accept (OK)" / "Cancel" |
+| `{w}.clear()` | "Clear {w}" |
+| `{w}.setFocus()` | "Move focus to {w}" |
+| `{w}.setChecked(bool)` | "Check or uncheck {w} the same way" |
+| `{w}.toggle()` / `click()` | "Toggle {w}" / "Click {w}" |
+| `{w}.setCurrentIndex(int)` | "Show the matching page of {w}" (tabs, stack) / "Choose the matching item of {w}" (combo) |
+| `{w}.setValue(int)` | "Set {w} to the same value" |
+| `{w}.setEnabled(bool)` / `setDisabled(bool)` | "Enable {w} to match" / "Disable {w} to match" |
+| `{w}.setVisible(bool)` / `show()` / `hide()` | "Show {w} to match" / "Show {w}" / "Hide {w}" |
+| `{w}.setText(QString)` | "Copy the text into {w}" |
+| `{w}.selectAll()` / `undo()` / `redo()` / `copy()` / `paste()` / `cut()` | "Select all in {w}" / "Undo in {w}" / … |
+| `{w}.update()` / `repaint()` / `raise_()` / `lower()` | "Redraw {w}" / "Redraw {w}" / "Bring {w} to the front" / "Send {w} to the back" |
+| call | "Call {method}()" |
+| method connected by name | "{method}() runs by its name" |
+| unknown verb (FB403) | "A step Code Studio can't edit ({verb})" |
+| a slot with no entry | "{w} · {slot name}" |
+
+`{w}` is "{display name} ({object})", the object name in `fb.faint`.
+
+**Undo names** (UX-M6-002):
+
+| Action | Undo name |
+| --- | --- |
+| Add steps from a picker | "Add {step words} to {sender} {event words}" ("Add Clear Name to Clear clicked") |
+| Add with an intent of two steps | "Keep {a} and {b} in step", "Make OK accept and Cancel close" |
+| Change a step / an event | "Change {old step words} to {new step words}", "Change the event to {event words}" |
+| Delete | "Delete {step words}", "Delete the {event words} event" |
+| Move, duplicate | "Move {step words}", "Duplicate {step words}" |
+| Turn off / on | "Turn off {step words}", "Turn on {step words}" |
+| Canvas link | "Connect {sender} to {receiver}" |
+| Merge | "Merge the {event words} event" |
+| Make a method | "Write code for {display name} {event words}" |
+| Remove a method declaration | "Remove method declaration {name}" |
+| Connect by name setting | "Change form setting: connect methods by name" |
+
+**Status sentences, refusals and toasts** (every sentence an M6 lane may show; the clauses above hold the confirms):
+
+| Where | Sentence | Colour |
+| --- | --- | --- |
+| Empty Events | "Nothing happens yet when {display name} is {event words}." / "Nothing happens yet for {display name}." | `fb.muted` |
+| Empty Events, D8 widget | "Use + When… to pick what happens, or double-click it on the form to write code." | Caption |
+| After Go to code or Write code, once | "Ctrl+Z in {file} takes this back. F12 on the method goes back to the form." | status |
+| Several selected | "Select one widget to see what it does." | `fb.muted` |
+| Layout or spacer selected | "Layouts and spacers don't have events. Select a widget." | `fb.muted` |
+| Move past the ends | "That is the first step." / "That is the last step." | status |
+| Step deleted, method kept | "Removed the step. {method}() is still in {file}. · Undo" | toast |
+| No picker match | "Nothing matches “{text}”." | `fb.muted` |
+| Incompatible slot | "Needs {type words}; {event words} sends nothing." / "Needs {type words}; {event words} sends {type words}." | `fb.faint` |
+| Change of event drops steps | "{n} steps can't run on {event words} and will be removed." | confirm |
+| Two places | "This event is stored in two places." | `fb.warning` |
+| Show all on | "Showing all {n} connections. Ctrl+Shift+L hides them." | status |
+| Connections banner | "Drag from a widget to the widget it should act on. Drop on the form's background to act on the form." | overlay banner |
+| Overlay link by keys | "Choose the widget for {sender} to act on, then press Enter. Home picks the form." | status |
+| Overlay hover | "{display name} · drag to another widget to connect" | status |
+| Arrow hover | "When {sender} is {event words}: {step words}. Click to select, Delete to remove." | status |
+| `{ }` hover | "Calls {method}() in {file}. Click to go to the code." | status |
+| Badge hover | "{n} events: When {a}, When {b}{ and {k} more}" ("1 event: When clicked") | tooltip |
+| Name check | the five lines of UX-CODE-002 | as listed |
+| Method plan refused | the five sentences of UX-CODE-006 | status |
+| No window class | "{file} has no class that calls self.ui.setupUi(self)." | status / picker line |
+| Form doesn't generate | "This form isn't in a project, so it has no window file." / "This form isn't in forms/, so Code Studio doesn't write Python for it." | picker line / status |
+| Method kept on Undo | "Removed the step. {method}() has your code in it, so it stays in {file}." | toast |
+| Method renamed on Undo | "Removed the step. {method}() was renamed in {file}, so the new name stays." | toast |
+| Method deleted on Undo | "Removed the step. {method}() is already gone from {file}." | toast |
+| Window file unreadable on Undo | "Removed the step. {file} can't be read, so {method}() was left as it is." | toast |
+| Nothing to go to | "{display name} has no code yet. Double-click it, or press Ctrl+Shift+E to add an event." / "{method}() isn't in {file} yet. Press Ctrl+. to create it." | status |
+| By-name explanation | "Qt runs methods named on_{object}_{event} by themselves, because Connect methods by name is on." | status |
+| F5 with unsaved window file | "Save {file} before running? It has code this form calls." | confirm |
+| Preview stand-in | "Preview: {display name} {event words} would call {method}() in {file}." / "Preview: {method}() in {file} would run." | status |
+| Rename updated events | "Renamed {old} to {new}. Updated {n} events." ("1 event") | status |
+| Paste | "Pasted {n} widgets. {k} steps now act on the copies; {m} still act on {name}." | toast |
+| Newer logic | "This form's behavior was saved by a newer version of Code Studio. You can read it here but not change it. Layout edits still work." | notice bar |
+| Newer logic, refused gesture | "This form's behavior was saved by a newer version of Code Studio, so it can't be changed here." | status |
+| Newer logic, rename | "{name} is used by behavior from a newer version of Code Studio, so it can't be renamed here." | status |
+| Newer logic pasted | "The pasted widgets have behavior from a newer version of Code Studio, so this form's behavior is now read-only here. · Undo" | toast |
+| Event can't be read (FB401) | "This event can't be read (line {n}). It is kept as it is and does nothing when the form runs." | `fb.error` |
+| Bad step name (FB406) | "{object} {event words} has a step whose name Code Studio can't use ({name}). It is kept as it is and does nothing." | `fb.error` |
+| Unknown step (FB403) | "A step Code Studio can't edit ({verb})" | `fb.warning` |
+| Your methods caption | "Code Studio adds methods to {file} and never changes the rest of it." | Caption |
+| Declaration in use | "{name} is used by {n} steps. Delete those steps first." | status |
+| Connect by name caption | "Methods named on_{widget}_{event} with @Slot run without a step. Qt Designer calls this Connect slots by name." | Caption |
+
+**FB codes and messages** (CONTRACTS §7.2 gains FB208–FB213 and FB403–FB405 through the lanes' `engine/diagnostic_codes/` modules; FB201–FB206 and FB401–FB402 keep LOGIC §2.9's numbers and meanings):
+
+| Code | Message |
+| --- | --- |
+| FB201 | "{method} is not defined in {class} ({file})." |
+| FB202 | "{method}(self, {params}) needs {n} values, but {event words} sends {m}. It would fail every time." |
+| FB203 | "{method} is still empty (pass)." |
+| FB204 | "The method name {method} would replace {base class}'s own {method}." |
+| FB205 | "{method} also runs by its name, so it would run twice." |
+| FB206 | "{method} has no @Slot(), so Qt won't run it by its name." / "{method}'s @Slot({types}) doesn't match {object}'s {signal}, so Qt won't run it by its name." |
+| FB208 | "{method} looks like a method Qt runs by its name, but {object} has no event {signal}. Did you mean {suggestion}?" / "… but there is no widget {object}. Did you mean {suggestion}?" |
+| FB209 | "{file} has an error on line {n}, so the code this form calls isn't checked." / "{file} can't be read, so the code this form calls isn't checked: {reason}." |
+| FB210 | "{file} has no class that calls self.ui.setupUi(self), so methods can't be added or checked." |
+| FB211 | "Connect methods by name is off, so {method} won't run by itself." |
+| FB212 | "{method} comes from {base}, which Code Studio can't read, so it isn't checked." |
+| FB213 | "{method} is a {staticmethod / class method / property}, so Qt can't call it for an event." |
+| FB401 | "{property} on {object} can't be read (line {n}). It is kept as it is and does nothing." |
+| FB402 | "This form's behavior was saved by a newer version of Code Studio (version {v}). It is shown read-only and kept as it is." |
+| FB403 | "{object} {event words} has a step Code Studio can't edit ({verb}). The event does nothing until it's edited in a newer version." |
+| FB404 | "{object} {event words} is stored in two places: Qt Designer connections and a Code Studio step list." |
+| FB405 | "Step {n} of {object} {event words} acts on {target}, which isn't on this form." |
+| FB406 | "{object} {event words} has a step whose name Code Studio can't use ({name}). It is kept as it is and does nothing." |
+
+#### 13.3.9 Deferred from M6, with owners
+
+| Item | Owner |
+| --- | --- |
+| State and Checks sections, rule intents ("Enable … only when"), the steer from `toggled → setEnabled` to a rule (LOGIC §2.14) | M7.2 (registers in `behavior_ext/` and `engine/logic/intents/`) |
+| Conditions on steps ("only if"), the step vocabulary (message, ask, set, open form…) | M7.1, M7.4 |
+| Form events and pseudo-events (D16) | M7.4, M8.2 |
+| Try mode and its log (Ctrl+Shift+R stays Preview) | M7.6 |
+| "In your code" connections found by parsing `self.ui.x.signal.connect(...)` | M7.8 |
+| Shift+F12, logic search, renaming a method in code and form together (D18, D19) | M7.8 |
+| The Logic panel and "Read as text" | M7.8 |
+| Dragging Designer's connection hint points (D7) | Not offered: hints round-trip unchanged |
+
+### 13.4 M7: formulas, rules, checks and Try (logic level 3)
+
+Version 1 (work package M7.0, 2026-10-31). Binding for M7. It is the on-screen half of LOGIC_DESIGN §2.1, §2.4, §2.5, §2.8–2.11, §2.13–2.16 and §4, and it builds on §13.3 (M6). The engine contracts are CONTRACTS §17 (formulas) and §18 (generated rules, checks and steps). The changes this version makes to LOGIC_DESIGN are listed at its end ("Changes recorded by M7.0").
+
+**Scope.** Level 3:
+- state rules (Enabled, Visible and Read-only when; Value; Default);
+- kinds and formats;
+- checks with error labels;
+- the no-code step vocabulary, with "only if" conditions;
+- the two form events "When the form opens" and "Before the form closes";
+- the point-and-click builder for conditions and values;
+- Try (Preview running the form's behavior);
+- the Logic panel, search, Read as text, Shift+F12, method rename and the "In your code" list.
+
+Data (record events, `form.*`, `record.*`, grids, lookups) is M8. Where M7 leaves room for M8, the clause names the registry M8 fills. M7 never shows a row it can't fill (UX-COPY-002). RECORD steps and data names don't appear until M8.
+
+**Words.** These add to §13.3's words.
+- A **rule** is a formula that keeps a property right all the time (Enabled when, Visible when, Read-only when, Value, Default).
+- A **check** tests one field's value before it's accepted.
+- A **formula** is the text in a rule, check or condition.
+- A **condition** is a formula that answers yes or no.
+- The **builder** is the point-and-click way to write a condition or value.
+- **Try** is Preview with the form's behavior running.
+
+#### 13.4.1 Decisions
+
+| # | Question | Decision | Why |
+| --- | --- | --- | --- |
+| E1 | Formula language | LOGIC §4's typed Python subset, exactly as CONTRACTS §17 specifies it. Excel habits are recognised and fixed with Ctrl+. (FB107). Only Python is saved | LOGIC Decision 3. One syntax, and it is the code |
+| E2 | Builder or formula first? | **Builder first for conditions and for simple values**, because the owner said the users are a real mix (LOGIC owner decision 4). A State row opens in the builder when its formula fits the builder, or when it is empty; otherwise it opens in formula mode. "Formula ›" and "‹ Builder" switch modes without loss. When a formula is too complex for the builder, "‹ Builder" is disabled with the sentence in §13.4.8 | Non-programmers never have to see `x if c else y` |
+| E3 | What the builder covers | Conditions: rows of "field, comparison, value" joined by *all of* or *any of* (LOGIC §2.5). Values: one field; or "field op field-or-number" with + − × ÷ and up to four terms; or "if ‹condition› then ‹value› otherwise ‹value›". Anything else is a formula | Covers walkthroughs 1 and 2, plus the common "if checked then 10 otherwise 0" |
+| E4 | Where Try lives | **Preview is Try.** The existing Preview (Ctrl+Shift+R, M2.5 and M5) runs the generated module with the form's behavior. A stand-in window takes the place of your window class (UX D17), and it now records what would have run in a log pane titled "What ran". There is no second window and no second key. "Run behavior" in the Preview toolbar is on by default and turns behavior off for layout checks. Ctrl+R stays Go to widget | One preview concept and one key. The fixed decision "Ctrl+Shift+R is preview" holds. Try mode is how Preview behaves once a form has logic |
+| E5 | Window values in Try | A "Window values" strip under the form lists each `window.m()` the form's formulas call, with a value box typed from its annotation. Unset values count as blank, and the log says "needs a window value" once per method | LOGIC §2.10 |
+| E6 | Steering `toggled → setEnabled` (M6 D4) | The M6 intent "Enable {target} only when…" now exists (M7.2b registers it). A drag or a step-picker choice of `toggled → setEnabled` or `setVisible` shows the steer from LOGIC §2.14: "Make it a rule" (the default) or "Connect anyway" | LOGIC Decision 2 |
+| E7 | "now:" values | Each State row and the formula editor show the live result against the canvas widgets' current values (CONTRACTS §17.12). The canvas widget itself shows the effect while the editor is open: a disabled field greys out and a calculated label shows its value. The effect stops when the editor closes, and the canvas goes back to design values | LOGIC P5. The design values in the file never change |
+| E8 | A calculated widget's own property | When a widget has a Value rule, its value property row in Properties reads "Calculated: {formula}" with "Edit rule" and can't be typed into. Enabled, Visible and Read-only rules leave their Qt property editable (it is the design-time default), with a small "rule" link beside it | LOGIC P3. No silent fight between a rule and a constant |
+| E9 | Error labels | When the first check is added to a field, Code Studio offers "Show messages under the field" (Add label, Not now). Add label inserts a `QLabel` named `{field}Error`, directly under the field in its layout, in one undo step with the check. "Not now" leaves FB119 (Info) | LOGIC §2.16 step 2 |
+| E10 | Form events in M7 | "When the form opens" (`cbcsOnOpened`) and "Before the form closes" (`cbcsOnClosing`, which can stop the close). They are listed first in the form's Behavior tab. Record events wait for M8 | They need no data |
+| E11 | The Logic panel | A tab in the left pane beside Outline and Insert, labelled "Logic". It doesn't replace the Behavior tab. Selecting a row selects the widget and opens its Behavior row. The M6 form-level "All events on this form" stays | LOGIC §2.8. One overview per form |
+| E12 | Formats and locale | `cbcsFormat` codes are LOGIC §4.11's. The project setting "Formats" (Settings › Form designer) defaults to US English: `$`, `1,234.50`, `MM/DD/YYYY`. Generated helpers read the project's choice at generate time and write it into the module as constants | LOGIC owner decision 3. No runtime lookup |
+| E13 | Repair references | When a form opens, a formula name that matches no widget, together with a widget of the same class that appeared since the last CBCS save (from the `ui_<stem>.py` name list), opens a non-blocking banner: "{n} rules point at widgets that were renamed outside Code Studio. Repair…" The Repair dialog pairs each old name with a candidate. Nothing changes until "Repair" is pressed, and the repair is one undo step | LOGIC §2.13 |
+| E14 | Keys | Enter on a State, Check or condition row: edit (F2 stays rename, UX-KEY-005). Ctrl+Enter: commit. Esc: cancel. Ctrl+Space: complete. Ctrl+.: fix. Alt+Up and Alt+Down: move a check or step. Shift+F12: find every use. Alt+L: the Logic panel with its filter focused, which is how you search this form's logic. Ctrl+F stays Find widget (UX-KEY-004); this replaces UX-KEY-005's "Ctrl+F searches logic", which would bind Ctrl+F twice. Ctrl+Shift+R: Preview, now Try | LOGIC §2.12, with Ctrl+R kept for Go to widget |
+| E15 | Unsaved formula on focus loss | A formula with no Error is committed when focus leaves the editor. A formula with an Error stays open, red, with the sentence "Fix or press Esc to undo this formula". Leaving the form tab keeps the draft and shows a dot on the row | Never lose typing, never save a broken rule silently |
+
+#### 13.4.2 State rules (STATE)
+
+**UX-STATE-001** `M7.2b` `[S A]` The Behavior tab's **State** section (registry order 10) lists five rows for a value widget, always, even when empty: Enabled when, Visible when, Read-only when (input widgets only), Value, Default. A non-value widget (a button or group box) lists only Enabled when and Visible when.
+- An empty row shows its default in muted text: "always", "never" (Read-only), "typed by the person" (Value), "as designed" (Default).
+- A filled row shows the rule in words from the builder, or its formula, and "now: {value}".
+
+**UX-STATE-002** `M7.2b` `[S T]` Editing a row opens the condition or value editor inline, below the row, at the inspector width (236 px minimum). It has:
+- the builder or the formula field (E2);
+- a status line with the type, "now:", and the formula read as words;
+- the problem sentence, if any;
+- Commit (Ctrl+Enter) and Cancel (Esc).
+
+Each commit is one undo step, named "Set Enabled when for {display}" (the name per row is in §13.4.8).
+
+**UX-STATE-003** `M7.2b` `[S]` Kind and Format.
+- A "Kind" row sits above State for QLineEdit, QLabel and QPlainTextEdit. It is a combo with Text, Whole number, Number (places), Money, Percent, Date and Time.
+- A "Format" row sits on the Value row's line when the widget shows text (E12).
+- Changing the kind re-checks every formula that reads the widget.
+
+**UX-STATE-004** `M7.2b` `[S A]` Canvas badges extend M6's logic badge:
+- `=` calculated;
+- `?` a conditional state;
+- `!` checks;
+- `>` events (M6).
+
+A widget with several kinds of logic shows the first in that order, plus a count. The tooltip lists all of them in one sentence each.
+
+**UX-STATE-005** `M7.2b` `[S]` With a widget selected and the Behavior tab current, dashed `ov.feeds` arrows run into it from the widgets its formulas read, and out to the widgets whose formulas read it (LOGIC §2.7). Show all connections (Ctrl+Shift+L) includes them. A new token: `ov.feeds` is `#6B7280`, 1 px dashed; in high contrast it is `#000000`, 1.5 px.
+
+**UX-STATE-006** `M7.2b` `[T]` E8's "Calculated" row, and its "Edit rule" link, which opens the Value row.
+
+#### 13.4.3 The formula editor (FX)
+
+**UX-FX-001** `M7.2b` `[S T]` Formula mode is one line. Shift+Enter adds a line, and the field grows up to six lines. It uses the code editor's syntax colors for the formula tokens (names, numbers, strings, operators, functions), with no gutter. Width follows the inspector.
+
+**UX-FX-002** `M7.2b` `[T]` Completion (Ctrl+Space, or automatically after 2 characters of a name). The order is:
+1. widgets, matched by object name or display name, each row showing "{name}  {display}  {Kind}";
+2. functions, with a one-line doc;
+3. `window.` methods once `window.` is typed.
+
+Tab or Enter accepts. Typing a display name and accepting inserts the object name.
+
+**UX-FX-003** `M7.2b` `[S T]` Problems are underlined under their span:
+- red for Error;
+- amber for Warning;
+- blue dotted for Info.
+
+The message shows in the status line. Ctrl+. applies the fix. A fix list opens when there is more than one fix.
+
+**UX-FX-004** `M7.2b` `[A]` Speed. A keystroke in the formula editor (analyze, then evaluate, then repaint the status line) costs ≤ 16 ms p95 for a 200-character formula on the 300-widget reference.
+
+#### 13.4.4 The builder (BLD)
+
+**UX-BLD-001** `M7.5` `[S T K]` The condition builder (LOGIC §2.5) has:
+- a first line "[all of ▾]" ("any of");
+- rows of [field ▾] [comparison ▾] [value];
+- "+ condition".
+
+The comparison list depends on the field's type (LOGIC §2.5). The value box takes the field's type: a number box, a date box, a text box, or a yes/no box that is hidden for "is checked". Every control can be reached with the keyboard (Tab moves through the row; Alt+Down opens a list).
+
+**UX-BLD-002** `M7.5` `[S T]` The value builder (E3) has three shapes:
+- "= [field or number]";
+- "= [a] [+ − × ÷] [b]", with "+ term" for up to four terms;
+- "if [condition…] then [value] otherwise [value]".
+
+The shape is chosen from a small "Shape ▾" menu.
+
+**UX-BLD-003** `M7.5` `[T]` Round trip. The builder writes a formula, the formula is what's stored, and reopening reads it back into the builder. The builder never stores anything else. A test proves `formula → builder → formula` is identical for every formula the builder can show.
+
+**UX-BLD-004** `M7.5` `[A]` Persona gate (M7.7). The shop owner completes walkthroughs 1 and 2 (LOGIC §2.14–2.15) with the builder, with no typing beyond field-name filtering, in at most 12 steps each.
+
+#### 13.4.5 Checks (CHK)
+
+**UX-CHK-001** `M7.3b` `[S A]` The Behavior tab's **Checks** section (order 20) shows the checks in run order. Each row shows the check in words and its message: "Required · Discount rate is required". Below the rows are "+ Add check ▾" and "Checked when: leaving the field" (a fixed sentence explaining LOGIC §4.9's timing, with a link to the manual).
+
+**UX-CHK-002** `M7.3b` `[T]` "+ Add check" offers, filtered by the field's type:
+- Required;
+- Between…;
+- Length…;
+- Email address;
+- Phone number;
+- US ZIP code;
+- Pattern…;
+- One of…;
+- Formula….
+
+**Native first** (LOGIC §4.9): a numeric field's Between, or a line edit's Length max, writes the Qt property (`minimum`, `maximum`, `maxLength`), and the row shows a "Qt" tag.
+
+**UX-CHK-003** `M7.3b` `[T]` Messages. The default message comes from the buddy label (LOGIC §4.9 table) and stays generated until edited. An edited message is stored. Pattern and Formula need a message, so Commit is disabled until there is one.
+
+**UX-CHK-004** `M7.3b` `[S]` E9's error-label offer, and the run-time look in Try: the message under the field; an outline from the project style rule `*[cbcsInvalid="true"]`, which Code Studio adds to the project theme once with "Add the red outline style" (one undo step); and the tooltip.
+
+#### 13.4.6 Steps and conditions (STEP)
+
+**UX-STEP-001** `M7.4` `[S T]` The step picker's groups become LOGIC §2.4's:
+- FIELDS: Check all fields, Set a field, Clear fields, Move focus to;
+- SHOW: Show or hide, Enable or disable, Show a message, Ask yes or no, Switch tab or page;
+- WINDOWS: Open another form, Close this form;
+- YOUR CODE: Call a method;
+- FLOW: Stop here if….
+
+The M6 "DO THIS" intent rows stay first. "Everything {target} can do" stays last. RECORD comes with M8.
+
+**UX-STEP-002** `M7.4` `[S T]` Each verb that needs details opens a small editor page in the picker, with one field per verb field (LOGIC §4.12), formulas using the FX editor. Then the step joins the list in one undo step.
+
+**UX-STEP-003** `M7.4` `[S]` "only if": any step can carry a condition, from its row menu ("Only if…"; Shift+F10 opens the menu from the keyboard; Ctrl+Shift+I stays the shell's Hover Info). It is shown as an indented line "only if {condition in words}". A step that can stop the list shows its note, always visible: "(stops here if a field fails)" or "(stops here on No)".
+
+**UX-STEP-004** `M7.4` `[T]` A one-off Enable, Disable, Show or Hide step on a property that a rule controls shows FB117 on the step. The fix is "Show the rule".
+
+**UX-STEP-005** `M7.4` `[S]` E10's form events, listed first in the form's Behavior tab: "When the form opens" and "Before the form closes". The second one's note reads "(the form stays open if a step stops)".
+
+#### 13.4.7 Try, the Logic panel and search (TRY, LOGP)
+
+**UX-TRY-001** `M7.6` `[S A]` The Preview window, when the form has logic and Run behavior is on:
+- runs the generated module with a stand-in window (E4);
+- has a "What ran" pane on the right: time, sentence, and source;
+- shows the "Window values" strip (E5).
+
+Every line in "What ran" names its source: "Rules ran (12)", "Check emailEdit: Enter an email address…", "Save is clicked: stopped at step 1 (Check all fields)", "Would call save_invoice()". Clicking a line selects that widget and rule in the editor. "Clear" and "Copy" buttons sit above the list.
+
+**UX-TRY-002** `M7.6` `[A]` Editing a rule while Preview is open regenerates the module and reloads Preview within 500 ms on the Mac and 1.5 s on the ChoreBoy VM. Field values are kept where object names still match. The VM row is a gate fact (§16.5).
+
+**UX-TRY-003** `M7.6` `[T]` Preview never imports the window file (E4, UX D17). A step that calls your method logs "Would call {method}()". A `window.m()` formula reads the Window values strip.
+
+**UX-LOGP-001** `M7.8` `[S A]` The Logic panel (E11) lists STATE, CHECKS and EVENTS, then IN YOUR CODE (read-only, best-effort, labelled), then the problems count. It has a filter field and toggle chips for Rules, Checks, Events and Problems. A row reads "{widget}  {Rule words}  {formula or summary}".
+
+**UX-LOGP-002** `M7.8` `[T]` Alt+L opens the Logic panel with its filter focused (E14). Project Find (Ctrl+Shift+F) gains a "Forms logic" group that matches formula text, method names and widget names inside every form's logic.
+
+**UX-LOGP-003** `M7.8` `[T]` Shift+F12 on a widget, a method or a Logic row opens "Uses of {name}". It lists every rule, check, step and line of window-file code that reads, sets or calls it. The code lines come from the M6 reading, plus the parsed `self.ui.{name}` uses.
+
+**UX-LOGP-004** `M7.8` `[T]` Renaming a method from Your methods or a Call step runs the shell's rename-refactor preview on the window file, and updates the form's steps in the same undo step on the form. The window file follows its own tab's undo.
+
+**UX-LOGP-005** `M7.8` `[T]` Read as text writes the whole form's behavior as numbered English sentences (LOGIC §2.8), in a read-only tab, with Copy and Print to PDF (the M5 print path).
+
+#### 13.4.8 Copy
+
+Every on-screen sentence a lane adds is written in its PR as a row in this table, in the M6 table format (Context | Exact text), and gated by O-UX. The rows below are fixed by this spec:
+
+| Context | Exact text |
+| --- | --- |
+| Builder disabled | "This is too complex for the builder. Edit it as a formula." |
+| Formula left with an error | "Fix or press Esc to undo this formula" |
+| Short date, month first | "Enter a date as MM/DD/YYYY." |
+| Short date, day first | "Enter a date as DD/MM/YYYY." |
+| Short date, year first | "Enter a date as YYYY-MM-DD." |
+| Rule steer (E6) | "Keep {target} enabled only while {sender} is checked? A rule also gets this right when the form opens." [Make it a rule] [Connect anyway] |
+| Calculated property | "Calculated: {formula}" · "Edit rule" |
+| Error-label offer | "Show messages under the field?" [Add label] [Not now] |
+| Repair banner | "{n} rules point at widgets that were renamed outside Code Studio." [Repair…] |
+| Window value needed | "{method}() needs a window value" |
+| Divide by zero tooltip | "Can't divide by zero" |
+| Undo names | "Set {Rule words} for {display}", "Clear {Rule words} for {display}", "Add check to {display}", "Edit check on {display}", "Remove check from {display}", "Move check", "Add error label for {display}", "Repair references" |
+| FB101 | "{name} is not a field on this form. Did you mean {suggestion}?" |
+| FB102 | "Can't {verb} {type a} and {type b}. {name} holds {type a}." |
+| FB103 | "Not available in formulas. Use a method instead." |
+| FB104 | "These values depend on each other in a circle: {a}, then {b}, then {a}." |
+| FB108 | "This formula isn't finished: {python message, first line}" |
+| FB107 | LOGIC §4.10's message column, verbatim |
+| FB109 | "{method} is not in {Class} ({file})." |
+| FB111 | "This formula is too long. Split it, or move it into a method." |
+| FB115 | "Connect this form to a table first (coming with data forms)." |
+| FB119 | "{display}'s messages show only as a tooltip. Add a label under the field?" |
+| FB101, no close match | "{name} is not a field on this form." |
+| FB102 on a literal | "Can't {verb} {type a} and {type b}." |
+| FB102 hints (appended) | " Use not is_blank({name})." · " Use {name} != 0." |
+| FB103 assignment | "Formulas can't change things. Use a Set a field step." |
+| FB105 | "The pattern has to be written in quotes." · "That pattern is too long." · "That pattern isn't one this formula can use." |
+| FB106 in a formula | "That name is reserved." |
+| FB108, checker fault | "This formula isn't finished." (the fault is logged) |
+| FB110 | "{method} has no type, so this formula treats it as yes or no." · "This value has no type, so this formula treats it as yes or no." |
+| FB112 | "{name} takes {n} values, not {m}." · "{name} takes {a} or {b} values, not {m}." · "{name} takes at least {n} values, not {m}." |
+| FB113 | "{name} is a whole column, so it only belongs inside sum, count, avg, min, or max." |
+| FB114 | "{display} has no value a formula can read." · "{display} has no {name}." |
+| FB118 | "{display} has an unknown kind, so this formula reads it as text." · "{format} is an unknown format, so this formula shows the value as text." |
+| FB107, cells LOGIC §4.10 leaves blank | "Use `True`." · "Use `False`." · "Use `is_blank`." · "Write a decimal, like `0.10`." · "Use `and`." · "Use `or`." · "Use `not`." · semicolon: "Separate the values with a comma." |
+| Step picker groups (M7.4) | "FIELDS", "SHOW", "WINDOWS", "FLOW" |
+| Step picker rows (M7.4) | "Check all fields", "Set a field", "Clear fields", "Move focus to", "Show or hide", "Enable or disable", "Show a message", "Ask yes or no", "Switch tab or page", "Open another form", "Close this form", "Stop here if…" |
+| Verb page button (M7.4) | "Add this step" |
+| Only if (M7.4) | row menu "Only if…"; the indented line "only if {condition}"; undo "Set only if for {words}" |
+| Step notes (M7.4) | "(stops here if a field fails)" · "(stops here on No)" · "(the form stays open if a step stops)" |
+| Form events (M7.4) | "When the form opens" · "Before the form closes" |
+| FB117 fix title (M7.4) | "Show the rule" |
+| FB120 | "That form isn't in this project's forms folder" |
+| Skipped step comment (generated) | "# step {n} skipped ({code}: see Problems)" |
+| Check messages (M7.3a defaults) | "{Label} is required" · "Enter a number" · "Enter an email address like name@example.com" · "Enter a phone number" · "Enter a ZIP code like 12345" · "{Label} is not in the right format" · "{Label} must be {min} to {max} characters" (and "at least {min}" / "at most {max} characters") · "{Label} must be between {min} and {max}" (and "at least {min}" / "at most {max}") · "{Label} must be one of {values}" |
+| State heading (M7.2b1) | "STATE" |
+| State columns (M7.2b1) | "Kind" · "Format" |
+| State empty (M7.2b1) | "always" · "never" · "typed by the person" · "as designed" |
+| Kind values (M7.2b1) | "Text" · "Whole number" · "Number (places)" · "Money" · "Percent" · "Date" · "Time" |
+| Format codes (M7.2b1) | "money" · "number" · "percent" · "date:short" · "date:long" · "date:iso" · "text:upper" · "text:proper" |
+| Decimal places (M7.2b1) | "Decimal places" |
+| Now line (M7.2b1) | "now: {value}" |
+| Type phrases (M7.2b1) | "text" · "a whole number" · "a number" · "money" · "a yes or no" · "a date" · "a time" · "a date and time" · "a page" · "a window value" · "blank" · "a choice" · "a column" |
+| Live now (M7.2b1) | "yes" · "no" · "blank" |
+| Window value blank (M7.2b1) | "needs a window value" |
+| Completion kinds (M7.2b1) | "Number" · "Yes or no" · "Date and time" · "Page" · "Choice" · "Column" |
+| Rule steer, enable (M7.2b1) | "Enable {target} only when…" |
+| Rule steer, show (M7.2b1) | "Show {target} only when…" |
+| Rule steer, visible (M7.2b1) | "Keep {target} visible only while {sender} is checked? A rule also gets this right when the form opens." |
+| What ran (M7.6) | "What ran" |
+| What ran columns (M7.6) | "Time" · "Source" |
+| Preview buttons (M7.6) | "Clear" · "Copy" · "Run behavior" · "Window values" |
+| Rules ran (M7.6) | "Rules ran ({n})" |
+| Rule count (M7.6) | "{n} rules" |
+| Rule source (M7.6) | "{widget} · {Rule words}" |
+| Check line (M7.6) | "Check {widget}: {message}" |
+| Would call (M7.6) | "Would call {method}()" |
+| Stopped step (M7.6) | "{clause}: stopped at step {n} ({step words})" |
+| When source (M7.6) | "{widget} · When {signal}" |
+| Checks heading (M7.3b) | "CHECKS" |
+| Add check (M7.3b) | "+ Add check ▾" |
+| Check timing (M7.3b) | "Checked when: leaving the field" |
+| Checks manual (M7.3b) | "How checks run" |
+| Check menu (M7.3b) | "Required" · "Between…" · "Length…" · "Email address" · "Phone number" · "US ZIP code" · "Pattern…" · "One of…" · "Formula…" |
+| Native tag (M7.3b) | "Qt" |
+| Outline (M7.3b) | "Add the red outline style" |
+| Outline missing (M7.3b) | "Fields that fail a check get no outline yet." |
+| Check page (M7.3b) | "Commit" · "Cancel" |
+| Check fields (M7.3b) | "Message" · "Minimum" · "Maximum" · "Pattern" · "Values" · "Formula" |
+| Checks badge (M7.3b) | "1 check" · "{n} checks" |
+| Check row (M7.3b) | "Check {n} of {total}, {words}, message {message}" |
+
+Words for the rules: "Enabled when", "Visible when", "Read-only when", "Value", "Default".
+
+#### 13.4.9 Shared rules, speed and evidence
+
+**UX-M7-001** `all M7` `[C]` UX-M6-001's copy rules apply. In addition: "formula", "rule", "check" and "condition" are the on-screen words; "expression" and "validator" never are; "blank" is used, never "null" or "None".
+
+**UX-M7-002** `all M7` `[T]` Every M7 edit is one undo step with a §13.4.8 name. The rule editor's draft is not a step until it is committed.
+
+**UX-M7-003** `all M7` `[A]` Speed, CPU p95 on the M6 reference form plus 100 rules and 60 checks. The Mac and ChoreBoy VM columns use the M6.R measurement method (load recorded, `idle_reference`).
+
+| Path | Mac | VM |
+| --- | --- | --- |
+| Analyze plus compile one 200-character formula | ≤ 2 ms | ≤ 6 ms |
+| A formula-editor keystroke (analyze, evaluate "now:", repaint) | ≤ 16 ms | ≤ 40 ms |
+| Behavior tab fill with State, Checks and Events for a widget with 5 rules and 3 checks | ≤ 16 ms | ≤ 40 ms |
+| Commit a rule (command, rule-graph update, badges, inspector) | ≤ 17 ms added | ≤ 50 ms added |
+| Save with 100 rules and 60 checks (generate included) | ≤ 80 ms | ≤ 250 ms |
+| Generated `cbcs_refresh()` with 100 rules, run in the app | ≤ 5 ms | ≤ 16 ms |
+| Preview reload after a rule edit | ≤ 500 ms | ≤ 1.5 s |
+
+**UX-M7-004** `all M7` `[A K]` Keys are registered from lane files in `integration/keys_ext/`, as in UX-M6-004. Accessible names read as sentences: "Enabled when Discount is checked, now no"; "Check 1 of 2, Required, message Discount rate is required"; "Step 2 of 3, Show a message, only if Total is more than 0".
+
+**Keyboard scripts.**
+- **K27** (M7.2b): select Discount rate → Alt+B → State › Enabled when → formula mode → type "disc", Tab to complete → Ctrl+Enter. No mouse event. (Until M7.5 ships the builder, E2's "builder first" opens formula mode.)
+- **K28** (M7.3b): add Required and Email to emailEdit, accept the label offer, Ctrl+Shift+R, tab out of the empty field, and read the message.
+- **K29** (M7.4): Save's list gains "Check all fields", moved first with Alt+Up, then "Show a message" with an only-if condition.
+- **K30** (M7.5): walkthrough 1 in the condition builder, and walkthrough 2 entirely in the value builder.
+
+**Screenshots** (light, dark and both high contrast; 100% and 200%; inspector states also at 236 px):
+- State with three rules and "now:" values;
+- the formula editor with an FB102 underline and completion open;
+- the condition builder;
+- the value builder "if … then … otherwise";
+- Checks with an error label offer;
+- the step picker with the M7 groups;
+- a step with "only if";
+- Preview with "What ran" and Window values;
+- the Logic panel;
+- Uses of qtySpin (Shift+F12);
+- the Repair dialog.
+
+**Personas (M7.7).** The shop owner does walkthroughs 1 and 2 with the builder, then a required-email check and a Save that checks first. The Qt developer does walkthrough 3, writes `window.is_manager()` with `-> bool`, uses Shift+F12, and renames a method. Each walkthrough records step counts and confusion points. Findings are fixed or written into the ledger.
+
+#### 13.4.10 Facts M7 lanes check on the ChoreBoy VM
+
+- **M7.6**: Preview with behavior opens and reloads within UX-M7-003's VM rows.
+- **M7.2a and M7.3a**: a generated module with 100 rules and 60 checks runs under FreeCAD 1.1's PySide6 on the VM within the refresh row. The `Decimal` and `re` helpers behave the same as on the Mac (the conformance subset runs there).
+- **M7.1**: the conformance suite's Python 3.9 subset passes in the 3.9 AppRun lane.
+
+### 13.5 M8: data (logic level 4)
+
+Version 1 (work package M8.0, 2026-11-02). Binding for M8. It is the on-screen half of LOGIC_DESIGN §2.6, §2.10–2.11 (data rows) and §5, with the owner decisions of 2026-10-20 applied, and it builds on §13.3 (M6) and §13.4 (M7). The engine contracts are CONTRACTS §19. The changes this version makes to LOGIC_DESIGN are listed at its end ("Changes recorded by M8.0").
+
+**Scope.** Level 4:
+- named connections, managed by Code Studio, with a Test button and a generated `cbcs_connections.py`;
+- one data source per record form, with field bindings;
+- the record verbs and the record toolbar;
+- lookups;
+- one lines grid per form;
+- list and search screens;
+- form-from-table producing bound forms;
+- Try with data;
+- Eject to code;
+- the schema cache and the schema helper process.
+
+Out of scope, as LOGIC §8 lists: query builders, upserts, more than one lines grid, record locks, Qt SQL models, and database access inside formulas.
+
+**Words.** These add to §13.4's words.
+- A **connection** is a named way to reach one database ("Shop database").
+- A **table** is a database table. A **column** is one of its columns. The person never sees "field" used for a column: a **field** is a widget on the form.
+- A **record** is one row of the form's table.
+- A form is **bound** to a table when it has a data source. A field is **bound** to a column.
+- A **lookup** is a combo box filled from another table.
+- **Lines** are the rows of a lines grid (invoice lines).
+- A **list screen** is a form that lists records and opens one.
+
+On screen these words are never used: "query" (except a list screen's own SQL), "row" (say "record" or "line"), "null" (say "blank"), "foreign key" (say "points to {table}"), "transaction" (say "saved together"), "cursor", "commit".
+
+#### 13.5.1 Decisions
+
+| # | Question | Decision | Why |
+| --- | --- | --- | --- |
+| F1 | Who owns connections | Code Studio. Owner decision 1. Connections are a project setting with their own page: Settings › Connections, project scope. They are stored in `connections.json` at the project root, which is shipped and holds no secrets. Code Studio **generates** `cbcs_connections.py` from that file, with a do-not-edit header like `ui_*.py`. It is regenerated whenever a connection changes and on every save of a bound form whose copy is out of date (FB305) | One definition used by form-from-table, the Data panel, Try and the running app |
+| F2 | Passwords | Each PostgreSQL connection picks a policy. **Ask when the app starts** is the default: one hidden-echo prompt per app session, kept in memory. **Remember on this machine** stores the password in the machine file of CONTRACTS §19.3: outside the project, mode 0600, never packaged. **No password** is for trust and peer auth. SQLite has no policy row. The editor keeps its own copy in memory for the session, and offers "Remember on this machine" from the Test prompt | Owner decision 1. Passwords never touch the project, `.ui` or `ui_*.py` |
+| F3 | Custom setup | A connection may name a **setup function**. "Create setup function" writes `connection_setup.py` (user-owned, created once, never overwritten) with `def on_connect(name, connection):` and stores `"setup": "on_connect"` on that connection. The generated module calls it after each connect. Nothing is called unless the connection names it (P7) | Owner decision 1's escape hatch, without magic names |
+| F4 | Drivers | PostgreSQL drivers are tried in order **psycopg, then pg8000**, both shipped in FreeCAD 1.1 (PLAN Appendix A). The order is a constant in `cbcs_connections.py`. M8.1's Mac lane connected with both drivers to PostgreSQL 9.3 (psycopg 3.3.4, libpq 18). psycopg does not refuse that server, so the order does not flip (§13.5.11) | Probe facts. No vendoring |
+| F5 | Where data lives in the workbench | Two places. (a) A **Data** tab in the left pane, beside Outline, Insert and Logic: the form's source, its columns (drag onto the canvas), its lines and the SQL. (b) A **Data** tab in the inspector (UX-INSP-015) for the selected widget: its column, a lookup for a combo, the columns of a lines grid. With the form root selected, the inspector Data tab shows the source settings | The form's source is form-wide (left pane, like Logic). A binding belongs to its widget (Decision 6), so it is edited where the widget is |
+| F6 | Data names in formulas | `form.position`, `form.count`, `form.isNew`, `form.isDirty`, `form.isFiltered`; `record.{column}` (the loaded value, for any column of the table, bound or not); a lookup's `also` columns as `{combo}.{column}`; grid aggregates `sum({grid}.{column})`, `count({grid})`; in a grid column's formula, the row's other columns by name. They are typed from the schema cache by `types.py` (CONTRACTS §19.5 type table). Columns no field can hold without loss (uuid, json, bytea, arrays, intervals) are typed text and read-only | LOGIC §5.2–5.6. Typed names keep M7's checks working on data |
+| F7 | Record steps and events | The step picker gains a **Records** group: New record, Save record, Delete record (the verb asks "Delete this {record}?" itself, so the toolbar adds no Ask step), Undo changes, First, Previous, Next, Last, Find, Show all, Reload lookups, Add a line, Delete the line, and Open record form (new or selected, on list screens). The form gains the record events **When a record is shown**, **When a new record starts**, **Before saving** (can stop the save), **After saving**, and **Before deleting** (can stop the delete), listed after M7's two form events | LOGIC §4.12 and §6.1 (`cbcsOnRecordLoaded`, `cbcsOnNewRecord`, `cbcsOnBeforeSave`, `cbcsOnAfterSave`, `cbcsOnBeforeDelete`) |
+| F8 | The record toolbar | "Add record toolbar" inserts the ordinary widgets of LOGIC §5.5 in one undo step, at the top of the form's main layout, or at the bottom when the form already ends with a button row. It is never a special widget. Its keys are the buttons' own `shortcut` properties | Decision 11 |
+| F9 | Unsaved changes | Dirty means the values differ from the snapshot taken at load (LOGIC §5.5). Typing a change back is not dirty. The running app asks "Save changes to this {record word}?" with [Save] [Discard] [Cancel] before navigating, New, Close and the window's close button. `{record word}` is the form's **record word**, a source setting that defaults to the table name in the singular ("invoices" → "invoice") | Never lose typing, and never prompt falsely |
+| F10 | Conflicts | Check by default: an update compares the loaded values (LOGIC §5.5). On a conflict: "Someone else changed this invoice since you opened it." [Reload their version] [Keep mine and save] [Cancel]. "Keep mine and save" is shown only when the source allows overwrite; otherwise it is absent | LOGIC §2.11, plus the honest third choice where the developer allowed it |
+| F11 | Try with data | Owner decision 2. **SQLite**: a scratch copy, made when Try starts and dropped when it closes. **PostgreSQL**: each verb's statements run in one transaction that is rolled back as soon as the verb finishes. The form then shows the values the database returned inside that transaction. A banner across the top of the Try window: "Try: changes to {connection} are rolled back. While a save runs, other people using it may wait up to 2 seconds." (owner decision 2's lock warning) Statement timeout 5 s and lock timeout 2 s (`SET LOCAL`). A per-connection setting **In Try, only show the SQL** turns writes into "Would run" lines. What ran shows every statement with its values. A record created in Try stays new after its save: the form shows it as saved, says "rolled back" in What ran, and leaving it discards it. Try refuses data when the source uses your own connection hook (the `connection` hook, UX-DATA-007 and LOGIC §5.9), and runs that form with data steps as "Would run" only, saying why. A form that imports a database driver itself and connects with its own credentials is outside Try's protection. When a write used a sequence (`nextval`), or the table has triggers, What ran adds the side-effect warning of §13.5.9 | Realistic writes with no lasting change, and locks held for milliseconds |
+| F12 | Schema | SQLite is read in the editor with the standard `sqlite3` in read-only mode (`mode=ro`). PostgreSQL is read by the schema helper, a short-lived AppRun child (CONTRACTS §19.7). The editor process never imports a PostgreSQL driver. The result is cached in `cbcs/schema/{connection}.json`. Every data screen shows "Columns read {date, time}" with [Refresh]. A cache older than 7 days says "(may be out of date)" in `fb.warning` | Offline design, and native libraries stay out of the editor |
+| F13 | Form from table | The Start screen's "Form from a table" (UX-TABLE-002) starts from a connection, not a file: "Connection [Shop database ▾] [Add connection…]". It gains "Make" with three choices: **Record form** (default), **List screen**, and **List screen and record form**. A record form can include its lines when another table points to this one ("Include lines from invoice_lines"). "Open this screen when the app starts" (UX-TABLE-003) is ticked only when `main.py` is missing. A stock template leaves it unticked and names the class that file opens. Ticking it rewrites `main.py`, so F5 opens the list screen, or the record form when Make has no list. The result is bound, has the record toolbar, and opens with the Data tab showing | One path from a database to a working app |
+| F14 | Eject | Data tab ⋯ › "Eject to code…" opens a dialog listing what will change: the methods added to the window file, the properties removed, and the steps rewired. [Eject] [Cancel]. It is one undo step in the form and one in the window file. Undo restores both while both files are open in this session | Decision 12 |
+| F15 | Keys | Ctrl+Shift+D: the Data tab with its column list focused. Alt+D in the inspector: the Data tab. In the column list, Enter inserts a new bound field after the canvas selection, and focus stays in the list so the next Enter inserts the next one. Shift+Enter binds the column to the selected field instead. Keys in the running app are the toolbar buttons' own shortcuts (Ctrl+N, Ctrl+S, PgUp, PgDown, Ctrl+Home, Ctrl+End, Ctrl+F) | Builds on UX-KEY-004 with no rebinding. Alt+D is unused in the inspector |
+
+#### 13.5.2 Connections (CONN)
+
+**UX-CONN-001** `M8.1` `[S K]` Settings › Connections is a page in the CBCS settings dialog, project scope only. Without an open project it reads "Open a project to manage its connections." The page has a list on the left (name, then the engine in `fb.faint`: "SQLite · data/shop.db", "PostgreSQL · clerk@192.168.1.20/shop"), [+ Add] [Duplicate] [Remove] under it, and the editor on the right. An empty list reads "No connections yet. Add one to bind forms to a database." with [+ Add SQLite file] and [+ Add PostgreSQL].
+
+**UX-CONN-002** `M8.1` `[S]` The editor's rows:
+- **Name.** The on-screen name, such as "Shop database". Its code name (`shop`), shown under it in `fb.faint`, is derived from the name and editable. It must match `^[a-z_][a-z0-9_]*$`.
+- **SQLite:** File, with [Choose…]. It is stored relative to the project. A file outside the project is refused with "Keep the database inside the project so it is packaged with the app."
+- **PostgreSQL:** Host, Port (5432), Database, User, Schema (`public`), Password (Ask when the app starts / Remember on this machine / No password).
+- Setup function: "none" with [Create setup function], or `on_connect` as a link to `connection_setup.py`.
+- In Try, only show the SQL (unticked).
+
+**UX-CONN-003** `M8.1` `[S T]` [Test] runs the schema helper's `test` request (CONTRACTS §19.7) and shows the result in place:
+- success: "Connected · PostgreSQL 9.3.25 · 14 tables · psycopg" with a ✓;
+- failure: the first line of the driver's message, plus a sentence from §13.5.9 when the cause is known (wrong password, host not reachable, database missing, no driver).
+
+A password the policy needs is asked once per editor session: "Password for clerk on shop", hidden echo, with "Remember on this machine" (unticked). Test never blocks the dialog. While it runs, the button reads "Testing…", and Esc cancels the test, not the dialog.
+
+**UX-CONN-004** `M8.1` `[S]` Renaming a connection's code name moves its entry in this machine's password file (other machines ask again), and offers to update every form that uses it: "3 forms use shop. Update them?" [Update] [Cancel]. The update is one undo step per open form. Closed forms are rewritten with the `.ui` writer, with the closed-form writer M8.1 builds. M8.5 reuses it for M7R-11 (method rename in closed forms). Removing a connection that forms use is refused with the list of forms.
+
+**UX-CONN-005** `M8.1` `[S]` Saving the page writes `connections.json` (canonical, CONTRACTS §19.2) and regenerates `cbcs_connections.py`. The project tree shows both files. `cbcs_connections.py` gets the generated-file treatment of UX §3.3. The Package wizard ships `connections.json`, `cbcs_connections.py` and `connection_setup.py`, and never the machine file. A test proves the machine file is not in the package. A SQLite file is packaged as **seed data**: the installed app copies it to its own data folder on first run and never overwrites it on update (CONTRACTS §19.4), so updating an app never replaces a customer's records.
+
+#### 13.5.3 The Data tab in the left pane (DATA)
+
+**UX-DATA-001** `M8.2` `[S E]` Empty state for a form with no source: "This form isn't connected to a database." Then [Connect to a table…] and, when the project has no connection, [Add a connection…], which opens UX-CONN-001.
+
+**UX-DATA-002** `M8.2` `[S]` Connect to a table: a small sheet with these rows.
+- Connection.
+- Table, a list with a filter.
+- Key: the primary key, read from the schema. A table with no single-column key is listed but disabled, with "{table} has no single key column. Record forms need one."
+- Order: the key ascending by default; up to three columns.
+- Opens at: First / Last / A new record / Nothing (your code calls `cbcs_open`).
+- Record word: the singular of the table name, editable.
+
+[Connect] writes `cbcsData` in one undo step.
+
+**UX-DATA-003** `M8.2` `[S A]` A connected form's Data tab, top to bottom:
+1. **Source line:** "invoices in Shop database", with [Change…] and ⋯ (Show SQL, Python hooks…, Eject to code…, Disconnect…).
+2. **Columns:** one 24 px row per column. Each row reads the column name, its type in words ("whole number", "money", "date", "text up to 40", "yes/no", "points to customers"), and its badges ("key", "required", "unique"). At the right: the bound field's display name as a link that selects it, "(not bound)" in `fb.faint`, or for a lines table "lines → linesView".
+3. **Lines:** "Lines from invoice_lines → linesView" with [Edit…], or [Add lines…] when another table points to this one.
+4. **Buttons:** [Bind fields by name] [Add record toolbar].
+5. **Footer:** "Columns read 2 Nov 14:02 [Refresh]".
+
+At 184 px, 236 px, and the default 232 px left pane, the column name is on its own line and elides with a tooltip of the full name. The type and notes are on the next line. The bound field is on the third line, or elided at the right.
+
+**UX-DATA-004** `M8.2` `[S T]` Dragging a column onto the canvas inserts a labelled field of the suggested class (LOGIC §5.3 table) and kind. Its object name is the column name, and it is bound, all in one undo step. A column that points to another table inserts a lookup combo (§13.5.5). Enter and Shift+Enter do the same from the keyboard (F15). Dropping a column onto an existing compatible field binds it instead, and the drop hint reads "Bind to invoice_date". An incompatible field shows the not-allowed drop with "A date column can't be shown in a check box."
+
+**UX-DATA-005** `M8.2` `[S T]` Bind fields by name previews a list: "invoiceDateEdit → invoice_date", "notesEdit → notes", with a tick each, and [Bind {n}] [Cancel]. Matching is exact first, then by stem, as LOGIC §2.6 describes. One undo step.
+
+**UX-DATA-006** `M8.2` `[S]` Show SQL opens a read-only panel listing every statement the form runs: select keys, load one, insert, update, delete, lookups, lines. Each statement has its placeholders and a caption ("Load one invoice"). [Copy all]. The SQL is the generator's own text (CONTRACTS §19.5), never a separate rendering.
+
+**UX-DATA-007** `M8.2` `[S]` Python hooks…: one row per hook (After a record is shown, Before saving, After saving, Before deleting, After deleting, When a new record starts, Connection), each with "none [create]" or a method link, as M6's call steps work (UX-CODE-003). Creating writes the stub through the M6 window-file path.
+
+#### 13.5.4 Bindings in the inspector (BIND)
+
+**UX-BIND-001** `M8.2` `[S K]` With a widget selected, the inspector's Data tab shows:
+- "Column [invoice_date ▾]", or "Not bound [Bind ▾]";
+- for a bound field, the column's type in words and "Only show, never save" (`cbcsBindMode = readOnly`);
+- for a combo, the Lookup section (§13.5.5);
+- for a table view, the Lines section (§13.5.6).
+
+With nothing bindable selected (a label or a layout), it reads "Labels and layouts aren't bound. Select a field." On the form root it shows the source settings of UX-DATA-002.
+
+**UX-BIND-002** `M8.2` `[S T]` A binding that doesn't fit the column's type gets a problem badge on the row and on the canvas field. Examples: text into a spin box, a date column on a line edit without the date kind, a column that isn't in the schema. Each is an FB3xx Warning or Error from §13.5.9, with Ctrl+. fixes: "Change to a date edit", "Set kind to date", "Pick another column".
+
+**UX-BIND-003** `M8.2` `[S]` The canvas shows a bound field's column as a small chip under the field while the Data tab (either one) is current, or with Show all on. The chip text is the column name in `fb.faint` (§5.4 placement rules). With the Data tabs closed, there is no chip. The Logic panel lists bindings in a DATA group after Events.
+
+#### 13.5.5 Lookups (LKP)
+
+**UX-LKP-001** `M8.3a` `[S K]` A combo's Data tab, Lookup section:
+- "Fill from [customers ▾]";
+- "Show [name ▾]";
+- "Save [id ▾]" (the key);
+- "Order by [name ▾]";
+- "Also carry [terms_days ×] [+]";
+- "First item [(choose a customer)]" with a tick to turn it off;
+- "Let people type to search" (makes the combo editable, LOGIC §5.4).
+
+A lookup over a table with more than 2,000 rows shows "customers has 12,480 rows. A search screen opens faster than a long list. [Use a search screen instead]". Above the cap of CONTRACTS §19.6 the count reads "more than 100,000 rows".
+
+**UX-LKP-002** `M8.3a` `[S]` Inserting a column that points to another table makes the lookup with these defaults: show the first text column named `name`, `title` or `description`, else the first text column; order by the shown column; and a first item "(choose a {singular})". The Data tab opens on the new combo with "Show" focused, so a wrong guess is one keystroke from fixed.
+
+**UX-LKP-003** `M8.3a` `[S T]` In the running app, a saved key that isn't in the list shows as "(unknown #17)" and stays selected (LOGIC §5.4). Try's What ran says "Lookup customerCombo: key 17 isn't in customers" once.
+
+#### 13.5.6 Lines grids (LINES)
+
+**UX-LINES-001** `M8.3b` `[S K]` [Add lines…] (from the Data tab or a table view's Data tab) opens a sheet with these rows.
+- "Lines from [invoice_lines ▾]", listing tables that point to this one.
+- "Linked by [invoice_id]", read from the schema.
+- "Order by [line_no ▾]".
+- "Number lines in [line_no ▾ / none]".
+- A column list: Include, Column, Header, Kind, Default, Lookup, Read-only.
+- "+ Calculated column", which adds a name, a header and a formula. Each added column stays listed as its name, its formula, and × to remove it.
+
+[Add lines] inserts a `QTableView` named `{table}View`, or binds the selected table view, with Add line and Delete line buttons under it. The buttons carry the steps "Add a line" and "Delete the line" (two new Records verbs). One undo step.
+
+**UX-LINES-002** `M8.3b` `[S]` In the running app, Ctrl+Insert adds a line and Ctrl+Delete asks "Delete line 3?" Calculated columns are read-only and grey. A failed column check marks the cell red with the message as its tooltip. Check all fields reports "Line 3: Qty is required" and selects the cell.
+
+**UX-LINES-003** `M8.3b` `[S]` A second lines grid on one form is refused at design time with FB320: "A form has one lines grid in this version. Use a method for more." Nested grids are refused the same way.
+
+#### 13.5.7 List screens (LIST)
+
+**UX-LIST-001** `M8.3c` `[S]` A list screen is a form whose source has `mode: list`. Its Data tab shows:
+- "List of customers in Shop database";
+- "Columns shown", reorderable;
+- "Search in" (default: every text column shown);
+- "Search box [searchEdit ▾]";
+- "Filters" (a widget and a column; blank means any);
+- "Order by";
+- "At most [500] records";
+- "Opens [customer.ui ▾] in a dialog", keyed by `id`.
+
+A fixed SQL source is offered under ⋯ › "Use my own SQL…". It accepts a single `SELECT` and runs it once through the schema helper to read its columns. Anything else is refused with "Only a single SELECT can be a list's source."
+
+**UX-LIST-002** `M8.3c` `[S]` In the running app, typing re-searches after 250 ms of quiet. A cut-off result shows "Showing the first 500 of 1,284. Type more to narrow the list." directly above the table, never in a tooltip (P8). Enter or a double-click opens the record form. When the dialog closes, the list re-runs and keeps the selection.
+
+**UX-LIST-003** `M8.3c` `[S]` A list screen made from Form from a table gets a search box with the placeholder "Search customers", the table, and [New] and [Open] buttons with the steps "Open record form (new)" and "Open record form (selected)".
+
+#### 13.5.8 Try with data, Eject and schema (TRYD, EJECT, SCH)
+
+**UX-TRYD-001** `M8.4` `[S T]` A bound form in Try shows a strip under Window values:
+- SQLite: "Data: scratch copy of data/shop.db [Reset data]";
+- PostgreSQL: "Data: Shop database. Changes are rolled back." with the banner of F11 at the top of the window in `fb.warning` fill.
+
+What ran logs each statement as "Ran: UPDATE "invoices" SET … (3 values)". The statement is expandable to show its values. With "only show the SQL", the line reads "Would run: …".
+
+**UX-TRYD-002** `M8.4` `[T]` Tests prove the user's data is unchanged after a Try session of New, Save, Delete and line edits, on SQLite (file hash) and on PostgreSQL 9.3 (row count and an `md5` of the table, before and after). A test holds a row lock in another session and proves Try's save stops at the 2 s lock timeout with the §13.5.9 sentence, not a hang.
+
+**UX-EJECT-001** `M8.5` `[S T]` Eject to code (F14). The dialog lists:
+- "Adds {n} methods and {m} helpers to invoice_window.py." and, on the next line, the first 8 names, then "and {k} more";
+- "Removes the data settings from invoice.ui";
+- "Save, Delete and the toolbar buttons will call your methods";
+- "Eject saves invoice.ui and invoice_window.py."
+
+Eject writes both files. An open tab reloads from disk, and that tab's own undo does not reach back past the eject. If either file has unsaved edits, Eject says "Save or discard your changes to {file} first." and does not open the dialog. After ejecting, the Data tab reads "This form's data code is in invoice_window.py." with a link to the first method. The sentence is body text. Only the file name is a link, in the theme's link colour, at the top of the page. If either file changed after Eject, on disk or in an open tab, Undo says "{file} changed after Eject, so Eject can't be undone. Undo your edits there first." and changes neither file. A closed tab whose file on disk is still the ejected text does not count as a change. A test proves the ejected form behaves identically: the same SQL, the same field values after load, save and delete, on SQLite and PostgreSQL.
+
+**UX-SCH-001** `M8.6` `[S T]` Refresh shows "Reading columns…" with Esc to cancel. When it completes, the Data tab updates in place and keeps scroll and selection. The editor stays responsive during a PostgreSQL refresh, because the helper is a separate process. If the database can't be reached, the cached columns stay in use, with the note "Using columns read 2 Nov. Can't reach Shop database: {reason}". Bindings to columns that disappeared get FB303 on Refresh, never silently removed.
+
+#### 13.5.9 Copy
+
+Sentences, en_US, following UX-M6-001 and UX-M7-001. `{record}` is the record word.
+
+| Where | Text |
+| --- | --- |
+| Test, wrong password | "The password for {user} was not accepted." |
+| Test, host down | "Can't reach {host}:{port}. Check the address and that the database server is running." |
+| Test, no database | "{host} has no database named {database}." |
+| Test, no driver | "No PostgreSQL driver could be loaded (tried psycopg, pg8000)." |
+| App, can't connect on open | "Can't open {connection}: {reason}." [Retry] [Close] |
+| App, unsaved | "Save changes to this {record}?" [Save] [Discard] [Cancel] |
+| App, delete | "Delete this {record}?" [Delete] [Cancel] |
+| App, conflict | "Someone else changed this {record} since you opened it." [Reload their version] [Keep mine and save]* [Cancel] |
+| App, deleted by someone else | "This {record} was deleted by someone else." [Close] |
+| App, unique | "Another {record} already uses this {field display name}." (under the field) |
+| App, not null | "{field display name} is required." (under the field) |
+| App, points to | "{field display name} must be one of the {table} records." |
+| App, position | "Record {n} of {count}" / "New {record}" |
+| App, find narrowed | "Showing {n} matches. [Show all]" |
+| List, cut off | "Showing the first {limit} of {count}. Type more to narrow the list." |
+| List, pg8000 scan | "This SQL can't be searched with the pg8000 driver. Remove the quote or comment that confuses it." |
+| Try, banner | "Try: changes to {connection} are rolled back. While a save runs, other people using it may wait up to 2 seconds." |
+| Try, ejected form | "This form's data code is in {window file}, so Try shows the layout and lists the calls instead of running them." |
+| Try, own connection | "This form uses your own connection method, so Try only shows what it would run." |
+| Try, own driver | "A form that imports a database driver itself and connects with its own credentials is outside Try's protection." |
+| App, password prompt | "Password for {user} on {connection}" with "Remember on this machine" when the policy allows it |
+| Try, lock timeout | "Another user is editing this {record}. Try stopped waiting after 2 seconds." |
+| Try, statement timeout | "This query took longer than 5 seconds, so Try stopped it." |
+| Try, saved | "Saved, then rolled back" |
+| Try, sequence | "Try used number {n} from {sequence}. Rolled-back numbers are skipped, so the next real {record} gets a later number." |
+| Try, triggers | "{table} has triggers. Anything they do outside the database isn't rolled back." |
+| Schema, stale | "Columns read {date} (may be out of date)" |
+| Schema, unreachable | "Using columns read {date}. Can't reach {connection}: {reason}" |
+| Bind, type | "A {type words} column can't be shown in a {class words}." |
+| Bind, missing | "{table} has no column named {column}." |
+| Start, checkbox | "Open this screen when the app starts" |
+| Start, stock template | "Open this screen when the app starts (instead of {class})" |
+| Start, own code | "main.py has your own code, so it stays as it is. To start on this screen, open {class} from {path} in main.py." |
+| Lines, total | "To total the lines, give Total the Value sum({view}.{column})." |
+
+\* only when the source allows overwrite.
+
+FB301–FB3xx are declared in `diagnostic_codes/fb3xx_data.py` (CONTRACTS §19.8). Each has one of the sentences above, or its own.
+
+#### 13.5.10 Shared rules, speed and evidence
+
+**UX-M8-001** `all M8` `[C]` §13.5's words. Every sentence a lane adds is a §13.5.9 row.
+
+**UX-M8-002** `all M8` `[T]` Every M8 edit is one undo step with a name: "Connect to invoices", "Bind invoice_date", "Add lookup", "Add lines", "Add record toolbar", "Eject to code". Settings › Connections edits are not form undo steps; they are saved with the dialog.
+
+**UX-M8-003** `all M8` `[A]` Speed, CPU p95, M6.R method. The reference is a SQLite `shop.db` with 100,000 invoices, 400,000 lines, 2,000 customers and 5,000 products, and the same schema in PostgreSQL 9.3.
+
+| Path | Mac | VM |
+| --- | --- | --- |
+| Data tab fill for a 40-column table, cached schema | ≤ 16 ms | ≤ 60 ms |
+| Open a bound form, SQLite: load 100,000 keys, both lookups (2,000 customers, 5,000 products) and record 1 with 20 lines | ≤ 200 ms | ≤ 800 ms |
+| Show another record with 20 lines | ≤ 16 ms | ≤ 60 ms |
+| Dirty check on a keystroke | ≤ 1 ms | ≤ 4 ms |
+| Save a record with 20 lines, SQLite | ≤ 40 ms | ≤ 160 ms |
+| Load a 2,000-row lookup | ≤ 30 ms | ≤ 120 ms |
+| List search, 2,000 customers, limit 500 | ≤ 50 ms | ≤ 200 ms |
+
+VM limits are 4× the Mac's, the low end of PLAN Appendix A's measured pure-Python gap; where a VM row misses and its Mac row passes, the lane profiles before asking for a budget change. The schema helper's refresh time (30 tables) and every PostgreSQL row are recorded on both machines, not budgeted: network latency isn't ours. The editor must stay responsive during a refresh (a test).
+
+**UX-M8-004** `all M8` `[A K]` Keys register from lane files in `integration/keys_ext/`. Accessible names read as sentences: "invoice_date, date, bound to Invoice date"; "Lookup, fill from customers, show name"; "Record 3 of 120".
+
+**Keyboard scripts.**
+- **K31** (M8.1): Settings › Connections › Add PostgreSQL, fill in the rows, Test, read the result. No mouse.
+- **K32** (M8.2): Ctrl+Shift+D, connect to invoices, Enter on four columns to insert four bound fields, Shift+Enter to bind a fifth column to an existing field, then Add record toolbar.
+- **K33** (M8.3a, M8.3b): Enter on customer_id makes a lookup and fixes Show. Then Add lines with a calculated column.
+- **K34** (M8.4): Ctrl+Shift+R, PgDown twice, change a field, Ctrl+S, read What ran and the banner.
+
+**Screenshots** (light, dark and both high contrast; 100% and 200%; the inspector also at 236 px; the left Data tab also at 184 px):
+- Settings › Connections empty, filled, and with a Test success and a failure;
+- the Data tab empty, connected, and with a stale schema;
+- Connect to a table;
+- Show SQL;
+- the inspector Data tab for a field, a combo lookup and a lines grid;
+- Add lines;
+- a list screen's Data tab;
+- Form from a table with Make;
+- Try with the PostgreSQL banner and What ran statements;
+- the Eject dialog;
+- the running app with an unsaved prompt and a conflict.
+
+**Personas (M8.7).**
+- The shop owner makes an invoice app from Form from a table (record form plus list screen), fixes a lookup's Show, adds lines with a total, tries it, and saves a record in the running app.
+- The Qt developer adds a `before_save` hook, reads Show SQL, writes a setup function that sets `search_path`, and ejects one form.
+
+Each walkthrough records step counts and confusion points, as M7.7 did.
+
+#### 13.5.11 Facts M8 lanes check on the ChoreBoy VM
+
+- **M8.1**:
+  - psycopg and pg8000 both connect to PostgreSQL 9.3 from the AppRun runtime: md5 auth, `SET client_encoding`, `RETURNING`.
+  - Mac lane, 2026-11-02, `postgres:9.3`: both drivers open, `work()` commits, and an exception rolls back. psycopg 3.3.4 with libpq 18 does not refuse 9.3, so F4 stays psycopg then pg8000. A bad password comes back as the sentence "password authentication failed" with no SQLSTATE on the psycopg exception.
+  - The machine file's folder under the CBCS state root is writable from a packaged app run, and `chmod 0600` sticks.
+- **M8.2**: a generated bound form opens, saves and navigates under FreeCAD 1.1 within UX-M8-003's VM rows.
+- **M8.3d**: the invoice end-to-end demo (PLAN M8.3d) runs on the VM against a PostgreSQL 9.3 server reachable from the VM.
+- **M8.4**: Try rollback on the VM leaves the table's `md5` unchanged.
+- **M8.6**: the helper's cold start on the VM, recorded.
+
+---
+
+## 14. Heuristic review of the spike build
+
+Method: the 22 spike screenshots, plus five offscreen captures of the spike made for this review at 1100 × 640 and 1366 × 768 (top row selected, outline focused, dark notes), judged against Nielsen's ten heuristics, Gestalt grouping, density and hierarchy, and consistency with CBCS. The spike is a strong start: the start screen, the overlay concept, the plain-words sizing and the realizer that moves live widgets are all kept. The issues below are what this spec fixes.
+
+| # | Issue | Screenshots | Heuristic | Fixed by |
+| --- | --- | --- | --- | --- |
+| 1 | The name chip covers the field above the selection, and the size badge covers the field below | `workbench-light`, `workbench-dark`, `dark-layout`, `quick-insert`, `empty-group`; extra `top-row-selected` | Aesthetic and minimalist design; Gestalt figure–ground | CHIP-001 … 004 |
+| 2 | Chips pile up at a container's top-right corner and cover its title | `empty-group`, `layout-selected` | Gestalt proximity (labels attach to the wrong thing) | CHIP-002, CHIP-003 |
+| 3 | Drop feedback tints the whole container (washing out every field) and its chip covers the target field, in internal words ("Into verticalLayout · position 3", "New row 3") | `drag-box`, `drag-grid`, `drag-form` | Match with the real world; visibility | DND-003, DND-004, COPY-006 |
+| 4 | Sizing vocabulary is inconsistent: the badge says "Auto × Auto" while the inspector offers Hug/Fill/Fixed with nothing chosen; "Minimum 0 × 0" placeholders read as values (pain 2 again); multi-select offers only Hug and Fill | `dark-layout`, `layout-selected`, `inspector-size`, `wrap-menu` | Consistency; error prevention | SIZE-001 … 006, INSP-007, INSP-011 |
+| 5 | All properties lists irrelevant rows first with raw names, and some values don't match the widget (focusPolicy "No focus" and mouseTracking on a line edit) | `inspector-size` | Match with the real world; trust | INSP-008 |
+| 6 | It is a separate application, not a CBCS tab: own menu bar, back-to-Start, Save button, status bar, 13 px / 28 px / 6 px metrics; and at ChoreBoy sizes the page clips under a scroll bar because no pane collapses and zoom never fits | all workbench shots; extra `small-1100x640` | Consistency and standards; flexibility | PRIN-008, SHELL-001 … 006, GRID-001 … 003, RESP-001 … 007 |
+| 7 | Controls clip or elide their own values ("All non fixed fields grov", "Left, Leading…rtical centre"), the label-alignment combo has a different style, and breadcrumbs truncate in the middle | `window-selected`, `drag-form`, `empty-group`; extra `top-row-selected` | Aesthetic design; recognition | INSP-001, INSP-003, INSP-009 |
+| 8 | Overlay marks sit on the content they annotate: buddy dots cover the last letter of labels and fields are tinted; tab-order badges sit inside fields; the button box gets no tab badge | `buddy`, `tab-order` | Visibility of what matters; accuracy | OVL-004, OVL-007 |
+| 9 | Two widths draws the wide copy smaller than the narrow one | `two-widths` | Match with the real world | WIDTHS-001 … 003 |
+| 10 | Developer and internal text reaches users: "edit 62.0 ms" (over the 16 ms edit budget), "open 118.6 ms", "Coming in the logic phase", "ui_ module", "(Expanding)" in the why sentence | `empty-group`, `workbench-dark`, `inspector-behavior`, `inspector-data`, `workbench-light` | Speak the user's language | FEED-006, COPY-002, COPY-006, EMPTY-006 |
+| 11 | No accessible names anywhere; the focused outline row looks the same as an unfocused selected row; the Shortcut field's placeholder "Ctrl+O" looks like a value | extra `focus-outline`; `main-window-menu` | Visibility of system status; accessibility | A11Y-002, A11Y-004, COPY-006 |
+| 12 | Templates create `label_2`, `label_3`; the Behavior tab is a three-combo form plus an "Add connection" button with no visible list; the "S M L" segments and the ⇆ icon are unlabeled | `workbench-light`, `inspector-behavior` | Recognition rather than recall | START-004 (templates name their widgets), INSP-013, SCALE-001 |
+| 13 | The table dialog's absolute database path dominates; the preview date reads "1/1/00" | `from-table` | Aesthetic design; match with the real world | TABLE-001 |
+| 14 | The empty-form drop zone fills only a band at the top of an empty window | `empty-form` | Affordance | EMPTY-001 |
+
+What the spike gets right and this spec keeps: whole-card click targets on Start; painted wireframes; the dot-grid backdrop and page card; faint layout frames that strengthen on focus; springs drawn as springs; gap bars and margin bands; the "why is it this size?" paragraph; Reset that deletes the line; overlays with an Esc banner; Type here menus; "Used in menuFile, toolBar" on actions; the runtime-palette canvas in dark mode; the realizer reusing live widgets.
+
+---
+
+## 15. Changes to earlier design documents
+
+| Earlier text | Change | Reason |
+| --- | --- | --- |
+| SPIKE_DESIGN §3 top bar: Back to Start, file name, Design / Tab order / Buddies segmented control, Save | Removed: the shell owns file name, save, navigation; overlays are toggles | PRIN-008, OVL-001 |
+| SPIKE_DESIGN §4 hover chip, selection chip plus size badge | Hover has no chip; one selection label placed by the solver | CHIP-001 … 003 |
+| SPIKE_DESIGN §4 drop indicator "the container tints" | No tint; frame plus one indicator | DND-003 |
+| SPIKE_DESIGN §4 Alt-click selects the parent layout; Alt-drag duplicates; Alt 1 px gap steps | Esc for parent; Ctrl-drag copies; Shift snaps, default 1 px | Linux window managers take Alt+drag; SEL-002, MOVE-002, RESIZE-007 |
+| SPIKE_DESIGN §2 type 13 px body, 28 px controls, 6 px control radius | 12 px body, 24 px controls, 4 px radius (shell metrics) | PRIN-008, TYPE-001, GRID-002, GRID-003 |
+| SPIKE_DESIGN §2 accent brightens in dark mode on the form | Form-surface overlay colours are constant across chrome themes | TOK-003 |
+| SPIKE_DESIGN §6 and LOGIC_DESIGN §2.12: Ctrl+G wrap, Ctrl+R preview/Try, Shift+F2 rename, Ctrl+Shift+F form logic search, Cmd+1/2/3 modes | Ctrl+Shift+G, Ctrl+Shift+R, F2, Ctrl+F, F7/F8 overlays; Ctrl+1 … 6 are Designer's layout keys | Shell collisions (Go to Line, Go to Symbol, Stop, Find in Files); KEY-004, KEY-005 |
+| SPIKE_DESIGN §6 F2 edits text on the canvas | Enter edits text; F2 renames everywhere | Same meaning as the shell's Rename Symbol; TEXT-001 |
+| SPIKE_DESIGN §7 Behavior/Data stubs say "arrives in the logic phase" | No milestone text in user builds; Data hidden until M8 | EMPTY-006 |
+| SPIKE_DESIGN §2 sizing "Auto" state | Outlined default word with a caption; three words only | SIZE-002, SIZE-003 |
+| LOGIC_DESIGN §2.7: a selected widget always draws its relationships | Arrows only with the Behavior tab current, in the Connections overlay, or with Show all | 13.3.1 D5, PRIN-004 |
+| LOGIC_DESIGN §2.12: F4 enters a connection-drawing mode | F4 toggles the Connections overlay | 13.3.1 D6, MODE-001 |
+| LOGIC_DESIGN §2.9: FB203 Warning, FB402 Error | FB203 Info, FB402 Warning | 13.3.1 D15 |
+| LOGIC_DESIGN §6.5: the next CBCS save re-canonicalises | Only edited properties are rewritten; read order is kept | 13.3.1 D21 |
+| LOGIC_DESIGN §2.1: the Behavior tab shows State, Checks and Events | M6 shows Events (and the form-only sections); State and Checks register in M7 | 13.3.1 D4, BEH-001 |
+
+---
+
+## 16. Open items
+
+### 16.1 Question for the product owner
+
+1. **Ctrl+R in a form tab.** Designer users press Ctrl+R to preview; in Code Studio Ctrl+R is "Go to Symbol in File". This spec keeps the shell meaning (Ctrl+R jumps to a widget by name) and puts Preview on Ctrl+Shift+R, so every CBCS tab treats Ctrl+R the same way. The alternative is to let Ctrl+R preview inside form tabs only, which helps Designer veterans and breaks shell consistency. Recommendation: keep the spec (shell meaning), and list Ctrl+Shift+R in the Designer key index. Decide only if you disagree.
+
+### 16.2 Facts needed from the M0.7 probe (not owner decisions)
+
+- The default `QStyle`, palette and application font that a CBCS-run app gets on ChoreBoy with FreeCAD 1.1 (UX-ISO-001 follows the probe).
+- Whether the ChoreBoy window manager takes Alt+click, Alt+drag, Alt+F7/F8 and Ctrl+Alt+arrows (UX-KEY-001 already avoids all of them; the probe confirms nothing else is taken, such as F7 or F8).
+- Screen size and device pixel ratio of ChoreBoy installs (the C tab size in 12.2 assumes 1366 × 768 at 1.0).
+
+### 16.3 Facts M5 lanes check on the ChoreBoy VM (not owner decisions)
+
+- That a palette role set on a widget shows in a CBCS-run app on ChoreBoy (UX-STYLE-010 relies on it; if an app-level style sheet in the runtime overrides palettes, the lane reports it and the rows move to the widget's own style sheet by spec change).
+
+Results (ChoreBoyExp slot, FreeCAD 1.1.1, Python 3.11.14, PySide6 / Qt 6.8.3, probes `fb_m5_facts` and `fb_m5_facts2`, 2026-10-29):
+
+| Fact | Result | Spec effect |
+| --- | --- | --- |
+| Palette roles at run time | Background (Window, with `autoFillBackground`) shows. Text (WindowText) does not: FreeCAD's ~70 KB application style sheet sets `color` on QWidget/QLabel, which beats the palette. A per-widget `color:` style sheet shows | UX-STYLE-010 Text colour writes a style sheet declaration (D4 amended). M4's palette editor: palette text roles have no effect on ChoreBoy; M5.3 adds the note in UX-STYLE-013 |
+| QtPrintSupport | Imports; `QPrinter()` and `QPrintDialog` construct; the only printer is "PDF-Printer" | UX-PREV-003 stands: Print… is present and prints to PDF |
+| `QStyleFactory.keys()` | Windows, Fusion | UX-PREV-001 Style ▸ lists those two |
+| Drag from the file manager | A `file://` URL in `QMimeData` round-trips as a local file; the file manager process can't be identified under AppArmor (`ps` is denied) | UX-RES-003 stays "should" until a manual drag is tried |
+| Settings folder | The state root is `~/choreboy_code_studio_state` (`app/core/constants.py` `GLOBAL_STATE_DIRNAME`); `form_templates/` can be created, written, read and removed there | UX-TMPL-002 stands |
+- That `QtPrintSupport` and a print dialog are available in the FreeCAD 1.1 AppRun (UX-PREV-003; without them Print… is absent, not disabled).
+- Which styles `QStyleFactory.keys()` lists in the preview runtime (UX-PREV-001 shows whatever it lists).
+- That files dragged from the ChoreBoy file manager reach the editor as local file URLs (UX-RES-003 is a "should" until confirmed).
+- That the Code Studio settings folder is writable for `form_templates/` (UX-TMPL-002).
+
+### 16.4 Facts M6 lanes check on the ChoreBoy VM (not owner decisions)
+
+- Checked on ChoreBoyExp (FreeCAD 1.1.1), 2026-10-30, M6.2b probe: matches macOS; `*args` on clicked receives no values. Zero-argument and one-argument methods work for clicked, textChanged and valueChanged. Stubs are `self` only, plus the optional named parameter from the checkbox, and never `*args`.
+- That the window file opened by double-click takes focus and shows the caret in a CBCS-run session on the VM (UX-CODE-007).

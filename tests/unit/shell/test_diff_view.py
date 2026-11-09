@@ -112,9 +112,12 @@ def test_format_relative_recent_buckets(delta: timedelta, expected_substring: st
 
 
 def test_format_relative_today_uses_clock_label() -> None:
-    today = datetime.now(timezone.utc).astimezone().replace(hour=3, minute=15, second=0, microsecond=0)
+    now = datetime.now(timezone.utc).astimezone()
+    today = now.replace(hour=3, minute=15, second=0, microsecond=0)
+    if today > now:
+        today = now.replace(hour=0, minute=0, second=0, microsecond=0)
     label = _format_relative(today.isoformat())
-    if (datetime.now(timezone.utc).astimezone() - today).total_seconds() < 12 * 3600:
+    if (now - today).total_seconds() < 12 * 3600:
         assert "hr ago" in label or "min ago" in label or "just now" in label
     else:
         assert "today at" in label

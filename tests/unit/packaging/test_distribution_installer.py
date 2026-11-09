@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+import importlib.machinery
 import importlib.util
 import json
 from pathlib import Path
@@ -28,6 +30,8 @@ from app.packaging.packager import package_project
 from tests.support.subprocess_guards import skip_unless_zip_available
 
 pytestmark = pytest.mark.unit
+
+_ALIAS_INSERTED: list[str] = []
 
 LINUX_X86_64_ELF_STUB = (
     b"\x7fELF"
@@ -59,11 +63,25 @@ def _alias_pyside_when_shim_missing() -> None:
         root = "PySide2"
     pyside = ModuleType("PySide")
     pyside.__path__ = []  # type: ignore[attr-defined]
+    # ModuleType.__spec__ is None, and find_spec raises ValueError on that.
+    pyside.__spec__ = importlib.machinery.ModuleSpec("PySide", loader=None, is_package=True)
     sys.modules["PySide"] = pyside
+    _ALIAS_INSERTED.append("PySide")
     for name in ("QtCore", "QtGui", "QtWidgets"):
         module = importlib.import_module(f"{root}.{name}")
-        sys.modules[f"PySide.{name}"] = module
+        key = f"PySide.{name}"
+        sys.modules[key] = module
+        _ALIAS_INSERTED.append(key)
         setattr(pyside, name, module)
+
+
+@pytest.fixture(scope="module", autouse=True)
+def _remove_pyside_alias_after_module() -> Iterator[None]:
+    """Remove the Ext/PySide stand-in so later tests call find_spec on a clean process."""
+    yield
+    for key in reversed(_ALIAS_INSERTED):
+        sys.modules.pop(key, None)
+    _ALIAS_INSERTED.clear()
 
 
 def _load_module(module_name: str, relative_path: str) -> ModuleType:

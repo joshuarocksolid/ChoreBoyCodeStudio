@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: MIT -->
+<ui version="4.0">
+ <class>CalendarWidgetHost</class>
+ <widget class="QCalendarWidget" name="CalendarWidgetHost">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>640</width>
+    <height>480</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>QCalendarWidget</string>
+  </property>
+  <property name="toolTip">
+   <string>QCalendarWidget host</string>
+  </property>
+ </widget>
+
+</ui>

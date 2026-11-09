@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>PropChar</class>
+ <widget class="QWidget" name="PropChar">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>640</width>
+    <height>480</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>char</string>
+  </property>
+  <property name="letter" stdset="0">
+   <char>
+    <unicode>66</unicode>
+   </char>
+  </property>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>

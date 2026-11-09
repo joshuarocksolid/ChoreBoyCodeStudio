@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>TaxSettings</class>
+ <widget class="QDialog" name="TaxSettings">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>640</width>
+    <height>480</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>Tax</string>
+  </property>
+  <layout class="QFormLayout" name="formLayout">
+   <item row="0" column="0">
+    <widget class="QLabel" name="label_rateEdit">
+     <property name="text">
+      <string>Rate</string>
+     </property>
+     <property name="buddy">
+      <cstring>rateEdit</cstring>
+     </property>
+    </widget>
+   </item>
+   <item row="0" column="1">
+    <widget class="QDoubleSpinBox" name="rateEdit"/>
+   </item>
+   <item row="1" column="0">
+    <widget class="QLabel" name="label_inclusiveCheck">
+     <property name="text">
+      <string>Inclusive</string>
+     </property>
+     <property name="buddy">
+      <cstring>inclusiveCheck</cstring>
+     </property>
+    </widget>
+   </item>
+   <item row="1" column="1">
+    <widget class="QCheckBox" name="inclusiveCheck"/>
+   </item>
+   <item row="2" column="0">
+    <widget class="QLabel" name="label_labelEdit">
+     <property name="text">
+      <string>Label</string>
+     </property>
+     <property name="buddy">
+      <cstring>labelEdit</cstring>
+     </property>
+    </widget>
+   </item>
+   <item row="2" column="1">
+    <widget class="QLineEdit" name="labelEdit"/>
+   </item>
+   <item row="3" column="0">
+    <widget class="QLabel" name="label_effectiveEdit">
+     <property name="text">
+      <string>Effective</string>
+     </property>
+     <property name="buddy">
+      <cstring>effectiveEdit</cstring>
+     </property>
+    </widget>
+   </item>
+   <item row="3" column="1">
+    <widget class="QDateEdit" name="effectiveEdit"/>
+   </item>
+  </layout>
+ </widget>
+ <tabstops>
+  <tabstop>rateEdit</tabstop>
+  <tabstop>inclusiveCheck</tabstop>
+  <tabstop>labelEdit</tabstop>
+  <tabstop>effectiveEdit</tabstop>
+ </tabstops>
+ <resources/>
+ <connections/>
+</ui>

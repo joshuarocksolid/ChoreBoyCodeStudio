@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 from app.qt.QtCore import QSize, Qt
@@ -272,6 +273,72 @@ def build_center_panel(window: Any) -> QWidget:
     return panel
 
 
+def _surface_for_path(window: Any, file_path: str) -> Any:
+    registry = getattr(window, "_tab_content_registry", None)
+    if registry is None:
+        return None
+    surface = registry.surface_for_path(file_path)
+    if surface is not None:
+        return surface
+    resolved = str(Path(file_path).expanduser().resolve())
+    if resolved == file_path:
+        return None
+    return registry.surface_for_path(resolved)
+
+
+def _is_form_problem(detail: dict) -> bool:
+    if detail.get("source_label") == "Form":
+        return True
+    return any(str(key).startswith("fb_") for key in detail)
+
+
+def _preview_form_problem(window: Any, file_path: str, detail: dict, line_number: int) -> None:
+    surface = _surface_for_path(window, file_path)
+    if surface is None or not callable(getattr(surface, "preview_problem", None)):
+        factory = getattr(window, "_editor_tab_factory", None)
+        open_file = getattr(factory, "open_file_in_editor", None)
+        if not callable(open_file) or not open_file(file_path, preview=True):
+            return
+        surface = _surface_for_path(window, file_path)
+    preview = getattr(surface, "preview_problem", None)
+    if callable(preview):
+        preview(detail, line_number)
+
+
+def _run_problem_fix(window: Any, file_path: str, fix_id: str) -> None:
+    """A fix chosen on a Problems row runs in the tab that owns the file, opening it if needed."""
+    detail = window._problems_panel.last_fix_detail()
+    surface = _surface_for_path(window, file_path)
+    if not callable(getattr(surface, "run_problem_fix", None)):
+        factory = getattr(window, "_editor_tab_factory", None)
+        open_file = getattr(factory, "open_file_in_editor", None)
+        if not callable(open_file) or not open_file(file_path, preview=False):
+            return
+        surface = _surface_for_path(window, file_path)
+    run = getattr(surface, "run_problem_fix", None)
+    if callable(run):
+        run(fix_id, detail)
+
+
+def _on_problem_preview(window: Any, file_path: str, line_number: int) -> None:
+    detail = window._problems_panel.last_preview_detail()
+    surface = _surface_for_path(window, file_path)
+    form_open = callable(getattr(surface, "preview_problem", None))
+    if _is_form_problem(detail) or form_open:
+        if detail.get("fb_key") or detail.get("fb_object"):
+            _preview_form_problem(window, file_path, detail, line_number)
+        elif form_open:
+            # No widget to reveal. In the XML view this moves the cursor to the
+            # row's line; in Design it does nothing.
+            surface.preview_problem(detail, line_number)
+        return
+    window._editor_tab_workflow.open_file_at_line(
+        file_path,
+        line_number,
+        preview=True,
+    )
+
+
 def build_bottom_panel(window: Any) -> QWidget:
     tabs = QTabWidget(window)
     tabs.setObjectName("shell.bottomRegion.tabs")
@@ -324,21 +391,21 @@ def build_bottom_panel(window: Any) -> QWidget:
 
     window._problems_panel = ProblemsPanel(tabs)
     window._problems_panel.item_preview_requested.connect(
-        lambda file_path, line_number: window._editor_tab_workflow.open_file_at_line(
-            file_path,
-            line_number,
-            preview=True,
-        )
+        lambda file_path, line_number: _on_problem_preview(window, file_path, line_number)
     )
     window._problems_panel.item_activated.connect(
         lambda file_path, line_number: window._editor_tab_workflow.open_file_at_line(
             file_path,
             line_number,
             preview=False,
+            detail=window._problems_panel.last_activation_detail(),
         )
     )
     window._problems_panel.context_menu_requested.connect(
         lambda fp, _code: window._python_style_workflow.apply_safe_fixes_for_file(fp)
+    )
+    window._problems_panel.fix_requested.connect(
+        lambda file_path, fix_id: _run_problem_fix(window, file_path, fix_id)
     )
     window._problems_tab_widget = tabs
     problems_index = tabs.addTab(window._problems_panel, "Problems")

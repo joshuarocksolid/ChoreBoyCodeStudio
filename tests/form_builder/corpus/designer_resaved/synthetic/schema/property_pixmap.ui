@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>PropPixmap</class>
+ <widget class="QWidget" name="PropPixmap">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>640</width>
+    <height>480</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>pixmap</string>
+  </property>
+  <property name="image" stdset="0">
+   <pixmap>:/cbcs/icons/dot.png</pixmap>
+  </property>
+ </widget>
+ <resources>
+  <include location="icons.qrc"/>
+ </resources>
+ <connections/>
+</ui>

@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
-from app.bootstrap.paths import PathInput
+from app.bootstrap.paths import PathInput, cached_resolve
 from app.persistence.history_models import (
     DRAFT_RECOVERY_POLICY_PROMPT,
     DRAFT_SOURCE_LIVE_DIRTY_BACKUP,
@@ -85,7 +85,7 @@ class AutosaveStore:
         project_root: Optional[str] = None,
     ) -> Optional[DraftEntry]:
         """Load draft for file path, if present and valid."""
-        normalized_path = str(Path(file_path).expanduser().resolve())
+        normalized_path = cached_resolve(file_path)
         stored = self._history_store.load_draft(
             normalized_path,
             project_id=project_id,
@@ -112,7 +112,9 @@ class AutosaveStore:
         project_root: Optional[str] = None,
     ) -> None:
         """Delete persisted draft for file path if present."""
-        normalized_path = str(Path(file_path).expanduser().resolve())
+        # The tab open resolved this path already. A highlighter pass reaches
+        # here with the same path and must not resolve it a second time.
+        normalized_path = cached_resolve(file_path)
         self._history_store.delete_draft(
             normalized_path,
             project_id=project_id,

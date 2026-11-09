@@ -44,15 +44,22 @@ choreboy_code_studio_state/
 **/cbcs/runs/
 **/cbcs/logs/
 **/cbcs/cache/
+**/cbcs/schema/
 
 # Generated icon intermediates (regenerate from SVG via scripts/generate_icon_pngs.py)
 app/ui/icons/app_icon_*.png
 app/ui/icons/installer_icon_*.png
 
-# Vendored dependencies (see vendor/README.md for setup)
-vendor/*
-!vendor/README.md
+# Vendored dependencies (see vendor/README.md for setup).
+# `vendor` is a per-machine symlink that dev_launch_editor.py creates; never track it.
+/vendor
+
+# pyright, installed by the cloud install script
+node_modules/
 
 
 # Team Sync review screenshots (tools/team_sync_screens.py); evidence lives on prototype/team-sync
 docs/team_sync/screens/
+
+# Form-builder probe output (screenshots, walk logs, perf results).
+/artifacts/

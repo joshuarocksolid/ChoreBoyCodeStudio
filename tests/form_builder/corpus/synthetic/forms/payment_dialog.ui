@@ -1,0 +1,92 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: MIT -->
+<ui version="4.0">
+ <class>PaymentDialog</class>
+ <widget class="QDialog" name="PaymentDialog">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>640</width>
+    <height>480</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>Payment</string>
+  </property>
+  <layout class="QFormLayout" name="formLayout">
+   <item row="0" column="0">
+    <widget class="QLabel" name="label_amountEdit">
+     <property name="text">
+      <string>Amount</string>
+     </property>
+     <property name="buddy">
+      <cstring>amountEdit</cstring>
+     </property>
+    </widget>
+   </item>
+   <item row="0" column="1">
+    <widget class="QDoubleSpinBox" name="amountEdit"/>
+   </item>
+   <item row="1" column="0">
+    <widget class="QLabel" name="label_methodCombo">
+     <property name="text">
+      <string>Method</string>
+     </property>
+     <property name="buddy">
+      <cstring>methodCombo</cstring>
+     </property>
+    </widget>
+   </item>
+   <item row="1" column="1">
+    <widget class="QComboBox" name="methodCombo"/>
+   </item>
+   <item row="2" column="0">
+    <widget class="QLabel" name="label_paidEdit">
+     <property name="text">
+      <string>Paid</string>
+     </property>
+     <property name="buddy">
+      <cstring>paidEdit</cstring>
+     </property>
+    </widget>
+   </item>
+   <item row="2" column="1">
+    <widget class="QDateEdit" name="paidEdit"/>
+   </item>
+   <item row="3" column="0">
+    <widget class="QLabel" name="label_referenceEdit">
+     <property name="text">
+      <string>Reference</string>
+     </property>
+     <property name="buddy">
+      <cstring>referenceEdit</cstring>
+     </property>
+    </widget>
+   </item>
+   <item row="3" column="1">
+    <widget class="QLineEdit" name="referenceEdit"/>
+   </item>
+   <item row="4" column="0">
+    <widget class="QLabel" name="label_memoEdit">
+     <property name="text">
+      <string>Memo</string>
+     </property>
+     <property name="buddy">
+      <cstring>memoEdit</cstring>
+     </property>
+    </widget>
+   </item>
+   <item row="4" column="1">
+    <widget class="QPlainTextEdit" name="memoEdit"/>
+   </item>
+  </layout>
+ </widget>
+ <tabstops>
+  <tabstop>amountEdit</tabstop>
+  <tabstop>methodCombo</tabstop>
+  <tabstop>paidEdit</tabstop>
+  <tabstop>referenceEdit</tabstop>
+  <tabstop>memoEdit</tabstop>
+ </tabstops>
+</ui>

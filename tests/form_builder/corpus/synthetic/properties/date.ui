@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: MIT -->
+<ui version="4.0">
+ <class>PropDate</class>
+ <widget class="QWidget" name="PropDate">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>640</width>
+    <height>480</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>date</string>
+  </property>
+  <property name="when" stdset="0">
+   <date><year>2026</year><month>10</month><day>21</day></date>
+  </property>
+ </widget>
+
+</ui>

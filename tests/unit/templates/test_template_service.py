@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+from app.bootstrap.qt_binding_choice import select_binding
 from app.core.errors import AppValidationError
 from app.project.project_manifest import load_project_manifest
 from app.templates.template_service import TemplateService
@@ -21,8 +22,11 @@ def test_list_templates_discovers_expected_builtin_templates() -> None:
     """Template service should discover all built-in template IDs."""
     service = TemplateService(templates_root=str(_repo_templates_root()))
     template_ids = [template.template_id for template in service.list_templates()]
+    expected = ["headless_tool", "qt_app", "utility_script"]
+    if select_binding() == "PySide6":
+        expected = ["headless_tool", "qt_app", "qt_app_with_form", "utility_script"]
 
-    assert template_ids == ["headless_tool", "qt_app", "utility_script"]
+    assert template_ids == expected
 
 
 def test_materialize_template_injects_project_manifest(tmp_path: Path) -> None:

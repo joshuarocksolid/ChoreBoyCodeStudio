@@ -11,7 +11,7 @@ from app.qt.QtWidgets import QMessageBox, QWidget
 
 from app.bootstrap.paths import global_app_log_path, global_logs_dir
 from app.core import constants
-from app.shell.shortcut_preferences import SHORTCUT_COMMANDS
+from app.shell.shortcut_preferences import iter_shortcut_commands
 from app.ui.help.help_dialog import show_help_file, show_help_markdown
 
 if TYPE_CHECKING:
@@ -93,7 +93,7 @@ class ShellHelpController:
         lines: list[str] = ["# Keyboard Shortcuts", ""]
         grouped: dict[str, list[tuple[str, str]]] = {}
         effective_shortcuts = self._get_effective_shortcuts()
-        for command in SHORTCUT_COMMANDS:
+        for command in iter_shortcut_commands():
             shortcut = effective_shortcuts.get(command.action_id, "")
             if not shortcut:
                 continue

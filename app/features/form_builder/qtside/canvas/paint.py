@@ -1,0 +1,394 @@
+"""Paints one overlay frame. The painter is already in canvas pixels."""
+
+from __future__ import annotations
+
+from app.qt.QtCore import QPointF, QRectF, Qt
+from app.qt.QtGui import QColor, QFont, QPainter, QPen
+
+from app.features.form_builder.qtside.canvas.core.frame import (
+    Badge,
+    Caption,
+    Chip,
+    Fill,
+    Glyph,
+    Handle,
+    Item,
+    OverlayFrame,
+    Pill,
+    Role,
+    Spring,
+    Stroke,
+)
+from app.features.form_builder.qtside.canvas.core.overlay import LayerItem
+from app.features.form_builder.qtside.canvas.core.space import CanvasRect
+from app.features.form_builder.qtside.canvas.layers import paint_layer_item
+from app.features.form_builder.qtside.theme.chrome import PAGE_TITLE_GLYPH, PAGE_TITLE_TEXT
+from app.features.form_builder.qtside.theme.overlay import CanvasPalette, channels
+
+_CHIP_RADIUS = 4.0
+_HANDLE_BORDER = 1.5
+_SPRING_WIDTH = 1.5
+_SPRING_AMP = 6.0
+_SPRING_STEP = 8.0
+
+
+def paint_frame(painter: QPainter, frame: OverlayFrame, palette: CanvasPalette, exposed: QRectF) -> None:
+    """Draw items that meet ``exposed``. Strokes stay at least ``min_stroke``."""
+    painter.save()
+    hints = getattr(QPainter, "RenderHint", QPainter)
+    painter.setRenderHint(getattr(hints, "Antialiasing"), True)
+    region = exposed.adjusted(-2, -2, 2, 2)
+    for item in frame.items:
+        if isinstance(item, Stroke) and not item.caps:
+            if not _stroke_meets(item, region):
+                continue
+        elif not _box(item.rect).intersects(region):
+            continue
+        _paint_one(painter, item, palette)
+    painter.restore()
+
+
+def _paint_one(painter: QPainter, item: Item, palette: CanvasPalette) -> None:
+    if isinstance(item, Stroke):
+        _stroke(painter, item, palette)
+        return
+    if isinstance(item, Fill):
+        if isinstance(item, LayerItem):
+            paint_layer_item(painter, item, palette, _fill)
+            return
+        _fill(painter, item, palette)
+        return
+    if isinstance(item, Spring):
+        _spring(painter, item, palette)
+        return
+    if isinstance(item, Handle):
+        _handle(painter, item, palette)
+        return
+    if isinstance(item, Pill):
+        _pill(painter, item, palette)
+        return
+    if isinstance(item, Chip):
+        _chip(painter, item, palette)
+        return
+    if isinstance(item, Badge):
+        _badge(painter, item, palette)
+        return
+    if isinstance(item, Caption):
+        _caption(painter, item, palette)
+        return
+    if isinstance(item, Glyph):
+        _glyph(painter, item.name, item.rect, _ink(palette, item.role, 1.0), _color(palette.overlay.chip_text, 1.0))
+        return
+    raise AssertionError(type(item))
+
+
+def _stroke_meets(item: Stroke, region: QRectF) -> bool:
+    """A stroke paints its border. An exposed interior does not redraw it."""
+    rect = item.rect
+    band = max(item.width, 2.0) + 2.0
+    if rect.width <= band * 2 or rect.height <= band * 2:
+        return _box(rect).intersects(region)
+    edges = (
+        QRectF(rect.x, rect.y, rect.width, band),
+        QRectF(rect.x, rect.y + rect.height - band, rect.width, band),
+        QRectF(rect.x, rect.y, band, rect.height),
+        QRectF(rect.x + rect.width - band, rect.y, band, rect.height),
+    )
+    return any(edge.intersects(region) for edge in edges)
+
+
+def _stroke(painter: QPainter, item: Stroke, palette: CanvasPalette) -> None:
+    width = max(item.width, palette.overlay.min_stroke)
+    painter.setBrush(_no_brush())
+    if item.caps:
+        _capped_line(painter, item, palette, width)
+        return
+    painter.setPen(_pen(_ink(palette, item.role, item.alpha), width, item.style))
+    box = _box(item.rect)
+    if item.radius > 0:
+        painter.drawRoundedRect(box, item.radius, item.radius)
+    else:
+        painter.drawRect(box)
+
+
+def _capped_line(painter: QPainter, item: Stroke, palette: CanvasPalette, width: float) -> None:
+    rect = item.rect
+    ink = _ink(palette, item.role, item.alpha)
+    horizontal = rect.width >= rect.height
+    if horizontal:
+        y = rect.y + rect.height / 2.0
+        start = rect.x
+        end = rect.x + rect.width
+        painter.setPen(_round_pen(ink, width))
+        painter.drawLine(QPointF(start, y), QPointF(end, y))
+        _cap(painter, ink, start, y)
+        _cap(painter, ink, end, y)
+        return
+    x = rect.x + rect.width / 2.0
+    start = rect.y
+    end = rect.y + rect.height
+    painter.setPen(_round_pen(ink, width))
+    painter.drawLine(QPointF(x, start), QPointF(x, end))
+    _cap(painter, ink, x, start)
+    _cap(painter, ink, x, end)
+
+
+def _cap(painter: QPainter, ink: QColor, x: float, y: float) -> None:
+    painter.setPen(_no_pen())
+    painter.setBrush(ink)
+    painter.drawEllipse(QPointF(x, y), 3.0, 3.0)
+
+
+def _round_pen(color: QColor, width: float) -> QPen:
+    pen = _pen(color, width, "solid")
+    pen.setCapStyle(getattr(getattr(Qt, "PenCapStyle", Qt), "RoundCap"))
+    return pen
+
+
+def _fill(painter: QPainter, item: Fill, palette: CanvasPalette) -> None:
+    painter.setPen(_no_pen())
+    painter.setBrush(_ink(palette, item.role, item.alpha))
+    painter.drawRect(_box(item.rect))
+
+
+def _spring(painter: QPainter, item: Spring, palette: CanvasPalette) -> None:
+    rect = item.rect
+    painter.setBrush(_no_brush())
+    painter.setPen(_pen(_ink(palette, "gap", 1.0), _SPRING_WIDTH, "solid"))
+    if item.axis == "vertical":
+        start = rect.y
+        end = rect.y + rect.height
+        centre = rect.x + rect.width / 2.0
+        horizontal = False
+    else:
+        start = rect.x
+        end = rect.x + rect.width
+        centre = rect.y + rect.height / 2.0
+        horizontal = True
+    points = [QPointF(centre, start) if not horizontal else QPointF(start, centre)]
+    cursor = start
+    side = 1.0
+    while cursor < end:
+        cursor = min(end, cursor + _SPRING_STEP)
+        offset = side * _SPRING_AMP
+        if horizontal:
+            points.append(QPointF(cursor, centre + offset))
+        else:
+            points.append(QPointF(centre + offset, cursor))
+        side = -side
+    painter.drawPolyline(points)
+
+
+def _handle(painter: QPainter, item: Handle, palette: CanvasPalette) -> None:
+    width = max(_HANDLE_BORDER, palette.overlay.min_stroke)
+    painter.setBrush(_ink(palette, "select", 1.0))
+    painter.setPen(_no_pen())
+    outer = _box(item.rect)
+    painter.drawRect(outer)
+    painter.setBrush(_color(palette.overlay.chip_text, 1.0))
+    inset = width
+    painter.drawRect(outer.adjusted(inset, inset, -inset, -inset))
+
+
+def _pill(painter: QPainter, item: Pill, palette: CanvasPalette) -> None:
+    raw = palette.backdrop.accent if item.hot else palette.backdrop.faint
+    painter.setPen(_no_pen())
+    painter.setBrush(_color(raw, 1.0))
+    box = _box(item.rect)
+    radius = min(box.width(), box.height()) / 2.0
+    painter.drawRoundedRect(box, radius, radius)
+
+
+def _chip(painter: QPainter, item: Chip, palette: CanvasPalette) -> None:
+    fill = _ink(palette, item.role, 1.0)
+    if item.leader is not None:
+        painter.setBrush(_no_brush())
+        painter.setPen(_pen(fill, max(1.0, palette.overlay.min_stroke), "solid"))
+        painter.drawLine(
+            QPointF(item.leader.start.x, item.leader.start.y),
+            QPointF(item.leader.end.x, item.leader.end.y),
+        )
+    if item.docked:
+        # The view paints the body above its caption chrome (paint_docked_chip).
+        return
+    _chip_body(painter, item, fill, palette)
+
+
+def paint_docked_chip(painter: QPainter, item: Chip, palette: CanvasPalette) -> None:
+    """The body of a docked chip. The painter is in canvas pixels."""
+    painter.save()
+    hints = getattr(QPainter, "RenderHint", QPainter)
+    painter.setRenderHint(getattr(hints, "Antialiasing"), True)
+    _chip_body(painter, item, _ink(palette, item.role, 1.0), palette)
+    painter.restore()
+
+
+def _chip_body(painter: QPainter, item: Chip, fill: QColor, palette: CanvasPalette) -> None:
+    box = _box(item.rect)
+    backdrop = QColor(palette.backdrop.fill[:7])
+    dark = backdrop.red() == 0 and backdrop.green() == 0 and backdrop.blue() == 0
+    high = palette.overlay.min_stroke >= 2
+    if item.role == "select" and high:
+        painter.setPen(_pen(QColor(255, 255, 255), 1.0, "solid"))
+    elif item.on_backdrop and high and dark:
+        painter.setPen(_pen(QColor(255, 255, 255), 1.0, "solid"))
+    else:
+        painter.setPen(_no_pen())
+    painter.setBrush(fill)
+    painter.drawRoundedRect(box, _CHIP_RADIUS, _CHIP_RADIUS)
+    painter.setPen(_color(palette.overlay.chip_text, 1.0))
+    painter.setFont(_weighted(11, "DemiBold"))
+    painter.drawText(box, _align("AlignCenter"), item.text)
+
+
+def _badge(painter: QPainter, item: Badge, palette: CanvasPalette) -> None:
+    fill = _ink(palette, item.role, 1.0)
+    if item.leader is not None:
+        painter.setBrush(_no_brush())
+        painter.setPen(_pen(fill, max(1.0, palette.overlay.min_stroke), "solid"))
+        painter.drawLine(
+            QPointF(item.leader.start.x, item.leader.start.y),
+            QPointF(item.leader.end.x, item.leader.end.y),
+        )
+    _glyph(painter, item.glyph, item.rect, fill, _color(palette.overlay.chip_text, 1.0))
+
+
+def _caption(painter: QPainter, item: Caption, palette: CanvasPalette) -> None:
+    if item.lines[:1] == ("Drop a widget here",) and (
+        len(item.lines) < 2 or item.lines[1] == "or press / to search"
+    ):
+        _empty_caption(painter, item)
+        return
+    painter.setPen(_ink(palette, item.role, item.alpha))
+    painter.setFont(_semibold(11))
+    line_height = 14.0
+    total = line_height * len(item.lines)
+    top = item.rect.y + (item.rect.height - total) / 2.0
+    for index, line in enumerate(item.lines):
+        painter.drawText(
+            QRectF(item.rect.x, top + index * line_height, item.rect.width, line_height),
+            _align("AlignCenter"),
+            line,
+        )
+
+
+def _empty_caption(painter: QPainter, item: Caption) -> None:
+    rows = (
+        (16.0, _weighted(12, "DemiBold"), QColor(PAGE_TITLE_TEXT)),
+        (14.0, _weighted(11, "Normal"), QColor(PAGE_TITLE_GLYPH)),
+    )
+    shown = item.lines[:2]
+    total = sum(rows[index][0] for index in range(len(shown)))
+    top = item.rect.y + (item.rect.height - total) / 2.0
+    cursor = top
+    for index, line in enumerate(shown):
+        height, font, color = rows[index]
+        painter.setPen(color)
+        painter.setFont(font)
+        painter.drawText(
+            QRectF(item.rect.x, cursor, item.rect.width, height),
+            _align("AlignCenter"),
+            line,
+        )
+        cursor += height
+
+
+def _glyph(painter: QPainter, name: str, rect: CanvasRect, colour: QColor, text: QColor) -> None:
+    if name == "plus":
+        painter.setBrush(_no_brush())
+        painter.setPen(_pen(colour, _SPRING_WIDTH, "solid"))
+        box = _box(rect)
+        mid_x = box.center().x()
+        mid_y = box.center().y()
+        painter.drawLine(QPointF(box.left(), mid_y), QPointF(box.right(), mid_y))
+        painter.drawLine(QPointF(mid_x, box.top()), QPointF(mid_x, box.bottom()))
+        return
+    if name == "error":
+        painter.setPen(_no_pen())
+        painter.setBrush(colour)
+        painter.drawEllipse(_box(rect))
+        painter.setPen(text)
+        painter.setFont(_semibold(9 if rect.width < 16 else 11))
+        painter.drawText(_box(rect), _align("AlignCenter"), "!")
+        return
+    if name == "grip":
+        _grip(painter, rect, colour, text)
+        return
+    raise AssertionError(name)
+
+
+def _grip(painter: QPainter, rect: CanvasRect, colour: QColor, rim: QColor) -> None:
+    """Three dots along the handle. A light rim keeps them readable over any pane."""
+    box = _box(rect)
+    tall = box.height() >= box.width()
+    spacing = max(box.width(), box.height()) / 3.0
+    radius = min(min(box.width(), box.height()), spacing) / 2.0 - 0.5
+    painter.setPen(_pen(rim, 1.0, "solid"))
+    painter.setBrush(colour)
+    for offset in (-1, 0, 1):
+        if tall:
+            centre = QPointF(box.center().x(), box.center().y() + offset * spacing)
+        else:
+            centre = QPointF(box.center().x() + offset * spacing, box.center().y())
+        painter.drawEllipse(centre, radius, radius)
+
+
+def _ink(palette: CanvasPalette, role: Role, alpha: float) -> QColor:
+    if role == "backdrop_faint":
+        raw = palette.backdrop.faint
+    elif role == "backdrop_accent":
+        raw = palette.backdrop.accent
+    else:
+        raw = getattr(palette.overlay, role)
+    return _color(raw, alpha)
+
+
+def _color(raw: str, alpha: float) -> QColor:
+    red, green, blue, stored = channels(raw)
+    return QColor(red, green, blue, max(0, min(255, int(round(stored * alpha)))))
+
+
+def _pen(color: QColor, width: float, style: str) -> QPen:
+    pen = QPen(color)
+    pen.setWidthF(width)
+    pen.setCosmetic(False)
+    styles = getattr(Qt, "PenStyle", Qt)
+    chosen = {
+        "solid": "SolidLine",
+        "dashed": "DashLine",
+        "dotted": "DotLine",
+    }[style]
+    pen.setStyle(getattr(styles, chosen))
+    return pen
+
+
+def _no_pen() -> QPen:
+    pen = QPen()
+    pen.setStyle(getattr(getattr(Qt, "PenStyle", Qt), "NoPen"))
+    return pen
+
+
+def _no_brush() -> object:
+    return getattr(getattr(Qt, "BrushStyle", Qt), "NoBrush")
+
+
+def _semibold(pixel_size: int) -> QFont:
+    font = QFont()
+    font.setPixelSize(pixel_size)
+    font.setBold(True)
+    return font
+
+
+def _weighted(pixel_size: int, weight: str) -> QFont:
+    font = QFont()
+    font.setPixelSize(pixel_size)
+    font.setWeight(getattr(getattr(QFont, "Weight", QFont), weight))
+    return font
+
+
+def _align(name: str) -> object:
+    return getattr(getattr(Qt, "AlignmentFlag", Qt), name)
+
+
+def _box(rect: CanvasRect) -> QRectF:
+    return QRectF(rect.x, rect.y, rect.width, rect.height)

@@ -274,16 +274,42 @@ def _materialize_git_baseline(repo_root: Path, baseline_root: Path) -> None:
 def _overlay_baseline_law_documents(
     baseline_root: Path,
     subject_root: Path,
+    current_root: Optional[Path] = None,
 ) -> None:
+    # Baseline text stays so deleting a name still fails the old law.
+    # Current text stays so a newly documented name still satisfies that law.
     for relative_path in _LAW_DOCUMENT_PATHS:
         target = subject_root / relative_path
+        current_bytes = _law_document_bytes(
+            current_root / relative_path if current_root is not None else target
+        )
         if target.is_symlink() or target.exists():
             target.unlink()
-        source = baseline_root / relative_path
-        if not source.is_file():
+        merged = _merge_law_document(
+            _law_document_bytes(baseline_root / relative_path),
+            current_bytes,
+        )
+        if merged is None:
             continue
         target.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(source, target)
+        target.write_bytes(merged)
+
+
+def _law_document_bytes(path: Path) -> Optional[bytes]:
+    if not path.is_file():
+        return None
+    return path.read_bytes()
+
+
+def _merge_law_document(
+    baseline: Optional[bytes],
+    current: Optional[bytes],
+) -> Optional[bytes]:
+    if baseline is None:
+        return current
+    if current is None or current == baseline:
+        return baseline
+    return baseline.rstrip(b"\n") + b"\n" + current.rstrip(b"\n") + b"\n"
 
 
 def _git_optional_blob(repo_root: Path, object_name: str) -> Optional[bytes]:
@@ -422,7 +448,7 @@ def _build_subject_root(
         baseline_root / "tools" / "dune",
         subject_tools / "dune",
     )
-    _overlay_baseline_law_documents(baseline_root, subject_root)
+    _overlay_baseline_law_documents(baseline_root, subject_root, repo_root)
 
 
 def _build_index_subject_root(

@@ -1,0 +1,322 @@
+"""Paints Insert rows: icon tiles, list rows and category headers (UX-CAT-004, -005, -008)."""
+
+from __future__ import annotations
+
+from typing import List, Optional, Tuple
+
+from app.qt.QtCore import QPointF, QRect, QRectF, QSize, Qt
+from app.qt.QtGui import QColor, QFont, QFontMetrics, QPainter, QPainterPath, QPen, QPolygonF
+from app.qt.QtWidgets import QStyle, QStyledItemDelegate, QStyleOptionViewItem
+
+from app.features.form_builder.qtside.icons.glyphs import paint_glyph
+from app.features.form_builder.qtside.insert.rows import ENTRY, HEADER, SECTION, Row
+from app.features.form_builder.qtside.theme.chrome import FormChrome
+from app.features.form_builder.qtside.theme.metrics import (
+    CHEVRON,
+    ICON,
+    R_CONTROL,
+    ROW,
+    S1,
+    SECTION_HEADER,
+    TYPE_BODY,
+    TYPE_FINE,
+    TYPE_SECTION,
+)
+
+ROW_ROLE = Qt.ItemDataRole.UserRole + 1
+TILE_WIDTH = 72
+TILE_HEIGHT = 56
+ROW_HEIGHT = ROW
+HEADER_HEIGHT = SECTION_HEADER
+GLYPH_TILE = ICON
+GLYPH_ROW = ICON
+_RADIUS = float(R_CONTROL)
+
+class EntryDelegate(QStyledItemDelegate):
+    """One delegate for the Insert list and the quick-insert list."""
+
+    def __init__(self, parent: Optional[object] = None) -> None:
+        super().__init__(parent)  # type: ignore[arg-type]
+        self._chrome: Optional[FormChrome] = None
+        self._icons = False
+        self._width = 216
+        self._layout_ink = ""
+        self._gap_ink = ""
+
+    def set_chrome(self, chrome: FormChrome) -> None:
+        self._chrome = chrome
+        self._layout_ink = chrome.layout
+        self._gap_ink = chrome.gap
+
+    def set_icons(self, icons: bool) -> None:
+        self._icons = icons
+
+    def set_width(self, width: int) -> None:
+        self._width = max(width, 120)
+
+    def sizeHint(self, option: QStyleOptionViewItem, index: object) -> QSize:  # noqa: N802
+        row = _row(index)
+        if row is not None and self._is_tile(row):
+            return QSize(TILE_WIDTH + S1, TILE_HEIGHT + S1)
+        # ResizeMode.Adjust asks again on resize. A width cached before the
+        # view is shown stays at the 120 px floor and tiles sit beside headers.
+        width = _viewport_width(option)
+        if width <= 0:
+            width = self._width
+        if row is None or row.kind == SECTION:
+            return QSize(width, HEADER_HEIGHT)
+        if row.kind == HEADER:
+            room = max(width - 22 - 44, 24)
+            font = QFont(option.font)
+            font.setPixelSize(10)
+            font.setBold(True)
+            lines = _wrap_header(row.title.upper(), QFontMetrics(font), room)
+            return QSize(width, max(HEADER_HEIGHT, 14 * len(lines) + 6))
+        return QSize(width, ROW_HEIGHT)
+
+    def paint(self, painter: QPainter, option: QStyleOptionViewItem, index: object) -> None:  # type: ignore[override]
+        row = _row(index)
+        if row is None:
+            return
+        painter.save()
+        try:
+            painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+            if row.kind in (SECTION, HEADER):
+                self._paint_header(painter, option, row)
+            elif self._is_tile(row):
+                self._paint_tile(painter, option, row)
+            else:
+                self._paint_row(painter, option, row)
+        finally:
+            painter.restore()
+
+    # Helpers -----------------------------------------------------------------
+
+    def _is_tile(self, row: Row) -> bool:
+        return row.kind == ENTRY and self._icons and not row.search
+
+    def _colors(self) -> Tuple[str, ...]:
+        chrome = self._chrome
+        if chrome is None:
+            # No chrome yet (before the first theme): the named Qt colours, so no literal hex lives here.
+            return ("black", "gray", "white", "lightgray", "yellow", "blue")
+        return (chrome.text, chrome.faint, chrome.row_hover, chrome.selected, chrome.search_match_bg, chrome.accent)
+
+    def _background(self, painter: QPainter, option: QStyleOptionViewItem, rect: QRect, radius: float) -> None:
+        _text, _faint, hover, current, _match, accent = self._colors()
+        state = option.state
+        fill = None
+        if state & QStyle.StateFlag.State_Selected:
+            fill = current
+        elif state & QStyle.StateFlag.State_MouseOver:
+            fill = hover
+        if fill is not None:
+            path = QPainterPath()
+            path.addRoundedRect(QRectF(rect).adjusted(0.5, 0.5, -0.5, -0.5), radius, radius)
+            painter.fillPath(path, QColor(fill))
+        if state & QStyle.StateFlag.State_HasFocus:
+            pen = QPen(QColor(accent))
+            pen.setWidthF(2.0)
+            painter.setPen(pen)
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            painter.drawRoundedRect(QRectF(rect).adjusted(1, 1, -1, -1), radius, radius)
+
+    def _font(self, option: QStyleOptionViewItem, pixels: int, bold: bool = False) -> QFont:
+        font = QFont(option.font)
+        font.setPixelSize(pixels)
+        font.setBold(bold)
+        return font
+
+    def _glyph(self, painter: QPainter, name: str, x: int, y: int, size: int) -> None:
+        color = self._glyph_ink(name)
+        ratio = painter.device().devicePixelRatioF() if painter.device() is not None else 1.0
+        pixmap = paint_glyph(name, color, size, float(ratio))
+        painter.drawPixmap(x, y, pixmap)
+
+    def _glyph_ink(self, name: str) -> str:
+        """Layouts use ov.layout and spacers ov.gap (UX-ICON-005). Everything else uses the text colour."""
+        if name.startswith("layout_") and self._layout_ink:
+            return self._layout_ink
+        if name.startswith("spacer_") and self._gap_ink:
+            return self._gap_ink
+        chrome = self._chrome
+        if chrome is not None and chrome.glyph:
+            return chrome.glyph
+        return self._colors()[0]
+
+    def _paint_header(self, painter: QPainter, option: QStyleOptionViewItem, row: Row) -> None:
+        _text, faint, _hover, _current, _match, _accent = self._colors()
+        title_ink = self._chrome.muted if self._chrome is not None and self._chrome.muted else faint
+        rect = option.rect
+        if row.kind == SECTION:
+            painter.setPen(QColor(title_ink))
+            painter.setFont(self._font(option, 10, bold=True))
+            painter.drawText(rect.adjusted(8, 0, -8, 0), int(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter), row.title.upper())
+            return
+        left = rect.left() + 10
+        mark = "chevron_down" if row.expanded else "chevron_right"
+        ratio = painter.device().devicePixelRatioF() if painter.device() is not None else 1.0
+        try:
+            pixmap = paint_glyph(mark, faint, CHEVRON, float(ratio))
+            painter.drawPixmap(left, rect.center().y() - CHEVRON // 2, pixmap)
+        except KeyError:
+            pass
+        painter.setFont(self._font(option, TYPE_SECTION, bold=True))
+        painter.setPen(QColor(title_ink))
+        label_left = rect.left() + 22
+        room = max(rect.width() - 22 - 44, 24)
+        lines = _wrap_header(row.title.upper(), QFontMetrics(painter.font()), room)
+        line_h = max(rect.height() // max(len(lines), 1), 12)
+        for index, line in enumerate(lines):
+            painter.drawText(label_left, rect.top() + index * line_h, room, line_h,
+                             int(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter), line)
+        painter.setPen(QColor(faint))
+        painter.setFont(self._font(option, 11))
+        painter.drawText(rect.adjusted(0, 0, -10, 0), int(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter), str(row.count))
+
+    def _paint_tile(self, painter: QPainter, option: QStyleOptionViewItem, row: Row) -> None:
+        text, _faint, _hover, _current, _match, _accent = self._colors()
+        outer = option.rect
+        rect = QRect(outer.left() + S1 // 2, outer.top() + S1 // 2, TILE_WIDTH, TILE_HEIGHT)
+        self._background(painter, option, rect, _RADIUS)
+        self._glyph(painter, row.glyph, rect.center().x() - GLYPH_TILE // 2, rect.top() + 8, GLYPH_TILE)
+        font = self._font(option, TYPE_FINE)
+        painter.setFont(font)
+        painter.setPen(QColor(text))
+        width = rect.width() - 8
+        label = row.title.split(" · ")[0]
+        lines = _two_lines(label, QFontMetrics(font), width)
+        line_h = 14
+        top = rect.top() + 8 + GLYPH_TILE
+        for index, line in enumerate(lines):
+            painter.drawText(
+                QRect(rect.left() + 4, top + index * line_h, width, line_h),
+                int(Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignVCenter),
+                line,
+            )
+
+    def _paint_row(self, painter: QPainter, option: QStyleOptionViewItem, row: Row) -> None:
+        text, faint, _hover, _current, match_bg, _accent = self._colors()
+        rect = option.rect
+        self._background(painter, option, rect, _RADIUS)
+        self._glyph(painter, row.glyph, rect.left() + 8, rect.top() + 4, GLYPH_ROW)
+        name_font = self._font(option, TYPE_BODY)
+        caption_font = self._font(option, 11)
+        left = rect.left() + 30
+        right_text = _right_caption(row)
+        name, right_text = fitted_label(row.title, right_text, rect.width(), name_font, caption_font)
+        painter.setFont(name_font)
+        name_metrics = QFontMetrics(name_font)
+        start, end = row.match
+        # `and` binds tighter than `or`, so the elision check has to cover both arms.
+        if start >= 0 and end <= len(row.title) and (not name.endswith("…") or end <= len(name)):
+            before = name_metrics.horizontalAdvance(name[:start])
+            width_of = name_metrics.horizontalAdvance(name[start:end])
+            painter.fillRect(QRect(left + before, rect.top() + 3, max(width_of, 0), rect.height() - 6), QColor(match_bg))
+        painter.setPen(QColor(text))
+        name_width = name_metrics.horizontalAdvance(name)
+        painter.drawText(QRect(left, rect.top(), name_width + 2, rect.height()),
+                         int(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter), name)
+        if right_text:
+            painter.setFont(caption_font)
+            painter.setPen(QColor(faint))
+            caption_metrics = QFontMetrics(caption_font)
+            right_width = caption_metrics.horizontalAdvance(right_text) + 12
+            painter.drawText(QRect(rect.right() - right_width, rect.top(), right_width - 8, rect.height()),
+                             int(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter), right_text)
+
+
+def _wrap_header(text: str, metrics: QFontMetrics, room: int) -> List[str]:
+    """Two lines at most. A short header stays one line and is not cut off."""
+
+    if metrics.horizontalAdvance(text) <= room:
+        return [text]
+    words = text.split()
+    if len(words) < 2:
+        return [text]
+    best = 1
+    for index in range(1, len(words)):
+        if metrics.horizontalAdvance(" ".join(words[:index])) <= room:
+            best = index
+    first = " ".join(words[:best])
+    second = " ".join(words[best:])
+    if metrics.horizontalAdvance(second) > room:
+        second = metrics.elidedText(second, Qt.TextElideMode.ElideRight, room)
+    return [first, second]
+
+
+def fitted_label(
+    title: str,
+    caption: str,
+    rect_width: int,
+    name_font: QFont,
+    caption_font: QFont,
+) -> Tuple[str, str]:
+    """The friendly name keeps its letters. The category is hidden or cut first."""
+    available = rect_width - 30 - 8
+    if available < 16:
+        available = 16
+    name_metrics = QFontMetrics(name_font)
+    name_width = name_metrics.horizontalAdvance(title)
+    if not caption:
+        return name_metrics.elidedText(title, Qt.TextElideMode.ElideRight, available), ""
+    caption_metrics = QFontMetrics(caption_font)
+    caption_width = caption_metrics.horizontalAdvance(caption) + 12
+    if name_width + 8 + caption_width <= available:
+        return title, caption
+    if name_width <= available:
+        room = available - name_width - 8
+        if room < caption_metrics.averageCharWidth() * 3:
+            return title, ""
+        shown = caption_metrics.elidedText(caption, Qt.TextElideMode.ElideRight, room)
+        return title, shown
+    return name_metrics.elidedText(title, Qt.TextElideMode.ElideRight, available), ""
+
+
+def _viewport_width(option: QStyleOptionViewItem) -> int:
+    widget = option.widget
+    if widget is None or not hasattr(widget, "viewport"):
+        return 0
+    viewport = widget.viewport()
+    if viewport is None:
+        return 0
+    return int(viewport.width())
+
+
+def _row(index: object) -> Optional[Row]:
+    value = getattr(index, "data")(ROW_ROLE)
+    return value if isinstance(value, Row) else None
+
+
+def _right_caption(row: Row) -> str:
+    """A synonym match stays. The category and the description live in the tooltip."""
+
+    if row.search and row.via:
+        return "“%s”" % row.via
+    return ""
+
+
+def _points(points: tuple) -> QPolygonF:
+    return QPolygonF([QPointF(x, y) for x, y in points])
+
+
+def _two_lines(text: str, metrics: QFontMetrics, width: int) -> List[str]:
+    """Up to two lines, broken at a space; the second line ends in an ellipsis when cut."""
+    if metrics.horizontalAdvance(text) <= width:
+        return [text]
+    words = text.split(" ")
+    first = ""
+    index = 0
+    while index < len(words):
+        candidate = (first + " " + words[index]).strip()
+        if metrics.horizontalAdvance(candidate) > width:
+            break
+        first = candidate
+        index += 1
+    if not first:
+        first = metrics.elidedText(text, Qt.TextElideMode.ElideRight, width)
+        return [first]
+    rest = " ".join(words[index:])
+    if not rest:
+        return [first]
+    return [first, metrics.elidedText(rest, Qt.TextElideMode.ElideRight, width)]

@@ -1,5 +1,6 @@
 {
   "pythonVersion": "3.9",
+  "useLibraryCodeForTypes": false,
   "verboseOutput": true,
   "stubPath": "typings",
   "include": [
@@ -15,7 +16,12 @@
       "extraPaths": [
         ".",
         "vendor",
-        "/opt/freecad/usr/lib/python3.11/site-packages"
+        "../ChoreBoyCodeStudio_artifacts/vendor_py311",
+        "../ChoreBoyCodeStudio_artifacts/vendor_py39",
+        "/ChoreBoyCodeStudio_artifacts/vendor_py311",
+        "/ChoreBoyCodeStudio_artifacts/vendor_py39",
+        "/home/ubuntu/cbcs_artifacts/vendor_py311",
+        "/home/ubuntu/cbcs_artifacts/vendor_py39"
       ]
     }
   ],

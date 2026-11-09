@@ -311,10 +311,12 @@ class MainWindow(QMainWindow):
         active_tab = self._editor_manager.active_tab()
         has_dirty_tabs = any(tab.is_dirty for tab in self._editor_manager.all_tabs())
 
+        from app.shell.action_state import assign_action
+
         if save_action is not None:
-            save_action.setEnabled(active_tab is not None)
+            assign_action(save_action, enabled=active_tab is not None)
         if save_all_action is not None:
-            save_all_action.setEnabled(has_dirty_tabs)
+            assign_action(save_all_action, enabled=has_dirty_tabs)
 
     def _resolve_project_entry_for_project_run(self) -> str | None:
         loaded_project = self._loaded_project

@@ -32,6 +32,7 @@ def build_main_window_menus(
         on_new_window=window._file_project_commands_workflow.handle_new_window_action,
         on_file_menu_about_to_show=window._file_project_commands_workflow.refresh_open_recent_menu,
         on_save=window._save_workflow.handle_save_action,
+        on_save_as=window._save_workflow.handle_save_as_action,
         on_save_all=window._save_workflow.handle_save_all_action,
         on_toggle_auto_save=window._save_workflow.handle_toggle_auto_save,
         on_open_settings=window._file_project_commands_workflow.handle_open_settings_action,
@@ -98,6 +99,11 @@ def build_main_window_menus(
         on_package_project=window._runtime_support_workflow.handle_package_project_action,
         on_new_project=window._file_project_commands_workflow.handle_new_project_action,
         on_new_project_from_template=window._file_project_commands_workflow.handle_new_project_from_template_action,
+        on_new_form=(
+            (lambda _checked=False: window._open_new_form())
+            if callable(getattr(window, "_open_new_form", None))
+            else None
+        ),
         on_quick_open=window._file_project_commands_workflow.handle_quick_open_action,
         on_open_recovery_center=window._local_history_workflow.open_recovery_center,
         on_open_global_history=window._local_history_workflow.open_global_history,

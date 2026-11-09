@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: MIT -->
+<ui version="4.0">
+ <class>ChoiceLab</class>
+ <widget class="QWidget" name="ChoiceLab">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>640</width>
+    <height>480</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>Choices</string>
+  </property>
+  <layout class="QVBoxLayout" name="col">
+   <item><widget class="QRadioButton" name="radioA"><property name="text"><string>A</string></property><attribute name="buttonGroup"><string>ab</string></attribute></widget></item>
+   <item><widget class="QRadioButton" name="radioB"><property name="text"><string>B</string></property><attribute name="buttonGroup"><string>ab</string></attribute></widget></item>
+   <item><widget class="QCheckBox" name="flag"><property name="text"><string>Flag</string></property></widget></item>
+   <item><widget class="QComboBox" name="combo"><item><property name="text"><string>One</string></property></item></widget></item>
+  </layout>
+ </widget>
+ <buttongroups>
+  <buttongroup name="ab"/>
+ </buttongroups>
+</ui>

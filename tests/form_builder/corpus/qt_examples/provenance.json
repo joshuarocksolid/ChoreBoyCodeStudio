@@ -1,0 +1,382 @@
+{
+  "files": [
+    {
+      "licence": "BSD-3-Clause (LicenseRef-Qt-Commercial OR BSD-3-Clause)",
+      "notes": "",
+      "path": "qt_examples/pyside6/examples/bluetooth/btscanner/device.ui",
+      "source": "https://code.qt.io/cgit/pyside/pyside-setup.git/tree/examples/bluetooth/btscanner/device.ui?h=v6.8.3"
+    },
+    {
+      "licence": "BSD-3-Clause (LicenseRef-Qt-Commercial OR BSD-3-Clause)",
+      "notes": "",
+      "path": "qt_examples/pyside6/examples/bluetooth/btscanner/service.ui",
+      "source": "https://code.qt.io/cgit/pyside/pyside-setup.git/tree/examples/bluetooth/btscanner/service.ui?h=v6.8.3"
+    },
+    {
+      "licence": "BSD-3-Clause (LicenseRef-Qt-Commercial OR BSD-3-Clause)",
+      "notes": "",
+      "path": "qt_examples/pyside6/examples/charts/chartthemes/themewidget.ui",
+      "source": "https://code.qt.io/cgit/pyside/pyside-setup.git/tree/examples/charts/chartthemes/themewidget.ui?h=v6.8.3"
+    },
+    {
+      "licence": "BSD-3-Clause (LicenseRef-Qt-Commercial OR BSD-3-Clause)",
+      "notes": "",
+      "path": "qt_examples/pyside6/examples/corelib/ipc/sharedmemory/dialog.ui",
+      "source": "https://code.qt.io/cgit/pyside/pyside-setup.git/tree/examples/corelib/ipc/sharedmemory/dialog.ui?h=v6.8.3"
+    },
+    {
+      "licence": "BSD-3-Clause (LicenseRef-Qt-Commercial OR BSD-3-Clause)",
+      "notes": "",
+      "path": "qt_examples/pyside6/examples/demos/documentviewer/mainwindow.ui",
+      "source": "https://code.qt.io/cgit/pyside/pyside-setup.git/tree/examples/demos/documentviewer/mainwindow.ui?h=v6.8.3"
+    },
+    {
+      "licence": "BSD-3-Clause (LicenseRef-Qt-Commercial OR BSD-3-Clause)",
+      "notes": "",
+      "path": "qt_examples/pyside6/examples/multimedia/camera/camera.ui",
+      "source": "https://code.qt.io/cgit/pyside/pyside-setup.git/tree/examples/multimedia/camera/camera.ui?h=v6.8.3"
+    },
+    {
+      "licence": "BSD-3-Clause (LicenseRef-Qt-Commercial OR BSD-3-Clause)",
+      "notes": "",
+      "path": "qt_examples/pyside6/examples/multimedia/camera/camera_mobile.ui",
+      "source": "https://code.qt.io/cgit/pyside/pyside-setup.git/tree/examples/multimedia/camera/camera_mobile.ui?h=v6.8.3"
+    },
+    {
+      "licence": "BSD-3-Clause (LicenseRef-Qt-Commercial OR BSD-3-Clause)",
+      "notes": "",
+      "path": "qt_examples/pyside6/examples/multimedia/camera/imagesettings.ui",
+      "source": "https://code.qt.io/cgit/pyside/pyside-setup.git/tree/examples/multimedia/camera/imagesettings.ui?h=v6.8.3"
+    },
+    {
+      "licence": "BSD-3-Clause (LicenseRef-Qt-Commercial OR BSD-3-Clause)",
+      "notes": "",
+      "path": "qt_examples/pyside6/examples/multimedia/camera/videosettings.ui",
+      "source": "https://code.qt.io/cgit/pyside/pyside-setup.git/tree/examples/multimedia/camera/videosettings.ui?h=v6.8.3"
+    },
+    {
+      "licence": "BSD-3-Clause (LicenseRef-Qt-Commercial OR BSD-3-Clause)",
+      "notes": "",
+      "path": "qt_examples/pyside6/examples/multimedia/camera/videosettings_mobile.ui",
+      "source": "https://code.qt.io/cgit/pyside/pyside-setup.git/tree/examples/multimedia/camera/videosettings_mobile.ui?h=v6.8.3"
+    },
+    {
+      "licence": "BSD-3-Clause (LicenseRef-Qt-Commercial OR BSD-3-Clause)",
+      "notes": "",
+      "path": "qt_examples/pyside6/examples/pdfwidgets/pdfviewer/mainwindow.ui",
+      "source": "https://code.qt.io/cgit/pyside/pyside-setup.git/tree/examples/pdfwidgets/pdfviewer/mainwindow.ui?h=v6.8.3"
+    },
+    {
+      "licence": "BSD-3-Clause (LicenseRef-Qt-Commercial OR BSD-3-Clause)",
+      "notes": "",
+      "path": "qt_examples/pyside6/examples/serialbus/can/canbusdeviceinfobox.ui",
+      "source": "https://code.qt.io/cgit/pyside/pyside-setup.git/tree/examples/serialbus/can/canbusdeviceinfobox.ui?h=v6.8.3"
+    },
+    {
+      "licence": "BSD-3-Clause (LicenseRef-Qt-Commercial OR BSD-3-Clause)",
+      "notes": "",
+      "path": "qt_examples/pyside6/examples/serialbus/can/canbusdeviceinfodialog.ui",
+      "source": "https://code.qt.io/cgit/pyside/pyside-setup.git/tree/examples/serialbus/can/canbusdeviceinfodialog.ui?h=v6.8.3"
+    },
+    {
+      "licence": "BSD-3-Clause (LicenseRef-Qt-Commercial OR BSD-3-Clause)",
+      "notes": "",
+      "path": "qt_examples/pyside6/examples/serialbus/can/connectdialog.ui",
+      "source": "https://code.qt.io/cgit/pyside/pyside-setup.git/tree/examples/serialbus/can/connectdialog.ui?h=v6.8.3"
+    },
+    {
+      "licence": "BSD-3-Clause (LicenseRef-Qt-Commercial OR BSD-3-Clause)",
+      "notes": "",
+      "path": "qt_examples/pyside6/examples/serialbus/can/mainwindow.ui",
+      "source": "https://code.qt.io/cgit/pyside/pyside-setup.git/tree/examples/serialbus/can/mainwindow.ui?h=v6.8.3"
+    },
+    {
+      "licence": "BSD-3-Clause (LicenseRef-Qt-Commercial OR BSD-3-Clause)",
+      "notes": "",
+      "path": "qt_examples/pyside6/examples/serialbus/can/sendframebox.ui",
+      "source": "https://code.qt.io/cgit/pyside/pyside-setup.git/tree/examples/serialbus/can/sendframebox.ui?h=v6.8.3"
+    },
+    {
+      "licence": "BSD-3-Clause (LicenseRef-Qt-Commercial OR BSD-3-Clause)",
+      "notes": "",
+      "path": "qt_examples/pyside6/examples/serialbus/modbus/modbusclient/mainwindow.ui",
+      "source": "https://code.qt.io/cgit/pyside/pyside-setup.git/tree/examples/serialbus/modbus/modbusclient/mainwindow.ui?h=v6.8.3"
+    },
+    {
+      "licence": "BSD-3-Clause (LicenseRef-Qt-Commercial OR BSD-3-Clause)",
+      "notes": "",
+      "path": "qt_examples/pyside6/examples/serialbus/modbus/modbusclient/settingsdialog.ui",
+      "source": "https://code.qt.io/cgit/pyside/pyside-setup.git/tree/examples/serialbus/modbus/modbusclient/settingsdialog.ui?h=v6.8.3"
+    },
+    {
+      "licence": "BSD-3-Clause (LicenseRef-Qt-Commercial OR BSD-3-Clause)",
+      "notes": "",
+      "path": "qt_examples/pyside6/examples/serialport/terminal/mainwindow.ui",
+      "source": "https://code.qt.io/cgit/pyside/pyside-setup.git/tree/examples/serialport/terminal/mainwindow.ui?h=v6.8.3"
+    },
+    {
+      "licence": "BSD-3-Clause (LicenseRef-Qt-Commercial OR BSD-3-Clause)",
+      "notes": "",
+      "path": "qt_examples/pyside6/examples/serialport/terminal/settingsdialog.ui",
+      "source": "https://code.qt.io/cgit/pyside/pyside-setup.git/tree/examples/serialport/terminal/settingsdialog.ui?h=v6.8.3"
+    },
+    {
+      "licence": "BSD-3-Clause (LicenseRef-Qt-Commercial OR BSD-3-Clause)",
+      "notes": "",
+      "path": "qt_examples/pyside6/examples/speech/hello_speak/mainwindow.ui",
+      "source": "https://code.qt.io/cgit/pyside/pyside-setup.git/tree/examples/speech/hello_speak/mainwindow.ui?h=v6.8.3"
+    },
+    {
+      "licence": "BSD-3-Clause (LicenseRef-Qt-Commercial OR BSD-3-Clause)",
+      "notes": "",
+      "path": "qt_examples/pyside6/examples/sql/books/bookwindow.ui",
+      "source": "https://code.qt.io/cgit/pyside/pyside-setup.git/tree/examples/sql/books/bookwindow.ui?h=v6.8.3"
+    },
+    {
+      "licence": "BSD-3-Clause (LicenseRef-Qt-Commercial OR BSD-3-Clause)",
+      "notes": "",
+      "path": "qt_examples/pyside6/examples/webchannel/standalone/dialog.ui",
+      "source": "https://code.qt.io/cgit/pyside/pyside-setup.git/tree/examples/webchannel/standalone/dialog.ui?h=v6.8.3"
+    },
+    {
+      "licence": "BSD-3-Clause (LicenseRef-Qt-Commercial OR BSD-3-Clause)",
+      "notes": "",
+      "path": "qt_examples/pyside6/examples/webenginewidgets/markdowneditor/mainwindow.ui",
+      "source": "https://code.qt.io/cgit/pyside/pyside-setup.git/tree/examples/webenginewidgets/markdowneditor/mainwindow.ui?h=v6.8.3"
+    },
+    {
+      "licence": "BSD-3-Clause (LicenseRef-Qt-Commercial OR BSD-3-Clause)",
+      "notes": "",
+      "path": "qt_examples/pyside6/examples/webenginewidgets/simplebrowser/certificateerrordialog.ui",
+      "source": "https://code.qt.io/cgit/pyside/pyside-setup.git/tree/examples/webenginewidgets/simplebrowser/certificateerrordialog.ui?h=v6.8.3"
+    },
+    {
+      "licence": "BSD-3-Clause (LicenseRef-Qt-Commercial OR BSD-3-Clause)",
+      "notes": "",
+      "path": "qt_examples/pyside6/examples/webenginewidgets/simplebrowser/downloadmanagerwidget.ui",
+      "source": "https://code.qt.io/cgit/pyside/pyside-setup.git/tree/examples/webenginewidgets/simplebrowser/downloadmanagerwidget.ui?h=v6.8.3"
+    },
+    {
+      "licence": "BSD-3-Clause (LicenseRef-Qt-Commercial OR BSD-3-Clause)",
+      "notes": "",
+      "path": "qt_examples/pyside6/examples/webenginewidgets/simplebrowser/downloadwidget.ui",
+      "source": "https://code.qt.io/cgit/pyside/pyside-setup.git/tree/examples/webenginewidgets/simplebrowser/downloadwidget.ui?h=v6.8.3"
+    },
+    {
+      "licence": "BSD-3-Clause (LicenseRef-Qt-Commercial OR BSD-3-Clause)",
+      "notes": "",
+      "path": "qt_examples/pyside6/examples/webenginewidgets/simplebrowser/passworddialog.ui",
+      "source": "https://code.qt.io/cgit/pyside/pyside-setup.git/tree/examples/webenginewidgets/simplebrowser/passworddialog.ui?h=v6.8.3"
+    },
+    {
+      "licence": "BSD-3-Clause (LicenseRef-Qt-Commercial OR BSD-3-Clause)",
+      "notes": "",
+      "path": "qt_examples/pyside6/examples/webenginewidgets/simplebrowser/webauthdialog.ui",
+      "source": "https://code.qt.io/cgit/pyside/pyside-setup.git/tree/examples/webenginewidgets/simplebrowser/webauthdialog.ui?h=v6.8.3"
+    },
+    {
+      "licence": "BSD-3-Clause (LicenseRef-Qt-Commercial OR BSD-3-Clause)",
+      "notes": "",
+      "path": "qt_examples/pyside6/examples/widgets/animation/easing/form.ui",
+      "source": "https://code.qt.io/cgit/pyside/pyside-setup.git/tree/examples/widgets/animation/easing/form.ui?h=v6.8.3"
+    },
+    {
+      "licence": "BSD-3-Clause (LicenseRef-Qt-Commercial OR BSD-3-Clause)",
+      "notes": "",
+      "path": "qt_examples/pyside6/sources/pyside6/doc/tutorials/portingguide/chapter3/bookwindow.ui",
+      "source": "https://code.qt.io/cgit/pyside/pyside-setup.git/tree/sources/pyside6/doc/tutorials/portingguide/chapter3/bookwindow.ui?h=v6.8.3"
+    },
+    {
+      "licence": "BSD-3-Clause (LicenseRef-Qt-Commercial OR BSD-3-Clause)",
+      "notes": "",
+      "path": "qt_examples/qtbase/examples/corelib/bindableproperties/shared/subscriptionwindow.ui",
+      "source": "https://github.com/qt/qtbase/blob/v6.8.3/examples/corelib/bindableproperties/shared/subscriptionwindow.ui"
+    },
+    {
+      "licence": "BSD-3-Clause (LicenseRef-Qt-Commercial OR BSD-3-Clause)",
+      "notes": "",
+      "path": "qt_examples/qtbase/examples/corelib/ipc/sharedmemory/dialog.ui",
+      "source": "https://github.com/qt/qtbase/blob/v6.8.3/examples/corelib/ipc/sharedmemory/dialog.ui"
+    },
+    {
+      "licence": "BSD-3-Clause (LicenseRef-Qt-Commercial OR BSD-3-Clause)",
+      "notes": "",
+      "path": "qt_examples/qtbase/examples/dbus/chat/chatmainwindow.ui",
+      "source": "https://github.com/qt/qtbase/blob/v6.8.3/examples/dbus/chat/chatmainwindow.ui"
+    },
+    {
+      "licence": "BSD-3-Clause (LicenseRef-Qt-Commercial OR BSD-3-Clause)",
+      "notes": "",
+      "path": "qt_examples/qtbase/examples/network/http/authenticationdialog.ui",
+      "source": "https://github.com/qt/qtbase/blob/v6.8.3/examples/network/http/authenticationdialog.ui"
+    },
+    {
+      "licence": "BSD-3-Clause (LicenseRef-Qt-Commercial OR BSD-3-Clause)",
+      "notes": "",
+      "path": "qt_examples/qtbase/examples/network/network-chat/chatdialog.ui",
+      "source": "https://github.com/qt/qtbase/blob/v6.8.3/examples/network/network-chat/chatdialog.ui"
+    },
+    {
+      "licence": "BSD-3-Clause (LicenseRef-Qt-Commercial OR BSD-3-Clause)",
+      "notes": "",
+      "path": "qt_examples/qtbase/examples/network/securesocketclient/certificateinfo.ui",
+      "source": "https://github.com/qt/qtbase/blob/v6.8.3/examples/network/securesocketclient/certificateinfo.ui"
+    },
+    {
+      "licence": "BSD-3-Clause (LicenseRef-Qt-Commercial OR BSD-3-Clause)",
+      "notes": "",
+      "path": "qt_examples/qtbase/examples/network/securesocketclient/sslclient.ui",
+      "source": "https://github.com/qt/qtbase/blob/v6.8.3/examples/network/securesocketclient/sslclient.ui"
+    },
+    {
+      "licence": "BSD-3-Clause (LicenseRef-Qt-Commercial OR BSD-3-Clause)",
+      "notes": "",
+      "path": "qt_examples/qtbase/examples/network/securesocketclient/sslerrors.ui",
+      "source": "https://github.com/qt/qtbase/blob/v6.8.3/examples/network/securesocketclient/sslerrors.ui"
+    },
+    {
+      "licence": "BSD-3-Clause (LicenseRef-Qt-Commercial OR BSD-3-Clause)",
+      "notes": "",
+      "path": "qt_examples/qtbase/examples/network/secureudpclient/addressdialog.ui",
+      "source": "https://github.com/qt/qtbase/blob/v6.8.3/examples/network/secureudpclient/addressdialog.ui"
+    },
+    {
+      "licence": "BSD-3-Clause (LicenseRef-Qt-Commercial OR BSD-3-Clause)",
+      "notes": "",
+      "path": "qt_examples/qtbase/examples/network/secureudpclient/mainwindow.ui",
+      "source": "https://github.com/qt/qtbase/blob/v6.8.3/examples/network/secureudpclient/mainwindow.ui"
+    },
+    {
+      "licence": "BSD-3-Clause (LicenseRef-Qt-Commercial OR BSD-3-Clause)",
+      "notes": "",
+      "path": "qt_examples/qtbase/examples/network/secureudpserver/mainwindow.ui",
+      "source": "https://github.com/qt/qtbase/blob/v6.8.3/examples/network/secureudpserver/mainwindow.ui"
+    },
+    {
+      "licence": "BSD-3-Clause (LicenseRef-Qt-Commercial OR BSD-3-Clause)",
+      "notes": "",
+      "path": "qt_examples/qtbase/examples/network/secureudpserver/nicselector.ui",
+      "source": "https://github.com/qt/qtbase/blob/v6.8.3/examples/network/secureudpserver/nicselector.ui"
+    },
+    {
+      "licence": "BSD-3-Clause (LicenseRef-Qt-Commercial OR BSD-3-Clause)",
+      "notes": "",
+      "path": "qt_examples/qtbase/examples/network/torrent/addtorrentform.ui",
+      "source": "https://github.com/qt/qtbase/blob/v6.8.3/examples/network/torrent/addtorrentform.ui"
+    },
+    {
+      "licence": "BSD-3-Clause (LicenseRef-Qt-Commercial OR BSD-3-Clause)",
+      "notes": "",
+      "path": "qt_examples/qtbase/examples/qmake/precompile/mydialog.ui",
+      "source": "https://github.com/qt/qtbase/blob/v6.8.3/examples/qmake/precompile/mydialog.ui"
+    },
+    {
+      "licence": "BSD-3-Clause (LicenseRef-Qt-Commercial OR BSD-3-Clause)",
+      "notes": "",
+      "path": "qt_examples/qtbase/examples/qtconcurrent/imagescaling/downloaddialog.ui",
+      "source": "https://github.com/qt/qtbase/blob/v6.8.3/examples/qtconcurrent/imagescaling/downloaddialog.ui"
+    },
+    {
+      "licence": "BSD-3-Clause (LicenseRef-Qt-Commercial OR BSD-3-Clause)",
+      "notes": "",
+      "path": "qt_examples/qtbase/examples/qtconcurrent/primecounter/primecounter.ui",
+      "source": "https://github.com/qt/qtbase/blob/v6.8.3/examples/qtconcurrent/primecounter/primecounter.ui"
+    },
+    {
+      "licence": "BSD-3-Clause (LicenseRef-Qt-Commercial OR BSD-3-Clause)",
+      "notes": "",
+      "path": "qt_examples/qtbase/examples/sql/sqlbrowser/browserwidget.ui",
+      "source": "https://github.com/qt/qtbase/blob/v6.8.3/examples/sql/sqlbrowser/browserwidget.ui"
+    },
+    {
+      "licence": "BSD-3-Clause (LicenseRef-Qt-Commercial OR BSD-3-Clause)",
+      "notes": "",
+      "path": "qt_examples/qtbase/examples/sql/sqlbrowser/qsqlconnectiondialog.ui",
+      "source": "https://github.com/qt/qtbase/blob/v6.8.3/examples/sql/sqlbrowser/qsqlconnectiondialog.ui"
+    },
+    {
+      "licence": "BSD-3-Clause (LicenseRef-Qt-Commercial OR BSD-3-Clause)",
+      "notes": "",
+      "path": "qt_examples/qtbase/examples/widgets/animation/easing/form.ui",
+      "source": "https://github.com/qt/qtbase/blob/v6.8.3/examples/widgets/animation/easing/form.ui"
+    },
+    {
+      "licence": "BSD-3-Clause (LicenseRef-Qt-Commercial OR BSD-3-Clause)",
+      "notes": "",
+      "path": "qt_examples/qtbase/examples/widgets/itemviews/editabletreemodel/mainwindow.ui",
+      "source": "https://github.com/qt/qtbase/blob/v6.8.3/examples/widgets/itemviews/editabletreemodel/mainwindow.ui"
+    },
+    {
+      "licence": "BSD-3-Clause (LicenseRef-Qt-Commercial OR BSD-3-Clause)",
+      "notes": "",
+      "path": "qt_examples/qtbase/examples/widgets/tutorials/notepad/notepad.ui",
+      "source": "https://github.com/qt/qtbase/blob/v6.8.3/examples/widgets/tutorials/notepad/notepad.ui"
+    },
+    {
+      "licence": "BSD-3-Clause (LicenseRef-Qt-Commercial OR BSD-3-Clause)",
+      "notes": "",
+      "path": "qt_examples/qtbase/tests/manual/examples/widgets/graphicsview/embeddeddialogs/embeddeddialog.ui",
+      "source": "https://github.com/qt/qtbase/blob/v6.8.3/tests/manual/examples/widgets/graphicsview/embeddeddialogs/embeddeddialog.ui"
+    },
+    {
+      "licence": "BSD-3-Clause (LicenseRef-Qt-Commercial OR BSD-3-Clause)",
+      "notes": "",
+      "path": "qt_examples/qtbase/tests/manual/examples/widgets/painting/fontsampler/mainwindowbase.ui",
+      "source": "https://github.com/qt/qtbase/blob/v6.8.3/tests/manual/examples/widgets/painting/fontsampler/mainwindowbase.ui"
+    },
+    {
+      "licence": "BSD-3-Clause (LicenseRef-Qt-Commercial OR BSD-3-Clause)",
+      "notes": "",
+      "path": "qt_examples/qtbase/tests/manual/examples/widgets/touch/dials/dials.ui",
+      "source": "https://github.com/qt/qtbase/blob/v6.8.3/tests/manual/examples/widgets/touch/dials/dials.ui"
+    },
+    {
+      "licence": "BSD-3-Clause (LicenseRef-Qt-Commercial OR BSD-3-Clause)",
+      "notes": "",
+      "path": "qt_examples/qtbase/tests/manual/examples/widgets/widgets/stylesheet/stylesheeteditor.ui",
+      "source": "https://github.com/qt/qtbase/blob/v6.8.3/tests/manual/examples/widgets/widgets/stylesheet/stylesheeteditor.ui"
+    },
+    {
+      "licence": "BSD-3-Clause (LicenseRef-Qt-Commercial OR BSD-3-Clause)",
+      "notes": "",
+      "path": "qt_examples/qtbase/tests/manual/examples/widgets/widgets/validators/validators.ui",
+      "source": "https://github.com/qt/qtbase/blob/v6.8.3/tests/manual/examples/widgets/widgets/validators/validators.ui"
+    },
+    {
+      "licence": "BSD-3-Clause (LicenseRef-Qt-Commercial OR BSD-3-Clause)",
+      "notes": "",
+      "path": "qt_examples/qttools/examples/assistant/remotecontrol/remotecontrol.ui",
+      "source": "https://github.com/qt/qttools/blob/v6.8.3/examples/assistant/remotecontrol/remotecontrol.ui"
+    },
+    {
+      "licence": "BSD-3-Clause (LicenseRef-Qt-Commercial OR BSD-3-Clause)",
+      "notes": "",
+      "path": "qt_examples/qttools/examples/designer/calculatorbuilder/calculatorform.ui",
+      "source": "https://github.com/qt/qttools/blob/v6.8.3/examples/designer/calculatorbuilder/calculatorform.ui"
+    },
+    {
+      "licence": "BSD-3-Clause (LicenseRef-Qt-Commercial OR BSD-3-Clause)",
+      "notes": "",
+      "path": "qt_examples/qttools/examples/designer/calculatorform/calculatorform.ui",
+      "source": "https://github.com/qt/qttools/blob/v6.8.3/examples/designer/calculatorform/calculatorform.ui"
+    },
+    {
+      "licence": "BSD-3-Clause (LicenseRef-Qt-Commercial OR BSD-3-Clause)",
+      "notes": "",
+      "path": "qt_examples/qttools/examples/designer/calculatorform_mi/calculatorform.ui",
+      "source": "https://github.com/qt/qttools/blob/v6.8.3/examples/designer/calculatorform_mi/calculatorform.ui"
+    },
+    {
+      "licence": "BSD-3-Clause (LicenseRef-Qt-Commercial OR BSD-3-Clause)",
+      "notes": "",
+      "path": "qt_examples/qttools/examples/help/contextsensitivehelp/wateringconfigdialog.ui",
+      "source": "https://github.com/qt/qttools/blob/v6.8.3/examples/help/contextsensitivehelp/wateringconfigdialog.ui"
+    },
+    {
+      "licence": "BSD-3-Clause (LicenseRef-Qt-Commercial OR BSD-3-Clause)",
+      "notes": "",
+      "path": "qt_examples/qttools/examples/uitools/textfinder/forms/textfinder.ui",
+      "source": "https://github.com/qt/qttools/blob/v6.8.3/examples/uitools/textfinder/forms/textfinder.ui"
+    }
+  ]
+}

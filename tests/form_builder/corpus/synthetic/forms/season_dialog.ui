@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: MIT -->
+<ui version="4.0">
+ <class>SeasonDialog</class>
+ <widget class="QDialog" name="SeasonDialog">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>640</width>
+    <height>480</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>Season</string>
+  </property>
+  <layout class="QFormLayout" name="formLayout">
+   <item row="0" column="0">
+    <widget class="QLabel" name="label_nameEdit">
+     <property name="text">
+      <string>Name</string>
+     </property>
+     <property name="buddy">
+      <cstring>nameEdit</cstring>
+     </property>
+    </widget>
+   </item>
+   <item row="0" column="1">
+    <widget class="QLineEdit" name="nameEdit"/>
+   </item>
+   <item row="1" column="0">
+    <widget class="QLabel" name="label_opensEdit">
+     <property name="text">
+      <string>Opens</string>
+     </property>
+     <property name="buddy">
+      <cstring>opensEdit</cstring>
+     </property>
+    </widget>
+   </item>
+   <item row="1" column="1">
+    <widget class="QDateEdit" name="opensEdit"/>
+   </item>
+   <item row="2" column="0">
+    <widget class="QLabel" name="label_closesEdit">
+     <property name="text">
+      <string>Closes</string>
+     </property>
+     <property name="buddy">
+      <cstring>closesEdit</cstring>
+     </property>
+    </widget>
+   </item>
+   <item row="2" column="1">
+    <widget class="QDateEdit" name="closesEdit"/>
+   </item>
+   <item row="3" column="0">
+    <widget class="QLabel" name="label_currentCheck">
+     <property name="text">
+      <string>Current</string>
+     </property>
+     <property name="buddy">
+      <cstring>currentCheck</cstring>
+     </property>
+    </widget>
+   </item>
+   <item row="3" column="1">
+    <widget class="QCheckBox" name="currentCheck"/>
+   </item>
+  </layout>
+ </widget>
+ <tabstops>
+  <tabstop>nameEdit</tabstop>
+  <tabstop>opensEdit</tabstop>
+  <tabstop>closesEdit</tabstop>
+  <tabstop>currentCheck</tabstop>
+ </tabstops>
+</ui>

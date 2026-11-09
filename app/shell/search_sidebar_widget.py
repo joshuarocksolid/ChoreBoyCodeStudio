@@ -13,6 +13,7 @@ from app.qt.QtGui import (
     QFontMetrics,
     QKeyEvent,
     QPainter,
+    QPalette,
     QPen,
 )
 from app.qt.QtWidgets import (
@@ -40,6 +41,8 @@ ROLE_MATCH_COUNT = Qt.UserRole + 3
 ROLE_LINE_TEXT = Qt.UserRole + 4
 ROLE_MATCH_COLUMN = Qt.UserRole + 5
 ROLE_MATCH_LENGTH = Qt.UserRole + 6
+ROLE_LOGIC_TITLE = Qt.UserRole + 7
+ROLE_LOGIC_TOKEN = Qt.UserRole + 8
 
 
 class SearchResultDelegate(QStyledItemDelegate):
@@ -59,6 +62,7 @@ class SearchResultDelegate(QStyledItemDelegate):
         self._text_primary = text_primary
         self._text_muted = text_muted
         self._badge_bg = badge_bg
+        self._row_bg = ""
 
     def update_colors(
         self,
@@ -67,11 +71,13 @@ class SearchResultDelegate(QStyledItemDelegate):
         text_primary: str,
         text_muted: str,
         badge_bg: str,
+        row_bg: str = "",
     ) -> None:
         self._match_bg = match_bg
         self._text_primary = text_primary
         self._text_muted = text_muted
         self._badge_bg = badge_bg
+        self._row_bg = row_bg
 
     def paint(
         self,
@@ -83,14 +89,19 @@ class SearchResultDelegate(QStyledItemDelegate):
         painter.setRenderHint(QPainter.Antialiasing, True)
 
         style = option.widget.style() if option.widget else None
-        if style:
+        selected = bool(option.state & QStyle.State_Selected)
+        if style and (selected or not self._row_bg):
             style.drawPrimitive(QStyle.PE_PanelItemViewItem, option, painter, option.widget)
+        elif self._row_bg:
+            painter.fillRect(option.rect, QColor(self._row_bg))
 
         rect = option.rect
         is_file = index.data(ROLE_IS_FILE)
 
         if is_file:
             self._paint_file_item(painter, rect, index, option)
+        elif index.data(ROLE_LOGIC_TITLE):
+            self._paint_logic_item(painter, rect, index, option)
         else:
             self._paint_match_item(painter, rect, index, option)
 
@@ -146,6 +157,33 @@ class SearchResultDelegate(QStyledItemDelegate):
 
             painter.setPen(QPen(QColor(self._text_muted)))
             painter.drawText(badge_rect, Qt.AlignCenter, badge_text)
+
+    def _paint_logic_item(
+        self,
+        painter: QPainter,
+        rect: QRect,
+        index: Any,
+        option: QStyleOptionViewItem,
+    ) -> None:
+        """Title line, then the same match paint the code rows use."""
+        title = str(index.data(ROLE_LOGIC_TITLE) or "")
+        half = max(1, rect.height() // 2)
+        top = QRect(rect.left(), rect.top(), rect.width(), half)
+        bottom = QRect(rect.left(), rect.top() + half, rect.width(), rect.height() - half)
+        font = QFont(option.font)
+        painter.setFont(font)
+        muted = QColor(self._text_muted)
+        if option.state & QStyle.State_Selected:
+            muted = option.palette.color(option.palette.HighlightedText)
+        painter.setPen(QPen(muted))
+        fm = QFontMetrics(font)
+        elided = fm.elidedText(title, Qt.ElideRight, max(1, rect.width() - 12))
+        painter.drawText(
+            QRect(rect.left() + 8, top.top(), max(1, rect.width() - 12), top.height()),
+            Qt.AlignVCenter | Qt.AlignLeft,
+            elided,
+        )
+        self._paint_match_item(painter, bottom, index, option)
 
     def _paint_match_item(
         self,
@@ -206,12 +244,12 @@ class SearchResultDelegate(QStyledItemDelegate):
                 )
                 x += before_w
 
-                match_w = fm.horizontalAdvance(match)
+                bold_font = QFont(font)
+                bold_font.setBold(True)
+                match_w = QFontMetrics(bold_font).horizontalAdvance(match)
                 highlight_rect = QRect(x, y_center - fm.height() // 2, match_w, fm.height())
                 painter.fillRect(highlight_rect, QColor(self._match_bg))
 
-                bold_font = QFont(font)
-                bold_font.setBold(True)
                 painter.setFont(bold_font)
                 painter.setPen(QPen(text_color))
                 painter.drawText(
@@ -250,7 +288,10 @@ class SearchResultDelegate(QStyledItemDelegate):
 
     def sizeHint(self, option: QStyleOptionViewItem, index: Any) -> QSize:  # noqa: N802
         is_file = index.data(ROLE_IS_FILE)
-        h = 26 if is_file else 22
+        if index.data(ROLE_LOGIC_TITLE):
+            h = 40
+        else:
+            h = 26 if is_file else 22
         return QSize(option.rect.width(), h)
 
 
@@ -463,6 +504,7 @@ class SearchSidebarWidget(QWidget):
         text_primary: str,
         text_muted: str,
         badge_bg: str,
+        background: str = "",
     ) -> None:
         """Update delegate colors when the theme changes."""
         self._delegate.update_colors(
@@ -470,7 +512,21 @@ class SearchSidebarWidget(QWidget):
             text_primary=text_primary,
             text_muted=text_muted,
             badge_bg=badge_bg,
+            row_bg=background,
         )
+        if not background:
+            return
+        role = getattr(QPalette, "ColorRole", QPalette)
+        palette = self._results_tree.palette()
+        palette.setColor(getattr(role, "Base"), QColor(background))
+        palette.setColor(getattr(role, "AlternateBase"), QColor(background))
+        palette.setColor(getattr(role, "Text"), QColor(text_primary))
+        self._results_tree.setAlternatingRowColors(False)
+        self._results_tree.setPalette(palette)
+        viewport = self._results_tree.viewport()
+        viewport.setAutoFillBackground(True)
+        viewport.setPalette(palette)
+        viewport.setStyleSheet("background: %s;" % background)
 
     def set_exclude_patterns(self, patterns: list[str]) -> None:
         self._exclude_patterns = list(patterns)
@@ -507,6 +563,20 @@ class SearchSidebarWidget(QWidget):
             include_globs=include_text.split(",") if include_text else None,
             exclude_globs=exclude_text.split(",") if exclude_text else None,
         )
+
+    def _form_logic_rows(self) -> tuple:
+        window = self.window()
+        hook = getattr(window, "_form_builder_forms_logic", None)
+        rows = getattr(hook, "rows", None)
+        if not callable(rows):
+            return ()
+        project = getattr(window, "_loaded_project", None)
+        root = getattr(project, "project_root", None) or self._project_root
+        query = self._search_input.text().strip()
+        if not root or not query:
+            return ()
+        found = rows(str(root), query, self._search_options())
+        return tuple(found or ())
 
     def _on_input_changed(self, _text: str = "") -> None:
         self._last_matches.clear()
@@ -604,8 +674,9 @@ class SearchSidebarWidget(QWidget):
 
         total_matches = len(matches)
         total_files = len(files)
+        logic_rows = self._form_logic_rows()
 
-        if total_matches == 0:
+        if total_matches == 0 and not logic_rows:
             self._summary_label.setText("No results found")
             self._clear_btn.setVisible(bool(self._search_input.text().strip()))
             self._no_results_label.setText(
@@ -619,10 +690,31 @@ class SearchSidebarWidget(QWidget):
         self._results_tree.setVisible(True)
         self._clear_btn.setVisible(True)
 
+        shown = total_matches + len(logic_rows)
+        groups = total_files + (1 if logic_rows else 0)
         self._summary_label.setText(
-            f"{total_matches} result{'s' if total_matches != 1 else ''} "
-            f"in {total_files} file{'s' if total_files != 1 else ''}"
+            f"{shown} result{'s' if shown != 1 else ''} "
+            f"in {groups} file{'s' if groups != 1 else ''}"
         )
+
+        if logic_rows:
+            group = QTreeWidgetItem(self._results_tree)
+            group.setText(0, "Forms logic")
+            group.setData(0, ROLE_IS_FILE, True)
+            group.setData(0, ROLE_MATCH_COUNT, len(logic_rows))
+            group.setExpanded(True)
+            for row in logic_rows:
+                item = QTreeWidgetItem(group)
+                excerpt = str(getattr(row, "excerpt", "") or "")
+                title = str(getattr(row, "title", "") or "")
+                item.setText(0, excerpt or title)
+                item.setToolTip(0, title)
+                item.setData(0, ROLE_IS_FILE, False)
+                item.setData(0, ROLE_LOGIC_TITLE, title)
+                item.setData(0, ROLE_LOGIC_TOKEN, str(getattr(row, "token", "") or ""))
+                item.setData(0, ROLE_LINE_TEXT, excerpt)
+                item.setData(0, ROLE_MATCH_COLUMN, getattr(row, "column", 0))
+                item.setData(0, ROLE_MATCH_LENGTH, getattr(row, "match_length", 0))
 
         for rel_path, file_matches in sorted(files.items()):
             file_item = QTreeWidgetItem(self._results_tree)
@@ -666,6 +758,14 @@ class SearchSidebarWidget(QWidget):
             self.preview_file_at_line.emit(str(abs_path), int(line_number))
 
     def _on_result_activated(self, item: QTreeWidgetItem, column: int = 0) -> None:
+        token = item.data(0, ROLE_LOGIC_TOKEN)
+        if token:
+            window = self.window()
+            hook = getattr(window, "_form_builder_forms_logic", None)
+            opener = getattr(hook, "open_row", None)
+            if callable(opener):
+                opener(window, str(token))
+            return
         abs_path = item.data(0, ROLE_ABS_PATH)
         line_number = item.data(0, ROLE_LINE_NUMBER)
         if abs_path and line_number:

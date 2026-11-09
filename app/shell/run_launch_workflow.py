@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Mapping
+from typing import Any, Mapping, Optional
 
 from app.core import constants
 from app.debug.debug_models import DebugBreakpoint, DebugExceptionPolicy, DebugSourceMap
@@ -70,6 +70,9 @@ class RunLaunchWorkflow:
         )
 
     def handle_run_action(self) -> bool:
+        runner = _form_run_hook(self._host)
+        if runner is not None:
+            return bool(runner(self))
         return self._start_active_file_session(mode=constants.RUN_MODE_PYTHON_SCRIPT)
 
     def handle_debug_action(self) -> bool:
@@ -119,3 +122,48 @@ class RunLaunchWorkflow:
                 ActiveFileTarget(file_path=file_path)
             ),
         )
+
+
+def _form_run_hook(host: RunLaunchWorkflowHost) -> Optional[Any]:
+    """``run_active_file`` on the active form tab, or None for every other tab.
+
+    The shell does not import the form builder. Shift+F5 and Ctrl+F5 do not
+    call this. They keep the shell's project and debug actions.
+    """
+    path = _active_editor_path(host)
+    if path is None or not path.lower().endswith(".ui"):
+        return None
+    surface = _surface_for_path(host, path)
+    runner = getattr(surface, "run_active_file", None)
+    if not callable(runner):
+        return None
+    return runner
+
+
+def _active_editor_path(host: Any) -> Optional[str]:
+    manager_fn = getattr(host, "editor_manager", None)
+    manager = manager_fn() if callable(manager_fn) else None
+    if manager is None:
+        return None
+    active = getattr(manager, "active_tab", None)
+    tab = active() if callable(active) else active
+    if tab is None:
+        return None
+    path = getattr(tab, "file_path", None)
+    if not path:
+        return None
+    return str(path)
+
+
+def _surface_for_path(host: Any, path: str) -> Any:
+    getter = getattr(host, "tab_content_registry", None)
+    registry = getter() if callable(getter) else None
+    if registry is None:
+        window = getattr(host, "_window", None)
+        registry = getattr(window, "_tab_content_registry", None) if window is not None else None
+    if registry is None:
+        return None
+    finder = getattr(registry, "surface_for_path", None)
+    if not callable(finder):
+        return None
+    return finder(path)

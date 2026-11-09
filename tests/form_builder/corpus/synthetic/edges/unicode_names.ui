@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: MIT -->
+<ui version="4.0">
+ <class>UnicodeForm</class>
+ <widget class="QDialog" name="UnicodeForm">
+  <property name="geometry"><rect><x>0</x><y>0</y><width>320</width><height>160</height></rect></property>
+  <property name="windowTitle"><string>café 東京</string></property>
+  <widget class="QLabel" name="名前">
+   <property name="geometry"><rect><x>8</x><y>8</y><width>280</width><height>24</height></rect></property>
+   <property name="text"><string>café — 日本語 «quotes» &amp; more</string></property>
+  </widget>
+  <widget class="QPushButton" name="виджет">
+   <property name="geometry"><rect><x>8</x><y>40</y><width>120</width><height>28</height></rect></property>
+   <property name="text"><string>Да</string></property>
+  </widget>
+ </widget>
+</ui>

@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>Form</class>
+ <widget class="QWidget" name="Form">
+  <layout class="QVBoxLayout" name="lay">
+   <item>
+    <widget class="Foo" name="btn">
+     <property name="text"><string>BODY</string></property>
+    </widget>
+   </item>
+   <item>
+    <widget class="QLabel" name="lab"/>
+   </item>
+  </layout>
+ </widget>
+ <customwidgets><customwidget><class>Foo</class><extends>QPushButton</extends><header>shop/foo.h; __import__("os").system("touch PWNED")</header></customwidget></customwidgets><resources/>
+ <connections/>
+</ui>

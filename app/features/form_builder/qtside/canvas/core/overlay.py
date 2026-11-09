@@ -1,0 +1,1779 @@
+"""Builds the overlay frame. Qt-free.
+
+Two layers. The static layer depends only on the document, the fresh index
+and the view map, and is cached on (epoch, view). The dynamic layer adds
+selection, hover, the gesture, focus, chips and badges, and is rebuilt per
+frame. Neither reads Qt.
+"""
+
+from __future__ import annotations
+
+import logging
+from dataclasses import dataclass, field, replace
+from typing import Callable, Dict, Hashable, List, Literal, Mapping, Optional, Sequence, Set, Tuple, Union
+
+from app.features.form_builder.engine.ids import NodeId
+from app.features.form_builder.engine.query.direct import EMPTY, KnobSet, Readout, Site, Spacing, Turn
+from app.features.form_builder.engine.query.drop_target import (
+    DOCK_BAND_PX,
+    DOCK_REFUSAL,
+    AcceptedDrop,
+    NoDrop,
+    RefusedDrop,
+)
+from app.features.form_builder.engine.query.pages import page_title, pages, scroll_area_of, start_page
+from app.features.form_builder.engine.query.hit_index import GeoEntry, HitIndex, Rect
+from app.features.form_builder.engine.query.selection import SelectionState
+from app.features.form_builder.engine.ui4.document import UiDocument
+from app.features.form_builder.engine.project.custom_widgets import entry_from_declaration
+from app.features.form_builder.engine.ui4.nodes import CustomWidgetNode, LayoutNode, SpacerNode, WidgetNode
+from app.features.form_builder.engine.ui4.values import EnumValue
+from app.features.form_builder.qtside.canvas.core.chips import (
+    BADGE_CORNERS,
+    BARE_CORNERS,
+    LABEL_CORNERS,
+    ChipRequest,
+    ChipSeat,
+    Corner,
+    CornerSeat,
+    DockSeat,
+    Obstacle,
+    place_chips,
+)
+from app.features.form_builder.qtside.canvas.core.frame import (
+    Badge,
+    Caption,
+    Chip,
+    ChipAction,
+    Fill,
+    FocusShare,
+    FrameBasis,
+    Glyph,
+    Handle,
+    Item,
+    AddPage,
+    OnChip,
+    OnHandle,
+    OnKnob,
+    OnPageEdge,
+    OnSpace,
+    OnWidget,
+    OpenLayoutPopover,
+    OpenProblem,
+    ShowStacked,
+    OverlayFrame,
+    Pill,
+    Role,
+    Spring,
+    Stroke,
+    Target,
+)
+from app.features.form_builder.qtside.canvas.core.gesture import (
+    Banding,
+    Gesture,
+    Idle,
+    Moving,
+    Placing,
+    PageResizing,
+    Turning,
+    band_hits,
+    band_rect,
+    drawn_rect,
+    page_size,
+    previewing,
+    turned,
+)
+from app.features.form_builder.qtside.canvas.core.space import CanvasRect, CanvasSize, Compass, ViewMap
+from app.features.form_builder.qtside.canvas.core.structure import (
+    LaidOut,
+    ancestors,
+    effective_class,
+    effective_selection,
+    managed_container,
+    positioning_of,
+)
+from app.features.form_builder.qtside.canvas.core.words import chip_text, no_layout_text
+
+logger = logging.getLogger(__name__)
+
+#: UX-EMPTY-002 canvas-only minimum for an empty layout or container mark.
+EMPTY_MIN_WIDTH = 48
+EMPTY_MIN_HEIGHT = 32
+EMPTY_CAPTION_MIN_WIDTH = 120
+
+# A childless one of these is an empty container. A button or a label is not.
+#: Bases whose own classes the realizer draws as a stand-in (``realize.stand_in.PLAIN_BASES``).
+_STAND_IN_BASES = frozenset({"QWidget", "QFrame"})
+_EMPTY_CONTAINER = frozenset({"QWidget", "QFrame", "QGroupBox", "QDialog", "QScrollArea"})
+
+LABEL_HEIGHT = 18
+LABEL_PADDING = 6
+BADGE_SLOT = 16
+#: UX-PROB-004. Screen pixels, so zoom does not grow it.
+REFUSAL_BADGE = 12
+HANDLE_SIZE = 7
+HANDLE_HIT = 12
+PILL_LONG = 32
+PILL_SHORT = 4
+#: Gap bars are this many screen pixels across at every zoom.
+GAP_BAR = 2
+#: A widget selection chip sits this far above the widget's top edge.
+_FLUSH_ABOVE = 2
+GRIP_GLYPH = CanvasSize(6, 16)
+_INERT_HANDLES: Tuple[Compass, ...] = ("e", "s", "se")
+_THIN_KINDS = frozenset({"gap", "margin"})
+_TICK_CORNERS: Dict[str, Tuple[Corner, ...]] = {
+    "top": ("above_left", "above_right"),
+    "bottom": ("below_left", "below_right"),
+}
+
+_EMPTY_FORM = (
+    "Drop a widget here",
+    "or press / to search",
+)
+_EMPTY_INSET = 8
+_EMPTY_NESTED = "Drop widgets here"
+#: UX-CONT-009: the caption on an empty page container.
+_EMPTY_PAGE_CAPTIONS = {
+    "QTabWidget": "No pages. Use + or Pages > Insert page.",
+    "QToolBox": "No pages. Use + or Pages > Insert page.",
+    "QStackedWidget": "No pages. Use + or Pages > Insert page.",
+    "QWizard": "No steps. Use + or Pages > Insert page.",
+    "QMdiArea": "No windows. Use Pages > Add window.",
+}
+_EMPTY_PAGE = "Drop widgets on this page"
+_PAGE_PARENTS = frozenset({"QTabWidget", "QStackedWidget", "QToolBox"})
+_PLUS = 12
+_TITLES = frozenset({"page_tab", "menu_title", "title_band"})
+_BANDS = frozenset({"page_tab", "title_band"})
+_DESCENDS = frozenset({"widget", "layout"})
+#: UX-OVL-003. While one of these layers is on, layout frames fade and hover outlines are not drawn.
+MODE_LAYERS = frozenset({"tab_order", "buddies", "connection_link"})
+_DIMMED_ROLES = frozenset({"layout", "layout_faint", "gap", "gap_fill"})
+_DIM = 0.3
+
+
+@dataclass(frozen=True)
+class LayerItem(Fill):
+    """An item a canvas layer paints itself (M5.0s).
+
+    It is a ``Fill`` to everything that does not know layers: it has a rect
+    and a role, so damage tracking and hit counting work unchanged. The
+    painter sees ``layer`` and calls that layer's own paint function; ``data``
+    is what that function needs and must be hashable.
+    """
+
+    layer: str = ""
+    data: Hashable = None
+
+
+@dataclass(frozen=True)
+class LayerOutput:
+    """What one layer adds to a frame: items in paint order, and hit targets."""
+
+    items: Tuple[Item, ...] = ()
+    targets: Tuple[Tuple[CanvasRect, Target], ...] = ()
+
+
+#: ``(static layer, frame inputs, state) -> LayerOutput``. Qt-free, like the
+#: rest of this module. ``state`` is what the layer was switched on with.
+OverlayLayer = Callable[["StaticLayer", "FrameInputs", Hashable], LayerOutput]
+
+
+@dataclass(frozen=True)
+class ActiveLayer:
+    """A layer switched on for one canvas, with the state it was switched on with.
+
+    ``state`` is the layer's own per-canvas input (the node ids a style rule
+    matches, say), hashable so two frames compare equal when nothing changed.
+    """
+
+    name: str
+    build: OverlayLayer
+    state: Hashable = True
+
+
+@dataclass(frozen=True)
+class StaticLayer:
+    epoch: int
+    view: ViewMap
+    #: Layout frames, spacer springs, empty marks, "No layout" frames. Paint order.
+    items: Tuple[Item, ...]
+    #: Visible widget and spacer rects clipped to the page, for the solver.
+    content: Tuple[Obstacle, ...]
+    #: Containers with children and no layout, excluding the root, in pre-order.
+    unlaid: Tuple[NodeId, ...]
+    #: Empty-mark targets. A click selects the empty layout.
+    targets: Tuple[Tuple[CanvasRect, Target], ...]
+    #: Unclipped canvas rect of every visible widget, layout and spacer.
+    placed: Tuple[Obstacle, ...]
+    #: Tab-title rects. ``(tab widget, canvas rect of one title)``.
+    tabs: Tuple[Tuple[NodeId, CanvasRect], ...] = ()
+    #: Page switchers. ``(widget, canvas rect, titles, kind)``.
+    #: ``kind`` is ``stacked``, ``wizard`` or ``mdi``.
+    stacks: Tuple[Tuple[NodeId, CanvasRect, Tuple[str, ...], str], ...] = ()
+    #: Visible splitters in pre-order. Their grips are hittable with any selection.
+    splitters: Tuple[NodeId, ...] = ()
+    #: Empty-layout marks keyed by the layout id. Drag lookup is O(1).
+    host_marks: Dict[NodeId, CanvasRect] = field(default_factory=dict)
+    #: Canvas rect of the scroll area that owns this node. Strokes clip to it.
+    scroll_clips: Dict[NodeId, CanvasRect] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class FrameInputs:
+    document: UiDocument
+    selection: SelectionState
+    gesture: Gesture
+    view: ViewMap
+    focused: bool
+    #: First error message per node, from ``DiagnosticsStore``.
+    problems: Mapping[NodeId, str]
+    problems_revision: int
+    #: The primary's (width, height) words, read from the live widget.
+    sizing: Optional[Tuple[Optional[str], Optional[str]]]
+    #: Page chip and size readout label rects. Backdrop chrome, not overlay chips.
+    chrome: Tuple[CanvasRect, ...]
+    #: Advance of chip text at 11 px semibold. The only font fact needed.
+    measure: Callable[[str], int]
+    #: Visible canvas. None keeps a loose gutter around the page for callers
+    #: that have not measured the viewport yet.
+    viewport: Optional[CanvasRect] = None
+    #: Chrome strip for a selection chip with no clear seat (the page caption).
+    dock: Optional[CanvasRect] = None
+    #: Where Enter would insert, drawn while the Insert list has a tile focused.
+    preview: Optional[AcceptedDrop] = None
+    #: Canvas-only page shown for a stacked widget. Absent keys use the property.
+    shown_pages: Optional[Mapping[NodeId, int]] = None
+    #: Knobs measured from live geometry for the selection's neighbourhood.
+    knobs: KnobSet = EMPTY
+    #: What a landed knob commit still reads. The controller clears it.
+    readout: Optional[Readout] = None
+    #: One tooltip per widget whose live value Qt refused. Empty on a normal
+    #: frame, so a selection change does not walk the form to look for them.
+    refusals: Tuple[Tuple[NodeId, str], ...] = ()
+    #: Canvas layers switched on for this canvas, in paint order. The empty
+    #: tuple costs one truth test per frame (M5.0s).
+    layers: Tuple[ActiveLayer, ...] = ()
+
+
+@dataclass(frozen=True)
+class _Face:
+    kind: Literal["chip", "badge"]
+    node: NodeId
+    role: Role
+    text: str
+    action: Optional[ChipAction]
+    tip: str = ""
+
+
+def build_static(document: UiDocument, index: HitIndex, view: ViewMap) -> StaticLayer:
+    """Caller has made ``index`` fresh."""
+    page = view.page_rect()
+    visible, titles = _visible(index, document.root.id)
+    root_layout = document.root.layout
+    layouts: List[Item] = []
+    springs: List[Item] = []
+    empties: List[Item] = []
+    bare: List[Item] = []
+    content: List[Obstacle] = []
+    placed: List[Obstacle] = []
+    unlaid: List[NodeId] = []
+    targets: List[Tuple[CanvasRect, Target]] = []
+    tabs: List[Tuple[NodeId, CanvasRect]] = []
+    stacks: List[Tuple[NodeId, CanvasRect, Tuple[str, ...], str]] = []
+    splitters: List[NodeId] = []
+    widget_canvas: Dict[NodeId, CanvasRect] = {}
+    clips: Dict[NodeId, CanvasRect] = {}
+
+    for node in document.iter_preorder():
+        if node.id != document.root.id and not visible.get(node.id, False):
+            continue
+        form_rect = index.rect_of(node.id)
+        if form_rect is None:
+            continue
+        canvas = view.to_canvas(form_rect)
+        limit = _scroll_limit(document, node.id, widget_canvas)
+        if isinstance(node, WidgetNode):
+            widget_canvas[node.id] = canvas
+        if limit is not None:
+            clips[node.id] = limit
+        paint = _clip(canvas, limit) if limit is not None else canvas
+        if isinstance(node, LayoutNode):
+            placed.append(Obstacle(node.id, canvas))
+            empty_root = (
+                root_layout is not None
+                and node.id == root_layout.id
+                and not _layout_filled(node)
+            )
+            if empty_root:
+                box = _empty_form_box(node, canvas)
+                layouts.append(
+                    # 4 matches theme R_CONTROL. This module cannot import the theme.
+                    Stroke(box, "layout_faint", 1, "dashed", radius=4.0, node=node.id)
+                )
+                empties.append(Caption(box, _EMPTY_FORM))
+                targets.append((box, OnSpace(node.id, node.id)))
+                continue
+            if paint is not None:
+                layouts.append(Stroke(paint, "layout_faint", 1, "dashed", node=node.id))
+            if _layout_filled(node):
+                continue
+            if paint is not None:
+                _empty_mark(
+                    empties,
+                    targets,
+                    paint,
+                    OnSpace(node.id, node.id),
+                    _drop_caption(document, node),
+                )
+            continue
+        if isinstance(node, SpacerNode):
+            placed.append(Obstacle(node.id, canvas))
+            springs.append(Spring(canvas, _spacer_axis(node), node=node.id))
+            continue
+        if not isinstance(node, WidgetNode):
+            continue
+        placed.append(Obstacle(node.id, canvas))
+        if effective_class(document, node) == "QSplitter":
+            splitters.append(node.id)
+        switch = _switcher(document, node)
+        if switch is not None:
+            stacks.append((node.id, canvas, switch[0], switch[1]))
+        clipped = _clip(canvas, page)
+        if limit is not None and clipped is not None:
+            clipped = _clip(clipped, limit)
+        if clipped is not None:
+            content.append(Obstacle(node.id, clipped))
+        if node.class_name in _EMPTY_PAGE_CAPTIONS and not node.child_widgets and node.id != document.root.id:
+            # A page container with no pages: a dashed frame and its caption. A drop makes the first page.
+            if paint is not None:
+                _empty_mark(
+                    empties,
+                    targets,
+                    paint,
+                    OnWidget(node.id, positioning_of(document, node.id), "widget"),
+                    _EMPTY_PAGE_CAPTIONS[node.class_name],
+                )
+            continue
+        if node.id == document.root.id or managed_container(document, node):
+            continue
+        if node.layout is not None:
+            continue
+        if node.child_widgets:
+            unlaid.append(node.id)
+            if paint is not None:
+                bare.append(Stroke(paint, "tab", 1, "dashed", node=node.id))
+        elif effective_class(document, node) in _EMPTY_CONTAINER and paint is not None:
+            # The body stays a widget hit so a drag moves the container.
+            # An own-class stand-in already names itself in the middle ("Card · from widgets.card"):
+            # it stays a drop target, marked with the plus glyph instead of a second caption.
+            _empty_mark(
+                empties,
+                targets,
+                paint,
+                OnWidget(node.id, positioning_of(document, node.id), "widget"),
+                None if _draws_stand_in(document, node) else _drop_caption(document, node),
+            )
+
+    for obstacle in placed:
+        found = document.get(obstacle.node)
+        if isinstance(found, SpacerNode):
+            clipped = _clip(obstacle.rect, page)
+            if clipped is not None:
+                content.append(Obstacle(obstacle.node, clipped))
+    for entry in titles:
+        clipped = _clip(view.to_canvas(entry.rect), page)
+        if clipped is not None:
+            content.append(Obstacle(entry.node, clipped, band=entry.kind in _BANDS))
+        if entry.kind == "page_tab" and entry.container is not None:
+            tabs.append((entry.container, view.to_canvas(entry.rect)))
+    for entry in index.title_entries():
+        if entry.kind == "page_tab" and entry.container is not None:
+            tabs.append((entry.container, view.to_canvas(entry.rect)))
+
+    marks: Dict[NodeId, CanvasRect] = {}
+    for mark, hit in targets:
+        if isinstance(hit, OnSpace):
+            marks[hit.select] = mark
+    return StaticLayer(
+        index.epoch,
+        view,
+        tuple(layouts + springs + empties + bare),
+        tuple(content),
+        tuple(unlaid),
+        tuple(targets),
+        tuple(placed),
+        tuple(tabs),
+        tuple(stacks),
+        tuple(splitters),
+        marks,
+        clips,
+    )
+
+
+def shift_static(
+    layer: StaticLayer,
+    view: ViewMap,
+    updates: Mapping[NodeId, Rect],
+) -> Optional[StaticLayer]:
+    """Move obstacles whose form rect changed. None means the caller rebuilds.
+
+    A layout stroke and a spacer spring carry the node id, so they move with
+    the rect. A new widget is appended. An empty-mark host still rebuilds,
+    because its caption is not a plain rect.
+    """
+    if not updates:
+        return layer
+    for obstacle in layer.content:
+        if obstacle.band and obstacle.node in updates:
+            return None
+    for _mark, hit in layer.targets:
+        if isinstance(hit, OnSpace) and hit.select in updates:
+            return None
+    page = view.page_rect()
+    placed: List[Obstacle] = []
+    previous = {}
+    found = set()
+    for obstacle in layer.placed:
+        rect = updates.get(obstacle.node)
+        if rect is None:
+            placed.append(obstacle)
+            previous.setdefault(obstacle.node, obstacle.rect)
+            continue
+        canvas = view.to_canvas(rect)
+        placed.append(Obstacle(obstacle.node, canvas))
+        previous.setdefault(obstacle.node, obstacle.rect)
+        found.add(obstacle.node)
+    for node_id, rect in updates.items():
+        if node_id not in found:
+            placed.append(Obstacle(node_id, view.to_canvas(rect)))
+    content: List[Obstacle] = []
+    seen = set()
+    for obstacle in layer.content:
+        rect = updates.get(obstacle.node)
+        old = previous.get(obstacle.node)
+        if rect is None or old is None or not _same_canvas(obstacle.rect, old, page):
+            content.append(obstacle)
+            continue
+        seen.add(obstacle.node)
+        clipped = _clip_scroll(_clip(view.to_canvas(rect), page), layer.scroll_clips.get(obstacle.node))
+        if clipped is not None:
+            content.append(Obstacle(obstacle.node, clipped))
+    for node, rect in updates.items():
+        if node in seen:
+            continue
+        clipped = _clip_scroll(_clip(view.to_canvas(rect), page), layer.scroll_clips.get(node))
+        if clipped is not None:
+            content.append(Obstacle(node, clipped))
+    shifted_items: List[Item] = []
+    for item in layer.items:
+        node_id = getattr(item, "node", None)
+        rect = None if node_id is None else updates.get(node_id)
+        if rect is None:
+            shifted_items.append(item)
+            continue
+        canvas = _clip_scroll(view.to_canvas(rect), layer.scroll_clips.get(node_id))
+        if canvas is None:
+            continue
+        shifted_items.append(replace(item, rect=canvas))
+    return StaticLayer(
+        layer.epoch,
+        layer.view,
+        tuple(shifted_items),
+        tuple(content),
+        layer.unlaid,
+        layer.targets,
+        tuple(placed),
+        layer.tabs,
+        layer.stacks,
+        layer.splitters,
+        layer.host_marks,
+        layer.scroll_clips,
+    )
+
+
+def build_frame(static: StaticLayer, inputs: FrameInputs) -> OverlayFrame:
+    """Static layer, then hover, selection, handles, grabbers, focus, band, chips.
+
+    During a live preview the static layer is omitted. The moved widgets and
+    the page's reflowed layouts no longer match the frozen index.
+    """
+    document = inputs.document
+    gesture = inputs.gesture
+    view = inputs.view
+    shown = effective_selection(document, inputs.selection)
+    primary = shown.current
+    live = previewing(gesture)
+    items: List[Item] = []
+    dim = any(layer.name in MODE_LAYERS for layer in inputs.layers)
+    if not live:
+        shown_static = _without_refused_hint(static.items, view, inputs)
+        items.extend(shown_static)
+        focused = _focused_layouts(document, primary)
+        _sites(items, view, inputs.knobs, focused)
+    if not dim:
+        _hover(items, static, document, gesture)
+    rects: Dict[NodeId, CanvasRect] = {}
+    for node_id in shown.ids:
+        rect = _shown_rect(static, view, document, gesture, node_id)
+        if rect is not None:
+            rects[node_id] = rect
+            found = document.get(node_id)
+            if isinstance(found, LayoutNode):
+                items.append(Stroke(rect, "layout", 1.5, "solid"))
+            else:
+                items.append(Stroke(rect.grown(1), "select", 2, "solid"))
+
+    primary_rect = rects.get(primary) if primary is not None else None
+    knob_hits = _knob_handles(items, inputs.knobs, primary, primary_rect)
+    inert_hits = _inert_handles(items, document, primary, primary_rect)
+    page, hot = _page_canvas(view, gesture)
+    grabbers = _grabbers(page, hot)
+    items.extend(grabbers)
+    if inputs.focused and primary is not None and primary_rect is not None:
+        if not isinstance(document.get(primary), LayoutNode):
+            items.append(Stroke(primary_rect.grown(3), "select", 1, "dotted"))
+    if isinstance(gesture, Banding):
+        _band(items, view, gesture)
+    if isinstance(gesture, Turning):
+        _turn_mark(items, view, turned(gesture))
+    else:
+        _grip_hover(items, view, inputs.knobs, gesture)
+    _drop_marks(items, view, inputs, static)
+    _paint_dock_bands(items, static, inputs)
+    _anchor_ticks(items, static, document, primary)
+    plus_hits = _plus_hits(items, static, document, gesture, shown)
+    # Selection strokes and knob ticks are added after the static layer. Dim
+    # them once here, then let the overlay's own marks stay at full strength.
+    if dim:
+        items[:] = _dimmed(items)
+    layer_targets = _run_layers(items, static, inputs) if inputs.layers else ()
+
+    faces, requests = _requests(static, inputs, shown, rects)
+    fixed = tuple(hit for hit, _target in knob_hits + inert_hits) + inputs.chrome
+    viewport = inputs.viewport if inputs.viewport is not None else page.grown(400)
+    seats = place_chips(requests, static.content, fixed, page, viewport, inputs.dock)
+    seats = _seat_selection_above(seats, requests, faces, static, inputs, viewport)
+    chip_hits, chip_rows = _seat_items(items, seats, faces, inputs.dock is not None, page)
+    targets: List[Tuple[CanvasRect, Target]] = []
+    targets.extend(layer_targets)
+    targets.extend(reversed(plus_hits))
+    targets.extend(reversed(chip_hits))
+    targets.extend((pill.rect, OnPageEdge(pill.at)) for pill in reversed(grabbers))
+    targets.extend(reversed(knob_hits))
+    if not live:
+        targets.extend(
+            (view.to_canvas(site.hit), OnKnob(site.knob))
+            for site in _drawn_sites(inputs.knobs, _focused_layouts(document, primary))
+        )
+    targets.extend(reversed(inert_hits))
+    if not live:
+        targets.extend(static.targets)
+    return OverlayFrame(
+        FrameBasis(static.epoch, view, inputs.selection, inputs.problems_revision),
+        tuple(items),
+        tuple(targets),
+        tuple(chip_rows),
+        inputs.dock,
+    )
+
+
+def _dimmed(items: Sequence[Item]) -> List[Item]:
+    dimmed: List[Item] = []
+    for item in items:
+        if isinstance(item, (Stroke, Fill, Caption)) and item.role in _DIMMED_ROLES and not isinstance(item, LayerItem):
+            dimmed.append(replace(item, alpha=item.alpha * _DIM))
+        else:
+            dimmed.append(item)
+    return dimmed
+
+
+_REFRESH_LAYERS = frozenset({"feeds", "logic_badges"})
+
+
+def splice_layers(frame: OverlayFrame, static: StaticLayer, inputs: FrameInputs) -> OverlayFrame:
+    """Replace feed and logic-badge marks. The rest of the frame stays.
+
+    Those two layers emit no hit targets, so the previous target list is kept.
+    A target they do emit is prepended, which is where ``build_frame`` puts layer targets.
+    """
+    kept: List[Item] = []
+    insert_at: Optional[int] = None
+    for item in frame.items:
+        if isinstance(item, LayerItem) and item.layer in _REFRESH_LAYERS:
+            if insert_at is None:
+                insert_at = len(kept)
+            continue
+        kept.append(item)
+    fresh: List[Item] = []
+    fresh_targets: List[Tuple[CanvasRect, Target]] = []
+    for layer in inputs.layers:
+        if layer.name not in _REFRESH_LAYERS:
+            continue
+        try:
+            output = layer.build(static, inputs, layer.state)
+        except Exception:
+            logger.exception("canvas layer %s failed", layer.name)
+            continue
+        fresh.extend(output.items)
+        fresh_targets.extend(output.targets)
+    if insert_at is None:
+        insert_at = len(kept)
+        for index, item in enumerate(kept):
+            if isinstance(item, Chip):
+                insert_at = index
+                break
+    kept[insert_at:insert_at] = fresh
+    targets = tuple(fresh_targets) + frame.targets if fresh_targets else frame.targets
+    return replace(
+        frame,
+        basis=replace(frame.basis, epoch=static.epoch),
+        items=tuple(kept),
+        targets=targets,
+    )
+
+
+def _run_layers(
+    items: List[Item], static: StaticLayer, inputs: FrameInputs
+) -> Tuple[Tuple[CanvasRect, Target], ...]:
+    """Append each active layer's items above the built-in marks, below the chips.
+
+    Layer targets win over every built-in target. A layer that raises is
+    logged and skipped: it can lose its own marks, never the canvas.
+    """
+    targets: List[Tuple[CanvasRect, Target]] = []
+    for layer in inputs.layers:
+        try:
+            output = layer.build(static, inputs, layer.state)
+        except Exception:
+            logger.exception("canvas layer %s failed", layer.name)
+            continue
+        items.extend(output.items)
+        targets.extend(output.targets)
+    return tuple(targets)
+
+
+def frame_basis(
+    index: HitIndex, view: ViewMap, selection: SelectionState, problems_revision: int
+) -> FrameBasis:
+    return FrameBasis(index.epoch, view, selection, problems_revision)
+
+
+def _visible(index: HitIndex, root: NodeId) -> Tuple[Dict[NodeId, bool], Tuple[GeoEntry, ...]]:
+    """O(entries). Title strips live beside the child lists, so read them from the index."""
+    flags = {root: True}
+    stack = [root]
+    while stack:
+        parent = stack.pop()
+        for entry in index.children_of(parent):
+            if entry.kind in _TITLES or entry.node in flags:
+                continue
+            flags[entry.node] = entry.visible
+            if entry.kind in _DESCENDS:
+                stack.append(entry.node)
+    return flags, index.title_entries()
+
+
+def _layout_filled(layout: LayoutNode) -> bool:
+    return any(item.content is not None for item in layout.items)
+
+
+def _spacer_axis(node: SpacerNode) -> Literal["horizontal", "vertical"]:
+    value = node.value("orientation")
+    if isinstance(value, EnumValue) and value.key()[1] == "Vertical":
+        return "vertical"
+    return "horizontal"
+
+
+def _drop_caption(document: UiDocument, node: object) -> str:
+    """O(depth). A tab, stack or toolbox page says so. A group box does not."""
+    owner = getattr(node, "id", None)
+    if isinstance(node, LayoutNode):
+        found = node.owner_widget_id()
+        if found is not None:
+            owner = found
+    if owner is None or not document.contains(owner):
+        return _EMPTY_NESTED
+    parent = document.parent(owner)
+    while parent is not None and not isinstance(parent, WidgetNode):
+        parent = document.parent(parent.id)
+    if isinstance(parent, WidgetNode) and parent.class_name in _PAGE_PARENTS:
+        return _EMPTY_PAGE
+    return _EMPTY_NESTED
+
+
+def _draws_stand_in(document: UiDocument, node: WidgetNode) -> bool:
+    """True when the realizer draws ``node`` as an own-class stand-in (a project class on a plain
+    QWidget or QFrame, UX-CUST-007), which carries its own centred caption."""
+    declared = document.custom_widget(node.class_name)
+    if not isinstance(declared, CustomWidgetNode) or declared.extends not in _STAND_IN_BASES:
+        return False
+    return node.id != document.root.id and entry_from_declaration(declared) is not None
+
+
+def _empty_mark(
+    items: List[Item],
+    targets: List[Tuple[CanvasRect, Target]],
+    canvas: CanvasRect,
+    target: Target,
+    caption: Optional[str] = _EMPTY_NESTED,
+) -> None:
+    mark = _at_least(canvas, EMPTY_MIN_WIDTH, EMPTY_MIN_HEIGHT)
+    items.append(Stroke(mark, "layout_faint", 1, "dashed"))
+    if caption is None:
+        # The middle already holds the widget's own words: the plus sits in the top-right corner.
+        corner = CanvasRect(mark.x + max(0, mark.width - _PLUS - 4), mark.y + 4, _PLUS, _PLUS)
+        items.append(Glyph(corner, "plus", "layout_faint"))
+    elif mark.width >= EMPTY_CAPTION_MIN_WIDTH:
+        items.append(Caption(mark, (caption,)))
+    else:
+        items.append(Glyph(_centred(mark, _PLUS, _PLUS), "plus", "layout_faint"))
+    targets.append((mark, target))
+
+
+def _hover(
+    items: List[Item], static: StaticLayer, document: UiDocument, gesture: Gesture
+) -> None:
+    if not isinstance(gesture, Idle) or gesture.hover is None:
+        return
+    found = document.get(gesture.hover)
+    if isinstance(found, (WidgetNode, SpacerNode)):
+        rect = _placed(static, gesture.hover)
+        if rect is not None:
+            items.append(Stroke(rect.grown(1), "hover", 1, "solid"))
+    parent = _parent_layout(document, gesture.hover)
+    if parent is None:
+        return
+    rect = _placed(static, parent)
+    if rect is not None:
+        items.append(Stroke(rect, "layout", 1, "solid", 0.6))
+
+
+def _parent_layout(document: UiDocument, node: NodeId) -> Optional[NodeId]:
+    place = positioning_of(document, node)
+    if isinstance(place, LaidOut):
+        return place.layout
+    return None
+
+
+def _knob_handles(
+    items: List[Item],
+    knobs: KnobSet,
+    primary: Optional[NodeId],
+    rect: Optional[CanvasRect],
+) -> List[Tuple[CanvasRect, Target]]:
+    """The primary widget's size handles. Each one turns a knob."""
+    if primary is None or rect is None:
+        return []
+    hits: List[Tuple[CanvasRect, Target]] = []
+    for knob in knobs.handles:
+        if knob.subject != primary:
+            continue
+        centre = _handle_point(rect, knob.pull)
+        items.append(Handle(_around(centre, HANDLE_SIZE), knob.pull))
+        hits.append((_around(centre, HANDLE_HIT), OnKnob(knob)))
+    return hits
+
+
+def _inert_handles(
+    items: List[Item],
+    document: UiDocument,
+    primary: Optional[NodeId],
+    rect: Optional[CanvasRect],
+) -> List[Tuple[CanvasRect, Target]]:
+    """A selected layout or spacer shows where its size comes from. Its handles write nothing."""
+    if primary is None or rect is None or not isinstance(document.get(primary), (LayoutNode, SpacerNode)):
+        return []
+    hits: List[Tuple[CanvasRect, Target]] = []
+    for at in _INERT_HANDLES:
+        centre = _handle_point(rect, at)
+        items.append(Handle(_around(centre, HANDLE_SIZE), at))
+        hits.append((_around(centre, HANDLE_HIT), OnHandle(primary, at)))
+    return hits
+
+
+def _focused_layouts(document: UiDocument, primary: Optional[NodeId]) -> Set[NodeId]:
+    """Layouts drawn at full strength: the selected layout, or the selected container's layout."""
+    if primary is None or not document.contains(primary):
+        return set()
+    node = document.get(primary)
+    if isinstance(node, LayoutNode):
+        return {node.id}
+    if isinstance(node, WidgetNode) and node.layout is not None:
+        return {node.layout.id}
+    return set()
+
+
+def _drawn_sites(knobs: KnobSet, focused: Set[NodeId]) -> List[Site]:
+    """Gap bars and margin bands exist only while their layout is selected (UX-GAP-001)."""
+    drawn = []
+    for site in knobs.sites:
+        if site.look in ("bar", "band") and site.knob.subject not in focused:
+            continue
+        drawn.append(site)
+    return drawn
+
+
+def _sites(items: List[Item], view: ViewMap, knobs: KnobSet, focused: Set[NodeId]) -> None:
+    """Gap bars, margin bands and root-layout ticks. Grips draw only under the pointer."""
+    for site in _drawn_sites(knobs, focused):
+        if site.look == "bar":
+            items.append(Fill(_thin(view.to_canvas(site.mark), GAP_BAR), "gap", 1.0))
+        elif site.look == "band":
+            band = view.to_canvas(site.mark)
+            if band.width > 0 and band.height > 0:
+                items.append(Fill(band, "gap_fill", 1.0))
+    for tick in knobs.ticks:
+        items.append(Stroke(view.to_canvas(tick.rect), "layout", 1.5, "solid", caps=True))
+
+
+def _turn_mark(items: List[Item], view: ViewMap, done: Turn) -> None:
+    mark = done.mark
+    if mark is None:
+        return
+    canvas = view.to_canvas(mark)
+    kind = done.readout.key[0]
+    if kind == "margin":
+        items.append(Fill(canvas, "gap_fill"))
+    elif kind == "gap":
+        items.append(Fill(_thin(canvas, GAP_BAR), "gap"))
+    elif kind == "grip":
+        items.append(Glyph(_grip_box(canvas), "grip", "select"))
+    else:
+        items.append(Fill(canvas, "drop_fill"))
+        items.append(Stroke(canvas, "select", 1.5, "dashed"))
+
+
+def _grip_hover(items: List[Item], view: ViewMap, knobs: KnobSet, gesture: Gesture) -> None:
+    """The splitter's own handle stays visible. The glyph sits on top of it."""
+    if not isinstance(gesture, Idle) or gesture.knob is None or gesture.knob[0] != "grip":
+        return
+    for site in knobs.sites:
+        if site.knob.key == gesture.knob:
+            items.append(Glyph(_grip_box(view.to_canvas(site.mark)), "grip", "select"))
+            return
+
+
+def _thin(rect: CanvasRect, across: int) -> CanvasRect:
+    if rect.width <= rect.height:
+        return CanvasRect(rect.x + rect.width // 2 - across // 2, rect.y, across, rect.height)
+    return CanvasRect(rect.x, rect.y + rect.height // 2 - across // 2, rect.width, across)
+
+
+def _grip_box(handle: CanvasRect) -> CanvasRect:
+    if handle.width <= handle.height:
+        return _centred(handle, GRIP_GLYPH.width, GRIP_GLYPH.height)
+    return _centred(handle, GRIP_GLYPH.height, GRIP_GLYPH.width)
+
+
+def _grabbers(page: CanvasRect, hot: bool) -> Tuple[Pill, ...]:
+    east = Pill(
+        CanvasRect(
+            page.x + page.width - PILL_SHORT // 2,
+            page.y + page.height // 2 - PILL_LONG // 2,
+            PILL_SHORT,
+            PILL_LONG,
+        ),
+        "e",
+        hot,
+    )
+    south = Pill(
+        CanvasRect(
+            page.x + page.width // 2 - PILL_LONG // 2,
+            page.y + page.height - PILL_SHORT // 2,
+            PILL_LONG,
+            PILL_SHORT,
+        ),
+        "s",
+        hot,
+    )
+    return (east, south)
+
+
+def _shown_drop(inputs: FrameInputs) -> Optional[Tuple[Union[AcceptedDrop, RefusedDrop], str]]:
+    gesture = inputs.gesture
+    if isinstance(gesture, Placing) and not gesture.outside and gesture.draw:
+        if isinstance(gesture.target, NoDrop):
+            return None
+        return gesture.target, gesture.token
+    if inputs.preview is not None and not isinstance(gesture, (Placing, Moving)):
+        return inputs.preview, "preview"
+    return None
+
+
+def _drop_chip(
+    faces: Dict[Hashable, _Face],
+    requests: List[ChipRequest],
+    inputs: FrameInputs,
+) -> None:
+    shown = _shown_drop(inputs)
+    if shown is None:
+        return
+    target, token = shown
+    text = target.chip or target.sentence
+    if not text:
+        return
+    host = target.host if isinstance(target, (AcceptedDrop, RefusedDrop)) and target.host is not None else inputs.document.root.id
+    role: Role = "problem" if isinstance(target, RefusedDrop) or target.indicator.role == "problem" else "select"
+    anchor = inputs.view.to_canvas(target.indicator.rect)
+    if isinstance(target, AcceptedDrop) and target.action == "dock_side":
+        # Beside the band's middle. below_left of the full-height band sits on the size readout.
+        mid = anchor.y + anchor.height // 2
+        anchor = CanvasRect(anchor.x, mid, max(anchor.width, 1), 1)
+    _ask(
+        faces,
+        requests,
+        ("drop", token),
+        anchor,
+        _label_size(text, inputs.measure),
+        LABEL_CORNERS,
+        inputs.document,
+        _Face("chip", host, role, text, None),
+        required=True,
+    )
+
+
+def _without_refused_hint(
+    items: Tuple[Item, ...], view: ViewMap, inputs: FrameInputs
+) -> Tuple[Item, ...]:
+    """A drag over a container that refuses it hides that container's "Drop widgets here"."""
+    shown = _shown_drop(inputs)
+    if shown is None or not isinstance(shown[0], RefusedDrop):
+        return items
+    frame = view.to_canvas(shown[0].frame)
+    return tuple(
+        item
+        for item in items
+        if not (isinstance(item, Caption) and item.lines == (_EMPTY_NESTED,) and _within(item.rect, frame))
+    )
+
+
+def _within(inner: CanvasRect, outer: CanvasRect) -> bool:
+    return (
+        inner.x >= outer.x
+        and inner.y >= outer.y
+        and inner.x + inner.width <= outer.x + outer.width
+        and inner.y + inner.height <= outer.y + outer.height
+    )
+
+
+def _drop_marks(items: List[Item], view: ViewMap, inputs: FrameInputs, static: StaticLayer) -> None:
+    shown = _shown_drop(inputs)
+    if shown is None:
+        return
+    target = shown[0]
+    if isinstance(target, NoDrop):
+        return
+    role: Role = "problem" if isinstance(target, RefusedDrop) else "layout"
+    items.append(Stroke(view.to_canvas(target.frame), role, 1.5, "solid"))
+    indicator = target.indicator
+    paint: Role = "problem" if indicator.role == "problem" else "select"
+    rect = _into_mark(static, view, target, indicator)
+    if indicator.dashed and indicator.role != "problem":
+        items.append(Fill(rect, "drop_fill"))
+    thin = min(rect.width, rect.height) <= 4
+    items.append(
+        Stroke(
+            rect,
+            paint,
+            1.5 if indicator.dashed else 2,
+            "dashed" if indicator.dashed else "solid",
+            caps=thin and not indicator.dashed,
+        )
+    )
+
+
+def _into_mark(static: StaticLayer, view: ViewMap, target: object, indicator: object) -> CanvasRect:
+    """O(empty marks). The into-indicator of an empty layout is that layout's empty mark."""
+    canvas = view.to_canvas(indicator.rect)  # type: ignore[attr-defined]
+    host = getattr(target, "host", None)
+    dashed = bool(getattr(indicator, "dashed", False))
+    role = getattr(indicator, "role", "")
+    if host is None or not dashed or role == "problem":
+        return canvas
+    mark = static.host_marks.get(host)
+    if mark is not None:
+        return mark
+    return canvas
+
+
+def _anchor_ticks(
+    items: List[Item],
+    static: StaticLayer,
+    document: UiDocument,
+    primary: Optional[NodeId],
+) -> None:
+    """O(1). Four layout ticks, one on each page edge, while the root layout is selected."""
+    layout = document.root.layout
+    if layout is None or primary != layout.id:
+        return
+    box = None
+    for obstacle in static.placed:
+        if obstacle.node == layout.id:
+            box = obstacle.rect
+            break
+    if box is None:
+        return
+    page = static.view.page_rect()
+    span = 8
+    mid_x = box.x + max(box.width, 1) // 2
+    mid_y = box.y + max(box.height, 1) // 2
+    for rect in (
+        CanvasRect(page.x, mid_y, span, 2),
+        CanvasRect(page.x + page.width - span, mid_y, span, 2),
+        CanvasRect(mid_x, page.y, 2, span),
+        CanvasRect(mid_x, page.y + page.height - span, 2, span),
+    ):
+        items.append(Stroke(rect, "layout", 1.5, "solid"))
+
+
+def _band(items: List[Item], view: ViewMap, gesture: Banding) -> None:
+    area = view.to_canvas(band_rect(gesture))
+    items.append(Fill(area, "drop_fill"))
+    items.append(Stroke(area, "select", 1, "solid"))
+    hit_ids = set(band_hits(gesture))
+    for node, form_rect in gesture.candidates:
+        if node not in hit_ids:
+            continue
+        items.append(Stroke(view.to_canvas(form_rect).grown(1), "hover", 1, "solid"))
+
+
+def _refusal_badges(
+    faces: Dict[Hashable, _Face],
+    requests: List[ChipRequest],
+    static: StaticLayer,
+    inputs: FrameInputs,
+) -> None:
+    """One problem badge per refused widget. O(1) when nothing was refused."""
+    marks = inputs.refusals
+    if not marks:
+        return
+    document = inputs.document
+    for node_id, text in marks:
+        if not text:
+            continue
+        rect = _shown_rect(static, inputs.view, document, inputs.gesture, node_id)
+        if rect is None:
+            continue
+        _ask(
+            faces,
+            requests,
+            ("refusal", node_id),
+            rect,
+            CanvasSize(REFUSAL_BADGE, REFUSAL_BADGE),
+            BADGE_CORNERS,
+            document,
+            _Face("badge", node_id, "problem", "", OpenProblem(node_id, text), text),
+        )
+
+
+def _requests(
+    static: StaticLayer,
+    inputs: FrameInputs,
+    shown: SelectionState,
+    rects: Mapping[NodeId, CanvasRect],
+) -> Tuple[Dict[Hashable, _Face], List[ChipRequest]]:
+    document = inputs.document
+    faces: Dict[Hashable, _Face] = {}
+    requests: List[ChipRequest] = []
+    _drop_chip(faces, requests, inputs)
+    _dock_band_chips(faces, requests, static, inputs)
+    primary = shown.current
+    placing = isinstance(inputs.gesture, Placing)
+    readout = turned(inputs.gesture).readout if isinstance(inputs.gesture, Turning) else inputs.readout
+    if not placing and primary is not None and primary in rects and primary != document.root.id:
+        text = chip_text(document, inputs.selection, inputs.sizing)
+        if readout is not None and readout.key[0] == "size" and readout.key[1] == primary:
+            text = readout.text
+        node = document.get(primary)
+        tab_order = any(layer.name == "tab_order" for layer in inputs.layers)
+        role: Role = "select" if tab_order or not isinstance(node, LayoutNode) else "layout"
+        # A layout chip stays in the gutter so it does not cover the margin ticks.
+        # A widget chip may sit on the widget when the gutter seat falls off the page.
+        corners = LABEL_CORNERS if isinstance(node, LayoutNode) else BARE_CORNERS
+        _ask(
+            faces,
+            requests,
+            ("chip", primary),
+            rects[primary],
+            _label_size(text, inputs.measure),
+            corners,
+            document,
+            _Face("chip", primary, role, text, None),
+            required=True,
+        )
+    if readout is not None and readout.key[0] != "size":
+        _readout_chip(faces, requests, inputs, readout)
+    if not previewing(inputs.gesture):
+        _knob_chips(faces, requests, inputs)
+    _refusal_badges(faces, requests, static, inputs)
+    # An empty map must not walk the form. Selection repaint is on an 8 ms budget.
+    if inputs.problems:
+        for node in document.iter_preorder():
+            message = inputs.problems.get(node.id)
+            if not message:
+                continue
+            rect = _shown_rect(static, inputs.view, document, inputs.gesture, node.id)
+            if rect is None:
+                continue
+            _ask(
+                faces,
+                requests,
+                ("badge", node.id),
+                rect,
+                CanvasSize(BADGE_SLOT, BADGE_SLOT),
+                BADGE_CORNERS,
+                document,
+                _Face("badge", node.id, "problem", message, OpenProblem(node.id, message)),
+            )
+    for node_id in static.unlaid:
+        rect = _shown_rect(static, inputs.view, document, inputs.gesture, node_id)
+        if rect is None:
+            continue
+        limit = static.scroll_clips.get(node_id)
+        if limit is not None:
+            rect = _clip(rect, limit)
+        if rect is None:
+            continue
+        text = no_layout_text()
+        _ask(
+            faces,
+            requests,
+            ("bare", node_id),
+            rect,
+            _label_size(text, inputs.measure),
+            BARE_CORNERS,
+            document,
+            _Face("chip", node_id, "tab", text, OpenLayoutPopover(node_id)),
+            required=True,
+            own_frame=True,
+        )
+    _page_chips(faces, requests, static, inputs)
+    _gap_chips(faces, requests, inputs, shown)
+    return faces, requests
+
+
+def _readout_chip(
+    faces: Dict[Hashable, _Face],
+    requests: List[ChipRequest],
+    inputs: FrameInputs,
+    readout: Readout,
+) -> None:
+    """A gap, margin or grip reads its number beside the site, rebuilt or not."""
+    anchor = next((site.mark for site in inputs.knobs.sites if site.knob.key == readout.key), readout.anchor)
+    role: Role = "gap" if readout.key[0] in _THIN_KINDS else "select"
+    _ask(
+        faces,
+        requests,
+        ("readout", readout.key),
+        inputs.view.to_canvas(anchor),
+        _label_size(readout.text, inputs.measure),
+        LABEL_CORNERS,
+        inputs.document,
+        _Face("chip", readout.key[1], role, readout.text, None),
+        required=True,
+    )
+
+
+def _knob_chips(faces: Dict[Hashable, _Face], requests: List[ChipRequest], inputs: FrameInputs) -> None:
+    """Share chips, then the root layout's margin numbers in the gutter."""
+    view = inputs.view
+    for tag in inputs.knobs.shares:
+        _ask(
+            faces,
+            requests,
+            tag.key,
+            view.to_canvas(tag.anchor),
+            _label_size(tag.text, inputs.measure),
+            LABEL_CORNERS,
+            inputs.document,
+            _Face("chip", tag.node, "layout", tag.text, FocusShare(tag.node, tag.axis)),
+        )
+    root_layout = inputs.document.root.layout
+    if root_layout is None:
+        return
+    for tick in inputs.knobs.ticks:
+        text = str(tick.pixels)
+        _ask(
+            faces,
+            requests,
+            ("tick", tick.side),
+            view.to_canvas(tick.rect),
+            _label_size(text, inputs.measure),
+            _TICK_CORNERS.get(tick.side, ()),
+            inputs.document,
+            _Face("chip", root_layout.id, "layout", text, None),
+            outside=True,
+        )
+
+
+def _page_chips(
+    faces: Dict[Hashable, _Face],
+    requests: List[ChipRequest],
+    static: StaticLayer,
+    inputs: FrameInputs,
+) -> None:
+    shown = inputs.shown_pages or {}
+    for node_id, rect, names, kind in static.stacks:
+        if not names:
+            continue
+        current = shown.get(node_id, 0)
+        if node_id not in shown and kind == "stacked":
+            node = inputs.document.get(node_id)
+            if isinstance(node, WidgetNode):
+                entry = node.prop("currentIndex")
+                value = getattr(getattr(entry, "value", None), "value", None)
+                if isinstance(value, int):
+                    current = value
+        current = max(0, min(len(names) - 1, current))
+        if kind == "wizard":
+            text = "\u25c0 Step %d of %d \u25b6" % (current + 1, len(names))
+        else:
+            text = "\u25c0 %d / %d \u25b6" % (current + 1, len(names))
+        _ask(
+            faces,
+            requests,
+            ("stack", node_id),
+            rect,
+            _label_size(text, inputs.measure),
+            LABEL_CORNERS,
+            inputs.document,
+            _Face(
+                "chip",
+                node_id,
+                "select",
+                text,
+                ShowStacked(node_id, 0),
+                _switch_tip(inputs.document, node_id, current, names),
+            ),
+            required=True,
+        )
+
+
+def _switcher(document: UiDocument, node: WidgetNode) -> Optional[Tuple[Tuple[str, ...], str]]:
+    """Titles and the chip kind for a stacked widget, wizard or MDI area."""
+    if not node.child_widgets:
+        return None
+    if node.class_name == "QStackedWidget":
+        names = tuple(child.object_name or "page" for child in node.child_widgets)
+        return names, "stacked"
+    if node.class_name == "QWizard":
+        names = tuple(page_title(document, child.id) or child.object_name or "step" for child in node.child_widgets)
+        return names, "wizard"
+    if node.class_name == "QMdiArea":
+        names = tuple(page_title(document, child.id) or child.object_name or "window" for child in node.child_widgets)
+        return names, "mdi"
+    return None
+
+
+def _switch_tip(document: UiDocument, container: NodeId, shown: int, names: Tuple[str, ...]) -> str:
+    """``Shows {title} · starts on {title}`` when the canvas page is not the saved one."""
+    found = pages(document, container)
+    if not found:
+        return names[shown] if names else ""
+    start = start_page(document, container)
+    start_at = next((index for index, page in enumerate(found) if page.id == start), 0)
+    if start_at == shown:
+        return names[shown]
+    shown_title = page_title(document, found[shown].id) or names[shown]
+    start_title = page_title(document, found[start_at].id) or names[start_at]
+    return "Shows %s \u00b7 starts on %s" % (shown_title, start_title)
+
+
+_DOCK_CHIP = (
+    ("Left", "Left side"),
+    ("Right", "Right side"),
+    ("Top", "Top"),
+    ("Bottom", "Bottom"),
+)
+
+
+def _dock_host(inputs: FrameInputs) -> Optional[NodeId]:
+    gesture = inputs.gesture
+    if not isinstance(gesture, Placing) or gesture.outside or not gesture.draw or not gesture.payload.dock:
+        return None
+    target = gesture.target
+    if isinstance(target, AcceptedDrop) and target.action == "dock_side":
+        return target.host
+    if isinstance(target, RefusedDrop) and target.sentence == DOCK_REFUSAL:
+        return target.host
+    return None
+
+
+def _dock_boxes(static: StaticLayer, inputs: FrameInputs) -> Tuple[Tuple[str, CanvasRect, str], ...]:
+    host = _dock_host(inputs)
+    if host is None:
+        return ()
+    rect = None
+    for obstacle in static.placed:
+        if obstacle.node == host:
+            rect = obstacle.rect
+            break
+    if rect is None or rect.width < 8 or rect.height < 8:
+        return ()
+    factor = inputs.view.factor or 1.0
+    band = max(1, int(round(DOCK_BAND_PX * factor)))
+    band = min(band, max(rect.width // 4, 1), max(rect.height // 4, 1))
+    boxes = {
+        "Left": CanvasRect(rect.x, rect.y, band, rect.height),
+        "Right": CanvasRect(rect.x + rect.width - band, rect.y, band, rect.height),
+        "Top": CanvasRect(rect.x, rect.y, rect.width, band),
+        "Bottom": CanvasRect(rect.x, rect.y + rect.height - band, rect.width, band),
+    }
+    return tuple((name, boxes[name], label) for name, label in _DOCK_CHIP)
+
+
+def _paint_dock_bands(items: List[Item], static: StaticLayer, inputs: FrameInputs) -> None:
+    for _name, rect, _label in _dock_boxes(static, inputs):
+        items.append(Fill(rect, "dock_band"))
+        items.append(Stroke(rect, "select", 1, "dashed"))
+
+
+def _dock_band_chips(
+    faces: Dict[Hashable, _Face],
+    requests: List[ChipRequest],
+    static: StaticLayer,
+    inputs: FrameInputs,
+) -> None:
+    host = _dock_host(inputs)
+    if host is None:
+        return
+    for name, rect, label in _dock_boxes(static, inputs):
+        _ask(
+            faces,
+            requests,
+            ("dockband", host, name),
+            rect,
+            _label_size(label, inputs.measure),
+            LABEL_CORNERS,
+            inputs.document,
+            _Face("chip", host, "select", label, None),
+            required=True,
+        )
+
+
+_PLUS_TABS = frozenset({"QTabWidget", "QToolBox"})
+_PLUS_CORNER = frozenset({"QStackedWidget", "QWizard"})
+_PLUS_EMPTY = frozenset({"QTabWidget", "QToolBox", "QStackedWidget", "QWizard"})
+
+
+def _plus_hits(
+    items: List[Item],
+    static: StaticLayer,
+    document: UiDocument,
+    gesture: Gesture,
+    shown: SelectionState,
+) -> List[Tuple[CanvasRect, Target]]:
+    groups: Dict[NodeId, List[CanvasRect]] = {}
+    for container, rect in static.tabs:
+        groups.setdefault(container, []).append(rect)
+    hits: List[Tuple[CanvasRect, Target]] = []
+    hot = _plus_ids(gesture, shown)
+    dragging = isinstance(gesture, Placing)
+    drawn: Set[NodeId] = set()
+    for container, rects in groups.items():
+        node = document.get(container)
+        if not isinstance(node, WidgetNode) or node.class_name not in _PLUS_TABS:
+            continue
+        if not _plus_wanted(node, container, hot, dragging):
+            continue
+        last = max(rects, key=lambda rect: rect.x + rect.width)
+        side = max(last.height, 18)
+        plus = CanvasRect(last.x + last.width + 4, last.y, side, side)
+        _draw_plus(items, hits, plus, container)
+        drawn.add(container)
+    for obstacle in static.placed:
+        node = document.get(obstacle.node)
+        if not isinstance(node, WidgetNode) or obstacle.node in drawn:
+            continue
+        if node.class_name in _PLUS_EMPTY and not node.child_widgets:
+            # The empty caption says "Use +", so the button is there with the caption.
+            side = 18
+            plus = CanvasRect(obstacle.rect.x + 8, obstacle.rect.y + 8, side, side)
+            _draw_plus(items, hits, plus, obstacle.node)
+            drawn.add(obstacle.node)
+            continue
+        if node.class_name not in _PLUS_CORNER or not node.child_widgets:
+            continue
+        if not _plus_wanted(node, obstacle.node, hot, dragging):
+            continue
+        side = 18
+        rect = obstacle.rect
+        plus = CanvasRect(rect.x + max(rect.width - side - 4, 0), rect.y + 4, side, side)
+        _draw_plus(items, hits, plus, obstacle.node)
+    return hits
+
+
+def _plus_wanted(node: WidgetNode, container: NodeId, hot: Set[NodeId], dragging: bool) -> bool:
+    if dragging:
+        return True
+    pages = {page.id for page in node.child_widgets}
+    return container in hot or bool(pages.intersection(hot))
+
+
+def _draw_plus(
+    items: List[Item],
+    hits: List[Tuple[CanvasRect, Target]],
+    plus: CanvasRect,
+    container: NodeId,
+) -> None:
+    items.append(Chip(plus, "+", "select", None))
+    hits.append((plus, OnChip(AddPage(container))))
+
+
+def _plus_ids(gesture: Gesture, shown: SelectionState) -> Set[NodeId]:
+    found = set(shown.ids)
+    if isinstance(gesture, Idle) and gesture.hover is not None:
+        found.add(gesture.hover)
+    return found
+
+
+def _ask(
+    faces: Dict[Hashable, _Face],
+    requests: List[ChipRequest],
+    key: Hashable,
+    target: CanvasRect,
+    size: CanvasSize,
+    corners: Tuple[Corner, ...],
+    document: UiDocument,
+    face: _Face,
+    required: bool = False,
+    own_frame: bool = False,
+    outside: bool = False,
+) -> None:
+    faces[key] = face
+    exempt = ancestors(document, face.node)
+    if own_frame:
+        exempt = exempt | {face.node}
+    requests.append(ChipRequest(key, target, size, corners, exempt, required=required, outside=outside))
+
+
+def _stored_px(node: LayoutNode, name: str) -> Optional[int]:
+    value = node.value(name)
+    raw = getattr(value, "value", None)
+    if isinstance(raw, bool) or not isinstance(raw, int):
+        return None
+    return max(raw, 0)
+
+
+def _side_px(node: LayoutNode, name: str, uniform: int) -> int:
+    stored = _stored_px(node, name)
+    if stored is None:
+        return uniform
+    return stored
+
+
+def _empty_form_box(node: LayoutNode, canvas: CanvasRect) -> CanvasRect:
+    """Dashed hint inset 8 px inside the root layout's own margins."""
+    uniform = _stored_px(node, "margin") or 0
+    left = _side_px(node, "leftMargin", uniform)
+    top = _side_px(node, "topMargin", uniform)
+    right = _side_px(node, "rightMargin", uniform)
+    bottom = _side_px(node, "bottomMargin", uniform)
+    box = CanvasRect(
+        canvas.x + left + _EMPTY_INSET,
+        canvas.y + top + _EMPTY_INSET,
+        canvas.width - left - right - _EMPTY_INSET * 2,
+        canvas.height - top - bottom - _EMPTY_INSET * 2,
+    )
+    if box.width >= 24 and box.height >= 24:
+        return box
+    return CanvasRect(
+        canvas.x + _EMPTY_INSET,
+        canvas.y + _EMPTY_INSET,
+        max(canvas.width - _EMPTY_INSET * 2, 1),
+        max(canvas.height - _EMPTY_INSET * 2, 1),
+    )
+
+
+def _gap_chips(
+    faces: Dict[Hashable, _Face],
+    requests: List[ChipRequest],
+    inputs: FrameInputs,
+    shown: SelectionState,
+) -> None:
+    """A number on a drawn gap when the gap is at least 4 px, or the layout is hovered."""
+    if isinstance(inputs.gesture, Turning):
+        return
+    focused = _focused_layouts(inputs.document, shown.current)
+    hover = inputs.gesture.hover if isinstance(inputs.gesture, Idle) else None
+    hovered = None
+    if hover is not None and inputs.document.contains(hover):
+        found = inputs.document.get(hover)
+        hovered = hover if isinstance(found, LayoutNode) else _parent_layout(inputs.document, hover)
+    for site in inputs.knobs.sites:
+        if site.look != "bar":
+            continue
+        rule = site.knob.rule
+        if not isinstance(rule, Spacing) or rule.layout not in focused:
+            continue
+        canvas = inputs.view.to_canvas(site.mark)
+        gap_px = min(canvas.width, canvas.height)
+        if gap_px < 4 and rule.layout != hovered:
+            continue
+        text = str(int(rule.origin))
+        _ask(
+            faces,
+            requests,
+            ("gapchip", rule.layout, rule.name),
+            canvas,
+            _label_size(text, inputs.measure),
+            LABEL_CORNERS,
+            inputs.document,
+            _Face("chip", rule.layout, "gap", text, None),
+        )
+
+
+def _seat_selection_above(
+    seats: Sequence[ChipSeat],
+    requests: Sequence[ChipRequest],
+    faces: Mapping[Hashable, _Face],
+    static: StaticLayer,
+    inputs: FrameInputs,
+    viewport: CanvasRect,
+) -> Tuple[ChipSeat, ...]:
+    """Seat a widget selection chip on the widget's top-left, 2 px above.
+
+    A seat that meets the page title, a neighbour, or content keeps the
+    ``place_chips`` result. There is no inside-the-widget fallback.
+    """
+    by_key = {request.key: request for request in requests}
+    rects = [seat.rect for seat in seats]
+    chosen: List[ChipSeat] = list(seats)
+    for index, seat in enumerate(seats):
+        face = faces.get(seat.key)
+        request = by_key.get(seat.key)
+        if face is None or request is None or not _selection_chip(face, seat.key):
+            continue
+        above = CanvasRect(
+            request.target.x,
+            request.target.y - _FLUSH_ABOVE - seat.rect.height,
+            seat.rect.width,
+            seat.rect.height,
+        )
+        others = rects[:index] + rects[index + 1 :]
+        if not _above_is_clear(above, face, request, static, inputs, viewport, others):
+            continue
+        chosen[index] = CornerSeat(seat.key, above, "above_left")
+        rects[index] = above
+    return tuple(chosen)
+
+
+def _selection_chip(face: _Face, key: Hashable) -> bool:
+    return (
+        face.kind == "chip"
+        and face.role == "select"
+        and isinstance(key, tuple)
+        and bool(key)
+        and key[0] == "chip"
+    )
+
+
+def _above_is_clear(
+    rect: CanvasRect,
+    face: _Face,
+    request: ChipRequest,
+    static: StaticLayer,
+    inputs: FrameInputs,
+    viewport: CanvasRect,
+    others: Sequence[CanvasRect],
+) -> bool:
+    if not _in_view(rect, viewport):
+        return False
+    if inputs.dock is not None and rect.intersects(inputs.dock):
+        return False
+    for band in inputs.chrome:
+        if rect.intersects(band):
+            return False
+    for obstacle in static.content:
+        if not rect.intersects(obstacle.rect):
+            continue
+        if obstacle.band or obstacle.node == face.node or obstacle.node not in request.exempt:
+            return False
+    if rect.intersects(request.target):
+        return False
+    for other in others:
+        if rect.intersects(other):
+            return False
+    return True
+
+
+def _in_view(rect: CanvasRect, viewport: CanvasRect) -> bool:
+    return (
+        rect.x >= viewport.x
+        and rect.y >= viewport.y
+        and rect.x + rect.width <= viewport.x + viewport.width
+        and rect.y + rect.height <= viewport.y + viewport.height
+    )
+
+
+def _seat_items(
+    items: List[Item],
+    seats: Sequence[ChipSeat],
+    faces: Mapping[Hashable, _Face],
+    chrome_dock: bool,
+    page: CanvasRect,
+) -> Tuple[List[Tuple[CanvasRect, Target]], List[Tuple[CanvasRect, NodeId]]]:
+    hits: List[Tuple[CanvasRect, Target]] = []
+    rows: List[Tuple[CanvasRect, NodeId]] = []
+    for seat in seats:
+        face = faces[seat.key]
+        leader = None if isinstance(seat, CornerSeat) else seat.leader
+        if face.kind == "badge":
+            items.append(Badge(seat.rect, "error", face.role, leader, face.tip))
+        else:
+            items.append(
+                Chip(
+                    seat.rect,
+                    face.text,
+                    face.role,
+                    leader,
+                    chrome_dock and isinstance(seat, DockSeat),
+                    face.tip,
+                    not _within(seat.rect, page),
+                )
+            )
+        rows.append((seat.rect, face.node))
+        if isinstance(face.action, ShowStacked) and face.action.delta == 0:
+            third = max(seat.rect.width // 3, 1)
+            left = CanvasRect(seat.rect.x, seat.rect.y, third, seat.rect.height)
+            right = CanvasRect(seat.rect.x + seat.rect.width - third, seat.rect.y, third, seat.rect.height)
+            hits.append((left, OnChip(ShowStacked(face.action.container, -1))))
+            hits.append((right, OnChip(ShowStacked(face.action.container, 1))))
+        elif face.action is not None:
+            hits.append((seat.rect, OnChip(face.action)))
+    return hits, rows
+
+
+def _shown_rect(
+    static: StaticLayer,
+    view: ViewMap,
+    document: UiDocument,
+    gesture: Gesture,
+    node: NodeId,
+) -> Optional[CanvasRect]:
+    if isinstance(gesture, Moving):
+        for item in gesture.items:
+            if item.node == node:
+                return view.to_canvas(drawn_rect(gesture, item))
+    if isinstance(gesture, Turning) and gesture.knob.subject == node:
+        outline = turned(gesture).outline
+        if outline is not None:
+            return view.to_canvas(outline)
+    if isinstance(gesture, PageResizing) and node == document.root.id:
+        return _page_canvas(view, gesture)[0]
+    return _placed(static, node)
+
+
+def _placed(static: StaticLayer, node: NodeId) -> Optional[CanvasRect]:
+    for obstacle in static.placed:
+        if obstacle.node == node:
+            return obstacle.rect
+    return None
+
+
+def _page_canvas(view: ViewMap, gesture: Gesture) -> Tuple[CanvasRect, bool]:
+    if isinstance(gesture, PageResizing):
+        size = page_size(gesture)
+        return (
+            CanvasRect(
+                view.page_origin.x,
+                view.page_origin.y,
+                max(1, int(round(size.width * view.factor))),
+                max(1, int(round(size.height * view.factor))),
+            ),
+            True,
+        )
+    return view.page_rect(), False
+
+
+def _handle_point(rect: CanvasRect, at: Compass) -> Tuple[int, int]:
+    left = rect.x - 1
+    right = rect.x + rect.width + 1
+    top = rect.y - 1
+    bottom = rect.y + rect.height + 1
+    mid_x = rect.x + rect.width // 2
+    mid_y = rect.y + rect.height // 2
+    points = {
+        "nw": (left, top),
+        "n": (mid_x, top),
+        "ne": (right, top),
+        "e": (right, mid_y),
+        "se": (right, bottom),
+        "s": (mid_x, bottom),
+        "sw": (left, bottom),
+        "w": (left, mid_y),
+    }
+    return points[at]
+
+
+def _around(point: Tuple[int, int], size: int) -> CanvasRect:
+    x, y = point
+    return CanvasRect(x - size // 2, y - size // 2, size, size)
+
+
+def _at_least(rect: CanvasRect, min_width: int, min_height: int) -> CanvasRect:
+    width = max(rect.width, min_width)
+    height = max(rect.height, min_height)
+    return CanvasRect(
+        rect.x - (width - rect.width) // 2,
+        rect.y - (height - rect.height) // 2,
+        width,
+        height,
+    )
+
+
+def _centred(host: CanvasRect, width: int, height: int) -> CanvasRect:
+    return CanvasRect(
+        host.x + (host.width - width) // 2,
+        host.y + (host.height - height) // 2,
+        width,
+        height,
+    )
+
+
+def _same_canvas(rect: CanvasRect, placed: CanvasRect, page: CanvasRect) -> bool:
+    """True when ``rect`` is the placed widget, or that widget clipped to the page.
+
+    A tab title shares its page's node id and a different rect, so a page move
+    must not drag the title.
+    """
+    if rect == placed:
+        return True
+    clipped = _clip(placed, page)
+    return clipped is not None and rect == clipped
+
+
+def _scroll_limit(
+    document: UiDocument,
+    node_id: NodeId,
+    widget_canvas: Mapping[NodeId, CanvasRect],
+) -> Optional[CanvasRect]:
+    """The scroll area's canvas rect, when ``node_id`` is inside one and not the area itself."""
+    area = scroll_area_of(document, node_id)
+    if area is None or area == node_id:
+        return None
+    return widget_canvas.get(area)
+
+
+def _clip_scroll(rect: Optional[CanvasRect], limit: Optional[CanvasRect]) -> Optional[CanvasRect]:
+    if rect is None:
+        return None
+    if limit is None:
+        return rect
+    return _clip(rect, limit)
+
+
+def _clip(rect: CanvasRect, page: CanvasRect) -> Optional[CanvasRect]:
+    left = max(rect.x, page.x)
+    top = max(rect.y, page.y)
+    right = min(rect.x + rect.width, page.x + page.width)
+    bottom = min(rect.y + rect.height, page.y + page.height)
+    if right <= left or bottom <= top:
+        return None
+    return CanvasRect(left, top, right - left, bottom - top)
+
+
+def _label_size(text: str, measure: Callable[[str], int]) -> CanvasSize:
+    return CanvasSize(max(1, measure(text) + 2 * LABEL_PADDING), LABEL_HEIGHT)
