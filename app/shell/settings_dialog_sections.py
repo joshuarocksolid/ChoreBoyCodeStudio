@@ -18,6 +18,8 @@ from app.qt.QtWidgets import (
     QLineEdit,
     QListWidget,
     QPushButton,
+    QScrollArea,
+    QSizePolicy,
     QSpinBox,
     QTabWidget,
     QTableWidget,
@@ -168,8 +170,19 @@ def build_linter_tab(
 
 def build_files_tab(dialog: "SettingsDialog", tabs: QTabWidget, snapshot: EditorSettingsSnapshot) -> None:
     files_tab = QWidget(tabs)
-    files_layout = QVBoxLayout(files_tab)
+    files_tab_layout = QVBoxLayout(files_tab)
+    files_tab_layout.setContentsMargins(0, 0, 0, 0)
     tabs.addTab(files_tab, "Files")
+
+    scroll = QScrollArea(files_tab)
+    scroll.setObjectName("shell.settingsDialog.filesScroll")
+    scroll.setWidgetResizable(True)
+    content = QWidget()
+    content.setObjectName("shell.settingsDialog.filesScrollContent")
+    # Minimum keeps the page at its size hint. A Preferred page shrinks to the
+    # tab and the Local History form rows overlap.
+    content.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Minimum)
+    files_layout = QVBoxLayout(content)
 
     excludes_group = QGroupBox("File Exclusions")
     excludes_group.setObjectName("shell.settingsDialog.fileExcludesGroup")
@@ -227,26 +240,27 @@ def build_files_tab(dialog: "SettingsDialog", tabs: QTabWidget, snapshot: Editor
     local_history_help.setWordWrap(True)
     local_history_layout.addWidget(local_history_help)
 
-    local_history_form = QFormLayout()
+    form_host = QWidget(local_history_group)
+    form_host.setObjectName("shell.settingsDialog.localHistoryForm")
+    form_host.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Minimum)
+    local_history_form = QFormLayout(form_host)
     local_history_form.setVerticalSpacing(10)
     local_history_form.setHorizontalSpacing(16)
-    dialog._local_history_max_checkpoints_input = QSpinBox(local_history_group)
+    dialog._local_history_max_checkpoints_input = QSpinBox(form_host)
     dialog._local_history_max_checkpoints_input.setRange(1, 500)
     dialog._local_history_max_checkpoints_input.setValue(snapshot.local_history_max_checkpoints_per_file)
     local_history_form.addRow("Max revisions per file", dialog._local_history_max_checkpoints_input)
 
-    dialog._local_history_retention_days_input = QSpinBox(local_history_group)
+    dialog._local_history_retention_days_input = QSpinBox(form_host)
     dialog._local_history_retention_days_input.setRange(1, 3650)
     dialog._local_history_retention_days_input.setValue(snapshot.local_history_retention_days)
     local_history_form.addRow("Retention days", dialog._local_history_retention_days_input)
 
-    dialog._local_history_max_tracked_file_kb_input = QSpinBox(local_history_group)
+    dialog._local_history_max_tracked_file_kb_input = QSpinBox(form_host)
     dialog._local_history_max_tracked_file_kb_input.setRange(1, 1024 * 100)
-    dialog._local_history_max_tracked_file_kb_input.setValue(
-        max(1, int((snapshot.local_history_max_tracked_file_bytes + 1023) / 1024))
-    )
+    dialog._remember_local_history_tracked_bytes(snapshot.local_history_max_tracked_file_bytes)
     local_history_form.addRow("Max tracked file size (KB)", dialog._local_history_max_tracked_file_kb_input)
-    local_history_layout.addLayout(local_history_form)
+    local_history_layout.addWidget(form_host)
 
     local_history_excludes_help = QLabel(
         "Skip durable local-history checkpoints for files matching these glob patterns."
@@ -257,6 +271,7 @@ def build_files_tab(dialog: "SettingsDialog", tabs: QTabWidget, snapshot: Editor
 
     dialog._local_history_excludes_list = QListWidget(local_history_group)
     dialog._local_history_excludes_list.setObjectName("shell.settingsDialog.localHistoryExcludesList")
+    dialog._local_history_excludes_list.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Minimum)
     for pattern in snapshot.local_history_exclude_patterns:
         dialog._local_history_excludes_list.addItem(pattern)
     local_history_layout.addWidget(dialog._local_history_excludes_list, 1)
@@ -286,8 +301,11 @@ def build_files_tab(dialog: "SettingsDialog", tabs: QTabWidget, snapshot: Editor
     local_history_button_row.addStretch(1)
     local_history_layout.addLayout(local_history_button_row)
 
+    local_history_group.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Minimum)
     files_layout.addWidget(local_history_group)
     files_layout.addStretch(1)
+    scroll.setWidget(content)
+    files_tab_layout.addWidget(scroll)
 
 
 def build_buttons_row(dialog: "SettingsDialog", layout: QVBoxLayout) -> None:

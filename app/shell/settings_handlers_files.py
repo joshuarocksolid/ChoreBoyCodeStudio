@@ -87,9 +87,7 @@ class SettingsFilesHandlersMixin:
             baseline = self._scope_snapshots[SETTINGS_SCOPE_GLOBAL]
         self._local_history_max_checkpoints_input.setValue(baseline.local_history_max_checkpoints_per_file)
         self._local_history_retention_days_input.setValue(baseline.local_history_retention_days)
-        self._local_history_max_tracked_file_kb_input.setValue(
-            max(1, int((baseline.local_history_max_tracked_file_bytes + 1023) / 1024))
-        )
+        self._remember_local_history_tracked_bytes(baseline.local_history_max_tracked_file_bytes)
         self._local_history_excludes_list.clear()
         for pattern in baseline.local_history_exclude_patterns:
             self._local_history_excludes_list.addItem(pattern)
