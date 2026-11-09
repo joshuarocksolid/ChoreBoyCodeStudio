@@ -105,5 +105,9 @@ def _show(root: Path, source: str, qapp: QApplication) -> None:
     finally:
         if window is not None:
             window.close()
+        for key in [key for key in sys.modules if key == "forms" or key.startswith("forms.")]:
+            del sys.modules[key]
         if sys.path and sys.path[0] == str(root):
+            sys.path.pop(0)
+        if ext.is_dir() and sys.path and sys.path[0] == str(ext):
             sys.path.pop(0)
