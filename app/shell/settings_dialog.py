@@ -199,6 +199,8 @@ class SettingsDialog(SettingsDialogHandlersMixin, QDialog):
         self._file_excludes_reset_btn: QPushButton | None = None
         self._local_history_reset_btn: QPushButton | None = None
         self._local_history_tracked_bytes = max(1, int(snapshot.local_history_max_tracked_file_bytes))
+        self._editor_font_family = snapshot.font_family
+        self._editor_font_family_shown = snapshot.font_family
         self._linter_provider_scope_hint: QLabel | None = None
 
         layout = QVBoxLayout(self)
@@ -448,6 +450,23 @@ class SettingsDialog(SettingsDialogHandlersMixin, QDialog):
         self._refresh_shortcut_conflicts()
         self._refresh_syntax_validation()
         self._refresh_validation_state()
+
+    def _remember_editor_font_family(self, family: str) -> None:
+        """Keep the stored family when the combo only resolved that same font.
+
+        ``QFont("monospace")`` can report a concrete family such as ``DejaVu Sans Mono``.
+        Saving without a font edit must not treat that resolution as a change.
+        """
+
+        self._editor_font_family = family
+        self._font_family_input.setCurrentFont(QFont(family))
+        self._editor_font_family_shown = self._font_family_input.currentFont().family()
+
+    def _editor_font_family_from_combo(self) -> str:
+        shown = self._font_family_input.currentFont().family()
+        if shown == self._editor_font_family_shown:
+            return self._editor_font_family
+        return shown
 
     def _remember_local_history_tracked_bytes(self, byte_count: int) -> None:
         """Show kilobytes, and keep the original byte count when the spinner still matches it.
