@@ -1,13 +1,13 @@
 ---
 name: verify-cbcs
-description: Drive the live ChoreBoy Code Studio Qt editor on a cbfarm lease. Use when you must prove a user-visible change the way a person would (launch, click, type, screenshot). The Debian lab is only the fallback this skill names.
+description: Drive the live ChoreBoy Code Studio Qt editor on a cbfarm lease. Use when you must prove a user-visible change the way a person would (launch, click, type, screenshot). The Debian lab is retired (2026-11-13); do not use `--backend lab`.
 ---
 
 # Verify ChoreBoy Code Studio
 
 ChoreBoy Code Studio is a Qt desktop IDE that runs inside confined FreeCAD AppRun. There is no browser and no DOM. The user touches the Qt window. This skill launches an isolated instance, drives it with `#shell.*` handles, and keeps proof after teardown.
 
-The farm is the default. `control-cbcs` uses the lease in `CBFARM_ENV` on machine `net1`. Pass `--backend lab` or set `CBCS_VERIFY_BACKEND=lab` only for the cases under Lab fallback.
+The farm is the default. `control-cbcs` uses the lease in `CBFARM_ENV` on machine `net1`. The Debian lab is retired as of 2026-11-13: do not pass `--backend lab` or set `CBCS_VERIFY_BACKEND=lab`. The Lab fallback and Scenario library sections below are historical until the scenario runner is ported to cbfarm.
 
 ## Reach the farm
 
@@ -203,7 +203,9 @@ $CONTROL shard all --repo "$PWD"
 
 Lease, push, `do`, screenshots, reset, and release are the user skill `run-choreboy-app`. This helper adds CBCS isolation, `#shell.*` conveniences, and the artifact contract.
 
-## Lab fallback
+## Lab fallback (retired 2026-11-13)
+
+The lab host is kept only for archive and cleanup. Do not use `--backend lab`; the cases below have no replacement yet, so stop and ask rather than reach for the lab. Historical text follows.
 
 Use `--backend lab` or `CBCS_VERIFY_BACKEND=lab` only for the two cases below. Everything else stays on the farm. Never `ChoreBoy5`. Never `cb-slot` with `--cb-slot any`. Never a visible window on the Mac.
 
@@ -215,7 +217,7 @@ Use `--backend lab` or `CBCS_VERIFY_BACKEND=lab` only for the two cases below. E
 2. Disk restore is `cb-slot checkpoint` / `cb-slot revert`. The proof file wants revert text containing `ready=runner` and a post-revert marker read. Farm `checkpoint` plus `reset` restores a disk and reboots the guest. It does not speak that contract, and this runner also releases the slot it leased.
 3. `cbapp desktop-shot` is refused through MCP, and cb3 sends Ctrl+Space with `cb-virsh send-key`. Farm `key` is one allow-listed name, not that chord.
 
-## Scenario library (lab only)
+## Scenario library (lab only; retired 2026-11-13, awaiting a cbfarm port)
 
 One command replays the v0.4.13 FreeCAD 1.0 acceptance on a leased lab slot. The runner is `scripts/verify-cbcs` (Mac Python 3). It leases a free slot, checkpoints the guest disk, installs the zip once, runs each scenario, reverts, and releases. Revert and release also run on failure and on Ctrl-C. `--want ChoreBoy5` is refused. The free-slot list is `ChoreBoy4`, then `ChoreBoy3`.
 
