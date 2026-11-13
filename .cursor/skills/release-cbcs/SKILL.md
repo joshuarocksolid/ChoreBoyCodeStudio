@@ -1,11 +1,11 @@
 ---
 name: release-cbcs
-description: Package a ChoreBoy-compatible product zip and prove it on a cbfarm lease before mailing, tagging, or handing a shop installer. Use when releasing, mailing LibrePy, tagging v*, running package.py for a product zip, or verifying an installer. The Debian lab is only the verify-cbcs fallback.
+description: Package a ChoreBoy-compatible product zip and prove it on a cbfarm lease before mailing, tagging, or handing a shop installer. Use when releasing, mailing LibrePy, tagging v*, running package.py for a product zip, or verifying an installer. The Debian lab is retired (2026-11-13); use the farm only.
 ---
 
 # Release ChoreBoy Code Studio
 
-Do not mail or tag a product zip until this list is green on a cbfarm lease. `control-cbcs` defaults to the farm. `--backend lab` is only for the cases named in verify-cbcs (the scenario runner, and FreeCAD 1.1 / PySide6 on `ChoreBoyExp`).
+Do not mail or tag a product zip until this list is green on a cbfarm lease. `control-cbcs` defaults to the farm. `--backend lab` is retired (2026-11-13); do not use it.
 
 ## Vendor
 

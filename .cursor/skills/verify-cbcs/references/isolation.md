@@ -6,7 +6,7 @@ Do not stop a session you did not start. Wait, or refuse. A stale `running` row 
 
 ## Lab fallback
 
-`--backend lab` uses one Debian slot (`cb-slot`). The same one-session rule applies. `launch` acquires that slot. `ssh debian` and `cb-virsh` are how doctor checks the slot is up. Do not use `ChoreBoy5` or `cb-slot` with `--cb-slot any`.
+`--backend lab` (retired 2026-11-13, do not use) used one Debian slot (`cb-slot`). The same one-session rule applies. `launch` acquires that slot. `ssh debian` and `cb-virsh` are how doctor checks the slot is up. Do not use `ChoreBoy5` or `cb-slot` with `--cb-slot any`.
 
 ## Refuse
 
