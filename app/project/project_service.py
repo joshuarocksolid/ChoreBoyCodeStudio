@@ -197,6 +197,12 @@ def open_project_and_track_recent(
     return loaded_project
 
 
+def blank_project_entry_text() -> str:
+    """The ``main.py`` text ``create_blank_project`` writes."""
+
+    return "# Project entrypoint.\n"
+
+
 def create_blank_project(destination_path: PathInput, *, project_name: str) -> Path:
     """Create a new blank project with canonical metadata and root `main.py`."""
     normalized_name = project_name.strip()
@@ -233,7 +239,7 @@ def create_blank_project(destination_path: PathInput, *, project_name: str) -> P
         raise AppValidationError(f"Entry path exists but is not a file: {entry_path}")
     if not entry_path.exists():
         try:
-            atomic_write_text(entry_path, "# Project entrypoint.\n")
+            atomic_write_text(entry_path, blank_project_entry_text())
         except OSError as exc:
             raise AppValidationError(f"Unable to write main.py: {exc}") from exc
 

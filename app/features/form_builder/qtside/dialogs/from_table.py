@@ -922,9 +922,11 @@ class FromTableDialog(QDialog):
 
     def _read_main_state(self) -> None:
         from app.features.form_builder.engine.project.start_screen import launched_class, main_kind
+        from app.project.project_service import blank_project_entry_text
 
         template = _template_main_bytes(self._project_root)
-        self._main_kind = main_kind(self._project_root, template)
+        placeholder = blank_project_entry_text().encode("utf-8")
+        self._main_kind = main_kind(self._project_root, template, placeholder)
         self._replaces = launched_class(template)
 
     def _sync_start(self) -> None:
