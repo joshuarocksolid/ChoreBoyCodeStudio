@@ -145,7 +145,7 @@ def build_general_tab(
     editor_form.addRow("Tab width", dialog._tab_width_input)
 
     dialog._font_family_input = QFontComboBox(editor_group)
-    dialog._font_family_input.setCurrentFont(QFont(snapshot.font_family))
+    dialog._remember_editor_font_family(snapshot.font_family)
     editor_form.addRow("Font family", dialog._font_family_input)
 
     dialog._font_size_input = QSpinBox(editor_group)
@@ -269,7 +269,7 @@ def general_tab_state_from_controls(dialog: "SettingsDialog") -> GeneralTabState
     return GeneralTabState(
         tab_width=int(dialog._tab_width_input.value()),
         font_size=int(dialog._font_size_input.value()),
-        font_family=dialog._font_family_input.currentFont().family(),
+        font_family=dialog._editor_font_family_from_combo(),
         indent_style=str(dialog._indent_style_input.currentText()),
         indent_size=int(dialog._indent_size_input.value()),
         detect_indentation_from_file=dialog._detect_indentation_input.isChecked(),
@@ -305,7 +305,7 @@ def general_tab_state_from_controls(dialog: "SettingsDialog") -> GeneralTabState
 def apply_general_tab_state_to_controls(dialog: "SettingsDialog", state: GeneralTabState) -> None:
     dialog._tab_width_input.setValue(state.tab_width)
     dialog._font_size_input.setValue(state.font_size)
-    dialog._font_family_input.setCurrentFont(QFont(state.font_family))
+    dialog._remember_editor_font_family(state.font_family)
     dialog._indent_style_input.setCurrentText(state.indent_style)
     dialog._indent_size_input.setValue(state.indent_size)
     dialog._detect_indentation_input.setChecked(state.detect_indentation_from_file)

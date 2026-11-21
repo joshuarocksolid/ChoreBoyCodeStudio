@@ -235,6 +235,7 @@ class ConnectionsPage(QWidget):
         self._items: List[Connection] = []
         self._touched: List[bool] = []
         self._top_unknown: tuple = ()
+        self._baseline = ConnectionSet()
         self._index = -1
         self._pending = ""
         self._setup_name: Optional[str] = None
@@ -510,11 +511,14 @@ class ConnectionsPage(QWidget):
         if any(NAME_RE.match(item.name) is None for item in self._items):
             return SettingsRefusal(ILLEGAL_NAME_SENTENCE)
         value = ConnectionSet(tuple(self._items), self._top_unknown)
+        if value == self._baseline:
+            return None
         text = write_connections(value)
         _parsed, diagnostic = read_connections(text, project_root=project_root)
         if diagnostic is not None:
             return SettingsRefusal(diagnostic.sentence)
         save_project_connections(project_root, value, slug=project_slug(project_root))
+        self._baseline = value
         self._refresh_project()
         return None
 
@@ -533,6 +537,8 @@ class ConnectionsPage(QWidget):
             self._machine.show()
         self._refresh_list()
         self._fill()
+        self._pull(commit_code=False)
+        self._baseline = ConnectionSet(tuple(self._items), self._top_unknown)
 
     def _refresh_list(self) -> None:
         self._loading = True

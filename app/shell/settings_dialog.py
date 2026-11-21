@@ -82,6 +82,10 @@ from app.editors.syntax_engine import (
 )
 
 
+def _tracked_kib(byte_count: int) -> int:
+    return max(1, int((int(byte_count) + 1023) / 1024))
+
+
 _VALID_SYNTAX_THEME_KEYS: frozenset[str] = frozenset(
     {THEME_LIGHT, THEME_DARK, THEME_HC_LIGHT, THEME_HC_DARK}
 )
@@ -194,6 +198,9 @@ class SettingsDialog(SettingsDialogHandlersMixin, QDialog):
         self._linter_reset_to_global_btn: QPushButton | None = None
         self._file_excludes_reset_btn: QPushButton | None = None
         self._local_history_reset_btn: QPushButton | None = None
+        self._local_history_tracked_bytes = max(1, int(snapshot.local_history_max_tracked_file_bytes))
+        self._editor_font_family = snapshot.font_family
+        self._editor_font_family_shown = snapshot.font_family
         self._linter_provider_scope_hint: QLabel | None = None
 
         layout = QVBoxLayout(self)
@@ -385,7 +392,7 @@ class SettingsDialog(SettingsDialogHandlersMixin, QDialog):
             file_exclude_patterns=self._file_exclude_patterns_snapshot(),
             local_history_max_checkpoints_per_file=int(self._local_history_max_checkpoints_input.value()),
             local_history_retention_days=int(self._local_history_retention_days_input.value()),
-            local_history_max_tracked_file_bytes=int(self._local_history_max_tracked_file_kb_input.value()) * 1024,
+            local_history_max_tracked_file_bytes=self._local_history_tracked_bytes_from_spin(),
             local_history_exclude_patterns=self._local_history_exclude_patterns_snapshot(),
         )
 
@@ -436,14 +443,48 @@ class SettingsDialog(SettingsDialogHandlersMixin, QDialog):
             self._file_excludes_list.addItem(pattern)
         self._local_history_max_checkpoints_input.setValue(snapshot.local_history_max_checkpoints_per_file)
         self._local_history_retention_days_input.setValue(snapshot.local_history_retention_days)
-        self._local_history_max_tracked_file_kb_input.setValue(
-            max(1, int((snapshot.local_history_max_tracked_file_bytes + 1023) / 1024))
-        )
+        self._remember_local_history_tracked_bytes(snapshot.local_history_max_tracked_file_bytes)
         self._local_history_excludes_list.clear()
         for pattern in snapshot.local_history_exclude_patterns:
             self._local_history_excludes_list.addItem(pattern)
         self._refresh_shortcut_conflicts()
         self._refresh_syntax_validation()
         self._refresh_validation_state()
+
+    def _remember_editor_font_family(self, family: str) -> None:
+        """Keep the stored family when the combo only resolved that same font.
+
+        ``QFont("monospace")`` can report a concrete family such as ``DejaVu Sans Mono``.
+        Saving without a font edit must not treat that resolution as a change.
+        """
+
+        self._editor_font_family = family
+        self._font_family_input.setCurrentFont(QFont(family))
+        self._editor_font_family_shown = self._font_family_input.currentFont().family()
+
+    def _editor_font_family_from_combo(self) -> str:
+        shown = self._font_family_input.currentFont().family()
+        if shown == self._editor_font_family_shown:
+            return self._editor_font_family
+        return shown
+
+    def _remember_local_history_tracked_bytes(self, byte_count: int) -> None:
+        """Show kilobytes, and keep the original byte count when the spinner still matches it.
+
+        The control is whole kilobytes. A stored size such as 1_000_000 bytes rounds up
+        to 977 KB for display. Saving that spinner unchanged must not rewrite the file
+        as 977 * 1024.
+        """
+
+        remembered = max(1, int(byte_count))
+        self._local_history_tracked_bytes = remembered
+        self._local_history_max_tracked_file_kb_input.setValue(_tracked_kib(remembered))
+
+    def _local_history_tracked_bytes_from_spin(self) -> int:
+        shown = int(self._local_history_max_tracked_file_kb_input.value())
+        remembered = self._local_history_tracked_bytes
+        if _tracked_kib(remembered) == shown:
+            return remembered
+        return shown * 1024
 
 

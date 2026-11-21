@@ -343,11 +343,13 @@ QDialog#shell\\.settingsDialog QScrollArea {{
     border: none;
 }}
 /* Qt's internal viewport child of the General-tab scroll area */
-QScrollArea#shell\\.settingsDialog\\.generalScroll > QWidget {{
+QScrollArea#shell\\.settingsDialog\\.generalScroll > QWidget,
+QScrollArea#shell\\.settingsDialog\\.filesScroll > QWidget {{
     background: {tokens.panel_bg};
 }}
 /* The user-supplied content widget set via QScrollArea.setWidget(...) */
-QWidget#shell\\.settingsDialog\\.generalScrollContent {{
+QWidget#shell\\.settingsDialog\\.generalScrollContent,
+QWidget#shell\\.settingsDialog\\.filesScrollContent {{
     background: {tokens.panel_bg};
 }}
 """

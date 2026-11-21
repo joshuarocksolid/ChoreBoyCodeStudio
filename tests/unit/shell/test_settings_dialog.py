@@ -8,7 +8,7 @@ pytest.importorskip("app.qt.QtWidgets", exc_type=ImportError)
 
 from app.qt.QtCore import Qt
 from app.qt.QtGui import QFont, QFontMetrics, QKeySequence
-from app.qt.QtWidgets import QApplication, QDialogButtonBox, QHeaderView, QLabel, QPushButton
+from app.qt.QtWidgets import QApplication, QDialogButtonBox, QFormLayout, QHeaderView, QLabel, QPushButton, QWidget
 
 from app.shell.settings_dialog import SettingsDialog
 from app.shell.settings_models import EditorSettingsSnapshot, SETTINGS_SCOPE_PROJECT
@@ -339,6 +339,50 @@ def test_settings_dialog_footer_buttons_clear_standard_icons() -> None:
     cancel_btn = button_box.button(QDialogButtonBox.Cancel)
     assert cancel_btn is not None
     assert cancel_btn.icon().isNull()
+
+
+def test_local_history_rows_are_at_least_their_size_hint() -> None:
+    dialog = SettingsDialog(EditorSettingsSnapshot())
+    dialog.resize(860, 640)
+    dialog.show()
+    tabs = dialog._tabs_widget
+    assert tabs is not None
+    for index in range(tabs.count()):
+        if tabs.tabText(index) == "Files":
+            tabs.setCurrentIndex(index)
+            break
+    app = QApplication.instance()
+    assert app is not None
+    app.processEvents()
+
+    rows = (
+        dialog._local_history_max_checkpoints_input,
+        dialog._local_history_retention_days_input,
+        dialog._local_history_max_tracked_file_kb_input,
+        dialog._local_history_excludes_list,
+    )
+    for row in rows:
+        assert row.height() >= row.sizeHint().height()
+
+    form_host = dialog.findChild(QWidget, "shell.settingsDialog.localHistoryForm")
+    assert form_host is not None
+    form = form_host.layout()
+    assert isinstance(form, QFormLayout)
+    for spin in rows[:3]:
+        label = form.labelForField(spin)
+        assert isinstance(label, QLabel)
+        assert label.height() >= label.sizeHint().height()
+        assert spin.geometry().intersected(label.geometry()).isEmpty()
+
+    dialog.close()
+    app.processEvents()
+
+
+def test_settings_dialog_snapshot_keeps_unedited_tracked_file_bytes() -> None:
+    dialog = SettingsDialog(
+        EditorSettingsSnapshot(local_history_max_tracked_file_bytes=1_000_000)
+    )
+    assert dialog.snapshot().local_history_max_tracked_file_bytes == 1_000_000
 
 
 def test_settings_dialog_snapshot_includes_local_history_controls() -> None:

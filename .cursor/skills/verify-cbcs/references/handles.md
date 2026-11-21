@@ -392,6 +392,8 @@ The Dune checker requires each handle below to match a `setObjectName` call unde
 - `#shell.settingsDialog.fileExcludesGroup`
 - `#shell.settingsDialog.fileExcludesHelp`
 - `#shell.settingsDialog.fileExcludesList`
+- `#shell.settingsDialog.filesScroll`
+- `#shell.settingsDialog.filesScrollContent`
 - `#shell.settingsDialog.generalScroll`
 - `#shell.settingsDialog.generalScrollContent`
 - `#shell.settingsDialog.intelligenceGroup`
@@ -403,6 +405,7 @@ The Dune checker requires each handle below to match a `setObjectName` call unde
 - `#shell.settingsDialog.localHistoryExcludeInput`
 - `#shell.settingsDialog.localHistoryExcludesHelp`
 - `#shell.settingsDialog.localHistoryExcludesList`
+- `#shell.settingsDialog.localHistoryForm`
 - `#shell.settingsDialog.localHistoryGroup`
 - `#shell.settingsDialog.localHistoryHelp`
 - `#shell.settingsDialog.okBtn`
