@@ -173,8 +173,10 @@ def test_run_pytest_target_includes_target_argument(
     result = run_pytest_target(str(project_root), str(target))
 
     assert result.return_code == 0
-    assert captured_command[:8] == ["/usr/bin/python3", "-m", "pytest", "-q", "-rA", "--import-mode=importlib", "-p", "no:cacheprovider"]
-    assert captured_command[-2:] == [str(target.resolve()), "--ignore=cbcs/form_builder"]
+    assert captured_command[:2] == ["/usr/bin/python3", "-c"]
+    assert "raise SystemExit(pytest.main(" in captured_command[2]
+    assert "'-q', '-rA', '--import-mode=importlib', '-p', 'no:cacheprovider'" in captured_command[2]
+    assert f"{str(target.resolve())!r}, '--ignore=cbcs/form_builder'" in captured_command[2]
 
 
 def test_run_pytest_args_passes_through_explicit_pytest_arguments(
@@ -208,14 +210,9 @@ def test_run_pytest_args_passes_through_explicit_pytest_arguments(
     assert result.return_code == 0
     assert captured_command == [
         "/usr/bin/python3",
-        "-m",
-        "pytest",
-        "-v",
-        "--import-mode=importlib",
-        "-p",
-        "no:cacheprovider",
-        "tests/test_sample.py::test_ok",
-        "--ignore=cbcs/form_builder",
+        "-c",
+        "import pytest; raise SystemExit(pytest.main(['-v', '--import-mode=importlib', '-p', "
+        "'no:cacheprovider', 'tests/test_sample.py::test_ok', '--ignore=cbcs/form_builder']))",
     ]
 
 

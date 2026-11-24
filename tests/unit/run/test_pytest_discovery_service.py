@@ -163,7 +163,7 @@ def test_discover_tests_uses_offscreen_qt_platform(
     assert captured_env["QT_QPA_PLATFORM"] == "offscreen"
 
 
-def test_build_collect_command_resolves_default_runtime_when_given_project_root(
+def test_build_collect_command_never_passes_dash_m_to_plain_python(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from app.pytest.launch_plan import PytestLaunchPlan
@@ -180,7 +180,39 @@ def test_build_collect_command_resolves_default_runtime_when_given_project_root(
 
     command = _build_collect_command(project_root="/tmp/project")
 
-    assert command[:3] == ["/usr/bin/python3", "-m", "pytest"]
+    assert command[:2] == ["/usr/bin/python3", "-c"]
+    assert "-m" not in command
+    assert "--collect-only" in command[2]
+
+
+def test_build_collect_command_ignores_project_run_tests_script_on_freecad(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    # Regression: a project run_tests.py that starts `sys.executable -m pytest`
+    # made FreeCAD 1.1 show "unrecognised option '-m'" after every save.
+    from app.pytest.launch_plan import PytestLaunchPlan
+
+    script = tmp_path / "run_tests.py"
+    script.write_text("raise SystemExit(0)\n", encoding="utf-8")
+    monkeypatch.setattr(
+        "app.pytest.discovery_service.build_pytest_launch_plan",
+        lambda project_root: PytestLaunchPlan(
+            project_root=project_root,
+            runtime_executable="/opt/freecad/AppRun",
+            run_tests_script=script,
+            use_apprun_inline_payload=True,
+        ),
+    )
+
+    command = _build_collect_command(project_root=str(tmp_path))
+
+    assert command[:2] == ["/opt/freecad/AppRun", "-c"]
+    assert "run_tests.py" not in command[2]
+    assert "pytest.main(" in command[2]
+    # AppRun -c does not add the cwd to sys.path, so the project root must be.
+    assert repr(str(tmp_path.resolve())) in command[2]
+    assert "--collect-only" in command[2]
 
 
 def test_discover_tests_returns_error_when_launch_plan_runtime_unavailable(

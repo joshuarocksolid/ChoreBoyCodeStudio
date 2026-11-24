@@ -67,11 +67,23 @@ def build_pytest_launch_plan(project_root: str) -> PytestLaunchPlan:
     )
 
 
-def build_pytest_command(plan: PytestLaunchPlan, pytest_args: list[str]) -> list[str]:
-    """Build argv for one pytest subprocess using the shared launch plan."""
+def build_pytest_command(
+    plan: PytestLaunchPlan,
+    pytest_args: list[str],
+    *,
+    use_project_script: bool = True,
+) -> list[str]:
+    """Build argv for one pytest subprocess using the shared launch plan.
+
+    Never passes ``-m``: on FreeCAD 1.1 the runtime is the FreeCAD GUI binary,
+    which answers ``-m`` with an "unrecognised option" dialog. Discovery runs
+    after every save, so it passes ``use_project_script=False`` and collects
+    with Code Studio's own payload instead of the project's ``run_tests.py``,
+    which may itself start ``sys.executable -m pytest``.
+    """
 
     normalized_args = _normalized_pytest_args(pytest_args)
-    if plan.run_tests_script is not None:
+    if use_project_script and plan.run_tests_script is not None:
         if plan.use_apprun_inline_payload:
             payload = build_runpy_bootstrap_payload(
                 script_path=str(plan.run_tests_script),
@@ -81,12 +93,28 @@ def build_pytest_command(plan: PytestLaunchPlan, pytest_args: list[str]) -> list
             return [plan.runtime_executable, "-c", payload]
         return [plan.runtime_executable, str(plan.run_tests_script), *normalized_args]
     if plan.use_apprun_inline_payload:
-        return [plan.runtime_executable, "-c", build_apprun_pytest_payload(normalized_args)]
-    return [plan.runtime_executable, "-m", "pytest", *normalized_args]
+        payload = build_apprun_pytest_payload(
+            normalized_args,
+            path_entries=_pytest_path_entries(plan.project_root),
+        )
+        return [plan.runtime_executable, "-c", payload]
+    return [
+        plan.runtime_executable,
+        "-c",
+        f"import pytest; raise SystemExit(pytest.main({normalized_args!r}))",
+    ]
 
 
-def build_apprun_pytest_payload(pytest_args: list[str]) -> str:
+def build_apprun_pytest_payload(
+    pytest_args: list[str],
+    *,
+    path_entries: tuple[str, ...] = (),
+) -> str:
     """Build inline AppRun payload that imports vendor pytest before running.
+
+    path_entries (the project's import roots) go on sys.path because
+    AppRun -c does not add the working directory the way python -m
+    does, so tests that import project modules would fail to collect.
 
     Keep this on one semicolon-joined line, like
     ``build_runpy_bootstrap_payload``. Do not wrap ``pytest.main(...)`` in
@@ -94,8 +122,13 @@ def build_apprun_pytest_payload(pytest_args: list[str]) -> str:
     """
 
     vendor_root = str(resolve_vendor_root())
+    project_inserts = "".join(
+        f"sys.path.insert(0, {entry!r}) if {entry!r} not in sys.path else None; "
+        for entry in reversed(path_entries)
+    )
     return apprun_safe_python(
         "import sys; "
+        f"{project_inserts}"
         f"sys.path.insert(0, {vendor_root!r}); "
         "import importlib.util; "
         "ok=importlib.util.find_spec('pytest') is not None; "
