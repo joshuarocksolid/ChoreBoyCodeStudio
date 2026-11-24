@@ -146,7 +146,7 @@ def _parse_verbose_result_line(stripped: str) -> tuple[str, TestOutcome] | None:
 
 def _build_collect_command(*, project_root: str) -> list[str]:
     plan = build_pytest_launch_plan(project_root)
-    return build_pytest_command(plan, ["--collect-only", "-q"])
+    return build_pytest_command(plan, ["--collect-only", "-q"], use_project_script=False)
 
 
 def _parse_collect_output(stdout: str, *, project_root: str) -> list[DiscoveredTestNode]:
